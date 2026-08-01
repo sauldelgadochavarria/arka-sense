@@ -1,0 +1,171 @@
+<fieldset class="form-section">
+  <legend>Identificación</legend>
+  <input name="numEmpleado" placeholder="No. empleado" value="<%= empleado ? empleado.numEmpleado : '' %>" required />
+  <input name="firstName" placeholder="Nombre(s)" value="<%= empleado ? empleado.firstName : '' %>" required />
+  <input name="lastName" placeholder="Apellido(s)" value="<%= empleado ? empleado.lastName : '' %>" required />
+  <input name="curp" placeholder="CURP" maxlength="18" value="<%= empleado ? empleado.curp : '' %>" />
+  <input name="rfc" placeholder="RFC" maxlength="13" value="<%= empleado ? empleado.rfc : '' %>" />
+  <input name="nss" placeholder="NSS" value="<%= empleado ? empleado.nss : '' %>" />
+  <input name="fechaNacimiento" type="date" value="<%= empleado && empleado.fechaNacimiento ? toDateInputValue(empleado.fechaNacimiento) : '' %>" />
+  <select name="sexo">
+    <option value="">— Sexo —</option>
+    <option value="M" <%= empleado && empleado.sexo === 'M' ? 'selected' : '' %>>Masculino</option>
+    <option value="F" <%= empleado && empleado.sexo === 'F' ? 'selected' : '' %>>Femenino</option>
+    <option value="X" <%= empleado && empleado.sexo === 'X' ? 'selected' : '' %>>Otro</option>
+  </select>
+</fieldset>
+
+<fieldset class="form-section">
+  <legend>Contacto</legend>
+  <input name="email" type="email" placeholder="Email corporativo" value="<%= empleado ? empleado.email : '' %>" />
+  <input name="emailPersonal" type="email" placeholder="Email personal" value="<%= empleado ? empleado.emailPersonal : '' %>" />
+  <input name="telefono" placeholder="Teléfono celular" value="<%= empleado ? empleado.telefono : '' %>" />
+  <input name="telefonoFijo" placeholder="Teléfono fijo" value="<%= empleado ? empleado.telefonoFijo : '' %>" />
+</fieldset>
+
+<fieldset class="form-section">
+  <legend>Asignación organizacional</legend>
+  <select name="subsidiariaId">
+    <option value="">— Sucursal —</option>
+    <% subsidiarias.forEach(function(s) { %>
+    <option value="<%= s._id %>" <%= empleado && empleado.subsidiariaId && String(empleado.subsidiariaId) === String(s._id) ? 'selected' : '' %>><%= s.nombre %> (<%= s.codigo %>)</option>
+    <% }); %>
+  </select>
+  <select name="departamentoId">
+    <option value="">— Departamento —</option>
+    <% departamentos.forEach(function(d) { %>
+    <option value="<%= d._id %>" <%= empleado && empleado.departamentoId && String(empleado.departamentoId) === String(d._id) ? 'selected' : '' %>><%= d.nombre %></option>
+    <% }); %>
+  </select>
+  <select name="puestoId">
+    <option value="">— Puesto —</option>
+    <% puestos.forEach(function(p) { %>
+    <option value="<%= p._id %>" <%= empleado && empleado.puestoId && String(empleado.puestoId) === String(p._id) ? 'selected' : '' %>><%= p.nombre %></option>
+    <% }); %>
+  </select>
+  <select name="turnoId">
+    <option value="">— Turno directo (sin plantilla) —</option>
+    <% (turnos || []).forEach(function(t) { %>
+    <option value="<%= t._id %>" <%= empleado && empleado.turnoId && String(empleado.turnoId) === String(t._id) ? 'selected' : '' %>><%= t.nombre %> (<%= t.horaEntrada %>-<%= t.horaSalida %>)</option>
+    <% }); %>
+  </select>
+  <p class="hint">El turno directo aplica si no hay plantilla asignada, o como respaldo.</p>
+  <select name="supervisorId">
+    <option value="">— Supervisor —</option>
+    <% supervisores.forEach(function(s) { %>
+    <option value="<%= s._id %>" <%= empleado && empleado.supervisorId && String(empleado.supervisorId) === String(s._id) ? 'selected' : '' %>><%= s.firstName %> <%= s.lastName %></option>
+    <% }); %>
+  </select>
+</fieldset>
+
+<fieldset class="form-section">
+  <legend>Plantilla de horario</legend>
+  <select name="plantillaRotacionId" id="plantillaRotacionId">
+    <option value="">— Sin plantilla (usar turno directo) —</option>
+    <% (plantillas || []).forEach(function(p) { %>
+    <option value="<%= p._id %>" <%= asignacionCtx && asignacionCtx.asignacion && String(asignacionCtx.asignacion.plantillaRotacionId) === String(p._id) ? 'selected' : '' %>>
+      <%= p.nombre %> — <%= p.tipoLabel %>: <%= p.resumen %>
+    </option>
+    <% }); %>
+  </select>
+  <label id="labelFechaAncla">Fecha ancla del ciclo
+    <input name="plantillaFechaAncla" type="date" id="plantillaFechaAncla"
+      value="<%= asignacionCtx && asignacionCtx.asignacion && asignacionCtx.asignacion.fechaAncla ? toDateInputValue(asignacionCtx.asignacion.fechaAncla) : '' %>" />
+  </label>
+  <p class="hint">
+    La plantilla (fija, secuencia o matriz) tiene prioridad sobre el turno directo.
+    <a href="/asistencia-rotaciones" target="_blank">Gestionar plantillas</a>
+  </p>
+</fieldset>
+
+<script>
+(function () {
+  const sel = document.getElementById('plantillaRotacionId');
+  const label = document.getElementById('labelFechaAncla');
+  const input = document.getElementById('plantillaFechaAncla');
+  if (!sel || !label) return;
+  function sync() {
+    const on = !!sel.value;
+    label.style.display = on ? '' : 'none';
+    if (on && input && !input.value) {
+      input.value = new Date().toISOString().slice(0, 10);
+    }
+  }
+  sel.addEventListener('change', sync);
+  sync();
+})();
+</script>
+
+<fieldset class="form-section">
+  <legend>Datos laborales</legend>
+  <input name="fechaIngreso" type="date" value="<%= empleado && empleado.fechaIngreso ? toDateInputValue(empleado.fechaIngreso) : '' %>" />
+  <select name="tipoContrato">
+    <% tiposContrato.forEach(function(t) { %>
+    <option value="<%= t.value %>" <%= empleado && empleado.tipoContrato === t.value ? 'selected' : (!empleado && t.value === 'indefinido' ? 'selected' : '') %>><%= t.label %></option>
+    <% }); %>
+  </select>
+  <input name="salarioDiario" type="number" min="0" step="0.01" placeholder="Salario diario" value="<%= empleado && empleado.salarioDiario != null ? empleado.salarioDiario : '' %>" />
+  <% if (empleado) { %>
+  <select name="estatus">
+    <% estatusOptions.forEach(function(o) { %>
+    <option value="<%= o.value %>" <%= empleado.estatus === o.value ? 'selected' : '' %>><%= o.label %></option>
+    <% }); %>
+  </select>
+  <input name="fechaBaja" type="date" value="<%= empleado.fechaBaja ? toDateInputValue(empleado.fechaBaja) : '' %>" />
+  <select name="motivoBaja">
+    <option value="">— Motivo baja —</option>
+    <% motivosBaja.forEach(function(m) { %>
+    <option value="<%= m %>" <%= empleado.motivoBaja === m ? 'selected' : '' %>><%= m %></option>
+    <% }); %>
+  </select>
+  <% } %>
+</fieldset>
+
+<fieldset class="form-section">
+  <legend>Administración e integración</legend>
+  <input name="codigoExterno" placeholder="Código externo (ERP / nómina)" value="<%= empleado ? (empleado.codigoExterno || '') : '' %>" />
+  <select name="tipoRegistro" required>
+    <% (tiposRegistro || []).forEach(function(t) { %>
+    <option value="<%= t.value %>" <%= empleado ? (empleado.tipoRegistro === t.value ? 'selected' : '') : (t.value === 'rol_turnos' ? 'selected' : '') %>><%= t.label %></option>
+    <% }); %>
+  </select>
+  <select name="grupoDispositivosId">
+    <option value="">— Grupo de dispositivos —</option>
+    <% (gruposDispositivos || []).forEach(function(g) { %>
+    <option value="<%= g._id %>" <%= empleado && empleado.grupoDispositivosId && String(empleado.grupoDispositivosId) === String(g._id) ? 'selected' : '' %>><%= g.nombre %></option>
+    <% }); %>
+  </select>
+  <div class="checkbox-group">
+    <label><input type="checkbox" name="exportarFaltas" value="1" <%= !empleado || empleado.exportarFaltas !== false ? 'checked' : '' %> /> Exportar faltas a nómina</label>
+    <label><input type="checkbox" name="exportarRetardos" value="1" <%= !empleado || empleado.exportarRetardos !== false ? 'checked' : '' %> /> Exportar retardos a nómina</label>
+    <label><input type="checkbox" name="exportarHorasExtra" value="1" <%= !empleado || empleado.exportarHorasExtra !== false ? 'checked' : '' %> /> Exportar horas extra a nómina</label>
+  </div>
+</fieldset>
+
+<% if (typeof showNominaConfig !== 'undefined' && showNominaConfig) { %>
+<% const nc = empleado && empleado.nominaConfig ? empleado.nominaConfig : {}; %>
+<fieldset class="form-section">
+  <legend>Nómina formal</legend>
+  <p class="hint">Parámetros usados por el motor de nómina (INFONAVIT, fondo de ahorro, finiquito). Requiere módulo <code>nomina</code> activo.</p>
+
+  <div class="checkbox-group">
+    <label><input type="checkbox" name="nomina_aplicaFondoAhorro" value="1" <%= nc.aplicaFondoAhorro ? 'checked' : '' %> /> Aplica fondo de ahorro</label>
+  </div>
+  <input name="nomina_porcentajeFondoAhorro" type="number" min="0" max="100" step="0.01" placeholder="% fondo de ahorro (vacío = parámetro global)" value="<%= nc.porcentajeFondoAhorro > 0 ? nc.porcentajeFondoAhorro : '' %>" />
+
+  <select name="nomina_tipoCreditoInfonavit" id="nomina_tipoCreditoInfonavit">
+    <% (tiposCreditoInfonavit || []).forEach(function(t) { %>
+    <option value="<%= t.value %>" <%= (nc.tipoCreditoInfonavit || '') === t.value ? 'selected' : '' %>><%= t.label %></option>
+    <% }); %>
+  </select>
+  <input name="nomina_tasaInfonavit" type="number" min="0" step="0.0001" placeholder="Tasa / valor INFONAVIT (% o monto según tipo)" value="<%= nc.tasaInfonavit > 0 ? nc.tasaInfonavit : '' %>" />
+  <input name="nomina_infonavitDescuento" type="number" min="0" step="0.01" placeholder="Descuento fijo por período (opcional, anula cálculo)" value="<%= nc.infonavitDescuento > 0 ? nc.infonavitDescuento : '' %>" />
+  <input name="nomina_sueldoIntegrado" type="number" min="0" step="0.01" placeholder="Sueldo integrado período (INFONAVIT %)" value="<%= nc.sueldoIntegrado > 0 ? nc.sueldoIntegrado : '' %>" />
+  <input name="nomina_diasCotizacionImss" type="number" min="0" step="1" placeholder="Días cotización IMSS/INFONAVIT" value="<%= nc.diasCotizacionImss > 0 ? nc.diasCotizacionImss : '' %>" />
+
+  <h3 class="form-subtitle">Extraordinaria / finiquito</h3>
+  <input name="nomina_diasPrimaVacacional" type="number" min="0" step="0.01" placeholder="Días prima vacacional" value="<%= nc.diasPrimaVacacional > 0 ? nc.diasPrimaVacacional : '' %>" />
+  <input name="nomina_proporcionAguinaldoFiniquito" type="number" min="0" step="0.01" placeholder="Monto aguinaldo finiquito" value="<%= nc.proporcionAguinaldoFiniquito > 0 ? nc.proporcionAguinaldoFiniquito : '' %>" />
+  <input name="nomina_fondoAhorroSaldoFiniquito" type="number" min="0" step="0.01" placeholder="Saldo fondo de ahorro finiquito" value="<%= nc.fondoAhorroSaldoFiniquito > 0 ? nc.fondoAhorroSaldoFiniquito : '' %>" />
+</fieldset>
+<% } %>

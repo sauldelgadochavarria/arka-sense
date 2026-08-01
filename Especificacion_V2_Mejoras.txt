@@ -1,0 +1,867 @@
+========================================
+ARCHIVO: spec_v2_part1.txt
+========================================
+
+﻿SISTEMA DE PRE-NÓMINA Y
+CONTROL DE TIEMPO Y ASISTENCIA
+─────────────────────────────────────────
+Documento Técnico de Especificación de Requerimientos y Módulos
+Versión 2.0
+Junio 2026
+Cambios respecto a v1.0: se incorporan hallazgos del "Manual Técnico Integral, Arquitectura de
+Datos y Sugerencias: PreAsyst WEB" (sistema de referencia analizado por ingeniería inversa de
+video-tutoriales), ampliando la lógica operativa de horarios, tolerancias, dispositivos, turnos
+rotativos y exportación a nómina, además de sugerencias de mejora arquitectónica.
+________________
+
+
+1. INTRODUCCIÓN Y ALCANCE DEL SISTEMA
+Este documento describe en detalle la arquitectura funcional, módulos, catálogos, flujos operativos y requerimientos técnicos del sistema de Pre-Nómina y Control de Tiempo y Asistencia. El sistema está diseñado para automatizar y centralizar la gestión de asistencia, incidencias, turnos y prenómina de empleados en empresas de cualquier tamaño, con integración directa a sistemas de nómina.
+1.1 Objetivo General
+Desarrollar una plataforma web SaaS multiempresa que permita registrar, controlar y procesar la asistencia del personal mediante dispositivos biométricos, aplicaciones móviles o registros manuales, generando automáticamente la pre-nómina con cálculos de incidencias, horas extra, retardos y justificaciones, para su posterior exportación al sistema de nómina del cliente.
+1.2 Alcance Funcional
+* Registro de asistencia por múltiples métodos (biométrico, RFID, facial, móvil, manual)
+* Administración de turnos y horarios flexibles, incluyendo rotaciones cíclicas multi-semana
+* Gestión de incidencias: retardos, faltas, permisos, vacaciones, horas extra
+* Cálculo automático de prenómina por período (semanal, quincenal, mensual)
+* Interfaz bidireccional con sistemas de nómina (Contpaqi, CONTPAQi Nóminas, SAP, ASPEL NOI, etc.)
+* Portal de autoservicio para empleados (consulta de asistencia, solicitudes)
+* App móvil con geolocalización y fichaje para trabajo remoto/campo
+* Panel directivo con KPIs de asistencia y productividad
+* Módulo de seguridad con roles, permisos y auditoría completa
+* Administración avanzada de dispositivos de captura (biométricos, control de acceso, accesorios de salud: cubrebocas/temperatura) con monitoreo de enlace y comandos remotos
+* Motor de calificación de marcajes contra horario con "ventana de holgura" configurable y vinculación de dispositivos por centro de costo
+1.3 Tecnologías Recomendadas
+Capa
+	Tecnología Recomendada
+	Alternativa
+	Frontend Web
+	React 18 + TypeScript + Tailwind CSS
+	Vue 3 + Nuxt
+	Backend API
+	Node.js (NestJS) + REST/GraphQL
+	Laravel (PHP) / Django
+	Base de Datos
+	PostgreSQL 15
+	MySQL 8
+	Autenticación
+	JWT + OAuth2 / Keycloak
+	Auth0
+	Caché
+	Redis 7
+	Memcached
+	Cola de mensajes
+	RabbitMQ / BullMQ
+	AWS SQS
+	Storage archivos
+	AWS S3 / MinIO
+	Azure Blob Storage
+	App Móvil
+	React Native (iOS + Android)
+	Flutter
+	Biométrico SDK
+	ZKTeco SDK / Anviz SDK
+	SUPREMA SDK
+	WebSockets
+	Socket.io
+	Pusher
+	CI/CD
+	GitHub Actions + Docker
+	GitLab CI
+	Infraestructura
+	AWS ECS / Kubernetes
+	Azure AKS
+	Middleware de Integración ERP (NUEVO)
+	Node.js worker dedicado + colas (BullMQ) para consumo de Webhooks/API hacia ERP
+	SuiteScripts (NetSuite) / Conectores nativos del ERP destino
+	Sincronizador Local de Biométricos (NUEVO)
+	Agente en contenedor Docker por sucursal, con cola de contingencia local (SQLite/PostgreSQL embebido)
+	Servicio nativo systemd con cola en disco
+	________________
+
+
+2. ARQUITECTURA DEL SISTEMA
+2.1 Arquitectura General
+El sistema sigue una arquitectura de microservicios con separación clara de capas. Los módulos críticos (asistencia, biométricos) se desarrollan como servicios independientes para garantizar escalabilidad y disponibilidad.
+Capa
+	Componentes
+	Descripción
+	Presentación
+	Web App (React), Mobile App (RN), Panel Admin
+	Interfaces de usuario multicanal
+	API Gateway
+	NestJS API Gateway / Kong
+	Punto de entrada único, autenticación, rate limiting
+	Microservicios
+	Auth, Empleados, Asistencia, Turnos, Incidencias, Prenómina, Reportes, Notificaciones, Dispositivos
+	Servicios independientes por dominio
+	Integración
+	Biométrico Adapter, Nómina Adapter, GPS Service, ERP Middleware (NUEVO)
+	Adaptadores para sistemas externos
+	Datos
+	PostgreSQL (principal), Redis (caché), S3 (archivos)
+	Almacenamiento persistente y temporal
+	Eventos
+	RabbitMQ / BullMQ
+	Comunicación asíncrona entre servicios
+	Edge / Sucursal
+	Agente Sincronizador en Docker (NUEVO)
+	Contingencia local de marcajes ante pérdida de enlace WAN
+	2.2 Modelo de Multitenancy
+El sistema opera en modalidad multi-tenant (una instancia sirve múltiples empresas). Cada empresa (tenant) tiene su propio esquema de base de datos en PostgreSQL, garantizando aislamiento total de datos.
+* Identificación de tenant por subdominio: empresa.sistemanom.mx
+* Schema separation en PostgreSQL por empresa
+* Configuración independiente de reglas de negocio por tenant
+* Facturación y suscripción por empresa
+Arquitectura de Base de Datos y Servicios:
+* Modelo Multi-tenant: Aislamiento lógico de datos por cliente mediante un identificador único (tenant_id), garantizando que la información de una empresa sea inaccesible para otras.
+* Microservicios Críticos:
+   * Auth Service: Gestión de identidades y sesiones con soporte para biometría móvil (FaceID/TouchID).
+   * Payroll Engine: Motor de cálculo asíncrono para pre-nómina, capaz de procesar grandes volúmenes de datos sin degradar la experiencia de usuario.
+   * Attendance Qualification Engine (NUEVO): Microservicio dedicado a comparar matemáticamente cada marcaje contra la regla de horario asignada (ver Módulo 13), aplicando la ventana de holgura y las reglas de tolerancia configuradas.
+* Escalabilidad: Implementación de particionamiento mensual en la tabla de registros de asistencia (attendance_log) para optimizar tiempos de consulta en empresas con más de 1,000 empleados.
+2.3 Resiliencia ante Falla de Enlace (NUEVO — sugerencia de arquitectura)
+Para operaciones con alto volumen de biométricos distribuidos en sucursales remotas, se recomienda evaluar un patrón de "Edge Buffering":
+* Agente local en contenedor Docker desplegado en el servidor o gateway de cada sucursal, responsable de hablar directamente con los dispositivos (Dahua, Hikvision, ZKTeco, etc.) por red local.
+* Ante pérdida de conectividad a internet, el agente almacena la cola de marcajes en una base de datos de contingencia local (SQLite o PostgreSQL embebido), evitando saturar la memoria interna de los relojes biométricos (que suele ser limitada).
+* Al restaurar el enlace, el agente sincroniza en ráfaga (batch) hacia el backend central, respetando un límite de tasa para no saturar la API.
+* Métrica de salud sugerida: "antigüedad del marcaje más viejo en cola local" como indicador de tiempo fuera de línea.
+
+
+========================================
+ARCHIVO: spec_v2_part2.txt
+========================================
+
+________________
+
+
+3. MÓDULOS DEL SISTEMA
+El sistema se compone de 14 módulos principales (se agregan dos respecto a v1.0: Motor de Calificación de Asistencia y Roles de Turno Cíclicos), cada uno con sus propias funcionalidades, entidades y flujos.
+MÓDULO 1: Seguridad y Administración de Accesos
+1.1 Descripción
+Controla el acceso al sistema, la gestión de usuarios internos (administradores, supervisores, RRHH, operativos) y los permisos granulares por módulo y acción.
+1.2 Funcionalidades
+* Gestión de usuarios del sistema (CRUD completo)
+* Roles predefinidos: Super Admin, Admin Empresa, Supervisor, RRHH, Empleado
+* Permisos granulares por módulo: Ver, Crear, Editar, Eliminar, Aprobar, Exportar
+* Autenticación con JWT + refresh token (expiración configurable)
+* Autenticación de dos factores (2FA) por TOTP o SMS
+* Inicio de sesión con biometría en dispositivos móviles (Face ID / Huella)
+* Bitácora de auditoría completa: quién, qué, cuándo, desde dónde
+* Política de contraseñas configurable por empresa
+* Bloqueo de cuenta por intentos fallidos (configurable)
+* Sesiones concurrentes y gestión de dispositivos
+* Recuperación de contraseña por email/SMS
+* Single Sign-On (SSO) via SAML 2.0 / LDAP / Active Directory
+1.3 Roles y Permisos
+Rol
+	Alcance
+	Permisos Principales
+	Super Admin
+	Todo el sistema
+	Gestión de empresas/tenants, configuración global
+	Admin Empresa
+	Su empresa completa
+	Todos los módulos de su empresa
+	Gerente / Director
+	Departamento(s) asignados
+	Reportes, aprobaciones, KPIs
+	Supervisor
+	Su equipo directo
+	Asistencia, incidencias, aprobaciones
+	RRHH
+	Todos los empleados
+	Altas/bajas, turnos, prenómina, reportes
+	Nómina
+	Módulo prenómina
+	Cálculos, exportación, ajustes
+	Empleado
+	Sus propios datos
+	Consulta asistencia, solicitudes, perfil
+	Auditor
+	Solo lectura
+	Reportes, bitácora, consultas
+	________________
+
+
+MÓDULO 2: Catálogo de Empleados (ABC de Personal)
+2.1 Descripción
+Administración completa del expediente digital del empleado. Es el módulo central del que dependen todos los demás módulos. Se sincroniza bidireccional con el sistema de nómina.
+2.2 Funcionalidades
+* Alta, baja y modificación (ABC) de empleados
+* Expediente digital completo con documentos adjuntos
+* Foto de perfil y plantillas biométricas (huella, face)
+* Asignación de empresa, sucursal, departamento, puesto
+* Asignación de turno y horario de trabajo
+* Historial de movimientos (cambios de puesto, salario, área)
+* Control de contratos: indefinido, temporal, por proyecto
+* Importación masiva por Excel / CSV
+* Sincronización automática con sistema de nómina (ABC)
+* Búsqueda avanzada con múltiples filtros
+* Fotografía y firma digital del empleado
+* QR personal para identificación y checado
+* Tipo de Registro obligatorio (NUEVO, ver 2.3.1): clasifica al empleado como "Rol de Turnos" o "Planilla" para habilitar el Motor de Calificación de Asistencia
+* Vinculación a Grupo de Dispositivos (NUEVO, ver 2.3.2): restringe a qué dispositivos biométricos se sincroniza la huella/rostro del empleado
+* Interruptores de exportación de incidencias (NUEVO, ver 2.3.3): banderas booleanas por empleado para habilitar/deshabilitar el envío de Faltas, Retardos y Horas Extra al archivo de nómina
+2.3 Datos del Expediente
+Sección
+	Campos
+	Datos Personales
+	Nombre completo, CURP, RFC, NSS, fecha nacimiento, sexo, estado civil, nacionalidad, tipo sangre
+	Contacto
+	Teléfono celular, teléfono fijo, email personal, email corporativo, dirección completa
+	Laboral
+	No. empleado, fecha ingreso, fecha baja, motivo baja, tipo contrato, salario diario, forma pago
+	Organizacional
+	Empresa, sucursal, departamento, área, puesto, nivel jerárquico, supervisor directo
+	Documentos
+	INE (frente/reverso), CURP oficial, comprobante domicilio, acta nacimiento, contrato firmado
+	Biométrico
+	Huella digital (1-10), reconocimiento facial (template), tarjeta RFID, código QR
+	Bancario
+	Banco, CLABE, número tarjeta (para pago de nómina)
+	Seguridad Social
+	IMSS, INFONAVIT, FONACOT, número de crédito activo si aplica
+	Prestaciones
+	Prima vacacional, aguinaldo, vales, comedor, seguro vida, seguro médico
+	Administración / Interface (NUEVO)
+	Código Externo (llave foránea hacia ERP/Nómina), Tipo de Registro, Grupo de Dispositivos, Interruptores de exportación (Faltas/Retardos/HE)
+	2.3.1 Tipo de Registro — Interruptor de Calificación (NUEVO, incorporado del análisis de PreAsyst WEB)
+Campo obligatorio en el expediente del empleado, con dos valores posibles: "Rol de Turnos" o "Planilla". Define si el empleado será evaluado matemáticamente contra una regla de horario:
+* Si se deja en "Ninguno" / sin configurar: el motor solo almacena los marcajes como texto plano, sin clasificarlos como entrada/salida/retardo. No hay cálculo de incidencias automáticas.
+* Si se asigna "Rol de Turnos": se activa el Motor de Calificación de Asistencia (ver Módulo 13), que compara cada checada contra el horario asignado, calculando retardos, salidas anticipadas y horas extra automáticamente.
+* Recomendación de mejora: exponer este campo también a nivel de catálogo de Departamento/Puesto para poder asignarlo de forma masiva por defecto al dar altas, reduciendo el riesgo de empleados "huérfanos" sin calificación.
+2.3.2 Grupo de Dispositivos (NUEVO)
+Catálogo de agrupación que define a qué dispositivos biométricos (por centro de costo / sucursal) se sincroniza la huella o rostro del empleado. Restringe el enrolamiento únicamente a los relojes autorizados del centro de costo asignado, evitando que el template biométrico se distribuya a sucursales no relacionadas. Ver también Catálogo "Grupos de Dispositivos" en sección 4.
+2.3.3 Interruptores de Exportación de Incidencias (NUEVO)
+Casillas booleanas (activas por default) que habilitan o deshabilitan, por empleado, la exportación de:
+* Faltas
+* Retardos
+* Horas Extra
+Útil para casos especiales (ej. empleados de confianza sin penalización por retardo, o personal cuyo cálculo de horas extra se gestiona manualmente fuera del sistema).
+
+
+========================================
+ARCHIVO: spec_v2_part3.txt
+========================================
+
+________________
+
+
+MÓDULO 3: Catálogo de Turnos y Horarios
+3.1 Descripción
+Permite definir y administrar todos los tipos de turno y horario de la empresa. Soporta turnos fijos, rotativos, flexibles y esquemas de trabajo remoto o mixto.
+3.2 Tipos de Turno Soportados
+* Turno fijo: Mismo horario todos los días (ej. 8am-6pm L-V)
+* Turno rotativo: Cambia según calendario definido (mañana/tarde/noche por semana)
+* Turno flexible: Entrada libre dentro de un rango, con horas mínimas obligatorias
+* Turno por horas: Personal de medio tiempo o por horas
+* Turno nocturno: Con reglas especiales de cálculo (prima nocturna)
+* Guardia 24x48: Turno especial para vigilancia y seguridad
+* Turno remoto (Home Office): Sin biométrico físico, checado por app/IP
+* Turno mixto: Combinación presencial + remoto
+* Rol de turnos cíclico multi-semana (NUEVO, ver 3.6): rotación programada en matriz de varias semanas, propia de esquemas tipo Qualtia
+3.3 Configuración de Turno
+Parámetro
+	Descripción
+	Ejemplo
+	Nombre del turno
+	Identificador descriptivo
+	Matutino General
+	Días laborables
+	Días de la semana activos
+	Lunes a Viernes
+	Hora entrada
+	Hora de inicio de jornada
+	08:00
+	Hora salida
+	Hora de fin de jornada
+	17:00
+	Tolerancia entrada
+	Minutos de gracia sin retardo
+	10 min
+	Tolerancia salida
+	Minutos antes del fin sin penalización
+	5 min
+	Tiempo comida
+	Duración descanso comida
+	60 min
+	Comida checada
+	Si aplica checado en comida
+	Sí/No
+	Horas jornada
+	Total horas laborables diarias
+	8 hrs
+	Inicio HE ordinaria
+	Desde cuándo aplica HE ordinaria
+	Minuto 1 extra
+	Inicio HE doble
+	Desde cuándo aplica HE al doble
+	Desde hr 9 extra
+	Inicio HE triple
+	Desde cuándo aplica HE al triple
+	Días festivos
+	Descansa semana
+	Si descansa sábado, domingo o ambos
+	Sábado y Domingo
+	Color
+	Color en calendario y vistas
+	#0066CC
+	Ventana de holgura / abanico de búsqueda (NUEVO)
+	Rango de horas antes/después de la hora programada en el que el sistema busca y valida marcajes
+	3 hrs antes / 3 hrs después (6 hrs totales)
+	3.4 Algoritmo de Ventana de Holgura (NUEVO — incorporado del análisis de PreAsyst WEB)
+Cada horario detona un "rango invisible" o ventana de búsqueda alrededor de la hora programada de entrada y salida. Por defecto se sugiere un abanico de 6 horas (3 antes y 3 después de la hora programada), aunque debe ser configurable por turno.
+Ejemplo práctico: para un turno con entrada a las 08:00 AM, el abanico de búsqueda de entrada va de 05:00 AM a 11:00 AM. Cualquier marcaje capturado dentro de esa ventana se clasifica como "Entrada" (a tiempo o con retardo, según la tolerancia). Un marcaje a las 11:30 AM cae fuera de la ventana y el sistema lo marca como "fuera de rango", requiriendo justificación manual por parte de RRHH o supervisor.
+* Recomendación de mejora: registrar en bitácora cada vez que un marcaje cae "fuera de rango", para que el reporte de "Marcajes sin clasificar" (ver Módulo 10) sea explícito y no se pierdan checadas válidas por mala configuración de la ventana.
+3.5 Control de Descansos / Validación de Integridad de 4 Marcajes (NUEVO)
+Parámetro booleano "No registrar horas de comida" en la configuración del turno:
+* Si está desactivado (es decir, si SÍ se exige registrar la comida): el sistema requiere 4 marcajes obligatorios en el día (entrada, salida a comida, regreso de comida, salida). Si falta cualquiera de los 4 — típicamente el "Regreso de Comida" — el algoritmo de cálculo de horas se interrumpe y el día se etiqueta como "Registro Parcial", bloqueando el cómputo de horas efectivas hasta que se corrija manualmente.
+* Si está activado (no se registra comida): basta con 2 marcajes (entrada y salida) y el tiempo de comida se descuenta automáticamente del total de horas jornada según el parámetro configurado.
+* Recomendación de mejora: agregar un estado intermedio "Registro Parcial — Pendiente de Corrección" visible en el dashboard de supervisor (no solo en el reporte de cierre de período), para que la corrección no se descubra hasta el día del cierre de nómina.
+3.6 Roles de Turno Cíclicos / Rotación Multi-Semana (NUEVO MÓDULO — incorporado del análisis de PreAsyst WEB, esquema tipo "Qualtia")
+Funcionalidad para configurar matrices de rotación cíclica que abarcan varias semanas (p. ej. patrones de 4x2, 6x1, rotaciones mañana/tarde/noche en ciclos de 3 a 8 semanas).
+* Lógica de "Asignación Inversa Anclada": al configurar un ciclo de múltiples semanas, la mejor práctica operativa es anclar primero el último domingo del periodo completo, y después regresar al primer lunes para llenar la cuadrícula completa. Este orden de captura evita superposiciones de turnos al final del ciclo, que es el punto donde más frecuentemente ocurren errores de traslape.
+* Catálogo de Plantillas de Rotación: permite guardar un patrón cíclico (ej. "4 días mañana, 2 descanso, 4 días tarde, 2 descanso...") como plantilla reutilizable y asignarla a un grupo de empleados o departamento completo, en lugar de capturar día por día por empleado.
+* Validación de superposición: el sistema debe alertar si, al anclar las semanas, dos turnos del mismo empleado se superponen en el mismo día/hora.
+* Recomendación de mejora: incluir una vista de calendario tipo "matriz" (empleados en filas, días en columnas) para la captura visual de estos ciclos, en lugar de un formulario secuencial día por día, reduciendo errores de captura en rotaciones largas.
+
+
+========================================
+ARCHIVO: spec_v2_part4.txt
+========================================
+
+________________
+
+
+MÓDULO 4: Registro de Asistencia
+4.1 Descripción
+Núcleo operativo del sistema. Recibe, procesa y almacena todas las marcaciones de asistencia de los empleados, independientemente del método de registro utilizado.
+4.2 Métodos de Registro
+Método
+	Descripción
+	Validación
+	Huella Digital
+	Lector biométrico físico en instalaciones
+	Template biométrico + empleado activo
+	Reconocimiento Facial
+	Cámara biométrica o dispositivo inteligente
+	Modelo IA + liveness detection
+	Tarjeta RFID/NFC
+	Proximidad con tarjeta o gafete
+	ID tarjeta + empleado activo
+	App Móvil
+	Desde smartphone iOS/Android
+	GPS + foto selfie + IP corporativa opcional
+	Código QR
+	QR personal escaneado en tablet/kiosco
+	QR único por empleado con expiración
+	Web Manual
+	Supervisor registra en sistema web
+	Usuario autorizado + justificación
+	Código PIN
+	Contraseña numérica en terminal
+	PIN único por empleado
+	Integración Terceros
+	Sistema de control de acceso existente
+	API/archivo plano
+	4.3 Tipos de Marcación
+* Entrada al turno
+* Salida a comida
+* Regreso de comida
+* Salida del turno
+* Entrada/Salida por comisión
+* Entrada/Salida extraordinaria (horas extra programadas)
+4.4 Procesamiento de Marcaciones
+Cada marcación recibida pasa por el siguiente proceso automático:
+1. Recepción de marcación (timestamp, empleado, dispositivo, ubicación)
+2. Validación de empleado activo y turno asignado
+3. Clasificación contra Tipo de Registro: si el empleado está en "Rol de Turnos", se evalúa contra la ventana de holgura del horario (ver 3.4); si está en "Ninguno", se almacena como texto sin clasificar
+4. Clasificación: Entrada a tiempo, Retardo, Salida anticipada, Hora extra, Fuera de rango (NUEVO)
+5. Cálculo de minutos de retardo o salida anticipada aplicando el Modo de Tolerancia configurado (Normal o Concorte, ver Módulo 14)
+6. Actualización del estado diario del empleado (incluye estado "Registro Parcial" si faltan marcajes de comida obligatorios, ver 3.5)
+7. Notificación en tiempo real al supervisor si aplica regla
+8. Almacenamiento en tabla de incidencias automáticas
+Especificación Técnica de Seguridad Biométrica:
+* Protocolo de Captura: Los datos biométricos (huellas o rasgos faciales) serán procesados localmente en los dispositivos periféricos.
+* Cifrado de Datos: Solo se transmitirán y almacenarán hashes biométricos unidireccionales. Queda estrictamente prohibido el almacenamiento de imágenes de huellas o rostros en la base de datos central.
+* Algoritmo de Hash: Implementación de cifrado AES-256 para la transmisión de datos entre el hardware y el servicio en la nube (Attendance Engine)
+________________
+
+
+MÓDULO 13: Motor de Calificación de Asistencia (NUEVO MÓDULO — incorporado del análisis de PreAsyst WEB)
+13.1 Descripción
+Microservicio especializado que toma cada marcaje crudo y lo "califica" matemáticamente contra la regla de horario vigente del empleado, generando automáticamente las incidencias de retardo, salida anticipada, hora extra o registro parcial. Es el componente que diferencia a un empleado configurado en "Rol de Turnos" (calificado) de uno en "Planilla"/"Ninguno" (solo bitácora de texto).
+13.2 Reglas de Calificación
+* Ventana de holgura por turno (ver 3.4): determina qué marcajes son candidatos a "Entrada" o "Salida".
+* Modo de Tolerancia (Normal / Concorte, ver Módulo 14): determina cómo se calculan los minutos de retardo dentro/fuera del margen de gracia.
+* Validación de Integridad de 4 Marcajes (ver 3.5): determina si el día se cierra como "Completo" o "Registro Parcial".
+* Vinculación a Grupo de Dispositivos (ver 2.3.2): solo se consideran válidos los marcajes provenientes de dispositivos autorizados para el centro de costo del empleado; un marcaje desde un dispositivo no autorizado se reporta como anomalía.
+13.3 Recomendación de mejora — Documentación de Redondeo
+El diseño estricto de los modos de tolerancia (Normal/Concorte) puede generar fricciones si el sindicato local o los contratos colectivos exigen métricas híbridas de redondeo. Se sugiere:
+* Documentar explícitamente, en código y en un catálogo de "Políticas de Redondeo" configurable, la función matemática exacta utilizada (ej. Math.floor, Math.round o Math.ceil) para minutos de retardo y horas extra.
+* Garantizar que esta política de redondeo empate exactamente con la lógica del sistema de nómina destino, evitando diferencias de centavos en el pago final — un punto de fricción frecuente en la conciliación contable.
+* Permitir, si el contrato colectivo lo exige, una política de redondeo distinta para retardos vs. horas extra dentro del mismo turno.
+
+
+========================================
+ARCHIVO: spec_v2_part5.txt
+========================================
+
+________________
+
+
+MÓDULO 5: Gestión de Incidencias
+5.1 Descripción
+Módulo para registrar, gestionar y aprobar todas las incidencias que afectan la asistencia y el cálculo de prenómina. Incluye flujos de aprobación configurables por tipo de incidencia.
+5.2 Catálogo de Incidencias
+Tipo
+	Código
+	Afecta Pago
+	Requiere Aprobación
+	Requiere Documento
+	Falta injustificada
+	FI
+	Descuento
+	No (automática)
+	No
+	Falta justificada
+	FJ
+	Varía por regla
+	Sí
+	Sí
+	Permiso con goce
+	PCG
+	No descuenta
+	Sí
+	Opcional
+	Permiso sin goce
+	PSG
+	Descuento
+	Sí
+	Sí
+	Incapacidad IMSS
+	INC
+	Subsidio IMSS
+	Sí
+	Sí (certificado)
+	Vacaciones
+	VAC
+	Pago vacaciones
+	Sí
+	No
+	Prima vacacional
+	PV
+	Pago prima
+	Sistema
+	No
+	Día festivo
+	DF
+	Pago doble/triple
+	No (automática)
+	No
+	Retardo
+	RET
+	Descuento minutos
+	No (automática)
+	Opcional
+	Salida anticipada
+	SA
+	Descuento minutos
+	No (automática)
+	Opcional
+	Hora extra ordinaria
+	HEO
+	Pago x2
+	Sí
+	No
+	Hora extra doble
+	HED
+	Pago x3
+	Sí
+	No
+	Hora extra festivo
+	HEF
+	Pago x3+
+	Sí
+	No
+	Comisión / Visita
+	COM
+	Sin descuento
+	Sí
+	Sí
+	Home Office
+	HO
+	Sin descuento
+	Sí
+	No
+	Lactancia
+	LAC
+	Sin descuento
+	Sí
+	Sí
+	Matrimonio
+	MAT
+	Sin descuento
+	Sí
+	Sí
+	Defunción familiar
+	DEF
+	Sin descuento
+	Sí
+	Sí
+	Ajuste manual
+	AJM
+	Manual
+	Sí (supervisor)
+	Obligatorio
+	Registro parcial (NUEVO)
+	RP
+	Bloquea horas hasta corrección
+	Sí (corrección manual)
+	No
+	Fuera de rango / Sin clasificar (NUEVO)
+	FR
+	No afecta hasta resolución
+	Sí (justificación manual)
+	Opcional
+	5.3 Flujo de Aprobación de Incidencias
+1. Empleado solicita incidencia desde portal/app → elige tipo, fechas, motivo, adjunta documento
+2. Notificación automática a supervisor directo
+3. Supervisor revisa y Aprueba / Rechaza / Solicita más información
+4. Si requiere segundo nivel → notificación a Gerente o RRHH
+5. RRHH puede aprobar/rechazar definitivo
+6. Empleado recibe notificación del resultado
+7. Si aprobada → se registra en expediente y afecta cálculo de prenómina
+8. Supervisor puede aprobar masivamente un rango de fechas
+________________
+
+
+MÓDULO 14: Tolerancias (NUEVO MÓDULO — incorporado del análisis de PreAsyst WEB)
+14.1 Descripción
+Flexibilización matemática de impuntualidades. Define cómo se interpreta el margen de gracia configurado en el turno frente a un retardo real, y cómo se acumulan reincidencias para disparar sanciones.
+14.2 Modos de Operación
+Modo
+	Lógica
+	Ejemplo
+	Normal
+	Suma el margen de tolerancia al horario de entrada antes de empezar a contar minutos de retardo. El retardo se calcula desde la hora programada, sumando el margen como "colchón".
+	Entrada 08:00, tolerancia 10 min → el empleado puede llegar hasta las 08:10 sin penalización; a las 08:15 el retardo se cuenta desde las 08:00 (15 min totales de atraso real)
+	Concorte
+	Ignora los minutos de gracia como colchón aditivo: una vez vencido el margen de tolerancia, el conteo de retardo inicia desde cero en ese punto, no desde la hora original de entrada.
+	Entrada 08:00, tolerancia 10 min → si el empleado llega a las 08:15, el retardo se cuenta desde las 08:10 (5 min de retardo), no desde las 08:00
+	14.3 Acumulación de Retardos y Sanciones
+* Parámetro "Acumular Retardos": define el número de reincidencias de retardo permitidas en el período antes de que el sistema dispare automáticamente la aplicación de una sanción configurada (ej. "3 retardos = 1 falta", ya contemplado en el Módulo 12 de v1.0).
+* Catálogo configurable de reglas de sanción por acumulación, ligado al Catálogo de Tipos de Incidencia.
+14.4 Recomendación de mejora
+Exponer el modo de tolerancia (Normal/Concorte) como parámetro de turno y no solo como parámetro global de empresa, ya que distintos departamentos o contratos colectivos pueden requerir modos distintos dentro de la misma empresa. Documentar el modo activo en el recibo de prenómina del empleado para transparencia ante posibles reclamaciones laborales.
+
+
+========================================
+ARCHIVO: spec_v2_part6.txt
+========================================
+
+________________
+
+
+MÓDULO 6: Gestión de Vacaciones y Ausencias Programadas
+6.1 Descripción
+Administra el saldo de vacaciones de cada empleado, las solicitudes, el calendario de ausencias del equipo y el cumplimiento de la Ley Federal del Trabajo (LFT) para vacaciones en México.
+6.2 Funcionalidades
+* Cálculo automático de días de vacaciones por antigüedad (conforme LFT México)
+* Saldo disponible, tomado y pendiente en tiempo real
+* Solicitud de vacaciones desde portal empleado o app
+* Validación automática de cobertura mínima de personal por área
+* Calendario de equipo para evitar traslapos
+* Bloqueo de períodos críticos (cierre fiscal, temporada alta)
+* Notificación por vencer de vacaciones (aviso 30/60/90 días antes)
+* Prima vacacional: cálculo automático con el período vacacional
+* Reporte de vacaciones pendientes por área para auditoría
+6.3 Tabla de Vacaciones LFT México
+Años de Servicio
+	Días de Vacaciones
+	Prima Vacacional
+	1 año
+	12 días
+	25% del salario
+	2 años
+	14 días
+	25% del salario
+	3 años
+	16 días
+	25% del salario
+	4 años
+	18 días
+	25% del salario
+	5 años
+	20 días
+	25% del salario
+	6 a 10 años
+	+2 días por año
+	25% del salario
+	11 a 15 años
+	+2 días por cada 5 años
+	25% del salario
+	Reforma 2023+
+	Mínimo 12 días año 1 (fue actualizado)
+	25% del salario
+	
+
+========================================
+ARCHIVO: spec_v2_part7.txt
+========================================
+
+________________
+
+
+MÓDULO 7: Módulo de Pre-Nómina
+7.1 Descripción
+Módulo central de cálculo. Consolida todas las marcaciones, incidencias y justificaciones del período para generar la pre-nómina que será exportada al sistema de nómina del cliente.
+7.2 Períodos de Cálculo
+* Semanal (lunes a domingo)
+* Quincenal (1-15 y 16-fin de mes)
+* Mensual (1 al último día del mes)
+* Decena (cada 10 días)
+* Período especial (configurable por empresa)
+7.3 Conceptos Calculados Automáticamente
+Concepto
+	Tipo
+	Fórmula Base
+	Días trabajados
+	Percepción base
+	Días presentes – faltas injustificadas
+	Salario período
+	Percepción
+	Salario diario × días trabajados
+	Retardos
+	Deducción
+	Minutos retardo × (salario diario / minutos jornada)
+	Faltas injustificadas
+	Deducción
+	Días falta × salario diario
+	Salidas anticipadas
+	Deducción
+	Minutos SA × (salario diario / minutos jornada)
+	Horas extra ordinarias
+	Percepción
+	HE × (salario hora × 2)
+	Horas extra dobles
+	Percepción
+	HE × (salario hora × 3)
+	Horas extra festivas
+	Percepción
+	HE × (salario hora × 3) + día festivo
+	Bono asistencia perfecta
+	Percepción
+	Si 0 faltas/retardos en período
+	Bono puntualidad
+	Percepción
+	Si 0 retardos en período
+	Prima vacacional
+	Percepción
+	Días vacaciones × salario × 0.25
+	Permisos con goce
+	Neutral
+	No suma ni resta (días cubiertos)
+	Incapacidad IMSS
+	Especial
+	Subsidio IMSS según certificado
+	Días festivos trabajados
+	Percepción
+	Salario día × 2 extra
+	Descuento FONACOT
+	Deducción fija
+	Monto fijo quincenal/mensual
+	Descuento INFONAVIT
+	Deducción fija
+	VSM calculado o monto fijo
+	7.4 Flujo del Cierre de Período
+1. RRHH abre el período de cálculo (puede ser automático)
+2. Sistema consolida marcaciones del período para todos los empleados
+3. Aplicación de incidencias aprobadas del período
+4. Generación de borrador de pre-nómina
+5. Revisión por supervisores: cada supervisor valida a sus empleados
+6. RRHH revisa incidencias faltantes o inconsistencias, incluyendo días con estado "Registro Parcial" (ver 3.5) que aún no han sido corregidos
+7. Ajustes manuales autorizados (con bitácora)
+8. Validación final y cierre del período
+9. Exportación al sistema de nómina en formato requerido, usando el Código Externo de cada empleado como llave foránea (ver 7.5)
+10. Generación de comprobantes de pre-nómina por empleado
+11. Archivado del período para consulta y auditoría
+7.5 Código Externo como Llave Foránea de Exportación (NUEVO — incorporado del análisis de PreAsyst WEB)
+El campo "Código Externo" del expediente de empleado (ver Módulo 2) funciona como traductor o Foreign Key hacia el sistema de nómina/ERP destino:
+* Al generar el archivo de exportación (TXT/CSV/Excel), el motor reemplaza el ID interno del empleado por su Código Externo, que es el identificador con el que el empleado existe en el software de nómina (ej. "E-095").
+* Riesgo crítico: si el Código Externo se omite o está mal capturado, el sistema contable destino arrojará un error de "Empleado No Encontrado" al importar el archivo, lo cual puede paralizar la dispersión bancaria de nómina del período completo.
+* Recomendación de mejora (mitigación): antes de permitir el cierre de período, ejecutar una validación previa ("pre-flight check") que verifique que el 100% de los empleados activos con incidencias en el período tengan un Código Externo válido y no vacío. Si existen empleados sin Código Externo, bloquear el cierre y mostrar el listado específico de empleados afectados, en lugar de descubrir el error hasta la importación en el sistema contable.
+* Recomendación de mejora (a mediano plazo): sustituir el acoplamiento por archivo plano por una capa de integración vía API/Webhooks (ver Módulo 8, sección 8.4) que valide el Código Externo en tiempo real contra el ERP antes del cierre de período.
+
+
+========================================
+ARCHIVO: spec_v2_part8.txt
+========================================
+
+________________
+
+
+MÓDULO 8: Integración con Sistemas de Nómina
+8.1 Descripción
+Módulo de integración bidireccional con los principales sistemas de nómina del mercado mexicano. Permite sincronizar el catálogo de empleados y exportar las incidencias del período calculado.
+8.2 Sistemas de Nómina Soportados
+Sistema
+	Método Integración
+	Datos Enviados
+	Datos Recibidos
+	CONTPAQi Nóminas
+	API REST + archivo CSV
+	Incidencias, faltas, HE
+	ABC empleados, salarios
+	ASPEL NOI
+	Archivo plano .NOI / XML
+	Incidencias por período
+	ABC empleados
+	SAP HCM
+	API REST / BAPI
+	Incidencias XML HR-XML
+	Estructura org, empleados
+	Worky
+	API REST webhook
+	Incidencias JSON
+	Empleados, turnos
+	Nomipaq
+	Archivo DBF/CSV
+	Incidencias CSV
+	Empleados CSV
+	Tress
+	API REST
+	Incidencias + asistencia
+	Empleados, departamentos
+	Siigo México
+	API REST
+	Incidencias
+	Empleados
+	NetSuite (NUEVO)
+	API REST + SuiteScripts programados
+	Incidencias consolidadas (batch nocturno)
+	Empleados, estructura org
+	Personalizado
+	Formato configurable
+	Campos mapeables
+	Campos mapeables
+	8.3 Sincronización ABC de Empleados
+* Recepción automática de altas de empleados desde el sistema de nómina
+* Actualización de datos (nombre, salario, puesto) cuando cambia en nómina
+* Marcación automática de baja cuando se registra en nómina
+* Configuración de frecuencia de sincronización (tiempo real, horaria, diaria)
+* Log de sincronizaciones con detalle de cambios
+* Resolución de conflictos configurable (nómina tiene prioridad o manual)
+8.4 Middleware de Integración hacia ERP (NUEVO — sugerencia de arquitectura del análisis de PreAsyst WEB)
+El acoplamiento basado únicamente en archivo plano (TXT/CSV) más Código Externo (ver 7.5) es funcional pero introduce fricción operativa: carga/descarga manual de archivos, ausencia de validación en tiempo real y mayor riesgo de errores humanos en el proceso de importación.
+Se sugiere evaluar una capa intermedia de middleware que elimine el paso manual de archivos:
+* Componente: servicio Node.js dedicado (worker), independiente del backend principal, que consuma los reportes de cierre de período mediante las APIs o Webhooks del sistema de prenómina (si están disponibles) y los inyecte automáticamente en el ERP contable.
+* Caso NetSuite: sistemas robustos como NetSuite se benefician de conexiones automatizadas mediante SuiteScripts programados (scheduled scripts) que se ejecuten en horario de baja demanda (madrugada) para consolidar las incidencias del período recién cerrado, evitando el archivo intermedio.
+* Idempotencia: cada envío al ERP debe incluir un identificador único de lote (batch_id) ligado al period_id de prenómina, para evitar duplicar incidencias si el proceso se reintenta tras una falla de red.
+* Trazabilidad: registrar en log de integración el resultado de cada envío (éxito/error) por empleado, no solo a nivel de lote, para facilitar la conciliación cuando el ERP rechace registros puntuales (p. ej. por Código Externo inválido, ver 7.5).
+* Webhooks de salida (outbound): notificar eventos clave del ciclo de prenómina (apertura de período, cierre de período, ajuste manual aplicado) hacia sistemas externos suscritos, habilitando integraciones reactivas en lugar de solo "pull" por archivo.
+________________
+
+
+========================================
+ARCHIVO: spec_v2_part9.txt
+========================================
+
+MÓDULO 9: Portal de Autoservicio del Empleado
+9.1 Descripción
+Interfaz web y móvil para que el empleado consulte su información, registre asistencia (si aplica), haga solicitudes y consulte su historial, sin necesidad de intermediario.
+9.2 Funcionalidades
+* Consulta de asistencia del período actual e histórico
+* Visualización del turno y horario asignado
+* Solicitud de incidencias: permisos, vacaciones, justificaciones
+* Consulta de saldo de vacaciones disponible
+* Descarga de comprobante de asistencia del período
+* Notificaciones push: aprobaciones, rechazos, recordatorios
+* Checado de entrada/salida desde app (con GPS y foto)
+* Chat con supervisor para dudas de asistencia
+* Perfil personal: actualización de foto, datos de contacto
+* Historial de solicitudes con estatus
+* Justificación de marcaje "fuera de rango" (NUEVO): cuando un checado cae fuera de la ventana de holgura del turno (ver 3.4), el empleado puede adjuntar justificación directamente desde el portal, en lugar de requerir gestión manual de RRHH
+9.3 Checado Móvil con Geolocalización
+El empleado puede registrar su asistencia desde la app móvil bajo estas condiciones configurables:
+* Validación de coordenadas GPS dentro de geocerca definida por empresa
+* Foto selfie obligatoria con liveness detection (opcional con IA)
+* Validación de red Wi-Fi corporativa (por SSID o IP)
+* Modo campo: sin restricción de geocerca, pero con registro de coordenadas
+* Historial de ubicaciones de checados para auditoría
+________________
+
+
+MÓDULO 10: Reportes y Analítica
+10.1 Descripción
+Suite completa de reportes operativos y gerenciales con capacidad de filtrado avanzado, exportación a Excel/PDF y visualización de KPIs en dashboard en tiempo real.
+10.2 Reportes Operativos
+Reporte
+	Descripción
+	Filtros Principales
+	Asistencia diaria
+	Lista de presentes/ausentes por día
+	Fecha, empresa, depto, turno
+	Reporte de período
+	Resumen de asistencia del período completo
+	Período, empresa, depto, empleado
+	Incidencias del período
+	Todas las incidencias aplicadas
+	Período, tipo incidencia, estatus
+	Retardos
+	Empleados con retardos y minutos acumulados
+	Período, empleado, depto
+	Faltas
+	Faltas justificadas e injustificadas
+	Período, tipo, empleado
+	Horas extra
+	Detalle de HE por empleado y tipo
+	Período, empleado, tipo HE
+	Asistencia perfecta
+	Empleados sin ninguna incidencia
+	Período, depto
+	Vacaciones
+	Saldos y períodos tomados
+	Empleado, año, depto
+	Rotación de personal
+	Altas y bajas en el período
+	Período, depto, motivo
+	Productividad por turno
+	Análisis de asistencia por turno
+	Turno, período, depto
+	Pre-nómina borrador
+	Vista previa del cálculo antes de cierre
+	Período, empleado
+	Pre-nómina cerrada
+	Cálculo final exportado a nómina
+	Período, empresa
+	Dispositivos biométricos
+	Actividad y estado de cada dispositivo
+	Dispositivo, fecha
+	Auditoría de cambios
+	Cambios manuales realizados en el sistema
+	Usuario, módulo, fecha
+	Registros parciales pendientes (NUEVO)
+	Días marcados como "Registro Parcial" por falta de marcaje de comida, aún sin corregir
+	Período, depto, empleado
+	Marcajes fuera de rango (NUEVO)
+	Checadas que cayeron fuera de la ventana de holgura del turno y su estatus de justificación
+	Período, dispositivo, empleado
+	Empleados sin Código Externo (NUEVO)
+	Listado de validación previa al cierre: empleados activos con incidencias pero sin Código Externo capturado (ver 7.5)
+	Empresa, período
+	Conciliación de exportación a ERP (NUEVO)
+	Estatus por lote (batch_id) de los envíos al ERP vía middleware/API: éxito, error, pendiente (ver 8.4)
+	Período, sistema destino
+	10.3 Dashboard Gerencial – KPIs
+* % Asistencia total de la empresa (hoy, semana, mes)
+* Número de empleados activos vs plantilla autorizada
+* Top 10 empleados con más retardos del mes
+* Índice de ausentismo por departamento
+* Horas extra acumuladas por período y proyección de costo
+* Solicitudes de incidencias pendientes de aprobación
+* Alertas: dispositivos offline, empleados sin turno, checados irregulares
+* Tendencia de asistencia (gráfica de los últimos 12 meses)
+* Antigüedad de marcajes en cola de contingencia local (NUEVO, ver 2.3 / Módulo 11.4): indicador de sucursales con buffer de marcajes sin sincronizar
+________________

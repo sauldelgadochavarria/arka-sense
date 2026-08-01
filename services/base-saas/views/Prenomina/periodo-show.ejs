@@ -1,0 +1,161 @@
+<%- include('../Partials/layout-top', { title: 'Período de pre-nómina', session }) %>
+<h1>Período <%= periodo.tipo %></h1>
+<p>
+  <strong><%= new Date(periodo.fechaInicio).toLocaleDateString('es-MX') %></strong>
+  al
+  <strong><%= new Date(periodo.fechaFin).toLocaleDateString('es-MX') %></strong>
+  · Estatus: <span class="badge badge-<%= periodo.estatus === 'cerrado' ? 'baja' : periodo.estatus === 'pendiente' ? 'suspendido' : periodo.estatus === 'borrador' ? 'activo' : 'alta' %>"><%= estatusLabels[periodo.estatus] || periodo.estatus %></span>
+  <% if (periodo.numeroPeriodo) { %> · #<%= periodo.numeroPeriodo %> / <%= periodo.anio || '' %><% } %>
+</p>
+
+<%- include('../Partials/periodo-config-panel', {
+  aplicaAsistencia: periodo.aplicaAsistenciaPrenomina !== false,
+  compartirNomina: periodo.compartirConNomina === true,
+  nota: 'Configuración guardada en este período al generarlo (snapshot del tipo de período).'
+}) %>
+
+<% if (periodo.estatus === 'pendiente') { %>
+<div class="alert alert-warning">
+  Este período está <strong>pendiente</strong>. Ábrelo para poder calcular asistencia / pre-cálculo.
+  <form method="post" action="/prenomina-periodos/<%= periodo._id %>/abrir" class="inline-form" style="display:inline;margin-left:.5rem">
+    <button type="submit">Abrir período</button>
+  </form>
+  · o desde <a href="/catalogos/periodos">Administración de períodos</a>.
+</div>
+<% } %>
+
+<% if (preflight && !preflight.ok) { %>
+<div class="alert alert-warning">
+  <strong>No se puede cerrar el período:</strong> <%= preflight.sinCodigo.length %> empleado(s)
+  afectados (incidencias / retardos / faltas / HE) no tienen identificador de exportación
+  (<em>código externo</em> ni <em>núm. empleado</em>).
+  <ul>
+    <% preflight.sinCodigo.forEach(function(e) { %>
+    <li><a href="/personal-empleados/<%= e._id %>/edit"><%= e.nombre %></a> (No. <%= e.numEmpleado || '—' %>)</li>
+    <% }); %>
+  </ul>
+</div>
+<% } else if (preflight && preflight.ok && periodo.estatus === 'borrador') { %>
+<p class="muted small">Pre-flight de cierre OK — puedes cerrar el período.</p>
+<% } %>
+
+<% if (typeof cobertura !== 'undefined' && cobertura) { %>
+<section class="panel">
+  <h2 class="panel-title">Ligación con asistencia</h2>
+  <p class="muted small">
+    Cadena recomendada:
+    <strong>Marcaciones</strong> → <strong>Asistencia diaria</strong> → <strong>Calcular pre-nómina</strong> → (opcional) Nómina formal.
+  </p>
+  <% if (!cobertura.usaAsistencia) { %>
+  <p class="warn-text">Este período tiene «Aplica asistencia» desactivado: el cálculo no leerá checadas.</p>
+  <% } else if (cobertura.registrosDiarios === 0) { %>
+  <div class="alert alert-warning">
+    <strong>Sin asistencia diaria en este rango</strong>
+    (<%= cobertura.fechaInicioStr %> → <%= cobertura.fechaFinStr %>).
+    Por eso ves días trab. = 0 y montos en $0.
+    Reprocesa la asistencia del período (toma las marcaciones) y luego recalcula.
+  </div>
+  <% } else { %>
+  <p>
+    Cobertura: <strong><%= cobertura.registrosDiarios %></strong> registros diarios ·
+    <strong><%= cobertura.empleadosConAsistencia %></strong> / <%= cobertura.empleadosActivos %> empleados con al menos un día ·
+    <% if (cobertura.empleadosSinAsistencia) { %>
+    <span class="warn-text"><%= cobertura.empleadosSinAsistencia %> sin asistencia en el rango</span>
+    <% } else { %>
+    todos con asistencia
+    <% } %>
+  </p>
+  <% } %>
+  <p class="muted small">
+    Ver día a día:
+    <a href="/asistencia-diaria?fecha=<%= cobertura.fechaInicioStr %>">asistencia diaria</a>
+    ·
+    <a href="/asistencia-marcaciones">marcaciones</a>
+  </p>
+</section>
+<% } %>
+
+<div class="toolbar">
+  <a class="btn" href="/prenomina-periodos">← Períodos</a>
+  <% if (periodo.estatus === 'abierto' || periodo.estatus === 'borrador') { %>
+  <form method="post" action="/prenomina-periodos/<%= periodo._id %>/reprocesar-asistencia" class="inline-form"
+        onsubmit="return confirm('¿Reprocesar asistencia diaria de todo el rango del período a partir de las marcaciones?');">
+    <button type="submit">1. Reprocesar asistencia del período</button>
+  </form>
+  <form method="post" action="/prenomina-periodos/<%= periodo._id %>/calcular" class="inline-form">
+    <button type="submit"><%= periodo.estatus === 'borrador' ? '2. Recalcular pre-nómina' : '2. Calcular pre-nómina' %></button>
+  </form>
+  <% } %>
+  <% if (periodo.estatus === 'borrador' || periodo.estatus === 'cerrado') { %>
+  <form method="post" action="/prenomina-periodos/<%= periodo._id %>/cerrar" class="inline-form"
+        onsubmit="return confirm('¿Cerrar período? No se podrán hacer más cambios.');">
+    <button type="submit"
+      <%= periodo.estatus === 'cerrado' || (preflight && !preflight.ok) ? 'disabled' : '' %>
+      title="<%= preflight && !preflight.ok ? 'Corrige el pre-flight antes de cerrar' : '' %>">
+      Cerrar período
+    </button>
+  </form>
+  <% if (preflight && !preflight.ok && periodo.estatus === 'borrador') { %>
+  <span class="muted small">Cierre bloqueado por pre-flight</span>
+  <% } %>
+  <% } %>
+</div>
+
+<% if (periodo.totales) { %>
+<div class="summary-cards">
+  <div class="card"><strong><%= periodo.totales.empleados %></strong> empleados</div>
+  <div class="card"><strong>$<%= periodo.totales.percepciones.toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></strong> percepciones</div>
+  <div class="card"><strong>$<%= periodo.totales.deducciones.toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></strong> deducciones</div>
+  <div class="card"><strong>$<%= periodo.totales.neto.toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></strong> neto</div>
+</div>
+<% } %>
+
+<h2>Detalle por empleado</h2>
+<table>
+  <thead>
+    <tr><th>Empleado</th><th>Días trab.</th><th>Faltas</th><th>Retardo (min)</th><th>HE (min)</th><th>Percepciones</th><th>Deducciones</th><th>Neto</th><th></th></tr>
+  </thead>
+  <tbody>
+    <% if (!detalles.length) { %>
+    <tr><td colspan="9">Sin cálculo. Usa «Calcular pre-nómina».</td></tr>
+    <% } %>
+    <% detalles.forEach(function(d) {
+      const emp = empMap.get(String(d.empleadoId));
+      const nombre = emp ? (emp.firstName + ' ' + emp.lastName) : '—';
+    %>
+    <tr>
+      <td><%= nombre %></td>
+      <td><%= d.diasTrabajados %></td>
+      <td><%= d.diasFalta %></td>
+      <td><%= d.minutosRetardo %></td>
+      <td><%= d.minutosHorasExtra %></td>
+      <td>$<%= d.totalPercepciones.toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></td>
+      <td>$<%= d.totalDeducciones.toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></td>
+      <td><strong>$<%= d.netoPagar.toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></strong></td>
+      <td>
+        <a href="/prenomina-periodos/<%= periodo._id %>/comprobante/<%= d.empleadoId %>">Comprobante</a>
+        <% if (periodo.estatus !== 'cerrado') { %>
+        · <a href="#ajuste-<%= d.empleadoId %>">Ajustar</a>
+        <% } %>
+      </td>
+    </tr>
+    <% if (periodo.estatus !== 'cerrado') { %>
+    <tr id="ajuste-<%= d.empleadoId %>">
+      <td colspan="9">
+        <form method="post" action="/prenomina-periodos/<%= periodo._id %>/ajuste/<%= d.empleadoId %>" class="inline-form">
+          <input name="concepto" placeholder="Concepto" required />
+          <select name="tipo">
+            <option value="percepcion">Percepción (+)</option>
+            <option value="deduccion">Deducción (−)</option>
+          </select>
+          <input type="number" name="monto" step="0.01" min="0" placeholder="Monto" required />
+          <input name="nota" placeholder="Nota / autorización" />
+          <button type="submit">Aplicar ajuste</button>
+        </form>
+      </td>
+    </tr>
+    <% } %>
+    <% }); %>
+  </tbody>
+</table>
+<%- include('../Partials/layout-bottom') %>

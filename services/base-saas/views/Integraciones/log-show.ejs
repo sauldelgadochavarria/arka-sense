@@ -1,0 +1,47 @@
+<%- include('../Partials/layout-top', { title: 'Detalle de sincronización', session }) %>
+<h1>Log de sincronización</h1>
+<div class="toolbar">
+  <a class="btn" href="/integraciones/logs">← Logs</a>
+  <% if (log.archivoContenido) { %>
+  <a class="btn" href="/integraciones/logs/<%= log._id %>/descargar">Descargar archivo</a>
+  <% } %>
+</div>
+
+<p><strong>Tipo:</strong> <%= tiposSync[log.tipo] || log.tipo %></p>
+<p><strong>Fecha:</strong> <%= new Date(log.createdAt).toLocaleString('es-MX') %></p>
+<p><strong>Estatus:</strong> <%= estatusSync[log.estatus] || log.estatus %></p>
+<p><strong>Detalle:</strong> <%= log.detalle %></p>
+<p>Registros OK: <%= log.registrosOk %> · Errores: <%= log.registrosError %></p>
+
+<% if (log.conflictos && log.conflictos.length) { %>
+<h2>Conflictos</h2>
+<table>
+  <thead>
+    <tr><th>Empleado</th><th>Campo</th><th>Local</th><th>Remoto</th><th>Resolución</th><th></th></tr>
+  </thead>
+  <tbody>
+    <% log.conflictos.forEach(function(c) { %>
+    <tr>
+      <td><%= c.numEmpleado || '—' %></td>
+      <td><%= c.campo %></td>
+      <td><%= c.valorLocal %></td>
+      <td><%= c.valorRemoto %></td>
+      <td><%= c.resolucion %></td>
+      <td>
+        <% if (c.resolucion === 'pendiente') { %>
+        <form method="post" action="/integraciones/logs/<%= log._id %>/conflictos/<%= c._id %>/resolver" class="inline-form">
+          <input type="hidden" name="resolucion" value="aceptar_local" />
+          <button type="submit">Mantener local</button>
+        </form>
+        <form method="post" action="/integraciones/logs/<%= log._id %>/conflictos/<%= c._id %>/resolver" class="inline-form">
+          <input type="hidden" name="resolucion" value="aceptar_remoto" />
+          <button type="submit">Aplicar remoto</button>
+        </form>
+        <% } else { %>—<% } %>
+      </td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<% } %>
+<%- include('../Partials/layout-bottom') %>

@@ -1,0 +1,9 @@
+<%- include('../Partials/layout-top', { title: 'Editar turno', session }) %>
+<p><a href="/asistencia-turnos">← Volver a turnos</a></p>
+
+<h1>Editar turno</h1>
+<form method="post" action="/asistencia-turnos/<%= turno._id %>" class="form-grid form-wide">
+  <%- include('partials/turno-fields', { turno, diasSemana, tiposTurno, modosTolerancia, describeVentana }) %>
+  <button type="submit">Guardar turno</button>
+</form>
+<%- include('../Partials/layout-bottom') %>

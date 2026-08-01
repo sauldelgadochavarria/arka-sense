@@ -1,0 +1,51 @@
+<%- include('../../Partials/layout-top', { title: 'Tablas fiscales', session }) %>
+<h1>Tablas fiscales</h1>
+<div class="toolbar">
+  <a class="btn" href="/nomina/catalogos">← Catálogos</a>
+</div>
+
+<p>Tablas usadas por <code>aplicarTabla()</code> e <code>isrPeriodo()</code> en el motor de nómina.</p>
+
+<h2>Nueva tabla / vigencia</h2>
+<form method="post" action="/nomina/catalogos/tablas-fiscales" class="form-grid">
+  <select name="codigo" required>
+    <% codigosTabla.forEach(function(c) { %>
+    <option value="<%= c.value %>"><%= c.label %></option>
+    <% }); %>
+  </select>
+  <input name="nombre" placeholder="Nombre descriptivo" required />
+  <select name="periodicidad">
+    <% periodicidades.forEach(function(p) { %>
+    <option value="<%= p.value %>" <%= p.value === 'mensual' ? 'selected' : '' %>><%= p.label %></option>
+    <% }); %>
+  </select>
+  <input name="vigenciaDesde" type="date" />
+  <button type="submit">Crear tabla</button>
+</form>
+<p class="muted">Al crear una nueva vigencia del mismo código, la vigencia anterior se cierra automáticamente.</p>
+
+<table>
+  <thead>
+    <tr><th>Código</th><th>Nombre</th><th>Periodicidad</th><th>Vigencia</th><th>Rangos</th><th>Activa</th><th></th></tr>
+  </thead>
+  <tbody>
+    <% if (!tablas.length) { %>
+    <tr><td colspan="7" class="muted">Sin tablas. Ejecuta <code>seed:nomina-fiscal</code>.</td></tr>
+    <% } %>
+    <% tablas.forEach(function(t) { %>
+    <tr class="<%= !t.activo ? 'row-muted' : '' %>">
+      <td><code><%= t.codigo %></code></td>
+      <td><%= t.nombre || '—' %></td>
+      <td><%= t.periodicidad %></td>
+      <td>
+        <%= new Date(t.vigenciaDesde).toLocaleDateString('es-MX') %>
+        <% if (t.vigenciaHasta) { %> – <%= new Date(t.vigenciaHasta).toLocaleDateString('es-MX') %><% } %>
+      </td>
+      <td><%= t.rangosCount %></td>
+      <td><%= t.activo ? 'Sí' : 'No' %></td>
+      <td><a href="/nomina/catalogos/tablas-fiscales/<%= t._id %>">Editar rangos</a></td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<%- include('../../Partials/layout-bottom') %>

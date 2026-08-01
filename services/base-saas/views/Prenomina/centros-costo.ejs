@@ -1,0 +1,32 @@
+<%- include('../Partials/layout-top', { title: 'Centros de costo', session }) %>
+<h1>Centros de costo</h1>
+<div class="toolbar">
+  <a class="btn btn-primary" href="/prenomina/centros-costo/nuevo">+ Nuevo</a>
+</div>
+<% if (!empresa) { %>
+<p>No hay empresa vinculada.</p>
+<% } else { %>
+<table>
+  <thead><tr><th>Código</th><th>Cód. externo</th><th>Legado</th><th>Cuenta contable</th><th>Nombre</th><th>Descripción</th><th>Activo</th><th></th></tr></thead>
+  <tbody>
+    <% centros.forEach(function(c) { %>
+    <tr class="<%= !c.activo ? 'row-muted' : '' %>">
+      <td><code><%= c.codigo %></code></td>
+      <td><%= c.codigoExterno || '—' %></td>
+      <td><%= c.codigoLegado != null ? c.codigoLegado : '—' %></td>
+      <td><%= c.cuentaContableExterna || '—' %></td>
+      <td><%= c.nombre %></td>
+      <td><%= c.descripcion || '—' %></td>
+      <td><%= c.activo ? 'Sí' : 'No' %></td>
+      <td class="actions">
+        <a href="/prenomina/centros-costo/<%= c._id %>/edit">Editar</a>
+        <form method="post" action="/prenomina/centros-costo/<%= c._id %>/toggle" class="inline-form">
+          <button type="submit"><%= c.activo ? 'Desactivar' : 'Activar' %></button>
+        </form>
+      </td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<% } %>
+<%- include('../Partials/layout-bottom') %>

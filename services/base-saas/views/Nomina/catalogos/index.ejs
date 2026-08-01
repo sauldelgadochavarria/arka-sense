@@ -1,0 +1,36 @@
+<%- include('../../Partials/layout-top', { title: 'Catálogos de nómina', session }) %>
+<h1>Catálogos de nómina</h1>
+<div class="toolbar">
+  <a class="btn" href="/nomina">← Nómina</a>
+  <a class="btn" href="/nomina/configuracion">Configuración fiscal</a>
+</div>
+
+<p>Catálogos globales usados por el motor, importación legada y validación SAT.</p>
+
+<div class="card-grid">
+  <a class="module-card" href="/nomina/catalogos/sat">
+    <h3>Catálogo SAT</h3>
+    <p>Percepciones, deducciones, otros pagos y horas extra (CFDI).</p>
+    <span class="badge"><%= satActivos %> activas</span>
+  </a>
+  <a class="module-card" href="/nomina/catalogos/mapeo-legado">
+    <h3>Mapeo legado Fortia</h3>
+    <p>Traducción TIPO_PERDED_SAT y tipos HE → claves SAT.</p>
+    <span class="badge"><%= mapeosActivos %> mapeos</span>
+  </a>
+  <a class="module-card" href="/nomina/catalogos/parametros">
+    <h3>Parámetros fiscales</h3>
+    <p>UMA, salario mínimo y vigencias para fórmulas.</p>
+    <span class="badge"><%= parametrosCount %> registros</span>
+  </a>
+  <a class="module-card" href="/nomina/catalogos/tablas-fiscales">
+    <h3>Tablas ISR</h3>
+    <p>Rangos de la tabla mensual Art. 96 LISR.</p>
+    <span class="badge"><%= tablasActivas %> activas</span>
+  </a>
+</div>
+
+<p class="muted" style="margin-top:1.5rem">
+  Seeds: <code>npm run seed:catalogo-sat</code> · <code>npm run seed:catalogo-mapeo-legado</code>
+</p>
+<%- include('../../Partials/layout-bottom') %>

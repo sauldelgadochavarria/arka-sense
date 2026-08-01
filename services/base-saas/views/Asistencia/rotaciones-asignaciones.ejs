@@ -1,0 +1,70 @@
+<%- include('../Partials/layout-top', { title: 'Asignaciones de rotación', session }) %>
+<p><a href="/asistencia-rotaciones">← Plantillas</a> · <a href="/asistencia-rotaciones/matriz">Vista matriz</a></p>
+<h1>Asignar rotación a empleados</h1>
+<% if (!empresa) { %>
+<p>No hay empresa vinculada.</p>
+<% } else { %>
+
+<h2>Asignación individual</h2>
+<form method="post" action="/asistencia-rotaciones/asignaciones" class="form-grid form-wide">
+  <select name="empleadoId" required>
+    <option value="">— Empleado —</option>
+    <% empleados.forEach(function(e) { %>
+    <option value="<%= e._id %>"><%= e.firstName %> <%= e.lastName %> (<%= e.numEmpleado %>)</option>
+    <% }); %>
+  </select>
+  <select name="plantillaRotacionId" required>
+    <option value="">— Plantilla —</option>
+    <% plantillas.forEach(function(p) { %>
+    <option value="<%= p._id %>"><%= p.nombre %> (<%= p.numSemanas %> sem.)</option>
+    <% }); %>
+  </select>
+  <label>Fecha ancla <span class="muted">(día 1 del ciclo para este empleado)</span></label>
+  <input type="date" name="fechaAncla" required value="<%= new Date().toISOString().slice(0,10) %>" />
+  <button type="submit">Asignar</button>
+</form>
+
+<h2>Asignación masiva por departamento</h2>
+<form method="post" action="/asistencia-rotaciones/asignaciones/masiva" class="form-grid form-wide">
+  <select name="departamentoId" required>
+    <option value="">— Departamento —</option>
+    <% departamentos.forEach(function(d) { %>
+    <option value="<%= d._id %>"><%= d.nombre %></option>
+    <% }); %>
+  </select>
+  <select name="plantillaRotacionId" required>
+    <option value="">— Plantilla —</option>
+    <% plantillas.forEach(function(p) { %>
+    <option value="<%= p._id %>"><%= p.nombre %></option>
+    <% }); %>
+  </select>
+  <input type="date" name="fechaAncla" required value="<%= new Date().toISOString().slice(0,10) %>" />
+  <button type="submit">Asignar a todo el departamento</button>
+</form>
+
+<h2>Asignaciones actuales</h2>
+<table>
+  <thead>
+    <tr><th>Empleado</th><th>Plantilla</th><th>Fecha ancla</th><th>Activo</th><th></th></tr>
+  </thead>
+  <tbody>
+    <% if (!asignaciones.length) { %>
+    <tr><td colspan="5" class="muted">Sin asignaciones.</td></tr>
+    <% } %>
+    <% asignaciones.forEach(function(a) { %>
+    <tr class="<%= !a.activo ? 'row-muted' : '' %>">
+      <td><%= empMap.get(String(a.empleadoId)) || '—' %></td>
+      <td><%= plantillaMap.get(String(a.plantillaRotacionId)) || '—' %></td>
+      <td><%= new Date(a.fechaAncla).toLocaleDateString('es-MX') %></td>
+      <td><%= a.activo ? 'Sí' : 'No' %></td>
+      <td>
+        <form method="post" action="/asistencia-rotaciones/asignaciones/<%= a._id %>/toggle" class="inline-form">
+          <button type="submit"><%= a.activo ? 'Desactivar' : 'Activar' %></button>
+        </form>
+      </td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<% } %>
+<%- include('../Partials/layout-bottom') %>

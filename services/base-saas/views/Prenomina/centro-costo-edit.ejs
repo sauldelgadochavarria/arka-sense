@@ -1,0 +1,13 @@
+<%- include('../Partials/layout-top', { title: 'Editar centro de costo', session }) %>
+<p><a href="/prenomina/centros-costo">← Volver a lista</a></p>
+<h1>Editar centro de costo</h1>
+<form method="post" action="/prenomina/centros-costo/<%= centro._id %>" class="form-grid">
+  <input name="codigo" value="<%= centro.codigo %>" placeholder="Código interno" required style="text-transform:uppercase" />
+  <input name="codigoExterno" placeholder="Código externo" value="<%= centro.codigoExterno || '' %>" />
+  <input name="codigoLegado" type="number" placeholder="Código legado" value="<%= centro.codigoLegado != null ? centro.codigoLegado : '' %>" />
+  <input name="cuentaContableExterna" placeholder="Cuenta contable externa" value="<%= centro.cuentaContableExterna || '' %>" />
+  <input name="nombre" value="<%= centro.nombre %>" placeholder="Nombre" required />
+  <input name="descripcion" value="<%= centro.descripcion || '' %>" placeholder="Descripción" />
+  <button type="submit">Guardar</button>
+</form>
+<%- include('../Partials/layout-bottom') %>

@@ -1,0 +1,67 @@
+<fieldset class="form-section">
+  <legend>Datos del turno</legend>
+  <input name="nombre" placeholder="Nombre del turno" value="<%= turno ? turno.nombre : '' %>" required />
+  <select name="tipo">
+    <% (tiposTurno || []).forEach(function(t) { %>
+    <option value="<%= t.value %>" <%= turno ? (turno.tipo === t.value ? 'selected' : '') : (t.value === 'fijo' ? 'selected' : '') %>><%= t.label %></option>
+    <% }); %>
+  </select>
+  <label class="inline-check"><input type="color" name="color" value="<%= turno ? turno.color : '#2563eb' %>" /> Color en calendario</label>
+</fieldset>
+
+<fieldset class="form-section">
+  <legend>Horario</legend>
+  <input name="horaEntrada" type="time" value="<%= turno ? turno.horaEntrada : '08:00' %>" required />
+  <input name="horaSalida" type="time" value="<%= turno ? turno.horaSalida : '17:00' %>" required />
+  <input name="horasJornada" type="number" min="0" step="0.5" placeholder="Horas jornada" value="<%= turno ? turno.horasJornada : 8 %>" />
+  <input name="tiempoComidaMin" type="number" min="0" placeholder="Tiempo comida (min)" value="<%= turno ? turno.tiempoComidaMin : 60 %>" />
+  <label class="inline-check">
+    <input type="checkbox" name="comidaChecada" value="1" <%= turno && turno.comidaChecada ? 'checked' : '' %> />
+    Exigir checado de comida (4 marcajes: entrada, salida comida, regreso, salida)
+  </label>
+  <p class="muted form-hint">Si no se marca, el tiempo de comida se descuenta automáticamente (2 marcajes: entrada y salida).</p>
+</fieldset>
+
+<fieldset class="form-section">
+  <legend>Tolerancias</legend>
+  <input name="toleranciaEntradaMin" type="number" min="0" placeholder="Tolerancia entrada (min)" value="<%= turno ? turno.toleranciaEntradaMin : 10 %>" />
+  <input name="toleranciaSalidaMin" type="number" min="0" placeholder="Tolerancia salida (min)" value="<%= turno ? turno.toleranciaSalidaMin : 5 %>" />
+  <select name="modoTolerancia">
+    <% (modosTolerancia || []).forEach(function(m) { %>
+    <option value="<%= m.value %>" <%= turno ? (turno.modoTolerancia === m.value ? 'selected' : '') : (m.value === 'normal' ? 'selected' : '') %>><%= m.label %></option>
+    <% }); %>
+  </select>
+</fieldset>
+
+<fieldset class="form-section">
+  <legend>Ventana de holgura</legend>
+  <p class="muted form-hint">Rango de búsqueda alrededor de la hora programada para clasificar marcajes (spec V2: 3 h antes y 3 h después por defecto).</p>
+  <input name="holguraAntesMin" type="number" min="0" placeholder="Minutos antes" value="<%= turno ? (turno.holguraAntesMin != null ? turno.holguraAntesMin : 180) : 180 %>" />
+  <input name="holguraDespuesMin" type="number" min="0" placeholder="Minutos después" value="<%= turno ? (turno.holguraDespuesMin != null ? turno.holguraDespuesMin : 180) : 180 %>" />
+  <% if (turno && typeof describeVentana === 'function') { %>
+  <p class="ventana-preview"><strong>Vista previa:</strong> <%= describeVentana(turno) %></p>
+  <% } %>
+</fieldset>
+
+<fieldset class="form-section">
+  <legend>Horas extra — umbrales</legend>
+  <p class="muted form-hint">Minutos de tiempo extra a partir de la salida programada. El motor de calificación los usará en la Fase 3.</p>
+  <input name="inicioHEOrdinariaMin" type="number" min="0" placeholder="Inicio HE ordinaria (min extra)" value="<%= turno ? (turno.inicioHEOrdinariaMin != null ? turno.inicioHEOrdinariaMin : 0) : 0 %>" />
+  <input name="inicioHEDobleMin" type="number" min="0" placeholder="Inicio HE doble (min acumulados, opcional)" value="<%= turno && turno.inicioHEDobleMin != null ? turno.inicioHEDobleMin : '' %>" />
+  <input name="inicioHETripleMin" type="number" min="0" placeholder="Inicio HE triple (min acumulados, opcional)" value="<%= turno && turno.inicioHETripleMin != null ? turno.inicioHETripleMin : '' %>" />
+</fieldset>
+
+<fieldset class="form-section">
+  <legend>Días laborables</legend>
+  <div class="checks-grid">
+    <% diasSemana.forEach(function(dia) { %>
+    <% const selected = turno ? (turno.diasLaborables || []).includes(dia.value) : [1,2,3,4,5].includes(dia.value); %>
+    <label class="inline-check">
+      <input type="checkbox" name="dia_<%= dia.value %>" value="1" <%= selected ? 'checked' : '' %> />
+      <%= dia.short %>
+    </label>
+    <% }); %>
+  </div>
+  <label class="inline-check"><input type="checkbox" name="descansaSabado" value="1" <%= !turno || turno.descansaSabado !== false ? 'checked' : '' %> /> Descansa sábado</label>
+  <label class="inline-check"><input type="checkbox" name="descansaDomingo" value="1" <%= !turno || turno.descansaDomingo !== false ? 'checked' : '' %> /> Descansa domingo</label>
+</fieldset>

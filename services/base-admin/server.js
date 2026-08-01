@@ -1,0 +1,228 @@
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '.env') });
+
+const express = require('express');
+const crypto = require('crypto');
+const mongoose = require('mongoose');
+
+const { Tenant, TenantDomain, Menu, Plan } = require('./models');
+const { adminAccessControl } = require('./middleware/adminAccessControl');
+const { internalApiAuth } = require('./middleware/internalApiAuth');
+const { apiLimiter } = require('./middleware/apiLimiter');
+const { provisionEmpresaYSubsidiaria } = require('./lib/provisionTenantOrg');
+const { provisionTenantOwnerUser } = require('./lib/provisionTenantOwnerUser');
+const {
+  FEATURE_FLAG_KEYS,
+  normalizeIncomingFeatureFlags,
+  parseFeatureFlagsFromForm,
+  mergeFeatureFlagsForDisplay
+} = require('./lib/featureFlagsCatalog');
+
+const app = express();
+app.set('view engine', 'ejs');
+app.set('views', path.join(__dirname, 'views'));
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+const PORT = Number(process.env.PORT || 3000);
+const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27020/config';
+const TENANT_BASE_DOMAIN = process.env.TENANT_BASE_DOMAIN || 'localhost:4003';
+const TENANT_APP_PROTOCOL = process.env.TENANT_APP_PROTOCOL || 'http';
+
+function normalizeSlug(slug) {
+  return String(slug || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+function tenantLoginUrl(slug) {
+  return `${TENANT_APP_PROTOCOL}://${TENANT_BASE_DOMAIN}/auth-login?account=${encodeURIComponent(slug)}`;
+}
+
+app.get('/health', (_req, res) => res.json({ ok: true, service: 'arka-presence-admin' }));
+
+// --- UI Admin ---
+app.get('/admin', adminAccessControl, async (_req, res) => {
+  res.redirect('/admin/tenants');
+});
+
+app.get('/admin/tenants', adminAccessControl, async (_req, res) => {
+  const tenants = await Tenant.find().sort({ createdAt: -1 }).lean();
+  res.render('tenants/index', { tenants, tenantLoginUrl, featureLabels: FEATURE_FLAG_KEYS });
+});
+
+app.get('/admin/tenants/new', adminAccessControl, (_req, res) => {
+  res.render('tenants/new', { featureFlags: FEATURE_FLAG_KEYS });
+});
+
+app.post('/admin/tenants', adminAccessControl, async (req, res) => {
+  const displayName = String(req.body.displayName || '').trim();
+  let slug = normalizeSlug(req.body.slug);
+  if (!slug) slug = crypto.randomUUID().replace(/-/g, '').slice(0, 10);
+  const tenantId = crypto.randomUUID();
+
+  const featureFlags = normalizeIncomingFeatureFlags(req.body.featureFlags || req.body);
+
+  await Tenant.create({
+    tenantId,
+    slug,
+    displayName: displayName || slug,
+    status: 'pending',
+    featureFlags: { core: true, config_admin: true, personal: true, asistencia: true, incidencias: true, prenomina: true, nomina: false, integraciones: true, reportes: true, ...featureFlags }
+  });
+
+  res.redirect('/admin/tenants');
+});
+
+app.get('/admin/tenants/:tenantId', adminAccessControl, async (req, res) => {
+  const tenant = await Tenant.findOne({ tenantId: req.params.tenantId }).lean();
+  if (!tenant) return res.status(404).send('Tenant no encontrado');
+  const flags = mergeFeatureFlagsForDisplay(tenant.featureFlags);
+  res.render('tenants/show', { tenant, flags, featureFlags: FEATURE_FLAG_KEYS, tenantLoginUrl, message: req.query.msg });
+});
+
+app.post('/admin/tenants/:tenantId/activate', adminAccessControl, async (req, res) => {
+  const tenant = await Tenant.findOne({ tenantId: req.params.tenantId });
+  if (!tenant) return res.status(404).send('Tenant no encontrado');
+
+  tenant.status = 'active';
+  tenant.billingStatus = 'active';
+  await tenant.save();
+
+  await provisionEmpresaYSubsidiaria(tenant.toObject(), {
+    codigo: String(req.body.codigo || 'MAIN').trim() || 'MAIN'
+  });
+
+  const owner = await provisionTenantOwnerUser(tenant.toObject(), {
+    ownerEmail: req.body.ownerEmail
+  });
+
+  const msg = owner.ok
+    ? `Activado. Usuario: ${owner.email} / ${owner.temporaryPassword}`
+    : `Activado. Owner: ${owner.reason || owner.skipped}`;
+
+  res.redirect(`/admin/tenants/${tenant.tenantId}?msg=${encodeURIComponent(msg)}`);
+});
+
+app.post('/admin/tenants/:tenantId/provision-owner', adminAccessControl, async (req, res) => {
+  const tenant = await Tenant.findOne({ tenantId: req.params.tenantId }).lean();
+  if (!tenant) return res.status(404).send('Tenant no encontrado');
+
+  const owner = await provisionTenantOwnerUser(tenant, {
+    ownerEmail: req.body.ownerEmail
+  });
+
+  const msg = owner.ok
+    ? `Usuario creado: ${owner.email} / ${owner.temporaryPassword}`
+    : owner.reason === 'ALREADY_HAS_USERS'
+      ? 'Este tenant ya tiene usuarios. Créalos desde Configuración en la app SaaS.'
+      : owner.reason === 'ROLE_NOT_FOUND'
+        ? `Rol no encontrado. Ejecuta: cd services/base-saas && npm run seed`
+        : `No se pudo crear usuario: ${owner.reason || owner.skipped}`;
+
+  res.redirect(`/admin/tenants/${tenant.tenantId}?msg=${encodeURIComponent(msg)}`);
+});
+
+app.post('/admin/tenants/:tenantId/suspend', adminAccessControl, async (req, res) => {
+  await Tenant.updateOne({ tenantId: req.params.tenantId }, { $set: { status: 'suspended' } });
+  res.redirect(`/admin/tenants/${req.params.tenantId}`);
+});
+
+app.post('/admin/tenants/:tenantId/feature-flags', adminAccessControl, async (req, res) => {
+  const flags = parseFeatureFlagsFromForm(req.body);
+  await Tenant.updateOne({ tenantId: req.params.tenantId }, { $set: { featureFlags: flags } });
+  res.redirect(`/admin/tenants/${req.params.tenantId}?msg=${encodeURIComponent('Módulos guardados correctamente')}`);
+});
+
+app.get('/admin/menus', adminAccessControl, async (_req, res) => {
+  const menus = await Menu.find().sort({ orden: 1, menuPrincipal: 1 }).lean();
+  res.render('menus/index', { menus });
+});
+
+app.get('/admin/menus/new', adminAccessControl, (_req, res) => {
+  res.render('menus/new', { featureFlags: FEATURE_FLAG_KEYS });
+});
+
+app.post('/admin/menus', adminAccessControl, async (req, res) => {
+  await Menu.create({
+    menuPrincipal: req.body.menuPrincipal,
+    rutaApp: req.body.rutaApp || req.body.rutaMenu,
+    rutaMenu: req.body.rutaMenu,
+    icono: req.body.icono,
+    orden: Number(req.body.orden || 0),
+    esCategoria: req.body.esCategoria === 'on',
+    activo: req.body.activo !== 'off',
+    requiredFeatureKeys: String(req.body.requiredFeatureKeys || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+  });
+  res.redirect('/admin/menus');
+});
+
+// --- API interna ---
+app.use('/api/admin', internalApiAuth, apiLimiter);
+
+app.get('/api/admin/tenants', async (_req, res) => {
+  const tenants = await Tenant.find().lean();
+  res.json({ success: true, tenants });
+});
+
+app.post('/api/admin/tenants', async (req, res) => {
+  const displayName = String(req.body.displayName || '').trim();
+  let slug = normalizeSlug(req.body.slug);
+  if (!slug) slug = crypto.randomUUID().replace(/-/g, '').slice(0, 10);
+  const tenantId = crypto.randomUUID();
+  const tenant = await Tenant.create({
+    tenantId,
+    slug,
+    displayName: displayName || slug,
+    status: 'pending',
+    featureFlags: { core: true, config_admin: true, ...normalizeIncomingFeatureFlags(req.body.featureFlags || {}) }
+  });
+  res.status(201).json({ success: true, tenant });
+});
+
+app.get('/api/admin/tenants/:tenantId', async (req, res) => {
+  const tenant = await Tenant.findOne({ tenantId: req.params.tenantId }).lean();
+  if (!tenant) return res.status(404).json({ success: false });
+  res.json({ success: true, tenant });
+});
+
+app.post('/api/admin/tenants/:tenantId/activate', async (req, res) => {
+  const tenant = await Tenant.findOne({ tenantId: req.params.tenantId });
+  if (!tenant) return res.status(404).json({ success: false });
+
+  tenant.status = 'active';
+  tenant.billingStatus = 'active';
+  await tenant.save();
+
+  const org = await provisionEmpresaYSubsidiaria(tenant.toObject(), req.body || {});
+  const owner = await provisionTenantOwnerUser(tenant.toObject(), req.body || {});
+
+  res.json({ success: true, tenant, org, owner });
+});
+
+app.get('/api/admin/menus', async (_req, res) => {
+  const menus = await Menu.find({ activo: true }).sort({ orden: 1 }).lean();
+  res.json({ success: true, menus });
+});
+
+app.get('/api/admin/plans', async (_req, res) => {
+  const plans = await Plan.find({ activo: true }).lean();
+  res.json({ success: true, plans });
+});
+
+mongoose
+  .connect(MONGO_URI)
+  .then(() => {
+    console.log(`[arka-presence-admin] Mongo conectado: ${MONGO_URI}`);
+    app.listen(PORT, () => console.log(`[arka-presence-admin] http://localhost:${PORT}`));
+  })
+  .catch((err) => {
+    console.error('[arka-presence-admin] Error Mongo:', err);
+    process.exit(1);
+  });

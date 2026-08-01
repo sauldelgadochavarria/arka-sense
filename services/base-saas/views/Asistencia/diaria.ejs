@@ -1,0 +1,65 @@
+<%- include('../Partials/layout-top', { title: 'Asistencia diaria', session }) %>
+<h1>Asistencia del día</h1>
+<% if (!empresa) { %>
+<p>No hay empresa vinculada a este tenant.</p>
+<% } else { %>
+<div class="toolbar">
+  <form method="get" action="/asistencia-diaria" class="inline-form">
+    <label>Fecha</label>
+    <input type="date" name="fecha" value="<%= fecha %>" onchange="this.form.submit()" />
+  </form>
+  <form method="post" action="/asistencia-diaria/reprocesar?fecha=<%= fecha %>" class="inline-form">
+    <button type="submit">Reprocesar día</button>
+  </form>
+  <a class="btn" href="/asistencia-marcaciones?fecha=<%= fecha %>">Registrar marcación</a>
+  <a class="btn" href="/incidencias/pendientes">Pendientes RP/FR</a>
+</div>
+
+<p class="muted">
+  El resumen del día se arma desde las marcaciones (entrada/salida).
+  <strong>Incompleto</strong> = hay checadas pero falta la pareja (p. ej. solo entrada).
+  <strong>Registro parcial / fuera de rango</strong> generan incidencias en
+  <a href="/incidencias/pendientes">Pendientes RP/FR</a>.
+  Solo <strong>presente</strong> o <strong>retardo</strong> cuentan como día trabajado en pre-nómina.
+</p>
+
+  <div class="stat-card ok"><strong><%= stats.presentes %></strong><span>Presentes</span></div>
+  <div class="stat-card warn"><strong><%= stats.retardos %></strong><span>Retardos</span></div>
+  <div class="stat-card bad"><strong><%= stats.faltas %></strong><span>Faltas</span></div>
+  <div class="stat-card"><strong><%= stats.incompletos %></strong><span>Incompletos</span></div>
+  <div class="stat-card warn"><strong><%= stats.registroParcial %></strong><span>Reg. parcial</span></div>
+  <div class="stat-card warn"><strong><%= stats.fueraDeRango %></strong><span>Fuera de rango</span></div>
+  <div class="stat-card"><strong><%= stats.descanso %></strong><span>Descanso</span></div>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th>Empleado</th>
+      <th>Turno</th>
+      <th>Entrada</th>
+      <th>Salida</th>
+      <th>Retardo</th>
+      <th>HE</th>
+      <th>Estatus</th>
+      <th>Incidencias</th>
+    </tr>
+  </thead>
+  <tbody>
+    <% filas.forEach(function(fila) { %>
+    <% const r = fila.resumen; %>
+    <tr class="<%= r && (r.estatus === 'falta' || r.estatus === 'registro_parcial' || r.estatus === 'fuera_de_rango') ? 'row-muted' : '' %>">
+      <td><%= fila.empleado.firstName %> <%= fila.empleado.lastName %></td>
+      <td><%= fila.empleado.turnoId ? (turnoMap.get(String(fila.empleado.turnoId)) || '—') : '—' %></td>
+      <td><%= r && r.entradaReal ? formatTimeHHMM(r.entradaReal) : '—' %></td>
+      <td><%= r && r.salidaReal ? formatTimeHHMM(r.salidaReal) : '—' %></td>
+      <td><%= r && r.minutosRetardo ? r.minutosRetardo + ' min' : '—' %></td>
+      <td><%= r && r.minutosHorasExtra ? r.minutosHorasExtra + ' min' : '—' %></td>
+      <td><span class="badge badge-<%= r ? r.estatus : 'falta' %>"><%= r ? (estatusLabels[r.estatus] || r.estatus) : 'Sin procesar' %></span></td>
+      <td><%= r && r.incidenciasAutomaticas && r.incidenciasAutomaticas.length ? r.incidenciasAutomaticas.join(', ') : '—' %></td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<% } %>
+<%- include('../Partials/layout-bottom') %>

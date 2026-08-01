@@ -1,0 +1,39 @@
+<%- include('partials/layout-top', { title: 'Mi asistencia', session }) %>
+<h1>Mi asistencia</h1>
+<form method="get" class="toolbar inline-form">
+  <label>Mes</label>
+  <input type="month" name="mes" value="<%= mes %>" onchange="this.form.submit()" />
+</form>
+
+<% if (rotacionLabel) { %>
+<p class="muted">Rotación asignada: <strong><%= rotacionLabel %></strong> — el turno efectivo puede variar por día.</p>
+<% } else if (turno) { %>
+<p class="muted">Turno asignado: <strong><%= turno.nombre %></strong> (<%= turno.horaEntrada %> – <%= turno.horaSalida %>)</p>
+<% } else { %>
+<p class="muted">Sin turno asignado. Contacta a RRHH.</p>
+<% } %>
+
+<table>
+  <thead>
+    <tr><th>Fecha</th><th>Entrada</th><th>Salida</th><th>Retardo</th><th>HE</th><th>Estatus</th><th></th></tr>
+  </thead>
+  <tbody>
+    <% if (!resumenes.length) { %><tr><td colspan="7" class="muted">Sin registros en este mes.</td></tr><% } %>
+    <% resumenes.forEach(function(r) { %>
+    <tr>
+      <td><%= new Date(r.fecha).toLocaleDateString('es-MX') %></td>
+      <td><%= r.entradaReal ? formatTimeHHMM(r.entradaReal) : '—' %></td>
+      <td><%= r.salidaReal ? formatTimeHHMM(r.salidaReal) : '—' %></td>
+      <td><%= r.minutosRetardo ? r.minutosRetardo + ' min' : '—' %></td>
+      <td><%= r.minutosHorasExtra ? r.minutosHorasExtra + ' min' : '—' %></td>
+      <td><%= estatusLabels[r.estatus] || r.estatus %><% if (r.notas && r.notas.indexOf('Rotación') === 0) { %><br><span class="muted" style="font-size:0.8em"><%= r.notas %></span><% } %></td>
+      <td>
+        <% if (r.estatus === 'fuera_de_rango' || (r.incidenciasAutomaticas || []).includes('FR')) { %>
+        <a href="/portal/solicitudes/nueva?fecha=<%= new Date(r.fecha).toISOString().slice(0,10) %>&tipo=FR">Justificar</a>
+        <% } %>
+      </td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<%- include('partials/layout-bottom') %>

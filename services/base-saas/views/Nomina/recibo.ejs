@@ -1,0 +1,90 @@
+<%- include('../Partials/layout-top', { title: 'Recibo de nómina', session }) %>
+<%
+  const fuente = recibo.insumosFuente || 'default';
+  const resumen = recibo.insumosResumen || {};
+  const fuenteLabel = fuente === 'prenomina'
+    ? 'Pre-nómina (asistencia diaria)'
+    : (fuente === 'prenomina_sin_detalle'
+      ? 'Pre-nómina vinculada, pero sin detalle del empleado'
+      : 'Sin pre-nómina: calendario del período + expediente');
+%>
+<p><a href="/nomina/periodos/<%= periodo._id %>">← Volver al período</a></p>
+
+<h1>Recibo de nómina</h1>
+<% if (empleado) { %>
+<p>
+  <strong><%= empleado.firstName %> <%= empleado.lastName %></strong>
+  (No. <%= empleado.numEmpleado %>)
+</p>
+<% } %>
+
+<div class="summary-cards">
+  <div class="card"><strong><%= recibo.diasLaborados %></strong> días laborados</div>
+  <div class="card"><strong>$<%= recibo.totalPercepciones.toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></strong> percepciones</div>
+  <div class="card"><strong>$<%= recibo.totalDeducciones.toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></strong> deducciones</div>
+  <div class="card"><strong>$<%= recibo.netoPagar.toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></strong> neto</div>
+</div>
+
+<section class="panel">
+  <h2 class="panel-title">Origen de asistencia e insumos</h2>
+  <p><strong><%= fuenteLabel %></strong></p>
+  <% if (fuente === 'prenomina') { %>
+  <p class="muted small">
+    Cadena: checadas / asistencia diaria → cálculo de pre-nómina (<code>PayrollDetail</code>) →
+    puente a nómina formal. El sueldo y conceptos usan estos valores en el contexto de fórmulas
+    (<code>PERIODO.diasTrabajados</code>, <code>EMPLEADO.salarioDiario</code>, <code>INCIDENCIAS.*</code>).
+  </p>
+  <% } else if (fuente === 'default') { %>
+  <p class="muted small">
+    No hubo período de pre-nómina vinculado (o no se usó). Entonces:
+    <code>diasTrabajados = diasPeriodo − faltas</code> (faltas=0) y
+    <code>salarioDiario</code> del expediente del empleado.
+  </p>
+  <% } else { %>
+  <p class="muted small">
+    El período de nómina apunta a una pre-nómina, pero este empleado no tiene detalle calculado ahí.
+    Se usaron defaults de calendario / expediente.
+  </p>
+  <% } %>
+  <ul class="vars-list">
+    <li>Días trabajados usados: <code><%= resumen.diasTrabajados != null ? resumen.diasTrabajados : recibo.diasLaborados %></code></li>
+    <li>Faltas: <code><%= resumen.faltas != null ? resumen.faltas : recibo.faltas %></code></li>
+    <li>Salario diario: <code>$<%= Number(resumen.sueldoDiario || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></code></li>
+    <li>Minutos retardo: <code><%= resumen.minutosRetardo || 0 %></code></li>
+    <li>HE dobles / triples: <code><%= resumen.horasExtraDobles || 0 %></code> / <code><%= resumen.horasExtraTriples || 0 %></code></li>
+    <% if (periodo.payrollPeriodId) { %>
+    <li>Pre-nómina:
+      <a href="/prenomina-periodos/<%= periodo.payrollPeriodId %>">ver período</a>
+    </li>
+    <% } %>
+  </ul>
+</section>
+
+<h2>Conceptos aplicados (trazabilidad)</h2>
+<table>
+  <thead>
+    <tr><th>Código</th><th>Importe</th><th>Fórmula</th><th>Variables usadas</th></tr>
+  </thead>
+  <tbody>
+    <% if (!conceptos.length) { %>
+    <tr><td colspan="4" class="muted">Sin detalle.</td></tr>
+    <% } %>
+    <% conceptos.forEach(function(c) { %>
+    <tr>
+      <td><code><%= c.conceptoCodigo %></code></td>
+      <td>$<%= c.importe.toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></td>
+      <td><code class="formula-cell"><%= c.formulaUsada || '—' %></code></td>
+      <td>
+        <% if (c.variablesUsadas && Object.keys(c.variablesUsadas).length) { %>
+        <ul class="vars-list">
+          <% Object.keys(c.variablesUsadas).forEach(function(k) { %>
+          <li><code><%= k %></code> = <%= c.variablesUsadas[k] %></li>
+          <% }); %>
+        </ul>
+        <% } else { %>—<% } %>
+      </td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<%- include('../Partials/layout-bottom') %>

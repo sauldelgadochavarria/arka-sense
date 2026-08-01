@@ -1,0 +1,55 @@
+<%- include('../Partials/layout-top', { title: 'Enum ' + grupo.grupo, session }) %>
+
+<div class="page-header">
+  <h1><%= grupo.nombre %></h1>
+  <p class="page-subtitle"><code><%= grupo.grupo %></code> — <%= grupo.descripcion || '' %></p>
+</div>
+
+<div class="toolbar">
+  <a class="btn btn-secondary" href="/config-sistema/enums">← Enums</a>
+</div>
+
+<div class="panel">
+  <% if (!grupo.editable) { %>
+  <p class="muted">Este enum es estructural (fase / tipo aplicación). Solo consulta.</p>
+  <table>
+    <thead><tr><th>Valor</th><th>Etiqueta</th><th>Descripción</th></tr></thead>
+    <tbody>
+      <% (grupo.items || []).forEach(function(it) { %>
+      <tr>
+        <td><code><%= it.value %></code></td>
+        <td><%= it.label %></td>
+        <td class="muted"><%= it.descripcion || '—' %></td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table>
+  <% } else { %>
+  <form method="post" action="/config-sistema/enums/<%= grupo.grupo %>" class="form-wide">
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Valor</th><th>Etiqueta</th><th>Descripción</th><th>Orden</th></tr></thead>
+        <tbody>
+          <% (grupo.items || []).forEach(function(it) { %>
+          <tr>
+            <td><input name="value" value="<%= it.value %>" required /></td>
+            <td><input name="label" value="<%= it.label %>" required /></td>
+            <td><input name="descripcion" value="<%= it.descripcion || '' %>" /></td>
+            <td><input name="orden" type="number" value="<%= it.orden || 0 %>" style="width:5rem" /></td>
+          </tr>
+          <% }); %>
+          <tr>
+            <td><input name="value" placeholder="nuevo_valor" /></td>
+            <td><input name="label" placeholder="Etiqueta" /></td>
+            <td><input name="descripcion" placeholder="Descripción" /></td>
+            <td><input name="orden" type="number" value="99" style="width:5rem" /></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <button type="submit">Guardar</button>
+  </form>
+  <% } %>
+</div>
+
+<%- include('../Partials/layout-bottom') %>

@@ -1,0 +1,70 @@
+<%- include('../Partials/layout-top', { title: 'Plantillas de horario', session }) %>
+<h1>Plantillas de horario</h1>
+<div class="toolbar">
+  <a class="btn" href="/asistencia-turnos">← Turnos</a>
+  <a class="btn" href="/asistencia-rotaciones/asignaciones">Asignaciones (<%= asignacionesCount %>)</a>
+  <a class="btn" href="/asistencia-rotaciones/cambios">Cambios puntuales</a>
+  <a class="btn" href="/asistencia-rotaciones/matriz">Vista calendario</a>
+</div>
+<% if (!empresa) { %>
+<p>No hay empresa vinculada.</p>
+<% } else { %>
+<p>Catálogo de plantillas: turno fijo, rotación por secuencia <code>T1→T2→T3</code> o matriz multi-semana. Asígnalas a empleados; usa <strong>cambios puntuales</strong> para excepciones por fecha.</p>
+
+<h2>Plantillas</h2>
+<table>
+  <thead>
+    <tr><th>Nombre</th><th>Tipo</th><th>Patrón</th><th>Activo</th><th></th></tr>
+  </thead>
+  <tbody>
+    <% if (!plantillas.length) { %>
+    <tr><td colspan="5" class="muted">Sin plantillas. Crea la primera abajo.</td></tr>
+    <% } %>
+    <% plantillas.forEach(function(p) { %>
+    <tr class="<%= !p.activo ? 'row-muted' : '' %>">
+      <td><a href="/asistencia-rotaciones/<%= p._id %>/edit"><%= p.nombre %></a></td>
+      <td><span class="badge badge-activo"><%= p.tipoLabel %></span></td>
+      <td class="patron-cell"><%= p.resumen %></td>
+      <td><%= p.activo ? 'Sí' : 'No' %></td>
+      <td class="actions">
+        <a href="/asistencia-rotaciones/<%= p._id %>/edit">Configurar</a>
+        <form method="post" action="/asistencia-rotaciones/<%= p._id %>/toggle" class="inline-form">
+          <button type="submit"><%= p.activo ? 'Desactivar' : 'Activar' %></button>
+        </form>
+      </td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+
+<h2>Nueva plantilla</h2>
+<form method="post" action="/asistencia-rotaciones" class="form-grid">
+  <input name="nombre" placeholder="Nombre (ej. Rotación mañana/tarde/noche)" required />
+  <input name="descripcion" placeholder="Descripción" />
+  <label>Tipo de plantilla
+    <select name="tipo" id="tipoPlantilla" required>
+      <% tiposPlantilla.forEach(function(t) { %>
+      <option value="<%= t.value %>"><%= t.label %> — <%= t.descripcion %></option>
+      <% }); %>
+    </select>
+  </label>
+  <div id="campoMatrizSemanas">
+    <label>Semanas en el ciclo (solo matriz)
+      <input name="numSemanas" type="number" min="1" max="12" value="2" />
+    </label>
+  </div>
+  <button type="submit">Crear plantilla</button>
+</form>
+<script>
+(function () {
+  const sel = document.getElementById('tipoPlantilla');
+  const campo = document.getElementById('campoMatrizSemanas');
+  function sync() {
+    campo.style.display = sel.value === 'matriz' ? '' : 'none';
+  }
+  sel.addEventListener('change', sync);
+  sync();
+})();
+</script>
+<% } %>
+<%- include('../Partials/layout-bottom') %>

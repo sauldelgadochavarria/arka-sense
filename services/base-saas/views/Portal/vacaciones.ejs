@@ -1,0 +1,27 @@
+<%- include('partials/layout-top', { title: 'Vacaciones', session }) %>
+<h1>Mis vacaciones <%= anio %></h1>
+
+<% if (saldo) { %>
+<div class="stats-grid">
+  <div class="stat-card"><strong><%= saldo.diasCorresponden %></strong><span>Corresponden</span></div>
+  <div class="stat-card warn"><strong><%= saldo.diasTomados %></strong><span>Tomados</span></div>
+  <div class="stat-card ok"><strong><%= saldo.diasPendientes %></strong><span>Disponibles</span></div>
+</div>
+<% } %>
+
+<p><a class="btn" href="/portal/solicitudes/nueva">Solicitar vacaciones</a></p>
+
+<h2>Historial de solicitudes de vacaciones</h2>
+<table>
+  <thead><tr><th>Periodo</th><th>Días</th><th>Estatus</th></tr></thead>
+  <tbody>
+    <% solicitudesVac.forEach(function(s) { %>
+    <tr>
+      <td><%= new Date(s.fechaInicio).toLocaleDateString('es-MX') %> – <%= new Date(s.fechaFin).toLocaleDateString('es-MX') %></td>
+      <td><%= s.diasAfectados %></td>
+      <td><%= s.estatus %></td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<%- include('partials/layout-bottom') %>

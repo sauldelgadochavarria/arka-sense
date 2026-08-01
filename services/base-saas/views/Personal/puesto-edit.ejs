@@ -1,0 +1,12 @@
+<%- include('../Partials/layout-top', { title: 'Editar puesto', session }) %>
+<p><a href="/personal-puestos">← Volver a puestos</a></p>
+
+<h1>Editar puesto</h1>
+<form method="post" action="/personal-puestos/<%= puesto._id %>" class="form-grid">
+  <input name="nombre" value="<%= puesto.nombre %>" required />
+  <input name="codigoLegado" type="number" placeholder="Código legado Fortia" value="<%= puesto.codigoLegado != null ? puesto.codigoLegado : '' %>" />
+  <input name="nivel" value="<%= puesto.nivel || '' %>" placeholder="Nivel" />
+  <input name="descripcion" value="<%= puesto.descripcion || '' %>" placeholder="Descripción" />
+  <button type="submit">Guardar</button>
+</form>
+<%- include('../Partials/layout-bottom') %>

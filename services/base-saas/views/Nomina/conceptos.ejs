@@ -1,0 +1,73 @@
+<%- include('../Partials/layout-top', { title: 'Conceptos de nómina', session }) %>
+<%
+  const _canEdit = typeof canEdit !== 'undefined' ? canEdit : true;
+%>
+<h1>Catálogo de conceptos</h1>
+<div class="toolbar">
+  <a class="btn" href="/nomina">← Nómina</a>
+  <a class="btn" href="/nomina/configuracion">Configuración fiscal</a>
+  <a class="btn" href="/config-sistema/enums">Enums / ámbitos</a>
+  <% if (_canEdit) { %>
+  <a class="btn btn-primary" href="/nomina/conceptos/nuevo">+ Nuevo</a>
+  <% } %>
+</div>
+<% if (!_canEdit) { %>
+<p class="banner-readonly">Modo consulta: puedes ver conceptos, pero no crear ni modificarlos.</p>
+<% } %>
+<% if (!empresa) { %>
+<p>No hay empresa vinculada a este tenant.</p>
+<% } else { %>
+<p class="muted">
+  Colección única (<code>nomina_conceptos</code>): se separan solo por <strong>ámbito</strong>
+  (nómina / pre-nómina / ambos). Misma ficha compartida; el motor formal usa fórmulas y la pre-nómina usa <code>formulaPrenomina</code>.
+</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Código</th>
+      <th>Nombre</th>
+      <th>Ámbito</th>
+      <th>SAT</th>
+      <th>Fiscal</th>
+      <th>Incidencias</th>
+      <th>Tipo</th>
+      <th>Activo</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <% if (!conceptos.length) { %>
+    <tr><td colspan="9" class="muted">Sin conceptos.</td></tr>
+    <% } %>
+    <% conceptos.forEach(function(c) {
+         const ambito = c.aplicaEn || 'nomina';
+         const ambitoLabel = ambito === 'ambos' ? 'Ambos' : (ambito === 'prenomina' ? 'Pre-nómina' : 'Nómina');
+         const satClave = (c.sat && c.sat.clave) || c.claveSAT || '—';
+         const fiscal = c.fiscal || {};
+         const fiscalTxt = (fiscal.integraISR === false ? 'ISR×' : 'ISR✓') + ' ' + (fiscal.integraIMSS === false ? 'IMSS×' : 'IMSS✓');
+    %>
+    <tr class="<%= !c.activo ? 'row-muted' : '' %>">
+      <td><code><%= c.codigo %></code></td>
+      <td><%= c.nombre %></td>
+      <td><span class="badge-ambito badge-ambito-<%= ambito %>"><%= ambitoLabel %></span></td>
+      <td><code><%= satClave %></code></td>
+      <td class="muted small"><%= fiscalTxt %><% if (fiscal.desglose && fiscal.desglose.modo) { %> · <%= fiscal.desglose.modo %><% } %></td>
+      <td class="muted small"><%= (c.tiposIncidencia || []).join(', ') || '—' %></td>
+      <td><%= c.tipo %></td>
+      <td><%= c.activo ? 'Sí' : 'No' %></td>
+      <td class="actions">
+        <a href="/nomina/conceptos/<%= c.codigo %>?modo=vista">Ver</a>
+        <% if (_canEdit) { %>
+        <a href="/nomina/conceptos/<%= c.codigo %>?modo=edicion">Editar</a>
+        <form method="post" action="/nomina/conceptos/<%= c.codigo %>/toggle" class="inline-form">
+          <button type="submit"><%= c.activo ? 'Desactivar' : 'Activar' %></button>
+        </form>
+        <% } %>
+      </td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<% } %>
+<%- include('../Partials/layout-bottom') %>

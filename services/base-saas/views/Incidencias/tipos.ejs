@@ -1,0 +1,44 @@
+<%- include('../Partials/layout-top', { title: 'Tipos de incidencia', session }) %>
+<p><a href="/incidencias">← Incidencias</a></p>
+<h1>Catálogo de tipos de incidencia</h1>
+<% if (!empresa) { %>
+<p>No hay empresa vinculada.</p>
+<% } else { %>
+
+<h2>Nuevo tipo</h2>
+<form method="post" action="/incidencias/tipos" class="form-grid">
+  <input name="clave" placeholder="Clave (ej. COM)" maxlength="6" required style="text-transform:uppercase" />
+  <input name="nombre" placeholder="Nombre" required />
+  <label><input type="checkbox" name="afectaPago" value="1" /> Afecta pago</label>
+  <label><input type="checkbox" name="requiereAprobacion" value="1" checked /> Requiere aprobación</label>
+  <label><input type="checkbox" name="requiereDocumento" value="1" /> Requiere documento</label>
+  <label><input type="checkbox" name="esAutomatica" value="1" /> Es automática (generada por sistema)</label>
+  <button type="submit">Crear tipo</button>
+</form>
+
+<table>
+  <thead>
+    <tr><th>Clave</th><th>Nombre</th><th>Afecta pago</th><th>Aprobación</th><th>Documento</th><th>Automática</th><th>Activo</th><th></th></tr>
+  </thead>
+  <tbody>
+    <% tipos.forEach(function(t) { %>
+    <tr class="<%= !t.activo ? 'row-muted' : '' %>">
+      <td><code><%= t.clave %></code></td>
+      <td><%= t.nombre %></td>
+      <td><%= t.afectaPago ? 'Sí' : 'No' %></td>
+      <td><%= t.requiereAprobacion ? 'Sí' : 'No' %></td>
+      <td><%= t.requiereDocumento ? 'Sí' : 'No' %></td>
+      <td><%= t.esAutomatica ? 'Sí' : 'No' %></td>
+      <td><%= t.activo ? 'Sí' : 'No' %></td>
+      <td class="actions">
+        <a href="/incidencias/tipos/<%= t._id %>/edit">Editar</a>
+        <form method="post" action="/incidencias/tipos/<%= t._id %>/toggle" class="inline-form">
+          <button type="submit"><%= t.activo ? 'Desactivar' : 'Activar' %></button>
+        </form>
+      </td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<% } %>
+<%- include('../Partials/layout-bottom') %>

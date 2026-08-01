@@ -1,0 +1,33 @@
+<%- include('../Partials/layout-top', { title: 'Exportar pre-nómina', session }) %>
+<h1>Exportar pre-nómina</h1>
+<div class="toolbar">
+  <a class="btn" href="/integraciones/perfiles">Perfiles</a>
+  <a class="btn" href="/integraciones/logs">Logs</a>
+</div>
+<% if (!empresa) { %>
+<p>No hay empresa vinculada.</p>
+<% } else if (!periodos.length) { %>
+<p>No hay períodos calculados. <a href="/prenomina-periodos">Abre y calcula un período</a> primero.</p>
+<% } else { %>
+<form method="post" action="/integraciones/exportacion/ejecutar" class="form-grid">
+  <label>Período</label>
+  <select name="periodId" required>
+    <option value="">— Seleccionar —</option>
+    <% periodos.forEach(function(p) { %>
+    <option value="<%= p._id %>">
+      <%= p.tipo %> — <%= new Date(p.fechaInicio).toLocaleDateString('es-MX') %> a <%= new Date(p.fechaFin).toLocaleDateString('es-MX') %> (<%= p.estatus %>)
+    </option>
+    <% }); %>
+  </select>
+  <label>Perfil / adaptador</label>
+  <select name="profileId" required>
+    <option value="">— Seleccionar —</option>
+    <% perfiles.forEach(function(p) { %>
+    <option value="<%= p._id %>"><%= p.nombre %> (<%= p.adaptador %>)</option>
+    <% }); %>
+  </select>
+  <button type="submit">Descargar CSV</button>
+</form>
+<p class="hint">Se registrará un log de sincronización con el archivo generado.</p>
+<% } %>
+<%- include('../Partials/layout-bottom') %>

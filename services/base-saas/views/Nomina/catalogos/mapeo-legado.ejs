@@ -1,0 +1,66 @@
+<%- include('../../Partials/layout-top', { title: 'Mapeo legado', session }) %>
+<h1>Mapeo legado Fortia → SAT</h1>
+<div class="toolbar">
+  <a class="btn" href="/nomina/catalogos">← Catálogos</a>
+</div>
+
+<p>Usado por <code>import:conceptos-legado</code> para asignar claves SAT a conceptos importados (<code>L####</code>).</p>
+
+<h2>Nuevo mapeo</h2>
+<form method="post" action="/nomina/catalogos/mapeo-legado" class="form-grid">
+  <select name="tipoMapeo" required>
+    <% tiposMapeo.forEach(function(t) { %>
+    <option value="<%= t.value %>"><%= t.label %></option>
+    <% }); %>
+  </select>
+  <input name="claveLegado" placeholder="Clave legado (ej. 1, 20)" required />
+  <select name="tipoConcepto">
+    <option value="">— N/A —</option>
+    <option value="percepcion">Percepción</option>
+    <option value="deduccion">Deducción</option>
+    <option value="otro_pago">Otro pago</option>
+  </select>
+  <select name="catalogoSat" required>
+    <% catalogosSat.forEach(function(c) { %>
+    <option value="<%= c.value %>"><%= c.label %></option>
+    <% }); %>
+  </select>
+  <input name="claveSat" placeholder="Clave SAT destino" required />
+  <input name="descripcion" placeholder="Descripción" />
+  <select name="tipoHoraExtra">
+    <option value="">— HE motor —</option>
+    <% tiposHoraExtra.forEach(function(h) { %>
+    <option value="<%= h.value %>"><%= h.label %></option>
+    <% }); %>
+  </select>
+  <button type="submit">Agregar mapeo</button>
+</form>
+
+<table>
+  <thead>
+    <tr><th>Tipo mapeo</th><th>Legado</th><th>Tipo concepto</th><th>Catálogo SAT</th><th>Clave SAT</th><th>HE motor</th><th>Descripción</th><th>Activo</th><th></th></tr>
+  </thead>
+  <tbody>
+    <% if (!mapeos.length) { %>
+    <tr><td colspan="9" class="muted">Sin mapeos. Ejecuta <code>seed:catalogo-mapeo-legado</code>.</td></tr>
+    <% } %>
+    <% mapeos.forEach(function(m) { %>
+    <tr class="<%= !m.activo ? 'row-muted' : '' %>">
+      <td><%= tipoMapeoLabel(m.tipoMapeo) %></td>
+      <td><code><%= m.claveLegado %></code></td>
+      <td><%= m.tipoConcepto || '—' %></td>
+      <td><%= catalogoLabel(m.catalogoSat) %></td>
+      <td><code><%= m.claveSat %></code></td>
+      <td><%= m.tipoHoraExtra || '—' %></td>
+      <td><%= m.descripcion || '—' %></td>
+      <td><%= m.activo ? 'Sí' : 'No' %></td>
+      <td>
+        <form method="post" action="/nomina/catalogos/mapeo-legado/<%= m._id %>/toggle" class="inline-form">
+          <button type="submit"><%= m.activo ? 'Desactivar' : 'Activar' %></button>
+        </form>
+      </td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<%- include('../../Partials/layout-bottom') %>

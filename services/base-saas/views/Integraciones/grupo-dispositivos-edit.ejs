@@ -1,0 +1,23 @@
+<%- include('../Partials/layout-top', { title: 'Editar grupo de dispositivos', session }) %>
+<p><a href="/integraciones/grupos-dispositivos">← Volver a grupos</a></p>
+
+<h1>Editar grupo</h1>
+<form method="post" action="/integraciones/grupos-dispositivos/<%= grupo._id %>" class="form-grid form-wide">
+  <input name="nombre" value="<%= grupo.nombre %>" required />
+  <input name="descripcion" value="<%= grupo.descripcion || '' %>" placeholder="Descripción" />
+  <select name="subsidiariaId">
+    <option value="">— Sucursal —</option>
+    <% subsidiarias.forEach(function(s) { %>
+    <option value="<%= s._id %>" <%= grupo.subsidiariaId && String(grupo.subsidiariaId) === String(s._id) ? 'selected' : '' %>><%= s.nombre %></option>
+    <% }); %>
+  </select>
+  <fieldset class="form-section">
+    <legend>Dispositivos incluidos</legend>
+    <% dispositivos.forEach(function(d) { %>
+    <% const selected = (grupo.dispositivoIds || []).some(function(id) { return String(id) === String(d._id); }); %>
+    <label><input type="checkbox" name="dispositivoIds" value="<%= d._id %>" <%= selected ? 'checked' : '' %> /> <%= d.nombre %></label>
+    <% }); %>
+  </fieldset>
+  <button type="submit">Guardar</button>
+</form>
+<%- include('../Partials/layout-bottom') %>

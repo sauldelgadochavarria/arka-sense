@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Nuevo menú</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; max-width: 600px; }
+    label { display: block; margin-top: 1rem; font-weight: 600; }
+    input { width: 100%; padding: 8px; }
+    button { margin-top: 1.5rem; padding: 10px 16px; background: #2563eb; color: #fff; border: none; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <h1>Nuevo ítem de menú</h1>
+  <form method="post" action="/admin/menus">
+    <label>Nombre</label>
+    <input name="menuPrincipal" required />
+    <label>Ruta app</label>
+    <input name="rutaApp" placeholder="/dashboard" />
+    <label>Icono (clase CSS)</label>
+    <input name="icono" placeholder="mdi mdi-home" />
+    <label>Orden</label>
+    <input name="orden" type="number" value="0" />
+    <label>Feature keys (coma)</label>
+    <input name="requiredFeatureKeys" placeholder="core,config_admin" />
+    <label><input type="checkbox" name="esCategoria" /> Es categoría</label>
+    <button type="submit">Guardar</button>
+  </form>
+  <p><a href="/admin/menus">← Volver</a></p>
+</body>
+</html>

@@ -1,0 +1,25 @@
+<%- include('../Partials/layout-top', { title: 'Datos de empresa', session }) %>
+<h1>Datos de empresa</h1>
+<% if (!empresa) { %>
+<p>No hay empresa vinculada a este tenant. Activa el tenant desde Arka-Presence Admin.</p>
+<% } else { %>
+<form method="post" action="/config-empresa" class="form-grid form-wide">
+  <fieldset class="form-section">
+    <legend>Identificación fiscal</legend>
+    <input name="razonSocial" value="<%= empresa.razonSocial %>" placeholder="Razón social" required />
+    <input name="nombreComercial" value="<%= empresa.nombreComercial || '' %>" placeholder="Nombre comercial" />
+    <input name="rfc" value="<%= empresa.rfc || '' %>" placeholder="RFC" maxlength="13" />
+    <input name="giro" value="<%= empresa.giro || '' %>" placeholder="Giro / sector" />
+    <input name="telefono" value="<%= empresa.telefono || '' %>" placeholder="Teléfono" />
+  </fieldset>
+  <fieldset class="form-section">
+    <legend>Domicilio fiscal</legend>
+    <input name="domicilioFiscal" value="<%= empresa.domicilioFiscal || '' %>" placeholder="Domicilio fiscal" />
+    <input name="ciudad" value="<%= empresa.ciudad || '' %>" placeholder="Ciudad" />
+    <input name="estado" value="<%= empresa.estado || '' %>" placeholder="Estado" />
+    <input name="codigoPostal" value="<%= empresa.codigoPostal || '' %>" placeholder="Código postal" />
+  </fieldset>
+  <button type="submit">Guardar datos</button>
+</form>
+<% } %>
+<%- include('../Partials/layout-bottom') %>

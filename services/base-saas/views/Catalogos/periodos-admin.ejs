@@ -1,0 +1,127 @@
+<%- include('../Partials/layout-top', { title: 'Administración de períodos', session }) %>
+<h1>Administración de períodos</h1>
+<div class="toolbar">
+  <a class="btn btn-primary" href="/catalogos/periodos/generar">+ Generar períodos del año</a>
+  <a class="btn" href="/prenomina/tipos-periodo">Tipos de período</a>
+  <a class="btn" href="/prenomina-periodos">Operación pre-nómina</a>
+</div>
+
+<% if (!empresa) { %>
+<p>No hay empresa vinculada.</p>
+<% } else { %>
+<p class="muted">
+  Los períodos se generan en estatus <strong>pendiente</strong>. Debe declararse <strong>abierto</strong> para captura, asistencia y cálculo.
+  Al cerrar nómina se cerrará el período (próxima fase).
+</p>
+
+<form method="get" action="/catalogos/periodos" class="form-grid form-wide filters-bar">
+  <select name="tipoPeriodoId">
+    <option value="">— Todos los tipos —</option>
+    <% tiposPeriodo.forEach(function(tp) { %>
+    <option value="<%= tp._id %>" <%= filtros.tipoPeriodoId === String(tp._id) ? 'selected' : '' %>><%= tp.codigoLegado %> — <%= tp.nombre %></option>
+    <% }); %>
+  </select>
+  <input name="anio" type="number" min="2000" max="2100" placeholder="Año" value="<%= filtros.anio || '' %>" />
+  <select name="estatus">
+    <option value="">— Todos los estatus —</option>
+    <% Object.keys(estatusLabels).forEach(function(k) { %>
+    <option value="<%= k %>" <%= filtros.estatus === k ? 'selected' : '' %>><%= estatusLabels[k] %></option>
+    <% }); %>
+  </select>
+  <select name="tipoNomina">
+    <option value="">— Tipo nómina —</option>
+    <% tiposNomina.forEach(function(tn) { %>
+    <option value="<%= tn.value %>" <%= filtros.tipoNomina === tn.value ? 'selected' : '' %>><%= tn.label %></option>
+    <% }); %>
+  </select>
+  <button type="submit">Filtrar</button>
+</form>
+
+<% if (tipoPeriodoSeleccionado) { %>
+<div class="info-panel tipo-periodo-resumen">
+  <strong><%= tipoPeriodoSeleccionado.nombre %></strong>
+  <code><%= tipoPeriodoSeleccionado.codigoLegado %></code>
+  · <%= tipoPeriodoSeleccionado.tipoMotor %>
+  <span class="flag-labels">
+    <label class="flag-readonly <%= tipoPeriodoSeleccionado.aplicaAsistenciaPrenomina !== false ? 'is-on' : '' %>">
+      <input type="checkbox" disabled <%= tipoPeriodoSeleccionado.aplicaAsistenciaPrenomina !== false ? 'checked' : '' %> />
+      Aplica asistencia/pre-nómina
+    </label>
+    <label class="flag-readonly <%= tipoPeriodoSeleccionado.compartirConNomina !== false ? 'is-on' : '' %>">
+      <input type="checkbox" disabled <%= tipoPeriodoSeleccionado.compartirConNomina !== false ? 'checked' : '' %> />
+      Compartir con nómina
+    </label>
+  </span>
+</div>
+<% } %>
+
+<table>
+  <thead>
+    <tr>
+      <th>#</th><th>Año</th><th>Tipo período</th><th>Tipo nómina</th><th>Inicio</th><th>Fin</th>
+      <th title="Aplica asistencia/pre-nómina (guardado en el período)">Asist.</th>
+      <th title="Compartir con nómina (guardado en el período)">Nómina</th><th>Estatus</th><th>Siguiente</th><th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <% if (!periodos.length) { %>
+    <tr><td colspan="11" class="muted">Sin períodos. Use «Generar períodos del año».</td></tr>
+    <% } %>
+    <% periodos.forEach(function(p) {
+      const tp = p.tipoPeriodoId ? tipoMap.get(String(p.tipoPeriodoId)) : null;
+      const ctx = contextos[String(p._id)] || {};
+      const tn = tiposNomina.find(function(t) { return t.value === p.tipoNomina; });
+      const aplicaAsist = p.aplicaAsistenciaPrenomina !== false;
+      const compartir = p.compartirConNomina === true;
+    %>
+    <tr class="<%= p.estatus === 'cerrado' ? 'row-muted' : '' %>">
+      <td><%= p.numeroPeriodo != null ? p.numeroPeriodo : '—' %></td>
+      <td><%= p.anio || '—' %></td>
+      <td><%= tp ? tp.nombre : p.tipo %><% if (tp) { %><br /><span class="muted"><code><%= tp.codigoLegado %></code></span><% } %></td>
+      <td><%= tn ? tn.label : (p.tipoNomina || 'ordinaria') %></td>
+      <td><%= new Date(p.fechaInicio).toLocaleDateString('es-MX') %></td>
+      <td><%= new Date(p.fechaFin).toLocaleDateString('es-MX') %></td>
+      <td>
+        <%- include('../Partials/periodo-flags', { mode: 'asistencia', aplicaAsistencia: aplicaAsist, compartirNomina: compartir }) %>
+      </td>
+      <td>
+        <%- include('../Partials/periodo-flags', { mode: 'nomina', aplicaAsistencia: aplicaAsist, compartirNomina: compartir }) %>
+      </td>
+      <td>
+        <span class="badge badge-<%= p.estatus === 'cerrado' ? 'baja' : p.estatus === 'pendiente' ? 'suspendido' : p.estatus === 'borrador' ? 'activo' : 'alta' %>">
+          <%= estatusLabels[p.estatus] || p.estatus %>
+        </span>
+      </td>
+      <td class="muted">
+        <% if (ctx.siguiente) { %>
+          <% if (ctx.siguienteAbierto) { %>Sig. abierto<% } else { %>Sig. <%= ctx.siguiente.estatus %><% } %>
+        <% } else { %>—<% } %>
+        <% if (ctx.otroAbierto && String(ctx.otroAbierto._id) !== String(p._id)) { %>
+        <br /><span class="warn">Otro activo: #<%= ctx.otroAbierto.numeroPeriodo %></span>
+        <% } %>
+      </td>
+      <td class="actions">
+        <% if (p.estatus === 'pendiente' && ctx.puedeAbrir) { %>
+        <form method="post" action="/catalogos/periodos/<%= p._id %>/abrir" class="inline-form">
+          <button type="submit">Abrir</button>
+        </form>
+        <% } %>
+        <% if (p.estatus === 'pendiente' && !ctx.puedeAbrir && ctx.otroAbierto) { %>
+        <span class="muted" title="Cierre el período activo primero">Bloqueado</span>
+        <% } %>
+        <% if (['abierto','borrador'].includes(p.estatus)) { %>
+        <a href="/prenomina-periodos/<%= p._id %>">Operar</a>
+        <form method="post" action="/catalogos/periodos/<%= p._id %>/cerrar" class="inline-form" onsubmit="return confirm('¿Cerrar este período?');">
+          <button type="submit">Cerrar</button>
+        </form>
+        <% } %>
+        <% if (p.estatus === 'cerrado') { %>
+        <a href="/prenomina-periodos/<%= p._id %>">Ver</a>
+        <% } %>
+      </td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<% } %>
+<%- include('../Partials/layout-bottom') %>

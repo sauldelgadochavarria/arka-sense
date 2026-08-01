@@ -1,0 +1,54 @@
+<%- include('../Partials/layout-top', { title: 'Movimientos asistencia', session }) %>
+<p><a href="/prenomina-periodos">← Pre-nómina</a></p>
+<h1>Movimientos de asistencia para nómina</h1>
+<p class="muted">Bandeja de movimientos (Fortia: <code>CLA_TRAB</code>, <code>CLA_PERDED</code>, <code>MONTO</code>). Pueden originarse en asistencia/pre-nómina o importarse.</p>
+<% if (!empresa) { %>
+<p>No hay empresa vinculada.</p>
+<% } else { %>
+
+<h2>Registrar movimiento manual</h2>
+<form method="post" action="/prenomina/movimientos" class="form-grid form-wide">
+  <label>
+    Empleado
+    <select name="empleadoId">
+      <option value="">— Seleccionar —</option>
+      <% empleados.forEach(function(e) { %>
+      <option value="<%= e._id %>"><%= e.numEmpleado %> — <%= e.firstName %> <%= e.lastName %></option>
+      <% }); %>
+    </select>
+  </label>
+  <input name="conceptoClave" placeholder="Concepto / CLA_PERDED (ej. 101)" required />
+  <input name="tipoMovimiento" type="number" placeholder="Tipo mov (TIPO_MOV)" value="1" />
+  <input name="monto" type="number" step="0.01" min="0" placeholder="Monto" required />
+  <input type="date" name="fechaMovimiento" required />
+  <input name="referencia" placeholder="Referencia / observaciones" />
+  <button type="submit">Registrar</button>
+</form>
+
+<p class="muted">Importación TSV: <code>npm run import:movimientos-asistencia -- --slug=&lt;tenant&gt; --file=data/movimientos-asistencia-sample.tsv</code></p>
+
+<h2>Últimos movimientos</h2>
+<table class="table-compact">
+  <thead>
+    <tr><th>Fecha</th><th>Empleado</th><th>CLA_TRAB</th><th>Concepto</th><th>Monto</th><th>Origen</th><th>Folio</th></tr>
+  </thead>
+  <tbody>
+    <% if (!movimientos.length) { %>
+    <tr><td colspan="7" class="muted">Sin movimientos.</td></tr>
+    <% } %>
+    <% movimientos.forEach(function(m) { %>
+    <% const emp = m.empleadoId ? empMap.get(String(m.empleadoId)) : null; %>
+    <tr>
+      <td><%= m.fechaMovimiento ? new Date(m.fechaMovimiento).toLocaleDateString('es-MX') : '—' %></td>
+      <td><%= emp ? (emp.firstName + ' ' + emp.lastName) : '—' %></td>
+      <td><code><%= m.claTrab || '—' %></code></td>
+      <td><code><%= m.conceptoClave || m.claPerded || '—' %></code></td>
+      <td><%= (m.monto || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></td>
+      <td><%= m.origenMovimiento %></td>
+      <td><%= m.folioAuto != null ? m.folioAuto : '—' %></td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<% } %>
+<%- include('../Partials/layout-bottom') %>

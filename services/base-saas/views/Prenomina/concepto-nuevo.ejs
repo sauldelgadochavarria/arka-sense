@@ -1,0 +1,25 @@
+<%- include('../Partials/layout-top', { title: 'Nuevo concepto', session }) %>
+<p><a href="/prenomina-conceptos">← Volver a lista</a></p>
+<h1>Nuevo concepto</h1>
+<% if (!empresa) { %>
+<p>No hay empresa vinculada.</p>
+<% } else { %>
+<form method="post" action="/prenomina-conceptos" class="form-grid">
+  <input name="clave" placeholder="Clave (ej. P003)" maxlength="10" required style="text-transform:uppercase" />
+  <input name="codigoExterno" placeholder="Código externo" />
+  <input name="nombre" placeholder="Nombre" required />
+  <select name="tipo" required>
+    <option value="percepcion">Percepción</option>
+    <option value="deduccion">Deducción</option>
+  </select>
+  <input name="cuentaContable" placeholder="Cuenta contable" />
+  <select name="formula">
+    <% formulasConcepto.forEach(function(f) { %>
+    <option value="<%= f.value %>"><%= f.label %></option>
+    <% }); %>
+  </select>
+  <input name="orden" type="number" min="0" placeholder="Orden" value="99" />
+  <button type="submit">Crear concepto</button>
+</form>
+<% } %>
+<%- include('../Partials/layout-bottom') %>

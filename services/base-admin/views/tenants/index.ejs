@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Tenants — Arka-Presence Admin</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+    th { background: #f5f5f5; }
+    .badge { padding: 2px 8px; border-radius: 4px; font-size: 12px; }
+    .active { background: #d4edda; }
+    .pending { background: #fff3cd; }
+    .suspended { background: #f8d7da; }
+    a.btn { display: inline-block; padding: 8px 12px; background: #2563eb; color: #fff; text-decoration: none; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <h1>Tenants</h1>
+  <p><a class="btn" href="/admin/tenants/new">Nuevo tenant</a> · <a href="/admin/menus">Menús</a></p>
+  <table>
+    <thead>
+      <tr>
+        <th>Slug</th>
+        <th>Nombre</th>
+        <th>Estado</th>
+        <th>Plan</th>
+        <th>Acciones</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% tenants.forEach(function(t) { %>
+      <tr>
+        <td><code><%= t.slug %></code></td>
+        <td><%= t.displayName %></td>
+        <td><span class="badge <%= t.status %>"><%= t.status %></span></td>
+        <td><%= t.currentPlan || '—' %></td>
+        <td>
+          <a href="/admin/tenants/<%= t.tenantId %>">Ver</a>
+          <% if (t.status === 'active') { %>
+          · <a href="<%= tenantLoginUrl(t.slug) %>" target="_blank">Abrir app</a>
+          <% } %>
+        </td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table>
+</body>
+</html>

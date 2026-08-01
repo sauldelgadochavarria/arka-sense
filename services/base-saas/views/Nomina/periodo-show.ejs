@@ -1,0 +1,191 @@
+<%- include('../Partials/layout-top', { title: 'Período de nómina', session }) %>
+<h1>Período <%= periodo.tipoPeriodo %> · <%= periodo.tipoNomina %></h1>
+<p>
+  <strong><%= new Date(periodo.fechaInicio).toLocaleDateString('es-MX') %></strong>
+  al
+  <strong><%= new Date(periodo.fechaFin).toLocaleDateString('es-MX') %></strong>
+  · <%= periodo.diasPeriodo %> días
+  · Estatus: <span class="badge badge-<%= periodo.estatus === 'cerrado' ? 'baja' : periodo.estatus === 'calculado' ? 'activo' : periodo.estatus === 'calculando' ? 'suspendido' : 'suspendido' %>"><%= estatusLabels[periodo.estatus] || periodo.estatus %></span>
+</p>
+
+<% if (prenominaPeriodo) { %>
+<p class="muted">
+  Pre-nómina vinculada:
+  <a href="/prenomina-periodos/<%= prenominaPeriodo._id %>"><%= prenominaPeriodo.tipo %></a>
+  (<%= prenominaPeriodo.estatus %>) ·
+  <%= new Date(prenominaPeriodo.fechaInicio).toLocaleDateString('es-MX') %>
+  –
+  <%= new Date(prenominaPeriodo.fechaFin).toLocaleDateString('es-MX') %>.
+  Solo se calculan empleados con <strong>días trabajados, HE o percepciones</strong> en esa pre-nómina
+  (quien solo tiene faltas / ceros no entra).
+</p>
+<% } else if (periodo.payrollPeriodId) { %>
+<p class="muted warn-text">Pre-nómina vinculada no encontrada.</p>
+<% } else { %>
+<div class="alert alert-warning">
+  <strong>Sin pre-nómina vinculada.</strong>
+  El recálculo usa calendario/expediente (todos los activos, <%= periodo.diasPeriodo %> días).
+  La asistencia de pre-nómina <em>no</em> aplica hasta vincular.
+  <% if (typeof prenominaCandidatos !== 'undefined' && prenominaCandidatos.length) { %>
+  <form method="post" action="/nomina/periodos/<%= periodo._id %>/vincular-prenomina" class="form-grid" style="margin-top:0.75rem">
+    <label>Vincular pre-nómina (alinea fechas a ese período)
+      <select name="payrollPeriodId" required>
+        <option value="">— Elegir —</option>
+        <% prenominaCandidatos.forEach(function(p) { %>
+        <option value="<%= p._id %>">
+          #<%= p.numeroPeriodo != null ? p.numeroPeriodo : '—' %>
+          <%= p.tipo %>
+          <%= new Date(p.fechaInicio).toLocaleDateString('es-MX') %> – <%= new Date(p.fechaFin).toLocaleDateString('es-MX') %>
+          (<%= p.estatus %><%= p.totales && p.totales.empleados ? ', ' + p.totales.empleados + ' emp.' : '' %>)
+        </option>
+        <% }); %>
+      </select>
+    </label>
+    <button type="submit">Vincular y alinear fechas</button>
+  </form>
+  <% } else { %>
+  <p class="muted" style="margin:0.5rem 0 0">No hay pre-nóminas compartidas abiertas/calculadas. Ábrelas en Pre-nómina o márcalas «compartir con nómina».</p>
+  <% } %>
+</div>
+<% } %>
+
+<% if (preflight) { %>
+  <% if (!preflight.ok) { %>
+<div class="alert alert-warning">
+  <strong>Preflight — no se puede calcular:</strong>
+  <ul>
+    <% preflight.bloqueos.forEach(function(b) { %><li><%= b.mensaje %></li><% }); %>
+  </ul>
+</div>
+  <% } else if (preflight.advertencias.length) { %>
+<div class="alert alert-warning">
+  <strong>Advertencias antes de calcular:</strong>
+  <ul>
+    <% preflight.advertencias.forEach(function(a) { %><li><%= a.mensaje %></li><% }); %>
+  </ul>
+</div>
+  <% } else { %>
+<p class="muted">Preflight OK — <%= preflight.resumen.empleadosCalculables %> empleado(s) calculables, <%= preflight.resumen.formulas %> fórmulas vigentes.</p>
+  <% } %>
+<% } %>
+
+<div id="calculo-progress" class="calculo-progress <%= periodo.estatus === 'calculando' || (calculoJob && ['pending','running'].includes(calculoJob.estatus)) ? '' : 'hidden' %>">
+  <h3>Cálculo en curso</h3>
+  <div class="progress-bar"><div id="progress-fill" class="progress-fill" style="width:0%"></div></div>
+  <p id="progress-text" class="muted">Iniciando…</p>
+  <ul id="progress-errores" class="alert-list-compact"></ul>
+</div>
+
+<div class="toolbar">
+  <a class="btn" href="/nomina/periodos">← Períodos</a>
+  <% if (periodo.estatus !== 'cerrado' && periodo.estatus !== 'calculando') { %>
+  <form method="post" action="/nomina/periodos/<%= periodo._id %>/calcular" class="inline-form">
+    <button type="submit" <%= preflight && !preflight.ok ? 'disabled' : '' %>>Calcular nómina (async)</button>
+  </form>
+  <% } %>
+  <% if (periodo.estatus === 'calculado') { %>
+  <form method="post" action="/nomina/periodos/<%= periodo._id %>/cerrar" class="inline-form" onsubmit="return confirm('¿Cerrar período? No se podrá recalcular.');">
+    <button type="submit">Cerrar período</button>
+  </form>
+  <% } %>
+</div>
+
+<% if (periodo.totales && periodo.totales.empleados) { %>
+<div class="summary-cards">
+  <div class="card"><strong><%= periodo.totales.empleados %></strong> recibos</div>
+  <% if (periodo.totales.empleadosConError) { %>
+  <div class="card warn"><strong><%= periodo.totales.empleadosConError %></strong> errores</div>
+  <% } %>
+  <div class="card"><strong>$<%= (periodo.totales.percepciones || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></strong> percepciones</div>
+  <div class="card"><strong>$<%= (periodo.totales.deducciones || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></strong> deducciones</div>
+  <div class="card"><strong>$<%= (periodo.totales.neto || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></strong> neto</div>
+</div>
+<% } %>
+
+<% if (calculoJob && calculoJob.estatus === 'failed') { %>
+<div class="alert alert-warning"><strong>Error en cálculo:</strong> <%= calculoJob.error %></div>
+<% } %>
+
+<h2>Recibos</h2>
+<table>
+  <thead>
+    <tr>
+      <th>No.</th>
+      <th>Empleado</th>
+      <th>Días lab.</th>
+      <th>Faltas</th>
+      <th>Origen insumos</th>
+      <th>Percepciones</th>
+      <th>Deducciones</th>
+      <th>Neto</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody id="recibos-body">
+    <% if (!recibos.length) { %>
+    <tr><td colspan="9" class="muted">Sin recibos. Ejecuta el cálculo del período.</td></tr>
+    <% } %>
+    <% recibos.forEach(function(r) {
+         const fuente = r.insumosFuente || 'default';
+         const fuenteLabel = fuente === 'prenomina' ? 'Pre-nómina / asistencia'
+           : (fuente === 'prenomina_sin_detalle' ? 'Pre-nómina (sin detalle)' : 'Calendario / expediente');
+    %>
+    <tr>
+      <td><%= r.numEmpleado %></td>
+      <td><%= r.empleadoNombre %></td>
+      <td><%= r.diasLaborados %></td>
+      <td><%= r.faltas %></td>
+      <td class="muted small"><%= fuenteLabel %></td>
+      <td>$<%= r.totalPercepciones.toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></td>
+      <td>$<%= r.totalDeducciones.toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></td>
+      <td>$<%= r.netoPagar.toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></td>
+      <td><a href="/nomina/periodos/<%= periodo._id %>/recibos/<%= r._id %>">Detalle</a></td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+
+<script>
+(function() {
+  const periodoId = '<%= periodo._id %>';
+  const estatus = '<%= periodo.estatus %>';
+  const jobInicial = <%- JSON.stringify(calculoJob ? { estatus: calculoJob.estatus } : null) %>;
+  const debePoll = estatus === 'calculando' || (jobInicial && ['pending','running'].includes(jobInicial.estatus));
+  if (!debePoll) return;
+
+  const box = document.getElementById('calculo-progress');
+  const fill = document.getElementById('progress-fill');
+  const text = document.getElementById('progress-text');
+  const errList = document.getElementById('progress-errores');
+  box.classList.remove('hidden');
+
+  async function poll() {
+    try {
+      const res = await fetch('/nomina/periodos/' + periodoId + '/estado-calculo');
+      const data = await res.json();
+      if (!data.ok || !data.job) return;
+      const j = data.job;
+      fill.style.width = j.porcentaje + '%';
+      text.textContent = j.estatus === 'running' || j.estatus === 'pending'
+        ? `Procesando ${j.progreso.procesados || 0} / ${j.progreso.total || '…'} empleados`
+        : j.estatus === 'completed'
+          ? `Completado: ${j.progreso.exitos} recibos, ${j.progreso.errores} errores`
+          : 'Falló: ' + (j.error || 'error desconocido');
+
+      if (j.erroresDetalle && j.erroresDetalle.length) {
+        errList.innerHTML = j.erroresDetalle.slice(-5).map(function(e) {
+          return '<li>' + (e.numEmpleado || '') + ' ' + (e.nombre || '') + ': ' + e.error + '</li>';
+        }).join('');
+      }
+
+      if (j.estatus === 'completed' || j.estatus === 'failed') {
+        setTimeout(function() { window.location.reload(); }, 1200);
+        return;
+      }
+    } catch (e) { /* ignore */ }
+    setTimeout(poll, 1500);
+  }
+  poll();
+})();
+</script>
+<%- include('../Partials/layout-bottom') %>

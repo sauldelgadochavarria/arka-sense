@@ -1,0 +1,30 @@
+<%- include('../Partials/layout-top', { title: 'Logs de sincronización', session }) %>
+<h1>Logs de sincronización</h1>
+<div class="toolbar">
+  <a class="btn" href="/integraciones/perfiles">Perfiles</a>
+  <a class="btn" href="/integraciones/exportacion">Exportación</a>
+  <a class="btn" href="/integraciones/abc">ABC</a>
+</div>
+<table>
+  <thead>
+    <tr><th>Fecha</th><th>Tipo</th><th>Adaptador</th><th>Estatus</th><th>OK</th><th>Errores</th><th>Conflictos</th><th></th></tr>
+  </thead>
+  <tbody>
+    <% if (!logs.length) { %>
+    <tr><td colspan="8">Sin registros de sincronización.</td></tr>
+    <% } %>
+    <% logs.forEach(function(l) { %>
+    <tr>
+      <td><%= new Date(l.createdAt).toLocaleString('es-MX') %></td>
+      <td><%= tiposSync[l.tipo] || l.tipo %></td>
+      <td><%= l.adaptador || '—' %></td>
+      <td><span class="badge badge-<%= l.estatus === 'ok' ? 'activo' : l.estatus === 'parcial' ? 'suspendido' : 'baja' %>"><%= estatusSync[l.estatus] || l.estatus %></span></td>
+      <td><%= l.registrosOk %></td>
+      <td><%= l.registrosError %></td>
+      <td><%= (l.conflictos || []).length %></td>
+      <td><a href="/integraciones/logs/<%= l._id %>">Detalle</a></td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<%- include('../Partials/layout-bottom') %>

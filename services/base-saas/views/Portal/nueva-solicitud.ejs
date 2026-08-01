@@ -1,0 +1,18 @@
+<%- include('partials/layout-top', { title: 'Nueva solicitud', session }) %>
+<p><a href="/portal/solicitudes">← Mis solicitudes</a></p>
+<h1>Nueva solicitud</h1>
+
+<form method="post" action="/portal/solicitudes" class="form-grid form-wide">
+  <select name="tipoIncidenciaId" required>
+    <option value="">— Tipo de solicitud —</option>
+    <% tipos.forEach(function(t) { %>
+    <option value="<%= t._id %>" <%= tipoSugerido === t.clave ? 'selected' : '' %>><%= t.nombre %><%= t.clave === 'FR' ? ' (justificación de marcaje)' : '' %></option>
+    <% }); %>
+  </select>
+  <input type="date" name="fechaInicio" value="<%= fechaSugerida ? fechaSugerida : '' %>" required />
+  <input type="date" name="fechaFin" placeholder="Fecha fin (opcional)" value="<%= fechaSugerida ? fechaSugerida : '' %>" />
+  <textarea name="motivo" placeholder="Motivo de la solicitud" rows="3"></textarea>
+  <input name="documentoReferencia" placeholder="Referencia de documento (folio o URL)" />
+  <button type="submit">Enviar solicitud</button>
+</form>
+<%- include('partials/layout-bottom') %>

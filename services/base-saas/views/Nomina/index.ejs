@@ -1,0 +1,31 @@
+<%- include('../Partials/layout-top', { title: 'Nómina', session }) %>
+<div class="page-header">
+  <h1><%= modulo.titulo %></h1>
+  <p class="page-subtitle"><%= modulo.descripcion %></p>
+</div>
+
+<% if (!empresa) { %>
+<p>No hay empresa vinculada a este tenant.</p>
+<% } else { %>
+
+<div class="module-banner nomina-banner">
+  <p><strong>En preparación.</strong> <%= relacionPrenomina %></p>
+  <p class="muted">Versión scaffold: <%= modulo.version %></p>
+</div>
+
+<div class="card-grid">
+  <% secciones.forEach(function(s) { %>
+  <a class="module-card" href="<%= s.ruta %>">
+    <h3><%= s.titulo %></h3>
+    <p><%= s.descripcion %></p>
+    <span class="badge badge-suspendido"><%= s.estado === 'pendiente' ? 'Próximamente' : s.estado === 'activo' ? 'Disponible' : s.estado %></span>
+  </a>
+  <% }); %>
+</div>
+
+<div class="toolbar" style="margin-top:1.5rem">
+  <a class="btn" href="/prenomina-periodos">Ir a pre-nómina (asistencia)</a>
+  <a class="btn" href="/integraciones/exportacion">Exportar a ERP</a>
+</div>
+<% } %>
+<%- include('../Partials/layout-bottom') %>

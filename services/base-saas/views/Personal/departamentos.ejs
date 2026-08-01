@@ -1,0 +1,32 @@
+<%- include('../Partials/layout-top', { title: 'Departamentos', session }) %>
+<h1>Departamentos</h1>
+<div class="toolbar">
+  <a class="btn btn-primary" href="/personal-departamentos/nuevo">+ Nuevo</a>
+</div>
+<% if (!empresa) { %>
+<p>No hay empresa vinculada a este tenant. Activa el tenant desde Arka-Presence Admin.</p>
+<% } else { %>
+<table>
+  <thead><tr><th>Nombre</th><th>Cód. externo</th><th>Cód. legado</th><th>Cuenta contable</th><th>Padre</th><th>Descripción</th><th>Activo</th><th></th></tr></thead>
+  <tbody>
+    <% departamentos.forEach(function(d) { %>
+    <tr class="<%= !d.activo ? 'row-muted' : '' %>">
+      <td><%= d.nombre %></td>
+      <td><%= d.codigoExterno || '—' %></td>
+      <td><%= d.codigoLegado != null ? d.codigoLegado : '—' %></td>
+      <td><%= d.cuentaContableExterna || '—' %></td>
+      <td><%= d.parentId ? (parentMap.get(String(d.parentId)) || '—') : '—' %></td>
+      <td><%= d.descripcion || '—' %></td>
+      <td><%= d.activo ? 'Sí' : 'No' %></td>
+      <td class="actions">
+        <a href="/personal-departamentos/<%= d._id %>/edit">Editar</a>
+        <form method="post" action="/personal-departamentos/<%= d._id %>/toggle" class="inline-form">
+          <button type="submit"><%= d.activo ? 'Desactivar' : 'Activar' %></button>
+        </form>
+      </td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<% } %>
+<%- include('../Partials/layout-bottom') %>

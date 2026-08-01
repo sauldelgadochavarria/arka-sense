@@ -1,0 +1,79 @@
+<%- include('../Partials/layout-top', { title: 'Períodos de nómina', session }) %>
+<h1>Períodos de nómina</h1>
+<div class="toolbar">
+  <a class="btn" href="/nomina">← Nómina</a>
+</div>
+<% if (!empresa) { %>
+<p>No hay empresa vinculada a este tenant.</p>
+<% } else { %>
+
+<h2>Nuevo período</h2>
+<form method="post" action="/nomina/periodos" class="form-grid">
+  <label>Tipo de período
+    <select name="tipoPeriodo" required>
+      <% tiposPeriodo.forEach(function(t) { %>
+      <option value="<%= t.value %>"><%= t.label %></option>
+      <% }); %>
+    </select>
+  </label>
+  <label>Tipo de nómina
+    <select name="tipoNomina" required>
+      <% tiposNomina.forEach(function(t) { %>
+      <option value="<%= t.value %>"><%= t.label %></option>
+      <% }); %>
+    </select>
+  </label>
+  <label>Fecha de referencia
+    <input type="date" name="fechaReferencia" value="<%= new Date().toISOString().slice(0,10) %>" />
+  </label>
+  <label>Período pre-nómina compartido (insumos, opcional)
+    <select name="payrollPeriodId">
+      <option value="">— Sin vincular —</option>
+      <% prenominaPeriodos.forEach(function(p) { %>
+      <option value="<%= p._id %>">
+        #<%= p.numeroPeriodo != null ? p.numeroPeriodo : '—' %>
+        <%= p.tipo %>
+        <%= new Date(p.fechaInicio).toLocaleDateString('es-MX') %> – <%= new Date(p.fechaFin).toLocaleDateString('es-MX') %>
+        (<%= p.estatus %>)
+      </option>
+      <% }); %>
+    </select>
+  </label>
+  <p class="muted small" style="grid-column:1/-1">
+    Catálogo/pre-nómina y nómina formal son colecciones distintas: pueden tener fechas distintas
+    (p. ej. semana sáb–vie del catálogo vs lun–dom al abrir sin vínculo).
+    <strong>Al elegir pre-nómina aquí, las fechas se copian de esa pre-nómina</strong>.
+    Si abres sin vincular, el cálculo ignora la asistencia.
+  </p>
+  <label>Notas
+    <input name="notas" placeholder="Opcional" />
+  </label>
+  <button type="submit">Abrir período</button>
+</form>
+
+<h2>Períodos</h2>
+<table>
+  <thead>
+    <tr><th>Tipo período</th><th>Tipo nómina</th><th>Inicio</th><th>Fin</th><th>Pre-nómina</th><th>Estatus</th><th>Empleados</th><th>Neto</th><th></th></tr>
+  </thead>
+  <tbody>
+    <% if (!periodos.length) { %>
+    <tr><td colspan="9" class="muted">Sin períodos. Al abrir el primero se sembrarán conceptos y fórmulas base.</td></tr>
+    <% } %>
+    <% periodos.forEach(function(p) { %>
+    <tr>
+      <td><%= p.tipoPeriodo %></td>
+      <td><%= p.tipoNomina %></td>
+      <td><%= new Date(p.fechaInicio).toLocaleDateString('es-MX') %></td>
+      <td><%= new Date(p.fechaFin).toLocaleDateString('es-MX') %></td>
+      <td class="muted small"><%= p.payrollPeriodId ? 'Vinculada' : 'Sin vincular' %></td>
+      <td><span class="badge badge-<%= p.estatus === 'cerrado' ? 'baja' : p.estatus === 'calculado' ? 'activo' : 'suspendido' %>"><%= estatusLabels[p.estatus] || p.estatus %></span></td>
+      <td><%= p.totales?.empleados || 0 %></td>
+      <td>$<%= (p.totales?.neto || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></td>
+      <td><a href="/nomina/periodos/<%= p._id %>">Ver</a></td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<% } %>
+<%- include('../Partials/layout-bottom') %>

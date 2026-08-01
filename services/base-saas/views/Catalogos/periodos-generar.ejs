@@ -1,0 +1,138 @@
+<%- include('../Partials/layout-top', { title: 'Generar períodos', session }) %>
+<p><a href="/catalogos/periodos">← Administración de períodos</a></p>
+<h1>Generar períodos del año</h1>
+<% if (!empresa) { %>
+<p>No hay empresa vinculada.</p>
+<% } else { %>
+<p class="muted">
+  Se crearán todos los períodos del año para el tipo seleccionado, en estatus <strong>pendiente</strong>,
+  calculando fechas a partir de la fecha inicial del primer período.
+</p>
+
+<form method="post" action="/catalogos/periodos/generar" class="form-grid form-wide" id="form-generar">
+  <label>
+    Tipo de período *
+    <select name="tipoPeriodoId" id="tipoPeriodoId" required>
+      <option value="">— Seleccione —</option>
+      <% tiposPeriodo.forEach(function(tp) { %>
+      <option value="<%= tp._id %>"
+        data-motor="<%= tp.tipoMotor %>"
+        data-dias="<%= tp.diasPeriodo %>"
+        data-aplica-asistencia="<%= tp.aplicaAsistenciaPrenomina !== false ? '1' : '0' %>"
+        data-compartir-nomina="<%= tp.compartirConNomina !== false ? '1' : '0' %>">
+        <%= tp.codigoLegado %> — <%= tp.nombre %> (<%= tp.tipoMotor %>, <%= tp.diasPeriodo %> días)
+      </option>
+      <% }); %>
+    </select>
+  </label>
+  <div id="tipo-flags-panel" class="info-panel tipo-periodo-resumen" hidden>
+    <span class="flag-labels">
+      <label class="flag-readonly" id="flag-aplica-asistencia">
+        <input type="checkbox" disabled />
+        Aplica asistencia/pre-nómina
+      </label>
+      <label class="flag-readonly" id="flag-compartir-nomina">
+        <input type="checkbox" disabled />
+        Compartir con nómina
+      </label>
+    </span>
+  <p class="muted small">Se copiarán automáticamente del tipo de período y quedarán guardados en cada período generado.</p>
+  </div>
+  <label>
+    Año *
+    <input type="number" name="anio" id="anio" min="2000" max="2100" value="<%= anioActual %>" required />
+  </label>
+  <label>
+    Fecha inicial del primer período *
+    <input type="date" name="fechaInicial" id="fechaInicial" required />
+  </label>
+  <label>
+    Tipo de nómina
+    <select name="tipoNomina">
+      <optgroup label="Ordinarios">
+        <% tiposNominaOrdinarios.forEach(function(tn) { %>
+        <option value="<%= tn.value %>" <%= tn.value === 'ordinaria' ? 'selected' : '' %>><%= tn.label %></option>
+        <% }); %>
+      </optgroup>
+      <optgroup label="Especiales / extraordinarios">
+        <% tiposNominaExtra.forEach(function(tn) { %>
+        <option value="<%= tn.value %>"><%= tn.label %></option>
+        <% }); %>
+      </optgroup>
+    </select>
+  </label>
+  <input name="notas" placeholder="Notas (opcional)" />
+  <button type="submit">Generar períodos pendientes</button>
+</form>
+
+<h2>Vista previa</h2>
+<p class="muted">Revise las fechas antes de confirmar la generación.</p>
+<button type="button" class="btn" id="btn-preview">Calcular vista previa</button>
+<div id="preview-box" class="preview-box muted" style="margin-top:1rem"></div>
+
+<script>
+(function() {
+  const selectTipo = document.getElementById('tipoPeriodoId');
+  const panel = document.getElementById('tipo-flags-panel');
+  const flagAsist = document.getElementById('flag-aplica-asistencia');
+  const flagNomina = document.getElementById('flag-compartir-nomina');
+
+  function syncTipoFlags() {
+    const opt = selectTipo.options[selectTipo.selectedIndex];
+    if (!opt || !opt.value) {
+      panel.hidden = true;
+      return;
+    }
+    const aplica = opt.dataset.aplicaAsistencia === '1';
+    const compartir = opt.dataset.compartirNomina === '1';
+    flagAsist.querySelector('input').checked = aplica;
+    flagAsist.classList.toggle('is-on', aplica);
+    flagNomina.querySelector('input').checked = compartir;
+    flagNomina.classList.toggle('is-on', compartir);
+    panel.hidden = false;
+  }
+
+  selectTipo.addEventListener('change', syncTipoFlags);
+  syncTipoFlags();
+
+  const btn = document.getElementById('btn-preview');
+  const box = document.getElementById('preview-box');
+  btn.addEventListener('click', async function() {
+    const tipoPeriodoId = document.getElementById('tipoPeriodoId').value;
+    const anio = document.getElementById('anio').value;
+    const fechaInicial = document.getElementById('fechaInicial').value;
+    if (!tipoPeriodoId || !anio || !fechaInicial) {
+      box.textContent = 'Complete tipo, año y fecha inicial.';
+      return;
+    }
+    box.textContent = 'Calculando…';
+    try {
+      const res = await fetch('/catalogos/periodos/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tipoPeriodoId, anio, fechaInicial })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Error');
+      if (!data.bloques.length) {
+        box.textContent = 'Sin períodos para esos datos.';
+        return;
+      }
+      const tp = data.tipoPeriodo || {};
+      const flagsHtml = tp.nombre
+        ? '<p class="tipo-preview-flags"><strong>' + tp.codigoLegado + ' — ' + tp.nombre + '</strong> · ' +
+          'Asistencia/pre-nómina: <strong>' + (tp.aplicaAsistenciaPrenomina ? 'Sí' : 'No') + '</strong> · ' +
+          'Compartir nómina: <strong>' + (tp.compartirConNomina ? 'Sí' : 'No') + '</strong></p>'
+        : '';
+      box.innerHTML = flagsHtml + '<p><strong>' + data.total + ' períodos</strong></p><table><thead><tr><th>#</th><th>Inicio</th><th>Fin</th></tr></thead><tbody>' +
+        data.bloques.map(function(b) {
+          return '<tr><td>' + b.numeroPeriodo + '</td><td>' + b.fechaInicio + '</td><td>' + b.fechaFin + '</td></tr>';
+        }).join('') + '</tbody></table>';
+    } catch (e) {
+      box.textContent = e.message;
+    }
+  });
+})();
+</script>
+<% } %>
+<%- include('../Partials/layout-bottom') %>

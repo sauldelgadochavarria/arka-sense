@@ -1,0 +1,66 @@
+<%- include('../Partials/layout-top', { title: 'Cambios de turno', session }) %>
+<p><a href="/asistencia-rotaciones">← Plantillas</a></p>
+<h1>Cambios de turno puntuales</h1>
+<p class="muted">Sobrescribe el turno de un empleado en una fecha específica (sin cambiar su plantilla). Tiene prioridad sobre plantilla y turno del expediente.</p>
+
+<% if (!empresa) { %>
+<p>No hay empresa vinculada.</p>
+<% } else { %>
+
+<h2>Registrar cambio</h2>
+<form method="post" action="/asistencia-rotaciones/cambios" class="form-grid">
+  <label>Empleado
+    <select name="empleadoId" required>
+      <option value="">— Seleccionar —</option>
+      <% empleados.forEach(function(e) { %>
+      <option value="<%= e._id %>"><%= e.firstName %> <%= e.lastName %> (<%= e.numEmpleado %>)</option>
+      <% }); %>
+    </select>
+  </label>
+  <label>Fecha <input type="date" name="fecha" required /></label>
+  <label>Turno ese día
+    <select name="turnoId" required>
+      <option value="">— Seleccionar —</option>
+      <option value="descanso">Descanso forzado</option>
+      <% turnos.forEach(function(t) { %>
+      <option value="<%= t._id %>"><%= t.nombre %></option>
+      <% }); %>
+    </select>
+  </label>
+  <input name="motivo" placeholder="Motivo (opcional)" />
+  <button type="submit">Guardar cambio</button>
+</form>
+
+<h2>Cambios programados</h2>
+<form method="get" action="/asistencia-rotaciones/cambios" class="inline-form toolbar">
+  <label>Desde <input type="date" name="desde" value="<%= desde %>" /></label>
+  <label>Hasta <input type="date" name="hasta" value="<%= hasta %>" /></label>
+  <button type="submit">Filtrar</button>
+</form>
+
+<table>
+  <thead>
+    <tr><th>Fecha</th><th>Empleado</th><th>Turno</th><th>Motivo</th><th>Activo</th><th></th></tr>
+  </thead>
+  <tbody>
+    <% if (!cambios.length) { %>
+    <tr><td colspan="6" class="muted">Sin cambios en el rango.</td></tr>
+    <% } %>
+    <% cambios.forEach(function(c) { %>
+    <tr class="<%= !c.activo ? 'row-muted' : '' %>">
+      <td><%= new Date(c.fecha).toLocaleDateString('es-MX') %></td>
+      <td><%= empMap.get(String(c.empleadoId)) || '—' %></td>
+      <td><%= c.esDescanso ? 'Descanso' : (turnoMap.get(String(c.turnoId)) || '—') %></td>
+      <td><%= c.motivo || '—' %></td>
+      <td><%= c.activo ? 'Sí' : 'No' %></td>
+      <td>
+        <form method="post" action="/asistencia-rotaciones/cambios/<%= c._id %>/toggle" class="inline-form">
+          <button type="submit"><%= c.activo ? 'Cancelar' : 'Reactivar' %></button>
+        </form>
+      </td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<% } %>
+<%- include('../Partials/layout-bottom') %>

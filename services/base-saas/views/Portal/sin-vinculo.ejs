@@ -1,0 +1,16 @@
+<%- include('partials/layout-top', { title: 'Cuenta sin vincular', session }) %>
+
+<div class="page-header">
+  <h1>Portal empleado</h1>
+  <p class="page-subtitle">Tu usuario aún no está vinculado a un expediente de empleado activo.</p>
+</div>
+
+<div class="panel">
+  <p>Contacta a Recursos Humanos para que asocien tu cuenta con tu número de empleado.</p>
+  <p class="muted">Usuario: <strong><%= session.email || session.user %></strong></p>
+  <div class="toolbar">
+    <a class="btn" href="/logout">Cerrar sesión</a>
+  </div>
+</div>
+
+<%- include('partials/layout-bottom') %>

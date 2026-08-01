@@ -1,0 +1,52 @@
+<%- include('../../Partials/layout-top', { title: 'Catálogo SAT', session }) %>
+<h1>Catálogo SAT</h1>
+<div class="toolbar">
+  <a class="btn" href="/nomina/catalogos">← Catálogos</a>
+</div>
+
+<h2>Nueva clave</h2>
+<form method="post" action="/nomina/catalogos/sat" class="form-grid">
+  <select name="catalogo" required>
+    <% catalogosSat.forEach(function(c) { %>
+    <option value="<%= c.value %>" <%= filtroCatalogo === c.value ? 'selected' : '' %>><%= c.label %></option>
+    <% }); %>
+  </select>
+  <input name="clave" placeholder="Clave (ej. 001)" maxlength="10" required />
+  <input name="descripcion" placeholder="Descripción" required />
+  <input name="vigenciaDesde" type="date" />
+  <button type="submit">Agregar</button>
+</form>
+
+<div class="toolbar" style="margin-top:1rem">
+  <span>Filtrar:</span>
+  <a class="btn <%= !filtroCatalogo ? 'btn-active' : '' %>" href="/nomina/catalogos/sat">Todos</a>
+  <% catalogosSat.forEach(function(c) { %>
+  <a class="btn <%= filtroCatalogo === c.value ? 'btn-active' : '' %>" href="/nomina/catalogos/sat?catalogo=<%= c.value %>"><%= c.label %></a>
+  <% }); %>
+</div>
+
+<table>
+  <thead>
+    <tr><th>Catálogo</th><th>Clave</th><th>Descripción</th><th>Vigencia</th><th>Activo</th><th></th></tr>
+  </thead>
+  <tbody>
+    <% if (!entradas.length) { %>
+    <tr><td colspan="6" class="muted">Sin claves. Ejecuta <code>seed:catalogo-sat</code> o agrega manualmente.</td></tr>
+    <% } %>
+    <% entradas.forEach(function(e) { %>
+    <tr class="<%= !e.activo ? 'row-muted' : '' %>">
+      <td><%= catalogoLabel(e.catalogo) %></td>
+      <td><code><%= e.clave %></code></td>
+      <td><%= e.descripcion %></td>
+      <td><%= new Date(e.vigenciaDesde).toLocaleDateString('es-MX') %></td>
+      <td><%= e.activo ? 'Sí' : 'No' %></td>
+      <td>
+        <form method="post" action="/nomina/catalogos/sat/<%= e._id %>/toggle" class="inline-form">
+          <button type="submit"><%= e.activo ? 'Desactivar' : 'Activar' %></button>
+        </form>
+      </td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<%- include('../../Partials/layout-bottom') %>

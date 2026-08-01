@@ -1,0 +1,63 @@
+<%- include('../Partials/layout-top', { title: 'Comprobante pre-nómina', session }) %>
+<h1>Comprobante de pre-nómina</h1>
+<p>
+  <strong><%= empleado.firstName %> <%= empleado.lastName %></strong><br />
+  Período: <%= new Date(periodo.fechaInicio).toLocaleDateString('es-MX') %> — <%= new Date(periodo.fechaFin).toLocaleDateString('es-MX') %>
+</p>
+
+<div class="toolbar">
+  <a class="btn" href="/prenomina-periodos/<%= periodo._id %>">← Volver al período</a>
+  <button type="button" onclick="window.print()">Imprimir</button>
+</div>
+
+<h2>Resumen de asistencia</h2>
+<ul>
+  <li>Días trabajados: <%= detalle.diasTrabajados %></li>
+  <li>Faltas (informativo): <%= detalle.diasFalta %> <span class="muted small">— no se descuentan si el sueldo ya es solo por días trabajados</span></li>
+  <li>Retardo (min): <%= detalle.minutosRetardo %></li>
+  <li>Horas extra (min): <%= detalle.minutosHorasExtra %></li>
+  <li>Salida anticipada (min): <%= detalle.minutosSalidaAnticipada %></li>
+  <li>Salario diario: $<%= detalle.salarioDiario.toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></li>
+</ul>
+
+<h2>Percepciones</h2>
+<table>
+  <thead><tr><th>Clave</th><th>Concepto</th><th>Monto</th></tr></thead>
+  <tbody>
+    <% detalle.percepciones.forEach(function(l) { %>
+    <tr><td><%= l.clave %></td><td><%= l.nombre %></td><td>$<%= l.monto.toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></td></tr>
+    <% }); %>
+    <tr><td colspan="2"><strong>Total percepciones</strong></td><td><strong>$<%= detalle.totalPercepciones.toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></strong></td></tr>
+  </tbody>
+</table>
+
+<h2>Deducciones</h2>
+<table>
+  <thead><tr><th>Clave</th><th>Concepto</th><th>Monto</th></tr></thead>
+  <tbody>
+    <% detalle.deducciones.forEach(function(l) { %>
+    <tr><td><%= l.clave %></td><td><%= l.nombre %></td><td>$<%= l.monto.toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></td></tr>
+    <% }); %>
+    <tr><td colspan="2"><strong>Total deducciones</strong></td><td><strong>$<%= detalle.totalDeducciones.toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></strong></td></tr>
+  </tbody>
+</table>
+
+<p class="neto-total"><strong>Neto a pagar: $<%= detalle.netoPagar.toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></strong></p>
+
+<% if (detalle.ajustesManuales && detalle.ajustesManuales.length) { %>
+<h2>Bitácora de ajustes manuales</h2>
+<table>
+  <thead><tr><th>Fecha</th><th>Concepto</th><th>Monto</th><th>Nota</th></tr></thead>
+  <tbody>
+    <% detalle.ajustesManuales.forEach(function(a) { %>
+    <tr>
+      <td><%= new Date(a.fecha).toLocaleString('es-MX') %></td>
+      <td><%= a.concepto %></td>
+      <td>$<%= a.monto.toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></td>
+      <td><%= a.nota || '—' %></td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<% } %>
+<%- include('../Partials/layout-bottom') %>

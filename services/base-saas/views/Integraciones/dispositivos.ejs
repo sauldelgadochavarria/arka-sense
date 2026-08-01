@@ -1,0 +1,61 @@
+<%- include('../Partials/layout-top', { title: 'Dispositivos biométricos', session }) %>
+<h1>Dispositivos biométricos</h1>
+<div class="toolbar">
+  <a class="btn" href="/integraciones/perfiles">Integraciones</a>
+  <a class="btn" href="/integraciones/grupos-dispositivos">Grupos</a>
+  <a class="btn" href="/integraciones/logs">Logs</a>
+</div>
+<% if (!empresa) { %>
+<p>No hay empresa vinculada.</p>
+<% } else { %>
+
+<h2>Registrar dispositivo</h2>
+<form method="post" action="/integraciones/dispositivos" class="form-grid">
+  <input name="nombre" placeholder="Nombre (ej. Checador entrada)" required />
+  <select name="tipo">
+    <% tiposDispositivo.forEach(function(t) { %>
+    <option value="<%= t.value %>"><%= t.label %></option>
+    <% }); %>
+  </select>
+  <input name="host" placeholder="IP o host" />
+  <input name="puerto" type="number" value="4370" placeholder="Puerto" />
+  <input name="ubicacion" placeholder="Ubicación" />
+  <select name="subsidiariaId">
+    <option value="">— Subsidiaria —</option>
+    <% subsidiarias.forEach(function(s) { %>
+    <option value="<%= s._id %>"><%= s.nombre %></option>
+    <% }); %>
+  </select>
+  <button type="submit">Registrar</button>
+</form>
+
+<h2>Dispositivos</h2>
+<table>
+  <thead>
+    <tr><th>Nombre</th><th>Tipo</th><th>Host</th><th>Estatus</th><th>Último ping</th><th>Catálogo</th><th></th></tr>
+  </thead>
+  <tbody>
+    <% if (!dispositivos.length) { %>
+    <tr><td colspan="7">Sin dispositivos registrados.</td></tr>
+    <% } %>
+    <% dispositivos.forEach(function(d) { %>
+    <tr>
+      <td><%= d.nombre %></td>
+      <td><%= d.tipo %></td>
+      <td><%= d.host || '—' %>:<%= d.puerto %></td>
+      <td><span class="badge badge-<%= d.estatus === 'online' ? 'activo' : d.estatus === 'offline' ? 'baja' : 'suspendido' %>"><%= d.estatus %></span></td>
+      <td><%= d.ultimoPing ? new Date(d.ultimoPing).toLocaleString('es-MX') : '—' %></td>
+      <td><%= d.empleadosSincronizados || 0 %> emp.<%= d.ultimaSincCatalogo ? ' · ' + new Date(d.ultimaSincCatalogo).toLocaleDateString('es-MX') : '' %></td>
+      <td>
+        <a href="/integraciones/dispositivos/<%= d._id %>/edit">Editar</a>
+        ·
+        <form method="post" action="/integraciones/dispositivos/<%= d._id %>/ping" style="display:inline"><button type="submit">Ping</button></form>
+        ·
+        <form method="post" action="/integraciones/dispositivos/<%= d._id %>/sinc-catalogo" style="display:inline"><button type="submit">Sync catálogo</button></form>
+      </td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<% } %>
+<%- include('../Partials/layout-bottom') %>

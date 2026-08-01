@@ -1,0 +1,148 @@
+<%- include('../Partials/layout-top', { title: 'Editar plantilla', session }) %>
+<p><a href="/asistencia-rotaciones">← Plantillas</a></p>
+<h1><%= plantilla.nombre %></h1>
+<p class="muted">
+  Tipo: <strong><% tiposPlantilla.forEach(function(t) { if (t.value === tipo) { %><%= t.label %><% } }); %></strong>
+  · <%= plantilla.descripcion || 'Sin descripción' %>
+</p>
+
+<form method="post" action="/asistencia-rotaciones/<%= plantilla._id %>" class="form-grid form-wide" id="formPlantilla">
+  <input name="nombre" value="<%= plantilla.nombre %>" required />
+  <input name="descripcion" value="<%= plantilla.descripcion || '' %>" placeholder="Descripción" />
+  <label>Tipo
+    <select name="tipo" id="tipoPlantilla">
+      <% tiposPlantilla.forEach(function(t) { %>
+      <option value="<%= t.value %>" <%= tipo === t.value ? 'selected' : '' %>><%= t.label %></option>
+      <% }); %>
+    </select>
+  </label>
+
+  <div id="panelFijo" class="plantilla-panel" <%= tipo !== 'fijo' ? 'hidden' : '' %>>
+    <h2>Turno fijo</h2>
+    <label>Turno asignado todos los días
+      <select name="turnoFijoId">
+        <option value="">— Seleccionar —</option>
+        <% turnos.forEach(function(t) { %>
+        <option value="<%= t._id %>" <%= String(plantilla.turnoFijoId) === String(t._id) ? 'selected' : '' %>><%= t.nombre %></option>
+        <% }); %>
+      </select>
+    </label>
+  </div>
+
+  <div id="panelSecuencia" class="plantilla-panel" <%= tipo !== 'secuencia' ? 'hidden' : '' %>>
+    <h2>Secuencia cíclica</h2>
+    <p class="muted">Define el ciclo día a día. Ejemplo: Matutino → Vespertino → Matutino → Nocturno → Descanso.</p>
+    <div id="cicloLista" class="ciclo-lista">
+      <% const ciclo = plantilla.cicloSlots && plantilla.cicloSlots.length ? plantilla.cicloSlots : [{ turnoId: null, esDescanso: false }]; %>
+      <% ciclo.forEach(function(step, i) { %>
+      <% const selected = step.esDescanso ? 'descanso' : (step.turnoId ? String(step.turnoId) : ''); %>
+      <div class="ciclo-paso">
+        <span class="ciclo-num"><%= i + 1 %></span>
+        <select name="ciclo_<%= i %>">
+          <option value="">— Sin asignar —</option>
+          <option value="descanso" <%= selected === 'descanso' ? 'selected' : '' %>>Descanso</option>
+          <% turnos.forEach(function(t) { %>
+          <option value="<%= t._id %>" <%= selected === String(t._id) ? 'selected' : '' %>><%= t.nombre %></option>
+          <% }); %>
+        </select>
+        <button type="button" class="btn-remove-paso" title="Quitar paso">×</button>
+      </div>
+      <% }); %>
+    </div>
+    <button type="button" id="btnAddPaso" class="btn">+ Agregar paso al ciclo</button>
+  </div>
+
+  <div id="panelMatriz" class="plantilla-panel" <%= tipo !== 'matriz' ? 'hidden' : '' %>>
+    <h2>Matriz multi-semana</h2>
+    <label>Semanas en el ciclo
+      <input name="numSemanas" type="number" min="1" max="12" value="<%= plantilla.numSemanas || 2 %>" />
+    </label>
+    <div class="matriz-rotacion-wrap">
+      <table class="matriz-rotacion">
+        <thead>
+          <tr>
+            <th>Semana / Día</th>
+            <% diasSemana.forEach(function(d) { %>
+            <th><%= d.short %></th>
+            <% }); %>
+          </tr>
+        </thead>
+        <tbody>
+          <% for (let s = 0; s < (plantilla.numSemanas || 2); s++) { %>
+          <tr>
+            <th>Semana <%= s + 1 %></th>
+            <% diasSemana.forEach(function(d) { %>
+            <% const key = s + '_' + d.value; const slot = slotMap.get(key); const selected = slot?.turnoId ? String(slot.turnoId) : (slot?.esDescanso ? 'descanso' : ''); %>
+            <td>
+              <select name="slot_<%= s %>_<%= d.value %>" class="matriz-select">
+                <option value="">—</option>
+                <option value="descanso" <%= selected === 'descanso' ? 'selected' : '' %>>Descanso</option>
+                <% turnos.forEach(function(t) { %>
+                <option value="<%= t._id %>" <%= selected === String(t._id) ? 'selected' : '' %>><%= t.nombre %></option>
+                <% }); %>
+              </select>
+            </td>
+            <% }); %>
+          </tr>
+          <% } %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <% if (preview && preview.length) { %>
+  <div class="plantilla-preview">
+    <h2>Vista previa (14 días desde hoy, fecha ancla = hoy)</h2>
+    <div class="preview-dias">
+      <% preview.forEach(function(d) { %>
+      <div class="preview-dia <%= d.esDescanso ? 'descanso' : '' %>" title="<%= d.fecha.toLocaleDateString('es-MX') %>">
+        <span class="preview-fecha"><%= d.fecha.toLocaleDateString('es-MX', { weekday: 'short', day: 'numeric' }) %></span>
+        <span class="preview-turno"><%= d.label %></span>
+      </div>
+      <% }); %>
+    </div>
+  </div>
+  <% } %>
+
+  <button type="submit">Guardar plantilla</button>
+</form>
+
+<script>
+(function () {
+  const tipoSel = document.getElementById('tipoPlantilla');
+  const panels = {
+    fijo: document.getElementById('panelFijo'),
+    secuencia: document.getElementById('panelSecuencia'),
+    matriz: document.getElementById('panelMatriz')
+  };
+  const turnosOpts = `<option value="">— Sin asignar —</option><option value="descanso">Descanso</option><% turnos.forEach(function(t) { %><option value="<%= t._id %>"><%= t.nombre %></option><% }); %>`;
+
+  function syncPanels() {
+    const t = tipoSel.value;
+    Object.keys(panels).forEach((k) => { panels[k].hidden = k !== t; });
+  }
+  tipoSel.addEventListener('change', syncPanels);
+
+  document.getElementById('btnAddPaso')?.addEventListener('click', () => {
+    const lista = document.getElementById('cicloLista');
+    const i = lista.querySelectorAll('.ciclo-paso').length;
+    const div = document.createElement('div');
+    div.className = 'ciclo-paso';
+    div.innerHTML = `<span class="ciclo-num">${i + 1}</span><select name="ciclo_${i}">${turnosOpts}</select><button type="button" class="btn-remove-paso">×</button>`;
+    lista.appendChild(div);
+    bindRemove(div);
+  });
+
+  function bindRemove(el) {
+    el.querySelector('.btn-remove-paso')?.addEventListener('click', () => {
+      el.remove();
+      document.querySelectorAll('#cicloLista .ciclo-paso').forEach((p, idx) => {
+        p.querySelector('.ciclo-num').textContent = idx + 1;
+        p.querySelector('select').name = `ciclo_${idx}`;
+      });
+    });
+  }
+  document.querySelectorAll('#cicloLista .ciclo-paso').forEach(bindRemove);
+})();
+</script>
+<%- include('../Partials/layout-bottom') %>

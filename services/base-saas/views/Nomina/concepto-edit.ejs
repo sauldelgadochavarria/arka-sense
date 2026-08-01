@@ -1,0 +1,928 @@
+<%- include('../Partials/layout-top', { title: 'Editor de concepto', session }) %>
+<%
+  const _tiposConcepto = (typeof tiposConcepto !== 'undefined' && tiposConcepto)
+    ? tiposConcepto
+    : [
+        { value: 'percepcion', label: 'Percepción' },
+        { value: 'deduccion', label: 'Deducción' },
+        { value: 'otro_pago', label: 'Otro pago' }
+      ];
+  const _naturalezas = (typeof naturalezas !== 'undefined' && naturalezas)
+    ? naturalezas
+    : [
+        { value: 'fiscal', label: 'Fiscal' },
+        { value: 'gravado', label: 'Gravado' },
+        { value: 'exento', label: 'Exento' },
+        { value: 'mixto', label: 'Mixto' },
+        { value: 'informativo', label: 'Informativo' }
+      ];
+  const _ambitosAplicaEn = (typeof ambitosAplicaEn !== 'undefined' && ambitosAplicaEn)
+    ? ambitosAplicaEn
+    : [
+        { value: 'nomina', label: 'Solo nómina' },
+        { value: 'prenomina', label: 'Solo pre-nómina' },
+        { value: 'ambos', label: 'Ambos' }
+      ];
+  const _opcionesSat = (typeof opcionesSat !== 'undefined' && opcionesSat) ? opcionesSat : [];
+  const _desgloseModos = (typeof desgloseModos !== 'undefined' && desgloseModos)
+    ? desgloseModos
+    : [
+        { value: 'todo_gravado', label: 'Todo gravado' },
+        { value: 'todo_exento', label: 'Todo exento' },
+        { value: 'tope_uma', label: 'Tope en UMAs' },
+        { value: 'tope_monto', label: 'Tope en monto' },
+        { value: 'formula', label: 'Fórmula gravado/exento' },
+        { value: 'regla_ley', label: 'Regla de ley (p.ej. HE)' }
+      ];
+  const _formulasPrenomina = (typeof formulasPrenomina !== 'undefined' && formulasPrenomina)
+    ? formulasPrenomina
+    : [
+        { value: '', label: '— (sin fórmula pre-nómina)' },
+        { value: 'salario_periodo', label: 'Salario del período' },
+        { value: 'horas_extra', label: 'Horas extra' },
+        { value: 'retardos', label: 'Retardos' },
+        { value: 'faltas', label: 'Faltas' },
+        { value: 'salida_anticipada', label: 'Salida anticipada' },
+        { value: 'manual', label: 'Manual' }
+      ];
+  const _tiposIncidenciaOpts = (typeof tiposIncidenciaOpts !== 'undefined' && tiposIncidenciaOpts)
+    ? tiposIncidenciaOpts
+    : [];
+  const _fases = (typeof fases !== 'undefined' && fases) ? fases : [
+    { value: '1', label: 'Fase 1 — Percepciones' },
+    { value: '2', label: 'Fase 2 — Acumuladores' },
+    { value: '3', label: 'Fase 3 — Deducciones' },
+    { value: '4', label: 'Fase 4 — Neto' }
+  ];
+  const _tiposAplicacion = (typeof tiposAplicacion !== 'undefined' && tiposAplicacion) ? tiposAplicacion : [
+    { value: 'FIJO', label: 'Fijo' },
+    { value: 'EVENTUAL', label: 'Eventual' }
+  ];
+
+  const selPeriodo = typeof periodoActivo !== 'undefined' ? periodoActivo : 'quincenal';
+  const selNomina = typeof nominaActiva !== 'undefined' ? nominaActiva : 'ordinaria';
+  const keyActiva = selPeriodo + '|' + selNomina;
+  const fActiva = formulasPorClave[keyActiva] || null;
+  const faseDefault = (concepto.fase != null) ? concepto.fase : ((typeof catalogEntry !== 'undefined' && catalogEntry && catalogEntry.fase) ? catalogEntry.fase : 1);
+  const appDefault = (typeof companyConfig !== 'undefined' && companyConfig && companyConfig.tipoAplicacion) ? companyConfig.tipoAplicacion : 'FIJO';
+  const faseActual = fActiva && fActiva.fase ? fActiva.fase : faseDefault;
+  const appActual = fActiva && fActiva.tipoAplicacion ? fActiva.tipoAplicacion : appDefault;
+  const totalCombos = tiposPeriodo.length * tiposNomina.length;
+  const definidos = Object.keys(formulasPorClave).length;
+
+  const cat = (typeof catalogEntry !== 'undefined' && catalogEntry) ? catalogEntry : {};
+  const satClaveActual = (concepto.sat && concepto.sat.clave) || concepto.claveSAT || (cat.sat && cat.sat.clave) || cat.claveSAT || '';
+  const satDescActual = (concepto.sat && concepto.sat.descripcion) || (cat.sat && cat.sat.descripcion) || '';
+  const fiscalActual = concepto.fiscal || cat.fiscal || {};
+  const desgloseActual = fiscalActual.desglose || {};
+  const aplicaEnActual = concepto.aplicaEn || cat.aplicaEn || 'nomina';
+  const faseProps = concepto.fase != null ? concepto.fase : (cat.fase || 1);
+  const tiposIncActual = concepto.tiposIncidencia && concepto.tiposIncidencia.length
+    ? concepto.tiposIncidencia
+    : (cat.tiposIncidencia || []);
+  const formulaPrenActual = concepto.formulaPrenomina || cat.formulaPrenomina || '';
+  const clavePrenActual = concepto.clavePrenomina || cat.clavePrenomina || '';
+  const tiposIncSet = {};
+  (tiposIncActual || []).forEach(function(t) { tiposIncSet[String(t).toUpperCase()] = true; });
+
+  const _canEdit = typeof canEdit !== 'undefined' ? !!canEdit : true;
+  const _modoVista = typeof modoVista !== 'undefined' ? !!modoVista : !_canEdit;
+  const _modo = _modoVista ? 'vista' : 'edicion';
+  const _modoQs = 'modo=' + _modo;
+%>
+<p><a href="/nomina/conceptos">← Catálogo</a></p>
+
+<div class="concepto-mode-bar">
+  <h1><code><%= concepto.codigo %></code> — <%= concepto.nombre %></h1>
+  <div class="mode-switch">
+    <a class="btn <%= _modoVista ? 'btn-primary' : 'btn-secondary' %>"
+       href="?periodo=<%= selPeriodo %>&amp;nomina=<%= selNomina %>&amp;modo=vista">Vista</a>
+    <% if (_canEdit) { %>
+    <a class="btn <%= !_modoVista ? 'btn-primary' : 'btn-secondary' %>"
+       href="?periodo=<%= selPeriodo %>&amp;nomina=<%= selNomina %>&amp;modo=edicion">Edición</a>
+    <% } %>
+  </div>
+</div>
+
+<% if (_modoVista) { %>
+<p class="banner-readonly">
+  <strong>Modo consulta</strong> — los campos se muestran en solo lectura.
+  <% if (_canEdit) { %>
+  <a href="?periodo=<%= selPeriodo %>&amp;nomina=<%= selNomina %>&amp;modo=edicion">Pasar a edición</a>
+  <% } else { %>
+  Tu rol no tiene permiso para modificar este concepto.
+  <% } %>
+</p>
+<% } %>
+
+<p class="page-subtitle">
+  Fórmulas definidas: <strong><%= definidos %></strong> / <%= totalCombos %>
+  <% if (typeof companyConfig !== 'undefined' && companyConfig) { %> · Aplicación empresa: <strong><%= companyConfig.tipoAplicacion %></strong><% } %>
+  · Ámbito: <strong><%= aplicaEnActual %></strong>
+  <% if (satClaveActual) { %> · SAT <code><%= satClaveActual %></code><% } %>
+  · Modo: <strong><%= _modoVista ? 'vista' : 'edición' %></strong>
+</p>
+
+<details class="panel arch-hint">
+  <summary><strong>Arquitectura en capas</strong> <span class="muted">— catálogo → fórmula → config empresa</span></summary>
+  <ol class="muted">
+    <li><strong>Catálogo global</strong> — naturaleza, fase y SAT.</li>
+    <li><strong>formula_rules</strong> — expresión + condición por período/tipo de nómina.</li>
+    <li><strong>Config empresa</strong> — FIJO vs EVENTUAL.</li>
+  </ol>
+  <p class="muted small">
+    Contexto: <code>EMPLEADO.*</code>, <code>PERIODO.*</code>, <code>INCIDENCIAS.*</code>, <code>PARAMETROS.*</code>.
+    Puntualidad → usa <code>INCIDENCIAS.minutosRetardo</code> / <code>INCIDENCIAS.sinRetardo</code>.
+  </p>
+</details>
+
+<section class="panel props-panel <%= _modoVista ? 'is-readonly' : '' %>" id="props">
+  <h2 class="panel-title">Propiedades del concepto</h2>
+  <p class="muted small">Identidad, catálogo SAT, fiscal (ISR/IMSS), ámbito e incidencias. Se sincroniza al catálogo global si existe la misma clave.</p>
+
+  <form method="post" action="/nomina/conceptos/<%= concepto.codigo %>/props" class="form-grid props-form" id="props-form">
+    <input type="hidden" name="returnPeriodo" value="<%= selPeriodo %>" />
+    <input type="hidden" name="returnNomina" value="<%= selNomina %>" />
+    <fieldset <%= _modoVista ? 'disabled' : '' %>>
+
+    <fieldset class="props-fieldset">
+      <legend>Identidad</legend>
+      <div class="form-row-2">
+        <label>Nombre
+          <input name="nombre" value="<%= concepto.nombre %>" required maxlength="120" />
+        </label>
+        <label>Código externo
+          <input name="codigoExterno" value="<%= concepto.codigoExterno || '' %>" />
+        </label>
+      </div>
+      <div class="form-row-3">
+        <label>Tipo
+          <select name="tipo" id="prop-tipo">
+            <% _tiposConcepto.forEach(function(t) { %>
+            <option value="<%= t.value %>" <%= concepto.tipo === t.value ? 'selected' : '' %>><%= t.label %></option>
+            <% }); %>
+          </select>
+        </label>
+        <label>Naturaleza
+          <select name="naturaleza" id="prop-naturaleza">
+            <% _naturalezas.forEach(function(n) { %>
+            <option value="<%= n.value %>" <%= concepto.naturaleza === n.value ? 'selected' : '' %>><%= n.label %></option>
+            <% }); %>
+          </select>
+        </label>
+        <label>Orden de cálculo
+          <input type="number" name="ordenCalculo" min="1" max="9999" value="<%= concepto.ordenCalculo != null ? concepto.ordenCalculo : 100 %>" />
+        </label>
+      </div>
+      <div class="form-row-3">
+        <label>Fase (catálogo)
+          <select name="fase">
+            <% _fases.forEach(function(ph) {
+                 const v = ph.meta && ph.meta.fase != null ? ph.meta.fase : ph.value;
+            %>
+            <option value="<%= v %>" <%= String(faseProps) === String(v) ? 'selected' : '' %>><%= ph.label %></option>
+            <% }); %>
+          </select>
+        </label>
+        <label>Ámbito
+          <select name="aplicaEn">
+            <% _ambitosAplicaEn.forEach(function(a) { %>
+            <option value="<%= a.value %>" <%= aplicaEnActual === a.value ? 'selected' : '' %>><%= a.label %></option>
+            <% }); %>
+          </select>
+        </label>
+        <label>Aplicación en empresa
+          <select name="tipoAplicacion">
+            <% _tiposAplicacion.forEach(function(ta) { %>
+            <option value="<%= ta.value %>" <%= appDefault === ta.value ? 'selected' : '' %>><%= ta.label %></option>
+            <% }); %>
+          </select>
+        </label>
+      </div>
+      <label>Cuenta contable
+        <input name="cuentaContable" value="<%= concepto.cuentaContable || '' %>" />
+      </label>
+    </fieldset>
+
+    <fieldset class="props-fieldset">
+      <legend>Catálogo SAT</legend>
+      <div class="form-row-2">
+        <label>Clave SAT
+          <select name="satClave" id="prop-sat-clave">
+            <option value="">— Sin clave SAT —</option>
+            <%
+              let satEnLista = false;
+              _opcionesSat.forEach(function(e) {
+                if (String(satClaveActual) === String(e.clave)) satEnLista = true;
+            %>
+            <option value="<%= e.clave %>"
+                    data-desc="<%= (e.descripcion || '').replace(/"/g, '&quot;') %>"
+                    <%= String(satClaveActual) === String(e.clave) ? 'selected' : '' %>>
+              <%= e.clave %> — <%= e.descripcion || '' %>
+            </option>
+            <% }); %>
+            <% if (satClaveActual && !satEnLista) { %>
+            <option value="<%= satClaveActual %>" data-desc="<%= (satDescActual || '').replace(/"/g, '&quot;') %>" selected>
+              <%= satClaveActual %><%= satDescActual ? ' — ' + satDescActual : ' (actual)' %>
+            </option>
+            <% } %>
+          </select>
+        </label>
+        <label>Descripción SAT
+          <input name="satDescripcion" id="prop-sat-desc" value="<%= satDescActual %>" placeholder="Se completa al elegir la clave" />
+        </label>
+      </div>
+      <% if (!_opcionesSat.length) { %>
+      <p class="muted small">No hay entradas SAT cargadas para este tipo.
+        <a href="/nomina/catalogos/sat">Administrar catálogo SAT</a>
+      </p>
+      <% } else { %>
+      <p class="muted small">Opciones filtradas por tipo del concepto.
+        <a href="/nomina/catalogos/sat">Ver catálogo completo</a>
+      </p>
+      <% } %>
+    </fieldset>
+
+    <fieldset class="props-fieldset">
+      <legend>Fiscal (ISR / IMSS / desglose)</legend>
+      <div class="form-row-checks">
+        <label class="inline-check">
+          <input type="checkbox" name="integraISR" <%= fiscalActual.integraISR !== false ? 'checked' : '' %> />
+          Integra ISR
+        </label>
+        <label class="inline-check">
+          <input type="checkbox" name="integraIMSS" <%= fiscalActual.integraIMSS !== false ? 'checked' : '' %> />
+          Integra IMSS
+        </label>
+        <label class="inline-check">
+          <input type="checkbox" name="integraINFONAVIT" <%= fiscalActual.integraINFONAVIT === true ? 'checked' : '' %> />
+          Integra INFONAVIT
+        </label>
+      </div>
+      <div class="form-row-3">
+        <label>Modo de desglose
+          <select name="desgloseModo" id="prop-desglose">
+            <% _desgloseModos.forEach(function(m) { %>
+            <option value="<%= m.value %>" <%= (desgloseActual.modo || 'todo_gravado') === m.value ? 'selected' : '' %>><%= m.label %></option>
+            <% }); %>
+          </select>
+        </label>
+        <label>Tope exento (UMAs)
+          <input type="number" name="topeExentoUMA" step="0.01" min="0" value="<%= desgloseActual.topeExentoUMA != null ? desgloseActual.topeExentoUMA : 0 %>" />
+        </label>
+        <label>Tope exento (monto)
+          <input type="number" name="topeExentoMonto" step="0.01" min="0" value="<%= desgloseActual.topeExentoMonto != null ? desgloseActual.topeExentoMonto : 0 %>" />
+        </label>
+      </div>
+      <div class="form-row-2">
+        <label>Fórmula exento
+          <input name="formulaExento" value="<%= desgloseActual.formulaExento || '' %>" placeholder="si modo = formula" />
+        </label>
+        <label>Fórmula gravado
+          <input name="formulaGravado" value="<%= desgloseActual.formulaGravado || '' %>" placeholder="si modo = formula" />
+        </label>
+      </div>
+      <label>Código de regla de ley
+        <input name="codigoRegla" value="<%= desgloseActual.codigoRegla || '' %>" placeholder="ej. horas_extra" />
+      </label>
+    </fieldset>
+
+    <fieldset class="props-fieldset">
+      <legend>Pre-nómina e incidencias</legend>
+      <div class="form-row-2">
+        <label>Fórmula pre-nómina
+          <select name="formulaPrenomina">
+            <% _formulasPrenomina.forEach(function(f) { %>
+            <option value="<%= f.value %>" <%= formulaPrenActual === f.value ? 'selected' : '' %>><%= f.label %></option>
+            <% }); %>
+          </select>
+        </label>
+        <label>Clave pre-nómina
+          <input name="clavePrenomina" value="<%= clavePrenActual %>" style="text-transform:uppercase" />
+        </label>
+      </div>
+      <label>Tipos de incidencia vinculados
+        <div class="incidencias-grid">
+          <% _tiposIncidenciaOpts.forEach(function(ti) { %>
+          <label class="inline-check">
+            <input type="checkbox" name="tiposIncidencia" value="<%= ti.clave %>"
+              <%= tiposIncSet[ti.clave] ? 'checked' : '' %> />
+            <code><%= ti.clave %></code> <%= ti.nombre %>
+          </label>
+          <% }); %>
+        </div>
+      </label>
+      <label>Insumos de contexto <span class="muted">(separados por coma)</span>
+        <input name="insumosContexto" value="<%= (concepto.insumosContexto || cat.insumosContexto || []).join(', ') %>"
+               placeholder="ej. minutosRetardo, diasConRetardo" />
+      </label>
+    </fieldset>
+    </fieldset>
+
+    <% if (!_modoVista) { %>
+    <div class="formula-actions">
+      <button type="submit">Guardar propiedades</button>
+    </div>
+    <% } %>
+  </form>
+</section>
+
+<section class="formula-workspace">
+  <aside class="formula-coverage panel">
+    <h2 class="panel-title">Cobertura</h2>
+    <p class="muted small">Clic en una celda para <%= _modoVista ? 'consultar' : 'editar' %> esa combinación. ● = fórmula vigente.</p>
+    <div class="coverage-scroll">
+      <table class="coverage-matrix">
+        <thead>
+          <tr>
+            <th>Período</th>
+            <% tiposNomina.forEach(function(tn) { %>
+            <th title="<%= tn.label %>"><%= tn.label.slice(0, 3) %></th>
+            <% }); %>
+          </tr>
+        </thead>
+        <tbody>
+          <% tiposPeriodo.forEach(function(tp) { %>
+          <tr>
+            <th scope="row"><%= tp.label %></th>
+            <% tiposNomina.forEach(function(tn) {
+                 const k = tp.value + '|' + tn.value;
+                 const tiene = !!formulasPorClave[k];
+                 const activa = k === keyActiva;
+            %>
+            <td>
+              <a class="coverage-cell <%= tiene ? 'has-formula' : 'empty' %> <%= activa ? 'is-active' : '' %>"
+                 href="?periodo=<%= tp.value %>&amp;nomina=<%= tn.value %>&amp;<%= _modoQs %>"
+                 title="<%= tp.label %> · <%= tn.label %><%= tiene ? ' (definida)' : ' (sin fórmula)' %>">
+                <%= tiene ? '●' : '·' %>
+              </a>
+            </td>
+            <% }); %>
+          </tr>
+          <% }); %>
+        </tbody>
+      </table>
+    </div>
+  </aside>
+
+  <div class="formula-editor panel <%= _modoVista ? 'is-readonly' : '' %>">
+    <h2 class="panel-title"><%= _modoVista ? 'Fórmula (consulta)' : 'Editor de fórmula' %></h2>
+
+    <form method="post" action="/nomina/conceptos/<%= concepto.codigo %>/formula" class="form-grid formula-form" id="formula-form">
+      <div class="form-row-2">
+        <label>Tipo de período
+          <select name="tipoPeriodo" id="sel-periodo">
+            <% tiposPeriodo.forEach(function(tp) { %>
+            <option value="<%= tp.value %>" <%= tp.value === selPeriodo ? 'selected' : '' %>><%= tp.label %></option>
+            <% }); %>
+          </select>
+        </label>
+        <label>Tipo de nómina
+          <select name="tipoNomina" id="sel-nomina">
+            <% tiposNomina.forEach(function(tn) { %>
+            <option value="<%= tn.value %>" <%= tn.value === selNomina ? 'selected' : '' %>><%= tn.label %></option>
+            <% }); %>
+          </select>
+        </label>
+      </div>
+
+      <fieldset <%= _modoVista ? 'disabled' : '' %>>
+      <div class="form-row-2">
+        <label>Fase de cálculo
+          <select name="fase">
+            <% _fases.forEach(function(ph) {
+                 const v = ph.meta && ph.meta.fase != null ? ph.meta.fase : ph.value;
+            %>
+            <option value="<%= v %>" <%= String(faseActual) === String(v) ? 'selected' : '' %>><%= ph.label %></option>
+            <% }); %>
+          </select>
+        </label>
+        <label>Tipo de aplicación
+          <select name="tipoAplicacion">
+            <% _tiposAplicacion.forEach(function(ta) { %>
+            <option value="<%= ta.value %>" <%= appActual === ta.value ? 'selected' : '' %>><%= ta.label %></option>
+            <% }); %>
+          </select>
+        </label>
+      </div>
+
+      <label>Condición <span class="muted">(vacía = siempre; escribe para autocompletar variables)</span>
+        <div class="ac-wrap">
+          <input name="condicion" id="field-condicion" value="<%= fActiva ? fActiva.condicion : '' %>"
+                 placeholder="ej. INCIDENCIAS.horasExtraDobles > 0" class="input-formula" autocomplete="off" spellcheck="false" />
+        </div>
+      </label>
+      <label>Fórmula <span class="muted">(Tab / Enter acepta sugerencia · Esc cierra)</span>
+        <div class="ac-wrap">
+          <textarea name="formula" id="field-formula" rows="3" required class="input-formula"
+                    placeholder="ej. EMPLEADO.salarioDiario * PERIODO.diasTrabajados"
+                    autocomplete="off" spellcheck="false"><%= fActiva ? fActiva.formula : '' %></textarea>
+        </div>
+      </label>
+      <div class="form-row-2">
+        <label>Dependencias <span class="muted">(códigos separados por coma · autocompletar)</span>
+          <div class="ac-wrap">
+            <input name="dependencias" id="field-deps"
+                   value="<%= fActiva && fActiva.dependencias ? fActiva.dependencias.join(', ') : '' %>"
+                   placeholder="SUELDO, HORAS_EXTRA_DOBLES"
+                   autocomplete="off" spellcheck="false" />
+          </div>
+        </label>
+        <label>Decimales
+          <input type="number" name="redondeo" id="field-redondeo" min="0" max="6"
+                 value="<%= fActiva ? fActiva.redondeo : 2 %>" />
+        </label>
+      </div>
+
+      <label class="inline-check">
+        <input type="checkbox" name="comoOverride" />
+        Guardar como override de esta empresa (si no, plantilla default)
+      </label>
+      <label class="inline-check">
+        <input type="checkbox" name="aplicarTodosPeriodos" />
+        Aplicar la misma fórmula a <strong>todos los tipos de período</strong> (misma nómina)
+      </label>
+      </fieldset>
+
+      <div class="formula-actions">
+        <% if (!_modoVista) { %>
+        <button type="submit">Guardar fórmula</button>
+        <% } %>
+        <button type="button" class="btn-secondary" id="btn-probar">Probar</button>
+      </div>
+      <div id="probar-result" class="probar-result muted"></div>
+    </form>
+
+    <p class="muted small" id="formula-meta">
+      <% if (fActiva) { %>
+      Vigente desde <%= new Date(fActiva.vigenciaDesde).toLocaleDateString('es-MX') %>
+      · v<%= fActiva.version || 1 %>
+      · fase <%= fActiva.fase || faseActual %>
+      · <%= fActiva.tipoAplicacion || appActual %>
+      <%= fActiva.empresaId ? '· override empresa' : '· plantilla' %>
+      <% } else { %>
+      Sin fórmula vigente para esta combinación — al guardar se crea la primera versión.
+      <% } %>
+    </p>
+  </div>
+</section>
+
+<details class="vars-panel">
+  <summary>
+    <strong>Variables disponibles</strong>
+    <span class="muted"> — clic para insertar en el campo activo</span>
+  </summary>
+
+  <div class="vars-legend">
+    <span class="chip chip-ctx">Contexto</span>
+    <span class="chip chip-concept">Concepto del catálogo</span>
+  </div>
+
+  <% variablesAgrupadas.forEach(function(grupo) { %>
+  <details class="vars-group" <%= ['periodo','salario','fiscal'].indexOf(grupo.id) >= 0 ? 'open' : '' %>>
+    <summary>
+      <span class="vars-group-title"><%= grupo.label %></span>
+      <span class="vars-group-count"><%= grupo.variables.length %></span>
+    </summary>
+    <% if (grupo.descripcion) { %>
+    <p class="vars-group-desc muted"><%= grupo.descripcion %></p>
+    <% } %>
+    <div class="vars-table-wrap">
+      <table class="vars-table">
+        <thead>
+          <tr>
+            <th>Variable</th>
+            <th>Nombre</th>
+            <th>Descripción</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          <% grupo.variables.forEach(function(v) { %>
+          <tr>
+            <td>
+              <button type="button"
+                class="chip <%= v.esConcepto ? 'chip-concept' : 'chip-ctx' %> chip-insert"
+                data-var="<%= v.key %>"
+                title="Insertar <%= v.key %>">
+                <%= v.key %>
+              </button>
+            </td>
+            <td><%= v.label %></td>
+            <td class="muted"><%= v.descripcion || '—' %></td>
+            <td class="muted small"><%= v.ejemplo != null ? 'ej. ' + v.ejemplo : '' %></td>
+          </tr>
+          <% }); %>
+        </tbody>
+      </table>
+    </div>
+  </details>
+  <% }); %>
+</details>
+
+<script>
+(function() {
+  const satSel = document.getElementById('prop-sat-clave');
+  const satDesc = document.getElementById('prop-sat-desc');
+  if (satSel && satDesc) {
+    satSel.addEventListener('change', function() {
+      const opt = satSel.options[satSel.selectedIndex];
+      if (!opt || !opt.value) return;
+      const d = opt.getAttribute('data-desc') || '';
+      if (d) satDesc.value = d;
+    });
+  }
+
+  const formulasPorClave = <%- JSON.stringify(formulasPorClave || {}) %>;
+  const faseDefault = <%= Number(faseDefault) || 1 %>;
+  const appDefault = <%- JSON.stringify(appDefault || 'FIJO') %>;
+
+  <%
+    const _acItems = [];
+    const _acSeen = {};
+    (variablesAgrupadas || []).forEach(function(g) {
+      (g.variables || []).forEach(function(v) {
+        if (!v.key || _acSeen[v.key]) return;
+        _acSeen[v.key] = true;
+        _acItems.push({
+          key: v.key,
+          label: v.label || v.key,
+          descripcion: v.descripcion || '',
+          grupo: g.label || g.id || '',
+          tipo: v.esConcepto ? 'concepto' : 'contexto'
+        });
+      });
+    });
+    ['EMPLEADO', 'PERIODO', 'INCIDENCIAS', 'PARAMETROS'].forEach(function(ns) {
+      if (_acSeen[ns]) return;
+      _acSeen[ns] = true;
+      _acItems.push({
+        key: ns,
+        label: ns,
+        descripcion: 'Namespace — continúa con punto (ej. ' + ns + '.…)',
+        grupo: 'Namespaces',
+        tipo: 'namespace'
+      });
+    });
+    ['min', 'max', 'abs', 'round', 'floor', 'ceil', 'aplicarTabla', 'topeUMA', 'isrPeriodo', 'imssObrero'].forEach(function(fn) {
+      if (_acSeen[fn]) return;
+      _acSeen[fn] = true;
+      _acItems.push({
+        key: fn,
+        label: fn + '(…)',
+        descripcion: 'Función permitida del evaluador',
+        grupo: 'Funciones',
+        tipo: 'funcion'
+      });
+    });
+  %>
+  const formulaSuggestions = <%- JSON.stringify(_acItems) %>;
+
+  const selPeriodo = document.getElementById('sel-periodo');
+  const selNomina = document.getElementById('sel-nomina');
+  const fieldCondicion = document.getElementById('field-condicion');
+  const fieldFormula = document.getElementById('field-formula');
+  const fieldDeps = document.getElementById('field-deps');
+  const fieldRedondeo = document.getElementById('field-redondeo');
+  const metaEl = document.getElementById('formula-meta');
+  const form = document.getElementById('formula-form');
+
+  function keyOf(periodo, nomina) {
+    return periodo + '|' + nomina;
+  }
+
+  function loadCombo(periodo, nomina, pushUrl) {
+    const f = formulasPorClave[keyOf(periodo, nomina)] || null;
+    fieldCondicion.value = f ? (f.condicion || '') : '';
+    fieldFormula.value = f ? (f.formula || '') : '';
+    fieldDeps.value = f && f.dependencias ? f.dependencias.join(', ') : '';
+    fieldRedondeo.value = f && f.redondeo != null ? f.redondeo : 2;
+
+    const faseSel = form.querySelector('[name=fase]');
+    const appSel = form.querySelector('[name=tipoAplicacion]');
+    if (faseSel) faseSel.value = String(f && f.fase ? f.fase : faseDefault);
+    if (appSel) appSel.value = (f && f.tipoAplicacion) ? f.tipoAplicacion : appDefault;
+
+    if (metaEl) {
+      if (f) {
+        const desde = f.vigenciaDesde ? new Date(f.vigenciaDesde).toLocaleDateString('es-MX') : '—';
+        metaEl.textContent =
+          'Vigente desde ' + desde +
+          ' · v' + (f.version || 1) +
+          ' · fase ' + (f.fase || faseDefault) +
+          ' · ' + (f.tipoAplicacion || appDefault) +
+          (f.empresaId ? ' · override empresa' : ' · plantilla');
+      } else {
+        metaEl.textContent = 'Sin fórmula vigente para esta combinación — al guardar se crea la primera versión.';
+      }
+    }
+
+    document.querySelectorAll('.coverage-cell').forEach(function(cell) {
+      const href = cell.getAttribute('href') || '';
+      const match = href.match(/periodo=([^&]+).*nomina=([^&]+)/);
+      if (!match) return;
+      const active = match[1] === periodo && match[2] === nomina;
+      cell.classList.toggle('is-active', active);
+    });
+
+    if (pushUrl) {
+      const url = new URL(window.location.href);
+      url.searchParams.set('periodo', periodo);
+      url.searchParams.set('nomina', nomina);
+      if (!url.searchParams.get('modo')) {
+        url.searchParams.set('modo', <%- JSON.stringify(_modo) %>);
+      }
+      window.history.replaceState({}, '', url.pathname + '?' + url.searchParams.toString());
+    }
+  }
+
+  function onSelectChange() {
+    loadCombo(selPeriodo.value, selNomina.value, true);
+  }
+  selPeriodo.addEventListener('change', onSelectChange);
+  selNomina.addEventListener('change', onSelectChange);
+
+  const varsEjemplo = {
+    EMPLEADO: { salarioDiario: 500, horasJornada: 8, antiguedadAnios: 3, sbc: 500 },
+    PERIODO: { diasPeriodo: 15, diasTrabajados: 15, diasLaborados: 15, faltas: 0 },
+    INCIDENCIAS: {
+      faltas: 0,
+      horasExtraDobles: 4,
+      horasExtraTriples: 0,
+      minutosRetardo: 0,
+      minutosSalidaAnticipada: 0,
+      diasConRetardo: 0,
+      llegadasTarde: 0,
+      sinRetardo: 1,
+      sinFaltas: 1
+    },
+    PARAMETROS: { uma: 113.14, salarioMinimo: 278.8 },
+    diasPeriodo: 15, diasLaborados: 15, diasTrabajados: 15, faltas: 0,
+    sueldoDiario: 500, salarioDiario: 500, horasJornada: 8,
+    horasExtraDobles: 4, horasExtraTriples: 0, antiguedadAnios: 3,
+    minutosRetardo: 0, minutosSalidaAnticipada: 0,
+    diasConRetardo: 0, llegadasTarde: 0, sinRetardo: 1, sinFaltas: 1,
+    uma: 113.14, salarioMinimo: 278.8, sbc: 500,
+    SUELDO: 7000, PERCEPCIONES_GRAVADAS: 7500
+  };
+
+  /* —— Autocompletado de variables / conceptos / funciones —— */
+  function attachFormulaAutocomplete(input, catalog, options) {
+    options = options || {};
+    const csvMode = !!options.csv;
+    const minChars = options.minChars != null ? options.minChars : 1;
+    const excludeKeys = new Set((options.excludeKeys || []).map(function(k) { return String(k).toUpperCase(); }));
+    const appendComma = !!options.appendComma;
+
+    const wrap = input.closest('.ac-wrap') || input.parentElement;
+    wrap.classList.add('ac-wrap');
+    const list = document.createElement('ul');
+    list.className = 'ac-list';
+    list.hidden = true;
+    wrap.appendChild(list);
+
+    let activeIdx = -1;
+    let matches = [];
+    let tokenRange = null;
+
+    function alreadySelected() {
+      if (!csvMode) return new Set();
+      return new Set(
+        String(input.value || '')
+          .split(',')
+          .map(function(s) { return s.trim().toUpperCase(); })
+          .filter(Boolean)
+      );
+    }
+
+    function getTokenAtCursor() {
+      const val = input.value;
+      const pos = input.selectionStart ?? val.length;
+      const before = val.slice(0, pos);
+      if (csvMode) {
+        const m = before.match(/(?:^|,)\s*([A-Za-z_][\w.]*)$/);
+        if (m) {
+          return { text: m[1], start: pos - m[1].length, end: pos };
+        }
+        // Tras coma / vacío: token vacío para listar conceptos
+        if (/(?:^|,)\s*$/.test(before)) {
+          return { text: '', start: pos, end: pos };
+        }
+        return null;
+      }
+      const m = before.match(/[A-Za-z_][\w.]*$/);
+      if (!m) return null;
+      return { text: m[0], start: pos - m[0].length, end: pos };
+    }
+
+    function rank(item, q) {
+      const key = item.key.toLowerCase();
+      const qq = (q || '').toLowerCase();
+      if (!qq) return 5;
+      if (key === qq) return 0;
+      if (key.startsWith(qq)) return 1;
+      if (key.includes('.' + qq) || key.includes(qq)) return 2;
+      if ((item.label || '').toLowerCase().includes(qq)) return 3;
+      return 9;
+    }
+
+    function filter(q) {
+      const selected = alreadySelected();
+      const qq = (q || '').toLowerCase();
+      if (qq.length < minChars && !(csvMode && qq.length === 0)) return [];
+
+      return catalog
+        .filter(function(item) {
+          const up = String(item.key).toUpperCase();
+          if (excludeKeys.has(up) || selected.has(up)) return false;
+          if (!qq) return true;
+          const key = item.key.toLowerCase();
+          return key.startsWith(qq) || key.includes(qq) || (item.label || '').toLowerCase().includes(qq);
+        })
+        .sort(function(a, b) {
+          return rank(a, q) - rank(b, q) || a.key.localeCompare(b.key);
+        })
+        .slice(0, 12);
+    }
+
+    function render() {
+      list.innerHTML = '';
+      if (!matches.length) {
+        list.hidden = true;
+        return;
+      }
+      matches.forEach(function(item, i) {
+        const li = document.createElement('li');
+        li.className = 'ac-item' + (i === activeIdx ? ' is-active' : '');
+        li.setAttribute('role', 'option');
+        li.innerHTML =
+          '<code class="ac-key">' + item.key + '</code>' +
+          '<span class="ac-meta">' +
+            '<span class="ac-label">' + (item.label || '') + '</span>' +
+            (item.grupo ? '<span class="ac-grupo">' + item.grupo + '</span>' : '') +
+          '</span>';
+        if (item.descripcion) li.title = item.descripcion;
+        li.addEventListener('mousedown', function(e) {
+          e.preventDefault();
+          accept(i);
+        });
+        list.appendChild(li);
+      });
+      list.hidden = false;
+    }
+
+    function hide() {
+      list.hidden = true;
+      activeIdx = -1;
+      matches = [];
+      tokenRange = null;
+    }
+
+    function accept(idx) {
+      const item = matches[idx];
+      if (!item || !tokenRange) return;
+      const val = input.value;
+      let insert = item.key;
+      if (!csvMode) {
+        if (item.tipo === 'funcion') insert = item.key + '(';
+        else if (item.tipo === 'namespace' && !insert.endsWith('.')) insert = item.key + '.';
+      } else if (appendComma) {
+        insert = item.key + ', ';
+      }
+
+      const next = val.slice(0, tokenRange.start) + insert + val.slice(tokenRange.end);
+      input.value = next;
+      const caret = tokenRange.start + insert.length;
+      input.focus();
+      if (input.setSelectionRange) input.setSelectionRange(caret, caret);
+      hide();
+      if (csvMode && appendComma) {
+        // Reabrir lista para la siguiente dependencia
+        setTimeout(refresh, 0);
+      } else {
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    }
+
+    function refresh() {
+      tokenRange = getTokenAtCursor();
+      if (!tokenRange) {
+        hide();
+        return;
+      }
+      if (!csvMode && tokenRange.text.length < minChars) {
+        hide();
+        return;
+      }
+      matches = filter(tokenRange.text);
+      activeIdx = matches.length ? 0 : -1;
+      render();
+    }
+
+    input.addEventListener('input', refresh);
+    input.addEventListener('click', refresh);
+    input.addEventListener('focus', refresh);
+    input.addEventListener('blur', function() {
+      setTimeout(hide, 120);
+    });
+
+    input.addEventListener('keydown', function(e) {
+      if (list.hidden || !matches.length) {
+        if (e.key === 'Escape') hide();
+        return;
+      }
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        activeIdx = (activeIdx + 1) % matches.length;
+        render();
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        activeIdx = (activeIdx - 1 + matches.length) % matches.length;
+        render();
+      } else if (e.key === 'Enter' || e.key === 'Tab') {
+        if (activeIdx >= 0) {
+          e.preventDefault();
+          accept(activeIdx);
+        }
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        hide();
+      }
+    });
+  }
+
+  const conceptoSuggestions = formulaSuggestions.filter(function(s) {
+    return s.tipo === 'concepto';
+  });
+
+  attachFormulaAutocomplete(fieldFormula, formulaSuggestions);
+  attachFormulaAutocomplete(fieldCondicion, formulaSuggestions);
+  attachFormulaAutocomplete(fieldDeps, conceptoSuggestions, {
+    csv: true,
+    minChars: 0,
+    appendComma: true,
+    excludeKeys: [<%- JSON.stringify(concepto.codigo) %>]
+  });
+
+  let lastFocused = null;
+  document.querySelectorAll('.input-formula').forEach(function(el) {
+    el.addEventListener('focus', function() { lastFocused = el; });
+  });
+
+  document.querySelectorAll('.chip-insert').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      const key = btn.dataset.var;
+      const target = lastFocused || fieldFormula;
+      if (!target) return;
+      const start = target.selectionStart ?? target.value.length;
+      const end = target.selectionEnd ?? start;
+      const before = target.value.slice(0, start);
+      const after = target.value.slice(end);
+      const needsSpace = before.length && !/\s$/.test(before) && !/[\(*+\-\/,]$/.test(before);
+      const insert = (needsSpace ? ' ' : '') + key;
+      target.value = before + insert + after;
+      target.focus();
+      const pos = start + insert.length;
+      if (target.setSelectionRange) target.setSelectionRange(pos, pos);
+    });
+  });
+
+  document.getElementById('btn-probar').addEventListener('click', async function() {
+    const resultEl = document.getElementById('probar-result');
+    const tipoApp = (form.querySelector('[name=tipoAplicacion]') || {}).value || 'FIJO';
+    resultEl.textContent = 'Evaluando…';
+    try {
+      const res = await fetch('/nomina/conceptos/probar-formula', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          formula: fieldFormula.value,
+          condicion: fieldCondicion.value,
+          tipoAplicacion: tipoApp,
+          variables: varsEjemplo
+        })
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        resultEl.textContent = 'Error: ' + data.error;
+        resultEl.className = 'probar-result error';
+        return;
+      }
+      if (!data.aplica) {
+        resultEl.textContent = data.mensaje || ('Condición no cumplida · faltas=' + varsEjemplo.INCIDENCIAS.faltas);
+        resultEl.className = 'probar-result muted';
+        return;
+      }
+      resultEl.textContent = 'Resultado: $' + Number(data.resultado).toFixed(2) +
+        ' · retardo=' + (data.retardosPrueba != null ? data.retardosPrueba : varsEjemplo.INCIDENCIAS.minutosRetardo) +
+        ' min · llegadasTarde=' + (data.llegadasPrueba != null ? data.llegadasPrueba : varsEjemplo.INCIDENCIAS.llegadasTarde) +
+        (data.condicionUsada ? ' · condición: ' + data.condicionUsada : '');
+      resultEl.className = 'probar-result ok';
+    } catch (e) {
+      resultEl.textContent = 'Error de red';
+      resultEl.className = 'probar-result error';
+    }
+  });
+})();
+</script>
+<%- include('../Partials/layout-bottom') %>

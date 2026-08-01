@@ -1,0 +1,10 @@
+<%#
+  mode: 'asistencia' | 'nomina' | omit for both chips
+  aplicaAsistencia, compartirNomina (boolean)
+%>
+<% if (!mode || mode === 'asistencia') { %>
+<span class="yn-badge <%= aplicaAsistencia ? 'yn-yes' : 'yn-no' %>" title="Aplica asistencia/pre-nómina"><%= aplicaAsistencia ? 'Sí' : 'No' %></span>
+<% } %>
+<% if (!mode || mode === 'nomina') { %>
+<span class="yn-badge <%= compartirNomina ? 'yn-yes' : 'yn-no' %>" title="Compartir con nómina"><%= compartirNomina ? 'Sí' : 'No' %></span>
+<% } %>

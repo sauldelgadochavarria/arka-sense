@@ -1,0 +1,156 @@
+<%- include('../Partials/layout-top', { title: 'Empleado', session }) %>
+<p><a href="/personal-empleados">← Volver al listado</a></p>
+
+<h1><%= empleado.firstName %> <%= empleado.lastName %></h1>
+<p>
+  <span class="badge badge-<%= empleado.estatus %>"><%= empleado.estatus %></span>
+  · No. <code><%= empleado.numEmpleado %></code>
+</p>
+
+<div class="detail-grid">
+  <section>
+    <h2>Identificación</h2>
+    <dl>
+      <dt>CURP</dt><dd><%= empleado.curp || '—' %></dd>
+      <dt>RFC</dt><dd><%= empleado.rfc || '—' %></dd>
+      <dt>NSS</dt><dd><%= empleado.nss || '—' %></dd>
+      <dt>Fecha nacimiento</dt><dd><%= empleado.fechaNacimiento ? new Date(empleado.fechaNacimiento).toLocaleDateString('es-MX') : '—' %></dd>
+      <dt>Sexo</dt><dd><%= empleado.sexo || '—' %></dd>
+    </dl>
+  </section>
+
+  <section>
+    <h2>Contacto</h2>
+    <dl>
+      <dt>Email corporativo</dt><dd><%= empleado.email || '—' %></dd>
+      <dt>Email personal</dt><dd><%= empleado.emailPersonal || '—' %></dd>
+      <dt>Celular</dt><dd><%= empleado.telefono || '—' %></dd>
+      <dt>Teléfono fijo</dt><dd><%= empleado.telefonoFijo || '—' %></dd>
+    </dl>
+  </section>
+
+  <section>
+    <h2>Organización</h2>
+    <dl>
+      <dt>Sucursal</dt><dd><%= empleado.subsidiariaId ? (subMap.get(String(empleado.subsidiariaId)) || '—') : '—' %></dd>
+      <dt>Departamento</dt><dd><%= empleado.departamentoId ? (deptMap.get(String(empleado.departamentoId)) || '—') : '—' %></dd>
+      <dt>Puesto</dt><dd><%= empleado.puestoId ? (puestoMap.get(String(empleado.puestoId)) || '—') : '—' %></dd>
+      <dt>Turno directo</dt><dd><%= empleado.turnoId ? (turnoMap.get(String(empleado.turnoId)) || '—') : '—' %></dd>
+      <dt>Plantilla de horario</dt>
+      <dd>
+        <% if (asignacionCtx && asignacionCtx.plantilla) { %>
+        <a href="/asistencia-rotaciones/<%= asignacionCtx.plantilla._id %>/edit"><%= asignacionCtx.plantillaLabel %></a>
+        <br /><span class="muted"><%= asignacionCtx.plantillaResumen %></span>
+        <% if (asignacionCtx.asignacion) { %>
+        <br /><span class="muted">Ancla: <%= new Date(asignacionCtx.asignacion.fechaAncla).toLocaleDateString('es-MX') %></span>
+        <% } %>
+        <% } else { %>
+        — <span class="muted">(usa turno directo)</span>
+        <% } %>
+      </dd>
+      <dt>Turno vigente hoy</dt>
+      <dd>
+        <strong><%= turnoVigenteLabel %></strong>
+        <span class="muted">(<%= turnoVigenteOrigen %>)</span>
+        <a href="/asistencia-rotaciones/cambios" class="muted"> · Cambio puntual</a>
+      </dd>
+      <dt>Supervisor</dt><dd><%= empleado.supervisorId ? (supervisorMap.get(String(empleado.supervisorId)) || '—') : '—' %></dd>
+    </dl>
+  </section>
+
+  <section>
+    <h2>Integración y asistencia</h2>
+    <dl>
+      <dt>Código externo</dt><dd><%= empleado.codigoExterno || '—' %></dd>
+      <dt>Tipo de registro</dt><dd><%= tipoRegistroLabel %></dd>
+      <dt>Grupo de dispositivos</dt><dd><%= grupoNombre %></dd>
+      <dt>Exportar faltas</dt><dd><%= empleado.exportarFaltas !== false ? 'Sí' : 'No' %></dd>
+      <dt>Exportar retardos</dt><dd><%= empleado.exportarRetardos !== false ? 'Sí' : 'No' %></dd>
+      <dt>Exportar horas extra</dt><dd><%= empleado.exportarHorasExtra !== false ? 'Sí' : 'No' %></dd>
+    </dl>
+  </section>
+
+  <section>
+    <h2>Laboral</h2>
+    <dl>
+      <dt>Tipo contrato</dt><dd><%= empleado.tipoContrato || '—' %></dd>
+      <dt>Salario diario</dt><dd><%= empleado.salarioDiario != null ? empleado.salarioDiario : '—' %></dd>
+      <dt>Fecha ingreso</dt><dd><%= empleado.fechaIngreso ? new Date(empleado.fechaIngreso).toLocaleDateString('es-MX') : '—' %></dd>
+      <% if (empleado.estatus === 'baja') { %>
+      <dt>Fecha baja</dt><dd><%= empleado.fechaBaja ? new Date(empleado.fechaBaja).toLocaleDateString('es-MX') : '—' %></dd>
+      <dt>Motivo baja</dt><dd><%= empleado.motivoBaja || '—' %></dd>
+      <% } %>
+    </dl>
+  </section>
+
+  <% if (typeof showNominaConfig !== 'undefined' && showNominaConfig) { %>
+  <% const nc = empleado.nominaConfig || {}; %>
+  <section>
+    <h2>Nómina formal</h2>
+    <dl>
+      <dt>Fondo de ahorro</dt><dd><%= nc.aplicaFondoAhorro ? 'Sí' : 'No' %><% if (nc.aplicaFondoAhorro && nc.porcentajeFondoAhorro > 0) { %> (<%= nc.porcentajeFondoAhorro %>% personalizado)<% } %></dd>
+      <dt>INFONAVIT</dt>
+      <dd>
+        <% if (nc.infonavitDescuento > 0) { %>
+        Descuento fijo: $<%= nc.infonavitDescuento.toLocaleString('es-MX', { minimumFractionDigits: 2 }) %>
+        <% } else if (nc.tipoCreditoInfonavit) { %>
+        <%= typeof labelTipoCreditoInfonavit === 'function' ? labelTipoCreditoInfonavit(nc.tipoCreditoInfonavit) : nc.tipoCreditoInfonavit %>
+        <% if (nc.tasaInfonavit > 0) { %> · tasa <%= nc.tasaInfonavit %><% } %>
+        <% } else { %>—<% } %>
+      </dd>
+      <dt>Sueldo integrado</dt><dd><%= nc.sueldoIntegrado > 0 ? nc.sueldoIntegrado : '—' %></dd>
+      <dt>Días cotización</dt><dd><%= nc.diasCotizacionImss > 0 ? nc.diasCotizacionImss : '—' %></dd>
+      <dt>Prima vacacional (días)</dt><dd><%= nc.diasPrimaVacacional > 0 ? nc.diasPrimaVacacional : '—' %></dd>
+      <dt>Aguinaldo finiquito</dt><dd><%= nc.proporcionAguinaldoFiniquito > 0 ? nc.proporcionAguinaldoFiniquito : '—' %></dd>
+      <dt>Saldo fondo finiquito</dt><dd><%= nc.fondoAhorroSaldoFiniquito > 0 ? nc.fondoAhorroSaldoFiniquito : '—' %></dd>
+    </dl>
+  </section>
+  <% } %>
+</div>
+
+<% if (typeof historialReciente !== 'undefined' && historialReciente) { %>
+<section class="historial-resumen">
+  <h2>Historial laboral reciente</h2>
+  <% if (!historialReciente.length) { %>
+  <p class="muted">Sin movimientos registrados.</p>
+  <% } else { %>
+  <table class="table-compact">
+    <thead>
+      <tr><th>Fecha</th><th>Tipo</th><th>Salario día</th><th>Sueldo int.</th><th>Origen</th></tr>
+    </thead>
+    <tbody>
+      <% historialReciente.forEach(function(m) { %>
+      <tr>
+        <td><%= new Date(m.fechaMovimiento).toLocaleDateString('es-MX') %></td>
+        <td><%= m.tipoMovimientoCodigo %><% if (tipoMovMap && tipoMovMap.get(m.tipoMovimientoCodigo)) { %> — <%= tipoMovMap.get(m.tipoMovimientoCodigo) %><% } %></td>
+        <td><%= m.salarioDiario != null ? m.salarioDiario : '—' %></td>
+        <td><%= m.sueldoIntegrado != null ? m.sueldoIntegrado : '—' %></td>
+        <td><%= m.origen %></td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table>
+  <% } %>
+  <p><a href="/personal-empleados/<%= empleado._id %>/historial-laboral">Ver historial completo →</a></p>
+</section>
+<% } %>
+
+<div class="actions-bar">
+  <a class="btn" href="/personal-empleados/<%= empleado._id %>/edit">Editar</a>
+  <% if (empleado.estatus === 'baja') { %>
+  <form method="post" action="/personal-empleados/<%= empleado._id %>/reactivar" class="inline-form">
+    <button type="submit">Reactivar</button>
+  </form>
+  <% } else { %>
+  <form method="post" action="/personal-empleados/<%= empleado._id %>/baja" class="inline-form" onsubmit="return confirm('¿Registrar baja de este empleado?');">
+    <select name="motivoBaja" required>
+      <option value="">— Motivo baja —</option>
+      <% ['Renuncia voluntaria','Término de contrato','Despido justificado','Despido injustificado','Abandono de empleo','Jubilación','Defunción','Otro'].forEach(function(m) { %>
+      <option value="<%= m %>"><%= m %></option>
+      <% }); %>
+    </select>
+    <button type="submit" class="btn-danger">Dar de baja</button>
+  </form>
+  <% } %>
+</div>
+<%- include('../Partials/layout-bottom') %>

@@ -1,0 +1,21 @@
+<%- include('../Partials/layout-top', { title: 'Editar concepto', session }) %>
+<p><a href="/prenomina-conceptos">← Volver a lista</a></p>
+
+<h1>Editar concepto <code><%= concepto.clave %></code></h1>
+<form method="post" action="/prenomina-conceptos/<%= concepto._id %>" class="form-grid">
+  <input name="codigoExterno" placeholder="Código externo" value="<%= concepto.codigoExterno || '' %>" />
+  <input name="nombre" value="<%= concepto.nombre %>" required />
+  <select name="tipo" required>
+    <option value="percepcion" <%= concepto.tipo === 'percepcion' ? 'selected' : '' %>>Percepción</option>
+    <option value="deduccion" <%= concepto.tipo === 'deduccion' ? 'selected' : '' %>>Deducción</option>
+  </select>
+  <input name="cuentaContable" placeholder="Cuenta contable" value="<%= concepto.cuentaContable || '' %>" />
+  <select name="formula">
+    <% formulasConcepto.forEach(function(f) { %>
+    <option value="<%= f.value %>" <%= concepto.formula === f.value ? 'selected' : '' %>><%= f.label %></option>
+    <% }); %>
+  </select>
+  <input name="orden" type="number" min="0" value="<%= concepto.orden %>" />
+  <button type="submit">Guardar</button>
+</form>
+<%- include('../Partials/layout-bottom') %>

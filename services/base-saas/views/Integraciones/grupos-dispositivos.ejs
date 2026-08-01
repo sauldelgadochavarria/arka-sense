@@ -1,0 +1,64 @@
+<%- include('../Partials/layout-top', { title: 'Grupos de dispositivos', session }) %>
+<h1>Grupos de dispositivos</h1>
+<div class="toolbar">
+  <a class="btn" href="/integraciones/dispositivos">← Dispositivos</a>
+  <a class="btn" href="/integraciones/perfiles">Integraciones</a>
+</div>
+<% if (!empresa) { %>
+<p>No hay empresa vinculada.</p>
+<% } else { %>
+<p>Agrupa checadores biométricos por sucursal o centro de costo. Los empleados se vinculan a un grupo en su expediente.</p>
+
+<h2>Nuevo grupo</h2>
+<form method="post" action="/integraciones/grupos-dispositivos" class="form-grid form-wide">
+  <input name="nombre" placeholder="Nombre del grupo" required />
+  <input name="descripcion" placeholder="Descripción" />
+  <select name="subsidiariaId">
+    <option value="">— Sucursal —</option>
+    <% subsidiarias.forEach(function(s) { %>
+    <option value="<%= s._id %>"><%= s.nombre %></option>
+    <% }); %>
+  </select>
+  <fieldset class="form-section">
+    <legend>Dispositivos incluidos</legend>
+    <% if (!dispositivos.length) { %>
+    <p class="muted">No hay dispositivos registrados. <a href="/integraciones/dispositivos">Registrar dispositivo</a></p>
+    <% } %>
+    <% dispositivos.forEach(function(d) { %>
+    <label><input type="checkbox" name="dispositivoIds" value="<%= d._id %>" /> <%= d.nombre %> (<%= d.host || 'sin host' %>)</label>
+    <% }); %>
+  </fieldset>
+  <button type="submit">Crear grupo</button>
+</form>
+
+<h2>Grupos registrados</h2>
+<table>
+  <thead>
+    <tr><th>Nombre</th><th>Sucursal</th><th>Dispositivos</th><th>Activo</th><th></th></tr>
+  </thead>
+  <tbody>
+    <% if (!grupos.length) { %>
+    <tr><td colspan="5" class="muted">Sin grupos registrados.</td></tr>
+    <% } %>
+    <% grupos.forEach(function(g) { %>
+    <tr class="<%= !g.activo ? 'row-muted' : '' %>">
+      <td><%= g.nombre %></td>
+      <td><%= g.subsidiariaId ? (subMap.get(String(g.subsidiariaId)) || '—') : '—' %></td>
+      <td>
+        <% if (!g.dispositivoIds || !g.dispositivoIds.length) { %>—<% } else { %>
+        <%= g.dispositivoIds.map(function(id) { return deviceMap.get(String(id)) || id; }).join(', ') %>
+        <% } %>
+      </td>
+      <td><%= g.activo ? 'Sí' : 'No' %></td>
+      <td class="actions">
+        <a href="/integraciones/grupos-dispositivos/<%= g._id %>/edit">Editar</a>
+        <form method="post" action="/integraciones/grupos-dispositivos/<%= g._id %>/toggle" class="inline-form">
+          <button type="submit"><%= g.activo ? 'Desactivar' : 'Activar' %></button>
+        </form>
+      </td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<% } %>
+<%- include('../Partials/layout-bottom') %>

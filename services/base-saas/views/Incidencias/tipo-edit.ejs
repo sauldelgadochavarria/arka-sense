@@ -1,0 +1,13 @@
+<%- include('../Partials/layout-top', { title: 'Editar tipo de incidencia', session }) %>
+<p><a href="/incidencias/tipos">← Volver al catálogo</a></p>
+
+<h1>Editar tipo <code><%= tipo.clave %></code></h1>
+<form method="post" action="/incidencias/tipos/<%= tipo._id %>" class="form-grid">
+  <input name="nombre" value="<%= tipo.nombre %>" required />
+  <label><input type="checkbox" name="afectaPago" value="1" <%= tipo.afectaPago ? 'checked' : '' %> /> Afecta pago</label>
+  <label><input type="checkbox" name="requiereAprobacion" value="1" <%= tipo.requiereAprobacion ? 'checked' : '' %> /> Requiere aprobación</label>
+  <label><input type="checkbox" name="requiereDocumento" value="1" <%= tipo.requiereDocumento ? 'checked' : '' %> /> Requiere documento</label>
+  <label><input type="checkbox" name="esAutomatica" value="1" <%= tipo.esAutomatica ? 'checked' : '' %> /> Es automática</label>
+  <button type="submit">Guardar</button>
+</form>
+<%- include('../Partials/layout-bottom') %>

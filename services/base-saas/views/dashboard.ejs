@@ -1,0 +1,113 @@
+<%- include('Partials/layout-top', { title: 'Dashboard', session, menuTree }) %>
+
+<div class="page-header">
+  <h1>Bienvenido, <%= session.user %></h1>
+  <p class="page-subtitle">
+    <% if (tenant) { %>Organización: <strong><%= tenant.displayName %></strong><% } %>
+    <% if (session.subsidiariaActiva) { %> · Subsidiaria: <strong><%= session.subsidiariaActiva.nombre %></strong> (<%= session.subsidiariaActiva.codigo %>)<% } %>
+  </p>
+</div>
+
+<div class="card-grid">
+  <a class="module-card" href="/personal-empleados">
+    <h3>Personal</h3>
+    <p>Empleados, departamentos, puestos y empresa.</p>
+    <ul>
+      <li><a href="/personal-empleados">Empleados</a></li>
+      <li><a href="/personal-departamentos">Departamentos</a></li>
+      <li><a href="/config-empresa">Datos de empresa</a></li>
+    </ul>
+  </a>
+
+  <a class="module-card" href="/asistencia-diaria">
+    <h3>Asistencia</h3>
+    <p>Turnos, marcaciones y resumen diario.</p>
+    <ul>
+      <li><a href="/asistencia-turnos">Turnos</a></li>
+      <li><a href="/asistencia-marcaciones">Marcaciones</a></li>
+      <li><a href="/asistencia-diaria">Asistencia del día</a></li>
+    </ul>
+  </a>
+
+  <a class="module-card" href="/incidencias">
+    <h3>Incidencias</h3>
+    <p>Solicitudes, vacaciones y portal empleado.</p>
+    <ul>
+      <li><a href="/incidencias/pendientes">Bandeja pendientes</a></li>
+      <li><a href="/incidencias/vacaciones">Vacaciones</a></li>
+      <li><a href="/portal">Portal empleado</a></li>
+    </ul>
+  </a>
+
+  <a class="module-card" href="/prenomina-periodos">
+    <h3>Pre-nómina</h3>
+    <p>Períodos, cálculo y conceptos (asistencia).</p>
+    <ul>
+      <li><a href="/prenomina-periodos">Períodos</a></li>
+      <li><a href="/prenomina-conceptos">Conceptos</a></li>
+    </ul>
+  </a>
+
+  <% if (typeof featureFlags !== 'undefined' && featureFlags && featureFlags.nomina) { %>
+  <a class="module-card" href="/nomina">
+    <h3>Nómina</h3>
+    <p>Cálculo formal, conceptos fiscales y cierre.</p>
+    <ul>
+      <li><a href="/nomina">Inicio nómina</a></li>
+      <li><a href="/nomina/periodos">Períodos</a></li>
+      <li><a href="/nomina/conceptos">Conceptos</a></li>
+    </ul>
+  </a>
+  <% } %>
+
+  <a class="module-card" href="/integraciones/perfiles">
+    <h3>Integraciones</h3>
+    <p>Exportación, ABC y dispositivos.</p>
+    <ul>
+      <li><a href="/integraciones/exportacion">Exportar pre-nómina</a></li>
+      <li><a href="/integraciones/abc">Sync ABC</a></li>
+      <li><a href="/integraciones/dispositivos">Dispositivos</a></li>
+    </ul>
+  </a>
+
+  <a class="module-card" href="/reportes">
+    <h3>Reportes</h3>
+    <p>KPIs, consultas operativas y exportación.</p>
+    <ul>
+      <li><a href="/reportes/kpis">Dashboard KPIs</a></li>
+      <li><a href="/reportes">Centro de reportes</a></li>
+    </ul>
+  </a>
+
+  <a class="module-card" href="/config-users">
+    <h3>Configuración</h3>
+    <p>Usuarios, roles y subsidiarias.</p>
+    <ul>
+      <li><a href="/config-users">Usuarios</a></li>
+      <li><a href="/config-roles">Roles</a></li>
+      <li><a href="/config-subsidiarias">Subsidiarias</a></li>
+    </ul>
+  </a>
+</div>
+
+<% if (typeof kpis !== 'undefined' && kpis) { %>
+<section class="dashboard-kpis">
+  <div class="section-header">
+    <h2>Indicadores del día</h2>
+    <a href="/reportes/kpis">Ver dashboard completo →</a>
+  </div>
+  <div class="stats-grid">
+    <div class="stat-card ok"><strong><%= kpis.asistenciaHoy.pct %>%</strong><span>Asistencia hoy</span></div>
+    <div class="stat-card"><strong><%= kpis.empleadosActivos %></strong><span>Empleados activos</span></div>
+    <div class="stat-card warn"><strong><%= kpis.incidenciasPendientes %></strong><span>Pendientes</span></div>
+    <div class="stat-card"><strong><%= kpis.heMesMinutos %></strong><span>Min HE (mes)</span></div>
+  </div>
+  <% if (kpis.alertas.length) { %>
+  <ul class="alert-list-compact">
+    <% kpis.alertas.forEach(function(a) { %><li><%= a.texto %></li><% }); %>
+  </ul>
+  <% } %>
+</section>
+<% } %>
+
+<%- include('Partials/layout-bottom') %>

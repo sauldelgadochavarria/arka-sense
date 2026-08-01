@@ -1,0 +1,43 @@
+<%- include('../Partials/layout-top', { title: 'Roles', session }) %>
+<h1>Roles</h1>
+<table>
+  <thead>
+    <tr>
+      <th>Nombre</th>
+      <th>Admin</th>
+      <th>Config</th>
+      <th>Subsidiarias</th>
+      <th>Reportes</th>
+      <th>Ver nómina</th>
+      <th>Editar nómina</th>
+    </tr>
+  </thead>
+  <tbody>
+    <% roles.forEach(function(r) { %>
+    <tr>
+      <td><%= r.nombre %></td>
+      <td><%= r.esAdmin ? 'Sí' : 'No' %></td>
+      <td><%= r.adminAccesoConfig ? 'Sí' : 'No' %></td>
+      <td><%= r.puedeGestionarSubsidiarias ? 'Sí' : 'No' %></td>
+      <td><%= r.puedeVerReportes ? 'Sí' : 'No' %></td>
+      <td><%= (r.puedeVerNomina || r.puedeGestionarNomina || r.esAdmin || r.esAdminSistema) ? 'Sí' : 'No' %></td>
+      <td><%= (r.puedeGestionarNomina || r.esAdmin || r.esAdminSistema) ? 'Sí' : 'No' %></td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+
+<h2>Nuevo rol</h2>
+<form method="post" action="/config-roles" class="form-grid">
+  <input name="nombre" placeholder="Nombre del rol" required />
+  <input name="descripcion" placeholder="Descripción" />
+  <label><input type="checkbox" name="esAdmin" /> Administrador</label>
+  <label><input type="checkbox" name="adminAccesoConfig" /> Acceso configuración</label>
+  <label><input type="checkbox" name="puedeGestionarSubsidiarias" /> Gestionar subsidiarias</label>
+  <label><input type="checkbox" name="esAdminSistema" /> Admin sistema</label>
+  <label><input type="checkbox" name="puedeVerReportes" /> Ver reportes</label>
+  <label><input type="checkbox" name="puedeVerNomina" /> Ver conceptos de nómina (consulta)</label>
+  <label><input type="checkbox" name="puedeGestionarNomina" /> Editar conceptos / gestionar nómina</label>
+  <button type="submit">Crear rol</button>
+</form>
+<%- include('../Partials/layout-bottom') %>

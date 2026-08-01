@@ -1,0 +1,136 @@
+<%- include('../Partials/layout-top', { title: 'Pre-nómina — Períodos', session }) %>
+<%
+  const _anio = typeof anioFiltro !== 'undefined' ? anioFiltro : new Date().getFullYear();
+  const _ctx = typeof contextos !== 'undefined' && contextos ? contextos : {};
+  const pendientes = (periodos || []).filter(function(p) { return p.estatus === 'pendiente'; });
+  const activos = (periodos || []).filter(function(p) { return p.estatus !== 'pendiente' && p.estatus !== 'cerrado'; });
+  const cerrados = (periodos || []).filter(function(p) { return p.estatus === 'cerrado'; });
+%>
+<h1>Períodos de pre-nómina / pre-cálculo</h1>
+<% if (!empresa) { %>
+<p>No hay empresa vinculada a este tenant.</p>
+<% } else { %>
+<div class="toolbar">
+  <a class="btn btn-primary" href="/catalogos/periodos/generar">+ Generar períodos del año</a>
+  <a class="btn" href="/catalogos/periodos">Administración de períodos</a>
+  <a class="btn" href="/prenomina-conceptos">Conceptos</a>
+</div>
+
+<p class="muted">
+  Los períodos se generan una sola vez en <strong>Catálogos → Períodos</strong> (colección compartida
+  <code>payroll_periods</code>). Quedan en estatus <strong>pendiente</strong> hasta que los <strong>abras</strong>;
+  solo entonces aparecen operables aquí para calcular asistencia / pre-cálculo.
+  La bandera «compartir con nómina» no crea otro período: solo permite vincularlo después en Nómina formal.
+</p>
+
+<form method="get" action="/prenomina-periodos" class="form-grid filters-bar" style="max-width:20rem">
+  <label>Año
+    <input type="number" name="anio" min="2000" max="2100" value="<%= _anio %>" />
+  </label>
+  <button type="submit">Filtrar</button>
+</form>
+
+<h2>Pendientes de abrir (<%= pendientes.length %>)</h2>
+<table>
+  <thead>
+    <tr>
+      <th>#</th><th>Tipo</th><th>Inicio</th><th>Fin</th><th>Tipo nómina</th>
+      <th>Asist.</th><th>Nómina</th><th>Estatus</th><th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <% if (!pendientes.length) { %>
+    <tr><td colspan="9" class="muted">No hay pendientes en <%= _anio %>. Genera el año en Catálogos si aún no lo has hecho.</td></tr>
+    <% } %>
+    <% pendientes.forEach(function(p) {
+      const aplicaAsist = p.aplicaAsistenciaPrenomina !== false;
+      const compartir = p.compartirConNomina === true;
+      const ctx = _ctx[String(p._id)] || {};
+    %>
+    <tr>
+      <td><%= p.numeroPeriodo != null ? p.numeroPeriodo : '—' %></td>
+      <td><%= p.tipo %></td>
+      <td><%= new Date(p.fechaInicio).toLocaleDateString('es-MX') %></td>
+      <td><%= new Date(p.fechaFin).toLocaleDateString('es-MX') %></td>
+      <td><%= p.tipoNomina || 'ordinaria' %></td>
+      <td><%- include('../Partials/periodo-flags', { mode: 'asistencia', aplicaAsistencia: aplicaAsist, compartirNomina: compartir }) %></td>
+      <td><%- include('../Partials/periodo-flags', { mode: 'nomina', aplicaAsistencia: aplicaAsist, compartirNomina: compartir }) %></td>
+      <td><span class="badge badge-suspendido"><%= estatusLabels[p.estatus] || p.estatus %></span></td>
+      <td class="actions">
+        <a href="/prenomina-periodos/<%= p._id %>">Ver</a>
+        <% if (ctx.puedeAbrir) { %>
+        <form method="post" action="/prenomina-periodos/<%= p._id %>/abrir" class="inline-form">
+          <button type="submit">Abrir</button>
+        </form>
+        <% } else if (ctx.otroAbierto) { %>
+        <span class="muted small">Cierra el período abierto primero</span>
+        <% } else if (ctx.anterior && ctx.anterior.estatus !== 'cerrado') { %>
+        <span class="muted small">Cierra el período #<%= ctx.anterior.numeroPeriodo %> antes</span>
+        <% } else { %>
+        <a class="btn" href="/catalogos/periodos?anio=<%= p.anio || _anio %>">Ver en catálogo</a>
+        <% } %>
+      </td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+
+<h2>Activos / en cálculo (<%= activos.length %>)</h2>
+<table>
+  <thead>
+    <tr>
+      <th>#</th><th>Tipo</th><th>Inicio</th><th>Fin</th><th>Tipo nómina</th>
+      <th title="Guardado en el período">Asist.</th>
+      <th title="Guardado en el período">Nómina</th>
+      <th>Estatus</th><th>Empleados</th><th>Neto</th><th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <% if (!activos.length) { %>
+    <tr><td colspan="11" class="muted">Ningún período abierto o en borrador. Abre uno pendiente arriba para pre-calcular.</td></tr>
+    <% } %>
+    <% activos.forEach(function(p) {
+      const aplicaAsist = p.aplicaAsistenciaPrenomina !== false;
+      const compartir = p.compartirConNomina === true;
+    %>
+    <tr>
+      <td><%= p.numeroPeriodo != null ? p.numeroPeriodo : '—' %></td>
+      <td><%= p.tipo %></td>
+      <td><%= new Date(p.fechaInicio).toLocaleDateString('es-MX') %></td>
+      <td><%= new Date(p.fechaFin).toLocaleDateString('es-MX') %></td>
+      <td><%= p.tipoNomina || 'ordinaria' %></td>
+      <td><%- include('../Partials/periodo-flags', { mode: 'asistencia', aplicaAsistencia: aplicaAsist, compartirNomina: compartir }) %></td>
+      <td><%- include('../Partials/periodo-flags', { mode: 'nomina', aplicaAsistencia: aplicaAsist, compartirNomina: compartir }) %></td>
+      <td><span class="badge badge-<%= p.estatus === 'borrador' ? 'activo' : 'alta' %>"><%= estatusLabels[p.estatus] || p.estatus %></span></td>
+      <td><%= p.totales?.empleados || 0 %></td>
+      <td>$<%= (p.totales?.neto || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></td>
+      <td><a href="/prenomina-periodos/<%= p._id %>">Calcular / ver</a></td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+
+<% if (cerrados.length) { %>
+<details>
+  <summary><strong>Cerrados</strong> (<%= cerrados.length %>) — año <%= _anio %></summary>
+  <table>
+    <thead>
+      <tr><th>#</th><th>Tipo</th><th>Inicio</th><th>Fin</th><th>Estatus</th><th></th></tr>
+    </thead>
+    <tbody>
+      <% cerrados.forEach(function(p) { %>
+      <tr class="row-muted">
+        <td><%= p.numeroPeriodo != null ? p.numeroPeriodo : '—' %></td>
+        <td><%= p.tipo %></td>
+        <td><%= new Date(p.fechaInicio).toLocaleDateString('es-MX') %></td>
+        <td><%= new Date(p.fechaFin).toLocaleDateString('es-MX') %></td>
+        <td><span class="badge badge-baja"><%= estatusLabels[p.estatus] || p.estatus %></span></td>
+        <td><a href="/prenomina-periodos/<%= p._id %>">Ver</a></td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table>
+</details>
+<% } %>
+<% } %>
+<%- include('../Partials/layout-bottom') %>

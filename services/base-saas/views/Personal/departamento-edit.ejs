@@ -1,0 +1,19 @@
+<%- include('../Partials/layout-top', { title: 'Editar departamento', session }) %>
+<p><a href="/personal-departamentos">← Volver a lista</a></p>
+
+<h1>Editar departamento</h1>
+<form method="post" action="/personal-departamentos/<%= departamento._id %>" class="form-grid">
+  <input name="nombre" value="<%= departamento.nombre %>" required />
+  <input name="codigoExterno" placeholder="Código externo" value="<%= departamento.codigoExterno || '' %>" />
+  <input name="codigoLegado" type="number" placeholder="Código legado Fortia" value="<%= departamento.codigoLegado != null ? departamento.codigoLegado : '' %>" />
+  <input name="cuentaContableExterna" placeholder="Cuenta contable externa" value="<%= departamento.cuentaContableExterna || '' %>" />
+  <input name="descripcion" value="<%= departamento.descripcion || '' %>" placeholder="Descripción" />
+  <select name="parentId">
+    <option value="">— Sin departamento padre —</option>
+    <% departamentos.forEach(function(d) { %>
+    <option value="<%= d._id %>" <%= departamento.parentId && String(departamento.parentId) === String(d._id) ? 'selected' : '' %>><%= d.nombre %></option>
+    <% }); %>
+  </select>
+  <button type="submit">Guardar</button>
+</form>
+<%- include('../Partials/layout-bottom') %>

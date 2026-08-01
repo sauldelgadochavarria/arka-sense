@@ -1,0 +1,22 @@
+<%- include('partials/layout-top', { title: 'Mis solicitudes', session }) %>
+<h1>Mis solicitudes</h1>
+<p><a class="btn" href="/portal/solicitudes/nueva">Nueva solicitud</a></p>
+
+<table>
+  <thead>
+    <tr><th>Fecha</th><th>Tipo</th><th>Días</th><th>Estatus</th><th>Motivo</th><th>Resolución</th></tr>
+  </thead>
+  <tbody>
+    <% solicitudes.forEach(function(s) { %>
+    <tr>
+      <td><%= new Date(s.fechaInicio).toLocaleDateString('es-MX') %></td>
+      <td><code><%= s.codigo %></code></td>
+      <td><%= s.diasAfectados || 1 %></td>
+      <td><%= estatusLabels[s.estatus] || s.estatus %></td>
+      <td><%= s.motivo || '—' %></td>
+      <td><%= s.notasResolucion || '—' %></td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<%- include('partials/layout-bottom') %>

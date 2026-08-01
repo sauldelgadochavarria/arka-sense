@@ -1,0 +1,41 @@
+<%- include('../../Partials/layout-top', { title: 'Parámetros fiscales', session }) %>
+<h1>Parámetros fiscales</h1>
+<div class="toolbar">
+  <a class="btn" href="/nomina/catalogos">← Catálogos</a>
+  <a class="btn" href="/nomina/configuracion">Ver tablas ISR</a>
+</div>
+
+<h2>Nueva vigencia</h2>
+<form method="post" action="/nomina/catalogos/parametros" class="form-grid">
+  <select name="clave" required>
+    <% clavesPermitidas.forEach(function(p) { %>
+    <option value="<%= p.clave %>"><%= p.label %> — <%= p.descripcion %></option>
+    <% }); %>
+  </select>
+  <input name="valor" type="number" step="0.01" min="0.01" placeholder="Valor" required />
+  <input name="vigenciaDesde" type="date" />
+  <input name="descripcion" placeholder="Descripción (opcional)" />
+  <button type="submit">Registrar vigencia</button>
+</form>
+<p class="muted">Al registrar una nueva vigencia, la anterior del mismo parámetro se cierra automáticamente.</p>
+
+<table>
+  <thead>
+    <tr><th>Clave</th><th>Valor</th><th>Vigencia desde</th><th>Vigencia hasta</th><th>Descripción</th></tr>
+  </thead>
+  <tbody>
+    <% if (!parametros.length) { %>
+    <tr><td colspan="5" class="muted">Sin parámetros. Ejecuta <code>seed:nomina-fiscal</code>.</td></tr>
+    <% } %>
+    <% parametros.forEach(function(p) { %>
+    <tr>
+      <td><code><%= p.clave %></code></td>
+      <td><%= p.valor %></td>
+      <td><%= new Date(p.vigenciaDesde).toLocaleDateString('es-MX') %></td>
+      <td><%= p.vigenciaHasta ? new Date(p.vigenciaHasta).toLocaleDateString('es-MX') : 'Vigente' %></td>
+      <td><%= p.descripcion || '—' %></td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<%- include('../../Partials/layout-bottom') %>

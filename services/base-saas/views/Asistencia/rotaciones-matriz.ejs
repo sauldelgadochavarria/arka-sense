@@ -1,0 +1,44 @@
+<%- include('../Partials/layout-top', { title: 'Matriz de rotaciones', session }) %>
+<h1>Vista matriz — turno vigente por día</h1>
+<div class="toolbar">
+  <a class="btn" href="/asistencia-rotaciones">← Plantillas</a>
+  <a class="btn" href="/asistencia-rotaciones/asignaciones">Asignaciones</a>
+  <form method="get" action="/asistencia-rotaciones/matriz" class="inline-form">
+    <label>Desde</label>
+    <input type="date" name="fecha" value="<%= fecha %>" onchange="this.form.submit()" />
+    <label>Días</label>
+    <select name="dias" onchange="this.form.submit()">
+      <option value="7" <%= diasVista === 7 ? 'selected' : '' %>>7</option>
+      <option value="14" <%= diasVista === 14 ? 'selected' : '' %>>14</option>
+      <option value="21" <%= diasVista === 21 ? 'selected' : '' %>>21</option>
+      <option value="28" <%= diasVista === 28 ? 'selected' : '' %>>28</option>
+    </select>
+  </form>
+</div>
+<% if (!filas.length) { %>
+<p class="muted">No hay empleados con rotación asignada. <a href="/asistencia-rotaciones/asignaciones">Asignar rotación</a></p>
+<% } else { %>
+<div class="matriz-rotacion-wrap">
+  <table class="matriz-rotacion matriz-empleados">
+    <thead>
+      <tr>
+        <th>Empleado</th>
+        <% fechas.forEach(function(f) { %>
+        <th><%= f.toLocaleDateString('es-MX', { weekday: 'short', day: 'numeric' }) %></th>
+        <% }); %>
+      </tr>
+    </thead>
+    <tbody>
+      <% filas.forEach(function(fila) { %>
+      <tr>
+        <th class="emp-name"><%= fila.empleado.firstName %> <%= fila.empleado.lastName %></th>
+        <% fila.celdas.forEach(function(c) { %>
+        <td class="<%= c.label === 'Descanso' ? 'cell-descanso' : (c.origen === 'override' ? 'cell-override' : (c.origen === 'plantilla' ? 'cell-rotacion' : '')) %>" title="<%= c.origen %>"><%= c.label %><% if (c.origen === 'override') { %> *<% } %></td>
+        <% }); %>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table>
+</div>
+<% } %>
+<%- include('../Partials/layout-bottom') %>

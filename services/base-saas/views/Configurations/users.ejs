@@ -1,0 +1,63 @@
+<%- include('../Partials/layout-top', { title: 'Usuarios', session, menuTree }) %>
+
+<div class="page-header">
+  <h1>Usuarios del sistema</h1>
+  <p class="page-subtitle">Administra cuentas de acceso y vinculación con empleados para el portal.</p>
+</div>
+
+<div class="panel">
+  <h2 class="panel-title">Usuarios registrados</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Nombre</th><th>Email</th><th>Usuario</th><th>Rol</th><th>Empleado</th><th>Activo</th><th></th></tr></thead>
+      <tbody>
+        <% users.forEach(function(u) {
+          const rolId = u.roles && u.roles[0] ? String(u.roles[0]) : '';
+        %>
+        <tr>
+          <td><%= u.firstName %> <%= u.lastName %></td>
+          <td><%= u.email %></td>
+          <td><%= u.userName %></td>
+          <td><%= rolId ? (roleMap.get(rolId) || '—') : '—' %></td>
+          <td><%= u.empleadoId ? (empMap.get(String(u.empleadoId)) || '—') : '—' %></td>
+          <td><span class="badge badge-<%= u.activo ? 'activo' : 'baja' %>"><%= u.activo ? 'Sí' : 'No' %></span></td>
+          <td class="actions">
+            <a href="/config-users/<%= u._id %>/edit">Editar</a>
+            <% if (String(u._id) !== String(session.userid)) { %>
+            <form method="post" action="/config-users/<%= u._id %>/toggle" class="inline-form">
+              <button type="submit" class="btn-secondary"><%= u.activo ? 'Desactivar' : 'Activar' %></button>
+            </form>
+            <% } %>
+          </td>
+        </tr>
+        <% }); %>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="panel">
+  <h2 class="panel-title">Nuevo usuario</h2>
+  <form method="post" action="/config-users" class="form-grid form-wide">
+    <input name="firstName" placeholder="Nombre" required />
+    <input name="lastName" placeholder="Apellido" required />
+    <input name="userName" placeholder="Usuario" required />
+    <input name="email" type="email" placeholder="Email" required />
+    <input name="password" type="password" placeholder="Contraseña" required />
+    <select name="roleId">
+      <option value="">— Rol —</option>
+      <% roles.forEach(function(r) { %>
+      <option value="<%= r._id %>"><%= r.nombre %></option>
+      <% }); %>
+    </select>
+    <select name="empleadoId">
+      <option value="">— Vincular empleado (portal) —</option>
+      <% empleados.forEach(function(e) { %>
+      <option value="<%= e._id %>"><%= e.firstName %> <%= e.lastName %> (<%= e.numEmpleado %>)</option>
+      <% }); %>
+    </select>
+    <button type="submit">Crear usuario</button>
+  </form>
+</div>
+
+<%- include('../Partials/layout-bottom') %>

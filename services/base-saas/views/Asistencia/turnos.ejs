@@ -1,0 +1,49 @@
+<%- include('../Partials/layout-top', { title: 'Turnos', session }) %>
+<h1>Turnos y horarios</h1>
+<% if (!empresa) { %>
+<p>No hay empresa vinculada a este tenant. Activa el tenant desde Arka-Presence Admin.</p>
+<% } else { %>
+<table>
+  <thead>
+    <tr>
+      <th>Nombre</th>
+      <th>Tipo</th>
+      <th>Horario</th>
+      <th>Holgura</th>
+      <th>Tolerancia</th>
+      <th>Días</th>
+      <th>Activo</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <% if (!turnos.length) { %>
+    <tr><td colspan="8" class="muted">No hay turnos registrados.</td></tr>
+    <% } %>
+    <% turnos.forEach(function(t) { %>
+    <tr class="<%= !t.activo ? 'row-muted' : '' %>">
+      <td><span class="color-dot" style="background:<%= t.color %>"></span> <%= t.nombre %></td>
+      <td><%= labelTipoTurno(t.tipo) %></td>
+      <td><%= t.horaEntrada %> – <%= t.horaSalida %></td>
+      <td class="muted" style="font-size:0.9em"><%= describeVentana(t) %></td>
+      <td><%= t.modoTolerancia || 'normal' %> · Ent. <%= t.toleranciaEntradaMin %>m</td>
+      <td><%= (t.diasLaborables || []).map(function(d) { var item = diasSemana.find(function(x){ return x.value === d; }); return item ? item.short : d; }).join(', ') %></td>
+      <td><%= t.activo ? 'Sí' : 'No' %></td>
+      <td class="actions">
+        <a href="/asistencia-turnos/<%= t._id %>/edit">Editar</a>
+        <form method="post" action="/asistencia-turnos/<%= t._id %>/toggle" class="inline-form">
+          <button type="submit"><%= t.activo ? 'Desactivar' : 'Activar' %></button>
+        </form>
+      </td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+
+<h2>Nuevo turno</h2>
+<form method="post" action="/asistencia-turnos" class="form-grid form-wide">
+  <%- include('partials/turno-fields', { turno: null, diasSemana, tiposTurno, modosTolerancia }) %>
+  <button type="submit">Crear turno</button>
+</form>
+<% } %>
+<%- include('../Partials/layout-bottom') %>

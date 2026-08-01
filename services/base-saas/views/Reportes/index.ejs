@@ -1,0 +1,24 @@
+<%- include('../Partials/layout-top', { title: 'Reportes', session }) %>
+<div class="page-header">
+  <h1>Reportes y analítica</h1>
+  <p class="page-subtitle">Consultas operativas y gerenciales con exportación a Excel (CSV).</p>
+</div>
+
+<% if (!empresa) { %>
+<p>No hay empresa vinculada a este tenant.</p>
+<% } else { %>
+<div class="toolbar">
+  <a class="btn btn-primary" href="/reportes/kpis">Dashboard KPIs</a>
+  <a class="btn" href="/asistencia-diaria">Asistencia del día</a>
+</div>
+
+<div class="card-grid report-catalog">
+  <% reportes.forEach(function(rep) { %>
+  <a class="module-card" href="/reportes/<%= rep.slug %>">
+    <h3><%= rep.title %></h3>
+    <p><%= rep.descripcion %></p>
+  </a>
+  <% }); %>
+</div>
+<% } %>
+<%- include('../Partials/layout-bottom') %>

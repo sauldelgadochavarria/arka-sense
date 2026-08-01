@@ -1,0 +1,44 @@
+<%- include('../Partials/layout-top', { title: 'Conceptos de nómina', session }) %>
+<h1>Conceptos de nómina</h1>
+<div class="toolbar">
+  <a class="btn" href="/prenomina-periodos">← Períodos</a>
+  <a class="btn btn-primary" href="/prenomina-conceptos/nuevo">+ Nuevo</a>
+</div>
+<% if (!empresa) { %>
+<p>No hay empresa vinculada a este tenant.</p>
+<% } else { %>
+<p>Misma colección que nómina formal; aquí se listan los de ámbito <strong>pre-nómina</strong> o <strong>ambos</strong>.</p>
+
+<table>
+  <thead>
+    <tr><th>Clave</th><th>Código</th><th>Ámbito</th><th>Nombre</th><th>Tipo</th><th>Fórmula</th><th>Incidencias</th><th>Activo</th><th></th></tr>
+  </thead>
+  <tbody>
+    <% if (!conceptos.length) { %>
+    <tr><td colspan="9" class="muted">Sin conceptos. Siembra arquitectura o abre un período.</td></tr>
+    <% } %>
+    <% conceptos.forEach(function(c) {
+         const ambito = c.aplicaEn || 'prenomina';
+         const ambitoLabel = ambito === 'ambos' ? 'Ambos' : (ambito === 'nomina' ? 'Nómina' : 'Pre-nómina');
+    %>
+    <tr class="<%= !c.activo ? 'row-muted' : '' %>">
+      <td><code><%= c.clave %></code></td>
+      <td><code><%= c.codigo || c.codigoCatalogo || '—' %></code></td>
+      <td><span class="badge-ambito badge-ambito-<%= ambito %>"><%= ambitoLabel %></span></td>
+      <td><%= c.nombre %></td>
+      <td><%= c.tipo === 'percepcion' ? 'Percepción' : 'Deducción' %></td>
+      <td><%= c.formula || '—' %></td>
+      <td class="muted small"><%= (c.tiposIncidencia || []).join(', ') || '—' %></td>
+      <td><%= c.activo ? 'Sí' : 'No' %></td>
+      <td class="actions">
+        <a href="/prenomina-conceptos/<%= c._id %>/edit">Editar</a>
+        <form method="post" action="/prenomina-conceptos/<%= c._id %>/toggle" class="inline-form">
+          <button type="submit"><%= c.activo ? 'Desactivar' : 'Activar' %></button>
+        </form>
+      </td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<% } %>
+<%- include('../Partials/layout-bottom') %>

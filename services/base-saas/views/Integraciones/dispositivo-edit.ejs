@@ -1,0 +1,30 @@
+<%- include('../Partials/layout-top', { title: 'Editar dispositivo', session }) %>
+<h1>Editar dispositivo</h1>
+<div class="toolbar"><a class="btn" href="/integraciones/dispositivos">← Dispositivos</a></div>
+<form method="post" action="/integraciones/dispositivos/<%= dispositivo._id %>" class="form-grid">
+  <label>Nombre</label>
+  <input name="nombre" value="<%= dispositivo.nombre %>" required />
+  <label>Tipo</label>
+  <select name="tipo">
+    <% tiposDispositivo.forEach(function(t) { %>
+    <option value="<%= t.value %>" <%= dispositivo.tipo === t.value ? 'selected' : '' %>><%= t.label %></option>
+    <% }); %>
+  </select>
+  <label>Host / IP</label>
+  <input name="host" value="<%= dispositivo.host || '' %>" />
+  <label>Puerto</label>
+  <input name="puerto" type="number" value="<%= dispositivo.puerto || 4370 %>" />
+  <label>Ubicación</label>
+  <input name="ubicacion" value="<%= dispositivo.ubicacion || '' %>" />
+  <label>Subsidiaria</label>
+  <select name="subsidiariaId">
+    <option value="">— Ninguna —</option>
+    <% subsidiarias.forEach(function(s) { %>
+    <option value="<%= s._id %>" <%= String(dispositivo.subsidiariaId) === String(s._id) ? 'selected' : '' %>><%= s.nombre %></option>
+    <% }); %>
+  </select>
+  <label>Activo</label>
+  <input type="checkbox" name="activo" <%= dispositivo.activo ? 'checked' : '' %> />
+  <button type="submit">Guardar</button>
+</form>
+<%- include('../Partials/layout-bottom') %>

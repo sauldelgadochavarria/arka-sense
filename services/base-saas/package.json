@@ -1,0 +1,40 @@
+{
+  "name": "arka-presence-saas",
+  "version": "1.0.0",
+  "description": "Arka-Presence — aplicación multi-tenant (usuarios, roles, subsidiarias, menús)",
+  "main": "index.js",
+  "scripts": {
+    "dev": "node index.js",
+    "start": "node index.js",
+    "seed": "node scripts/seed.js",
+    "seed:empleados": "node scripts/seed-empleados.js",
+    "seed:empleados:sur": "node scripts/seed-empleados.js --subsidiaria=SUR",
+    "seed:empleados:all": "node scripts/seed-empleados.js --subsidiaria=all",
+    "seed:nomina-fiscal": "node scripts/seed-nomina-fiscal.js",
+    "seed:nomina-arquitectura": "node scripts/seed-nomina-arquitectura.js",
+    "seed:catalogo-sat": "node scripts/seed-catalogo-sat.js",
+    "seed:catalogo-mapeo-legado": "node scripts/seed-catalogo-mapeo-legado.js",
+    "seed:tipos-movimiento-laboral": "node scripts/seed-tipos-movimiento-laboral.js",
+    "seed:org-legado-demo": "node scripts/seed-org-legado-demo.js",
+    "seed:historial-empleados-demo": "node scripts/seed-historial-empleados-demo.js",
+    "import:conceptos-legado": "node scripts/import-conceptos-legado.js",
+    "import:historial-legado": "node scripts/import-historial-legado.js",
+    "seed:tipos-periodo": "node scripts/seed-tipos-periodo.js",
+    "import:tipos-periodo": "node scripts/import-tipos-periodo.js",
+    "import:movimientos-asistencia": "node scripts/import-movimientos-asistencia.js",
+    "test:nomina": "node scripts/nomina-smoke-test.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "body-parser": "^1.20.2",
+    "connect-flash": "^0.1.1",
+    "dotenv": "^16.4.5",
+    "ejs": "^3.1.10",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.5.0",
+    "express-session": "^1.17.3",
+    "mathjs": "^14.9.1",
+    "mongoose": "^8.18.1",
+    "zod": "^3.25.76"
+  }
+}

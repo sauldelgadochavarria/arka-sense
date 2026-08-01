@@ -1,0 +1,36 @@
+<%- include('../Partials/layout-top', { title: 'Enums del sistema', session }) %>
+
+<div class="page-header">
+  <h1>Enums del sistema</h1>
+  <p class="page-subtitle">Valores de catálogo en BD (mínimo hardcode). Usados por nómina y configuración de conceptos.</p>
+</div>
+
+<div class="toolbar">
+  <form method="post" action="/config-sistema/bootstrap-nomina" class="inline-form">
+    <button type="submit">Sembrar catálogo SUELDO / HE + enums</button>
+  </form>
+  <a class="btn btn-secondary" href="/nomina/conceptos">Conceptos de nómina</a>
+</div>
+
+<div class="panel">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Grupo</th><th>Nombre</th><th>Ítems</th><th>Editable</th><th></th></tr>
+      </thead>
+      <tbody>
+        <% enums.forEach(function(e) { %>
+        <tr>
+          <td><code><%= e.grupo %></code></td>
+          <td><%= e.nombre %></td>
+          <td><%= (e.items || []).length %></td>
+          <td><%= e.editable ? 'Sí' : 'No' %></td>
+          <td><a href="/config-sistema/enums/<%= e.grupo %>">Ver / editar</a></td>
+        </tr>
+        <% }); %>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<%- include('../Partials/layout-bottom') %>

@@ -1,0 +1,19 @@
+<%#
+  aplicaAsistencia, compartirNomina (boolean)
+  nota (optional string)
+%>
+<div class="info-panel periodo-config-panel">
+  <span class="flag-labels">
+    <label class="flag-readonly <%= aplicaAsistencia ? 'is-on' : '' %>">
+      <input type="checkbox" disabled <%= aplicaAsistencia ? 'checked' : '' %> />
+      Aplica asistencia/pre-nómina
+    </label>
+    <label class="flag-readonly <%= compartirNomina ? 'is-on' : '' %>">
+      <input type="checkbox" disabled <%= compartirNomina ? 'checked' : '' %> />
+      Compartir con nómina
+    </label>
+  </span>
+  <% if (typeof nota === 'string' && nota) { %>
+  <p class="muted small"><%= nota %></p>
+  <% } %>
+</div>

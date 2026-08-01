@@ -1,0 +1,877 @@
+'use strict';
+
+const getConceptoNominaModel = require('../../models/conceptoNomina');
+const getFormulaConceptoModel = require('../../models/formulaConcepto');
+const {
+  CONCEPTOS_BASE,
+  FORMULAS_BASE,
+  FORMULAS_FISCALES_V2,
+  VIGENCIA_INICIAL,
+  VIGENCIA_FISCAL_V2
+} = require('../../config/nominaDefaults');
+const {
+  CONCEPTOS_CAPA_B,
+  FORMULAS_CAPA_B,
+  VIGENCIA_CAPA_B,
+  MAPEO_CANONICO_LEGADO
+} = require('../../config/nominaConceptosCapaB');
+const {
+  CONCEPTOS_CAPA_C,
+  FORMULAS_CAPA_C,
+  VIGENCIA_CAPA_C,
+  MAPEO_CANONICO_CAPA_C
+} = require('../../config/nominaConceptosCapaC');
+
+const MAPEO_CANONICO_COMPLETO = { ...MAPEO_CANONICO_LEGADO, ...MAPEO_CANONICO_CAPA_C };
+const {
+  parseConceptosLegadoFile,
+  mapLegacyRowToConcepto,
+  resumirImportacion,
+  legacyCodigo
+} = require('../../libs/importacionConceptosLegado');
+const { ordenarPorDependencias } = require('./dependencyResolver');
+const { validateFormulaSyntax, normalizeConditionComparisons } = require('./formulaEvaluator');
+const { validateFormulaPayload, validateConceptoPayload } = require('../../libs/nominaValidators');
+
+async function ensureNominaConceptsForTenant(tenantId, empresaId) {
+  const ConceptoNomina = await getConceptoNominaModel();
+  const FormulaConcepto = await getFormulaConceptoModel();
+  const vigenciaDesde = VIGENCIA_INICIAL;
+
+  for (const c of CONCEPTOS_BASE) {
+    await ConceptoNomina.updateOne(
+      { tenantId, codigo: c.codigo },
+      {
+        $setOnInsert: {
+          tenantId,
+          empresaId,
+          codigo: c.codigo,
+          nombre: c.nombre,
+          tipo: c.tipo,
+          naturaleza: c.naturaleza,
+          ordenCalculo: c.ordenCalculo,
+          sat: c.sat || {},
+          metadata: c.metadata || {},
+          activo: true,
+          aplicaTipoNomina: ['ordinaria', 'extraordinaria', 'finiquito']
+        }
+      },
+      { upsert: true }
+    );
+  }
+
+  for (const f of FORMULAS_BASE) {
+    const exists = await FormulaConcepto.findOne({
+      tenantId,
+      conceptoCodigo: f.conceptoCodigo,
+      tipoPeriodo: f.tipoPeriodo,
+      tipoNomina: f.tipoNomina,
+      vigenciaDesde
+    }).lean();
+    if (exists) continue;
+
+    await FormulaConcepto.create({
+      tenantId,
+      conceptoCodigo: f.conceptoCodigo,
+      tipoPeriodo: f.tipoPeriodo,
+      tipoNomina: f.tipoNomina,
+      vigenciaDesde,
+      vigenciaHasta: null,
+      condicion: f.condicion || '',
+      formula: f.formula,
+      dependencias: f.dependencias || [],
+      activo: true
+    });
+  }
+
+  await syncFormulasFiscalesV2(tenantId);
+  await ensureCapaBConceptosForTenant(tenantId, empresaId);
+  await ensureCapaCConceptosForTenant(tenantId, empresaId);
+  await recalcularDependientes(tenantId);
+}
+
+/** Conceptos y fórmulas Capa B (catálogo legado priorizado → mathjs) */
+async function ensureCapaBConceptosForTenant(tenantId, empresaId) {
+  const ConceptoNomina = await getConceptoNominaModel();
+  const FormulaConcepto = await getFormulaConceptoModel();
+
+  for (const c of CONCEPTOS_CAPA_B) {
+    await ConceptoNomina.updateOne(
+      { tenantId, codigo: c.codigo },
+      {
+        $setOnInsert: {
+          tenantId,
+          empresaId,
+          codigo: c.codigo,
+          nombre: c.nombre,
+          tipo: c.tipo,
+          naturaleza: c.naturaleza,
+          ordenCalculo: c.ordenCalculo,
+          sat: c.sat || {},
+          metadata: c.metadata || {},
+          activo: true,
+          aplicaTipoNomina: c.aplicaTipoNomina || ['ordinaria', 'extraordinaria', 'finiquito', 'aguinaldo']
+        }
+      },
+      { upsert: true }
+    );
+  }
+
+  await syncFormulasCapaB(tenantId);
+}
+
+async function syncFormulasCapaB(tenantId) {
+  const FormulaConcepto = await getFormulaConceptoModel();
+
+  await FormulaConcepto.updateMany(
+    {
+      tenantId,
+      vigenciaDesde: VIGENCIA_CAPA_B,
+      vigenciaHasta: { $ne: null, $lt: VIGENCIA_CAPA_B }
+    },
+    { $set: { vigenciaHasta: null } }
+  );
+
+  for (const f of FORMULAS_CAPA_B) {
+    const vigente = await FormulaConcepto.findOne({
+      tenantId,
+      conceptoCodigo: f.conceptoCodigo,
+      tipoPeriodo: f.tipoPeriodo,
+      tipoNomina: f.tipoNomina,
+      vigenciaHasta: null,
+      activo: true
+    }).lean();
+
+    if (vigente && vigente.formula === f.formula && vigente.condicion === (f.condicion || '')) {
+      continue;
+    }
+
+    const mismaEra =
+      vigente && new Date(vigente.vigenciaDesde).getTime() === VIGENCIA_CAPA_B.getTime();
+
+    if (vigente && mismaEra) {
+      await FormulaConcepto.updateOne(
+        { _id: vigente._id },
+        {
+          $set: {
+            formula: f.formula,
+            condicion: f.condicion || '',
+            dependencias: f.dependencias || [],
+            vigenciaHasta: null,
+            activo: true
+          }
+        }
+      );
+      continue;
+    }
+
+    if (vigente) {
+      await FormulaConcepto.updateOne(
+        { _id: vigente._id },
+        { $set: { vigenciaHasta: new Date(VIGENCIA_CAPA_B.getTime() - 1) } }
+      );
+    }
+
+    const yaCapaB = await FormulaConcepto.findOne({
+      tenantId,
+      conceptoCodigo: f.conceptoCodigo,
+      tipoPeriodo: f.tipoPeriodo,
+      tipoNomina: f.tipoNomina,
+      vigenciaDesde: VIGENCIA_CAPA_B
+    }).lean();
+
+    if (yaCapaB) {
+      await FormulaConcepto.updateOne(
+        { _id: yaCapaB._id },
+        {
+          $set: {
+            formula: f.formula,
+            condicion: f.condicion || '',
+            dependencias: f.dependencias || [],
+            vigenciaHasta: null,
+            activo: true
+          }
+        }
+      );
+      continue;
+    }
+
+    await FormulaConcepto.create({
+      tenantId,
+      conceptoCodigo: f.conceptoCodigo,
+      tipoPeriodo: f.tipoPeriodo,
+      tipoNomina: f.tipoNomina,
+      vigenciaDesde: VIGENCIA_CAPA_B,
+      vigenciaHasta: null,
+      condicion: f.condicion || '',
+      formula: f.formula,
+      dependencias: f.dependencias || [],
+      activo: true
+    });
+  }
+}
+
+/** Conceptos y fórmulas Capa C (INFONAVIT, fondo de ahorro, finiquito) */
+async function ensureCapaCConceptosForTenant(tenantId, empresaId) {
+  const ConceptoNomina = await getConceptoNominaModel();
+
+  for (const c of CONCEPTOS_CAPA_C) {
+    await ConceptoNomina.updateOne(
+      { tenantId, codigo: c.codigo },
+      {
+        $setOnInsert: {
+          tenantId,
+          empresaId,
+          codigo: c.codigo,
+          nombre: c.nombre,
+          tipo: c.tipo,
+          naturaleza: c.naturaleza,
+          ordenCalculo: c.ordenCalculo,
+          sat: c.sat || {},
+          metadata: c.metadata || {},
+          activo: true,
+          aplicaTipoNomina: c.aplicaTipoNomina || ['ordinaria', 'extraordinaria', 'finiquito', 'aguinaldo']
+        }
+      },
+      { upsert: true }
+    );
+  }
+
+  await ConceptoNomina.updateOne(
+    { tenantId, codigo: 'PRIMA_VACACIONAL' },
+    { $unset: { 'metadata.pendienteMotor': '' } }
+  );
+
+  await syncFormulasCapaC(tenantId);
+}
+
+async function syncFormulasCapaC(tenantId) {
+  const FormulaConcepto = await getFormulaConceptoModel();
+
+  await FormulaConcepto.updateMany(
+    {
+      tenantId,
+      vigenciaDesde: VIGENCIA_CAPA_C,
+      vigenciaHasta: { $ne: null, $lt: VIGENCIA_CAPA_C }
+    },
+    { $set: { vigenciaHasta: null } }
+  );
+
+  for (const f of FORMULAS_CAPA_C) {
+    const vigente = await FormulaConcepto.findOne({
+      tenantId,
+      conceptoCodigo: f.conceptoCodigo,
+      tipoPeriodo: f.tipoPeriodo,
+      tipoNomina: f.tipoNomina,
+      vigenciaHasta: null,
+      activo: true
+    }).lean();
+
+    if (vigente && vigente.formula === f.formula && vigente.condicion === (f.condicion || '')) {
+      continue;
+    }
+
+    const mismaEra =
+      vigente && new Date(vigente.vigenciaDesde).getTime() === VIGENCIA_CAPA_C.getTime();
+
+    if (vigente && mismaEra) {
+      await FormulaConcepto.updateOne(
+        { _id: vigente._id },
+        {
+          $set: {
+            formula: f.formula,
+            condicion: f.condicion || '',
+            dependencias: f.dependencias || [],
+            vigenciaHasta: null,
+            activo: true
+          }
+        }
+      );
+      continue;
+    }
+
+    if (vigente) {
+      await FormulaConcepto.updateOne(
+        { _id: vigente._id },
+        { $set: { vigenciaHasta: new Date(VIGENCIA_CAPA_C.getTime() - 1) } }
+      );
+    }
+
+    const yaCapaC = await FormulaConcepto.findOne({
+      tenantId,
+      conceptoCodigo: f.conceptoCodigo,
+      tipoPeriodo: f.tipoPeriodo,
+      tipoNomina: f.tipoNomina,
+      vigenciaDesde: VIGENCIA_CAPA_C
+    }).lean();
+
+    if (yaCapaC) {
+      await FormulaConcepto.updateOne(
+        { _id: yaCapaC._id },
+        {
+          $set: {
+            formula: f.formula,
+            condicion: f.condicion || '',
+            dependencias: f.dependencias || [],
+            vigenciaHasta: null,
+            activo: true
+          }
+        }
+      );
+      continue;
+    }
+
+    await FormulaConcepto.create({
+      tenantId,
+      conceptoCodigo: f.conceptoCodigo,
+      tipoPeriodo: f.tipoPeriodo,
+      tipoNomina: f.tipoNomina,
+      vigenciaDesde: VIGENCIA_CAPA_C,
+      vigenciaHasta: null,
+      condicion: f.condicion || '',
+      formula: f.formula,
+      dependencias: f.dependencias || [],
+      activo: true
+    });
+  }
+}
+
+/**
+ * Capa A: importa metadatos del TSV legado (sin fórmulas SQL).
+ * Los conceptos se guardan como L#### con metadata.legado completa.
+ */
+async function importarConceptosLegadoCapaA(tenantId, empresaId, filePath, options = {}) {
+  const { dryRun = false, soloActivos = true, claEmpresa = null, mapeos = null } = options;
+  const rows = parseConceptosLegadoFile(filePath);
+  const ConceptoNomina = await getConceptoNominaModel();
+
+  const conceptos = [];
+  for (const row of rows) {
+    const doc = mapLegacyRowToConcepto(row, tenantId, empresaId, { soloActivos, claEmpresa, mapeos });
+    if (!doc) continue;
+
+    const canonico = MAPEO_CANONICO_COMPLETO[doc.metadata.legado.claPerded];
+    if (canonico) {
+      doc.metadata.legado.codigoCanonico = canonico;
+    }
+    conceptos.push(doc);
+  }
+
+  if (dryRun) {
+    return { dryRun: true, resumen: resumirImportacion(conceptos), conceptos };
+  }
+
+  let insertados = 0;
+  let actualizados = 0;
+
+  for (const doc of conceptos) {
+    const res = await ConceptoNomina.updateOne(
+      { tenantId, codigo: doc.codigo },
+      {
+        $set: {
+          nombre: doc.nombre,
+          tipo: doc.tipo,
+          naturaleza: doc.naturaleza,
+          claveSAT: doc.claveSAT,
+          gravado: doc.gravado,
+          aplicaTipoNomina: doc.aplicaTipoNomina,
+          ordenCalculo: doc.ordenCalculo,
+          sat: doc.sat,
+          metadata: doc.metadata,
+          activo: doc.activo,
+          empresaId: doc.empresaId
+        },
+        $setOnInsert: {
+          tenantId: doc.tenantId,
+          codigo: doc.codigo,
+          dependientes: []
+        }
+      },
+      { upsert: true }
+    );
+    if (res.upsertedCount) insertados++;
+    else if (res.modifiedCount) actualizados++;
+  }
+
+  await vincularCanonicoEnLegado(tenantId);
+
+  return {
+    dryRun: false,
+    resumen: resumirImportacion(conceptos),
+    insertados,
+    actualizados,
+    totalFilas: rows.length
+  };
+}
+
+/** Escribe codigoCanonico en conceptos L#### según MAPEO_CANONICO_LEGADO */
+async function vincularCanonicoEnLegado(tenantId) {
+  const ConceptoNomina = await getConceptoNominaModel();
+  for (const [claPerded, codigoCanonico] of Object.entries(MAPEO_CANONICO_COMPLETO)) {
+    await ConceptoNomina.updateOne(
+      { tenantId, codigo: legacyCodigo(claPerded) },
+      { $set: { 'metadata.legado.codigoCanonico': codigoCanonico } }
+    );
+  }
+}
+
+/** Actualiza fórmulas ISR/IMSS/HE a versión con isrPeriodo e imssObrero */
+async function syncFormulasFiscalesV2(tenantId) {
+  const FormulaConcepto = await getFormulaConceptoModel();
+
+  for (const f of FORMULAS_FISCALES_V2) {
+    const vigente = await FormulaConcepto.findOne({
+      tenantId,
+      conceptoCodigo: f.conceptoCodigo,
+      tipoPeriodo: f.tipoPeriodo,
+      tipoNomina: f.tipoNomina,
+      vigenciaHasta: null,
+      activo: true
+    }).lean();
+
+    if (vigente && vigente.formula === f.formula && vigente.condicion === (f.condicion || '')) {
+      continue;
+    }
+
+    if (vigente) {
+      await FormulaConcepto.updateOne(
+        { _id: vigente._id },
+        { $set: { vigenciaHasta: new Date(VIGENCIA_FISCAL_V2.getTime() - 1) } }
+      );
+    }
+
+    const yaV2 = await FormulaConcepto.findOne({
+      tenantId,
+      conceptoCodigo: f.conceptoCodigo,
+      tipoPeriodo: f.tipoPeriodo,
+      tipoNomina: f.tipoNomina,
+      vigenciaDesde: VIGENCIA_FISCAL_V2
+    }).lean();
+
+    if (yaV2) continue;
+
+    await FormulaConcepto.create({
+      tenantId,
+      conceptoCodigo: f.conceptoCodigo,
+      tipoPeriodo: f.tipoPeriodo,
+      tipoNomina: f.tipoNomina,
+      vigenciaDesde: VIGENCIA_FISCAL_V2,
+      vigenciaHasta: null,
+      condicion: f.condicion || '',
+      formula: f.formula,
+      dependencias: f.dependencias || [],
+      activo: true
+    });
+  }
+}
+
+async function recalcularDependientes(tenantId) {
+  const FormulaConcepto = await getFormulaConceptoModel();
+  const ConceptoNomina = await getConceptoNominaModel();
+  const formulas = await FormulaConcepto.find({ tenantId, activo: true }).lean();
+
+  const dependientesMap = new Map();
+  for (const f of formulas) {
+    for (const dep of f.dependencias || []) {
+      if (!dependientesMap.has(dep)) dependientesMap.set(dep, new Set());
+      dependientesMap.get(dep).add(f.conceptoCodigo);
+    }
+  }
+
+  const conceptos = await ConceptoNomina.find({ tenantId }).lean();
+  for (const c of conceptos) {
+    const deps = dependientesMap.has(c.codigo) ? [...dependientesMap.get(c.codigo)] : [];
+    await ConceptoNomina.updateOne({ _id: c._id }, { $set: { dependientes: deps } });
+  }
+}
+
+async function listConceptos(tenantId) {
+  const ConceptoNomina = await getConceptoNominaModel();
+  return ConceptoNomina.find({ tenantId }).sort({ ordenCalculo: 1, codigo: 1 }).lean();
+}
+
+async function getConceptoConFormulas(tenantId, codigo) {
+  const ConceptoNomina = await getConceptoNominaModel();
+  const FormulaConcepto = await getFormulaConceptoModel();
+  const concepto = await ConceptoNomina.findOne({ tenantId, codigo: String(codigo).toUpperCase() }).lean();
+  if (!concepto) return null;
+
+  const formulas = await FormulaConcepto.find({ tenantId, conceptoCodigo: concepto.codigo, activo: true })
+    .sort({ tipoPeriodo: 1, tipoNomina: 1, vigenciaDesde: -1 })
+    .lean();
+
+  return { concepto, formulas };
+}
+
+async function validarDependenciasGrupo(tenantId, tipoPeriodo, tipoNomina, conceptoCodigo, dependencias) {
+  const FormulaConcepto = await getFormulaConceptoModel();
+  const formulasDelGrupo = await FormulaConcepto.find({
+    tenantId,
+    tipoPeriodo,
+    tipoNomina,
+    activo: true
+  }).lean();
+
+  const formulasSimuladas = [
+    ...formulasDelGrupo.filter((f) => f.conceptoCodigo !== conceptoCodigo),
+    { conceptoCodigo, dependencias: dependencias || [] }
+  ];
+
+  ordenarPorDependencias(formulasSimuladas);
+  return { valido: true };
+}
+
+async function guardarFormula(tenantId, payload) {
+  const validated = validateFormulaPayload({
+    ...payload,
+    conceptoCodigo: String(payload.conceptoCodigo).toUpperCase(),
+    dependencias: (payload.dependencias || []).map((d) => String(d).toUpperCase())
+  });
+
+  const {
+    conceptoCodigo,
+    tipoPeriodo,
+    tipoNomina,
+    condicion,
+    formula,
+    dependencias,
+    redondeo
+  } = validated;
+
+  const fase = Math.min(4, Math.max(1, Number(payload.fase) || 1));
+  const tipoAplicacion = String(payload.tipoAplicacion || 'FIJO').toUpperCase() === 'EVENTUAL' ? 'EVENTUAL' : 'FIJO';
+  const empresaId = payload.empresaId || null;
+  const condicionNorm = normalizeConditionComparisons(condicion || '');
+
+  validateFormulaSyntax(formula);
+  if (condicionNorm) validateFormulaSyntax(condicionNorm);
+
+  await validarDependenciasGrupo(
+    tenantId,
+    tipoPeriodo,
+    tipoNomina,
+    conceptoCodigo,
+    dependencias
+  );
+
+  const FormulaConcepto = await getFormulaConceptoModel();
+  const vigenciaDesde = new Date();
+  vigenciaDesde.setHours(0, 0, 0, 0);
+
+  const closeFilter = {
+    tenantId,
+    conceptoCodigo,
+    tipoPeriodo,
+    tipoNomina,
+    vigenciaHasta: null,
+    activo: true
+  };
+  if (empresaId) closeFilter.empresaId = empresaId;
+  else closeFilter.$or = [{ empresaId: null }, { empresaId: { $exists: false } }];
+
+  await FormulaConcepto.updateMany(closeFilter, {
+    $set: { vigenciaHasta: new Date(vigenciaDesde.getTime() - 1) }
+  });
+
+  const last = await FormulaConcepto.findOne({
+    tenantId,
+    conceptoCodigo,
+    tipoPeriodo,
+    tipoNomina,
+    ...(empresaId ? { empresaId } : { $or: [{ empresaId: null }, { empresaId: { $exists: false } }] })
+  })
+    .sort({ version: -1 })
+    .lean();
+
+  const doc = await FormulaConcepto.create({
+    tenantId,
+    empresaId,
+    conceptoCodigo: String(conceptoCodigo).toUpperCase(),
+    tipoPeriodo,
+    tipoNomina,
+    fase,
+    tipoAplicacion,
+    vigenciaDesde,
+    vigenciaHasta: null,
+    condicion: condicionNorm,
+    formula,
+    dependencias: dependencias || [],
+    redondeo: redondeo ?? 2,
+    version: (last?.version || 0) + 1,
+    activo: true
+  });
+
+  await recalcularDependientes(tenantId);
+  return doc;
+}
+
+const APLICA_EN = new Set(['nomina', 'prenomina', 'ambos']);
+const FORMULAS_PRENOMINA = new Set([
+  'salario_periodo',
+  'horas_extra',
+  'retardos',
+  'faltas',
+  'salida_anticipada',
+  'manual'
+]);
+const DESGLOSE_MODOS = new Set([
+  'todo_gravado',
+  'todo_exento',
+  'tope_uma',
+  'tope_monto',
+  'formula',
+  'regla_ley'
+]);
+
+function parseBoolFlag(v, fallback = false) {
+  if (v === true || v === false) return v;
+  if (v == null || v === '') return fallback;
+  const s = String(v).toLowerCase();
+  return s === '1' || s === 'true' || s === 'on' || s === 'sí' || s === 'si';
+}
+
+function parseStringList(value) {
+  if (Array.isArray(value)) {
+    return value.map((s) => String(s).trim()).filter(Boolean);
+  }
+  return String(value || '')
+    .split(/[,;\s]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function buildSatFiscalPatch(data, tipoFallback = 'percepcion', naturalezaFallback = 'gravado') {
+  const tipo = String(data.tipo || tipoFallback).toLowerCase();
+  const naturaleza = String(data.naturaleza || naturalezaFallback).toLowerCase();
+  const satClave = String(data.satClave || data.claveSAT || data['sat.clave'] || '').trim();
+  const satDesc = String(data.satDescripcion || data['sat.descripcion'] || '').trim();
+
+  const fiscalNaturaleza = String(data.fiscalNaturaleza || data['fiscal.naturaleza'] || naturaleza).toLowerCase();
+  const desgloseModo = String(data.desgloseModo || data['fiscal.desglose.modo'] || '').toLowerCase();
+  const modo = DESGLOSE_MODOS.has(desgloseModo) ? desgloseModo : null;
+
+  const { defaultFiscalFromNaturaleza } = require('../../models/fiscalConceptoShared');
+  const fiscalBase = defaultFiscalFromNaturaleza(fiscalNaturaleza || naturaleza);
+
+  if (data.integraISR !== undefined || data['fiscal.integraISR'] !== undefined) {
+    fiscalBase.integraISR = parseBoolFlag(data.integraISR ?? data['fiscal.integraISR'], fiscalBase.integraISR);
+  }
+  if (data.integraIMSS !== undefined || data['fiscal.integraIMSS'] !== undefined) {
+    fiscalBase.integraIMSS = parseBoolFlag(data.integraIMSS ?? data['fiscal.integraIMSS'], fiscalBase.integraIMSS);
+  }
+  if (data.integraINFONAVIT !== undefined || data['fiscal.integraINFONAVIT'] !== undefined) {
+    fiscalBase.integraINFONAVIT = parseBoolFlag(
+      data.integraINFONAVIT ?? data['fiscal.integraINFONAVIT'],
+      fiscalBase.integraINFONAVIT
+    );
+  }
+
+  if (modo) fiscalBase.desglose.modo = modo;
+  const topeUma = data.topeExentoUMA ?? data['fiscal.desglose.topeExentoUMA'];
+  const topeMonto = data.topeExentoMonto ?? data['fiscal.desglose.topeExentoMonto'];
+  if (topeUma !== undefined && topeUma !== '') {
+    fiscalBase.desglose.topeExentoUMA = Number(topeUma) || 0;
+  }
+  if (topeMonto !== undefined && topeMonto !== '') {
+    fiscalBase.desglose.topeExentoMonto = Number(topeMonto) || 0;
+  }
+  const formulaExento = data.formulaExento ?? data['fiscal.desglose.formulaExento'];
+  const formulaGravado = data.formulaGravado ?? data['fiscal.desglose.formulaGravado'];
+  const codigoRegla = data.codigoRegla ?? data['fiscal.desglose.codigoRegla'];
+  if (formulaExento !== undefined) fiscalBase.desglose.formulaExento = String(formulaExento || '').trim();
+  if (formulaGravado !== undefined) fiscalBase.desglose.formulaGravado = String(formulaGravado || '').trim();
+  if (codigoRegla !== undefined) {
+    fiscalBase.desglose.codigoRegla = String(codigoRegla || '').trim().toLowerCase();
+  }
+
+  return {
+    claveSAT: satClave,
+    sat: {
+      tipo: satClave ? tipo : String(data.satTipo || tipo || ''),
+      clave: satClave,
+      descripcion: satDesc
+    },
+    fiscal: fiscalBase,
+    gravado: fiscalBase.naturaleza !== 'exento' && fiscalBase.naturaleza !== 'informativo'
+  };
+}
+
+async function crearConcepto(tenantId, empresaId, data) {
+  const validated = validateConceptoPayload({
+    ...data,
+    codigo: String(data.codigo).trim().toUpperCase()
+  });
+
+  const ConceptoNomina = await getConceptoNominaModel();
+  const exists = await ConceptoNomina.findOne({ tenantId, codigo: validated.codigo }).lean();
+  if (exists) throw new Error('Ya existe un concepto con ese código');
+
+  const aplicaEn = APLICA_EN.has(String(data.aplicaEn || '').toLowerCase())
+    ? String(data.aplicaEn).toLowerCase()
+    : 'nomina';
+  const formulaPrenominaRaw = String(data.formulaPrenomina || '').trim().toLowerCase();
+  const formulaPrenomina = FORMULAS_PRENOMINA.has(formulaPrenominaRaw) ? formulaPrenominaRaw : undefined;
+  const fase = Math.min(4, Math.max(1, Number(data.fase) || 1));
+  const satFiscal = buildSatFiscalPatch(
+    { ...data, tipo: validated.tipo, naturaleza: validated.naturaleza, claveSAT: validated.claveSAT },
+    validated.tipo,
+    validated.naturaleza
+  );
+
+  return ConceptoNomina.create({
+    tenantId,
+    empresaId,
+    codigo: validated.codigo,
+    codigoExterno: String(data.codigoExterno || '').trim(),
+    nombre: validated.nombre,
+    tipo: validated.tipo,
+    naturaleza: validated.naturaleza,
+    ordenCalculo: validated.ordenCalculo,
+    fase,
+    aplicaEn,
+    clavePrenomina: String(data.clavePrenomina || '').trim().toUpperCase(),
+    ...(formulaPrenomina ? { formulaPrenomina } : {}),
+    tiposIncidencia: parseStringList(data.tiposIncidencia).map((s) => s.toUpperCase()),
+    insumosContexto: parseStringList(data.insumosContexto),
+    ...satFiscal,
+    cuentaContable: String(data.cuentaContable || '').trim(),
+    activo: true,
+    aplicaTipoNomina: data.aplicaTipoNomina || ['ordinaria', 'extraordinaria', 'finiquito']
+  });
+}
+
+/**
+ * Actualiza propiedades del concepto (SAT, fiscal, ámbito, incidencias, etc.).
+ * Sincroniza catálogo global y config empresa cuando existen.
+ */
+async function actualizarConcepto(tenantId, codigo, data, { empresaId = null, syncCatalog = true } = {}) {
+  const ConceptoNomina = await getConceptoNominaModel();
+  const codigoUp = String(codigo).trim().toUpperCase();
+  const concepto = await ConceptoNomina.findOne({ tenantId, codigo: codigoUp });
+  if (!concepto) throw new Error('Concepto no encontrado');
+
+  const patch = {};
+  if (data.nombre != null && String(data.nombre).trim()) patch.nombre = String(data.nombre).trim();
+  if (data.tipo != null && ['percepcion', 'deduccion', 'otro_pago'].includes(String(data.tipo))) {
+    patch.tipo = String(data.tipo);
+  }
+  if (data.naturaleza != null) {
+    const n = String(data.naturaleza).toLowerCase();
+    if (['fiscal', 'gravado', 'exento', 'mixto', 'informativo'].includes(n)) patch.naturaleza = n;
+  }
+  if (data.ordenCalculo != null && data.ordenCalculo !== '') {
+    const o = Number(data.ordenCalculo);
+    if (Number.isFinite(o)) patch.ordenCalculo = Math.min(9999, Math.max(1, Math.round(o)));
+  }
+  if (data.fase != null && data.fase !== '') {
+    const f = Number(data.fase);
+    if (Number.isFinite(f)) patch.fase = Math.min(4, Math.max(1, Math.round(f)));
+  }
+  if (data.aplicaEn != null && APLICA_EN.has(String(data.aplicaEn).toLowerCase())) {
+    patch.aplicaEn = String(data.aplicaEn).toLowerCase();
+  }
+  if (data.codigoExterno !== undefined) patch.codigoExterno = String(data.codigoExterno || '').trim();
+  if (data.cuentaContable !== undefined) patch.cuentaContable = String(data.cuentaContable || '').trim();
+  if (data.clavePrenomina !== undefined) {
+    patch.clavePrenomina = String(data.clavePrenomina || '').trim().toUpperCase();
+  }
+  let unsetPrenomina = false;
+  if (data.formulaPrenomina !== undefined) {
+    const fp = String(data.formulaPrenomina || '').trim().toLowerCase();
+    if (!fp) unsetPrenomina = true;
+    else if (FORMULAS_PRENOMINA.has(fp)) patch.formulaPrenomina = fp;
+  }
+  if (data.tiposIncidencia !== undefined) {
+    patch.tiposIncidencia = parseStringList(data.tiposIncidencia).map((s) => s.toUpperCase());
+  }
+  if (data.insumosContexto !== undefined) {
+    patch.insumosContexto = parseStringList(data.insumosContexto);
+  }
+
+  const tipoEff = patch.tipo || concepto.tipo;
+  const natEff = patch.naturaleza || concepto.naturaleza;
+  Object.assign(patch, buildSatFiscalPatch({ ...data, tipo: tipoEff, naturaleza: natEff }, tipoEff, natEff));
+
+  const updateOps = { $set: patch };
+  if (unsetPrenomina) updateOps.$unset = { formulaPrenomina: 1 };
+  await ConceptoNomina.updateOne({ _id: concepto._id }, updateOps);
+
+  if (syncCatalog) {
+    try {
+      const getConceptCatalogModel = require('../../models/conceptCatalog');
+      const Catalog = await getConceptCatalogModel();
+      const catalogPatch = {
+        nombre: patch.nombre || concepto.nombre,
+        tipo: tipoEff,
+        naturaleza: natEff,
+        fase: patch.fase != null ? patch.fase : concepto.fase,
+        aplicaEn: patch.aplicaEn || concepto.aplicaEn,
+        claveSAT: patch.claveSAT,
+        sat: patch.sat,
+        fiscal: patch.fiscal,
+        ordenDefault: patch.ordenCalculo != null ? patch.ordenCalculo : concepto.ordenCalculo
+      };
+      if (patch.clavePrenomina !== undefined) catalogPatch.clavePrenomina = patch.clavePrenomina;
+      if (patch.formulaPrenomina !== undefined) catalogPatch.formulaPrenomina = patch.formulaPrenomina;
+      if (patch.tiposIncidencia !== undefined) catalogPatch.tiposIncidencia = patch.tiposIncidencia;
+      if (patch.insumosContexto !== undefined) catalogPatch.insumosContexto = patch.insumosContexto;
+      const catalogOps = { $set: catalogPatch };
+      if (unsetPrenomina) catalogOps.$unset = { formulaPrenomina: 1 };
+      await Catalog.updateOne({ codigo: codigoUp }, catalogOps);
+    } catch (_) {
+      /* catálogo global opcional */
+    }
+  }
+
+  if (empresaId && data.tipoAplicacion != null) {
+    const app = String(data.tipoAplicacion).toUpperCase();
+    if (app === 'FIJO' || app === 'EVENTUAL') {
+      try {
+        const getCompanyConceptConfigModel = require('../../models/companyConceptConfig');
+        const Config = await getCompanyConceptConfigModel();
+        await Config.updateOne(
+          { tenantId, empresaId, conceptoCodigo: codigoUp },
+          { $set: { tipoAplicacion: app }, $setOnInsert: { activo: true, deshabilitado: false } },
+          { upsert: true }
+        );
+      } catch (_) {
+        /* config empresa opcional */
+      }
+    }
+  }
+
+  return ConceptoNomina.findOne({ tenantId, codigo: codigoUp }).lean();
+}
+
+async function toggleConcepto(tenantId, codigo) {
+  const ConceptoNomina = await getConceptoNominaModel();
+  const concepto = await ConceptoNomina.findOne({ tenantId, codigo }).lean();
+  if (!concepto) throw new Error('Concepto no encontrado');
+
+  if (concepto.activo && concepto.dependientes?.length) {
+    throw new Error(
+      `No se puede desactivar: otros conceptos dependen de él (${concepto.dependientes.join(', ')})`
+    );
+  }
+
+  await ConceptoNomina.updateOne({ _id: concepto._id }, { $set: { activo: !concepto.activo } });
+}
+
+module.exports = {
+  ensureNominaConceptsForTenant,
+  ensureCapaBConceptosForTenant,
+  ensureCapaCConceptosForTenant,
+  syncFormulasFiscalesV2,
+  syncFormulasCapaB,
+  syncFormulasCapaC,
+  importarConceptosLegadoCapaA,
+  vincularCanonicoEnLegado,
+  recalcularDependientes,
+  listConceptos,
+  getConceptoConFormulas,
+  validarDependenciasGrupo,
+  guardarFormula,
+  crearConcepto,
+  actualizarConcepto,
+  toggleConcepto
+};

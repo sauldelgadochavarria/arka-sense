@@ -1,0 +1,23 @@
+<%- include('../Partials/layout-top', { title: 'Sincronización ABC', session }) %>
+<h1>Sincronización ABC de empleados</h1>
+<div class="toolbar">
+  <a class="btn" href="/integraciones/perfiles">Perfiles</a>
+  <a class="btn" href="/integraciones/logs">Logs</a>
+</div>
+<% if (!empresa) { %>
+<p>No hay empresa vinculada.</p>
+<% } else { %>
+<h2>Exportar empleados</h2>
+<p>Genera un CSV con el catálogo actual para enviar a nómina externa o respaldo.</p>
+<form method="post" action="/integraciones/abc/exportar">
+  <button type="submit">Descargar CSV de empleados</button>
+</form>
+
+<h2>Importar empleados</h2>
+<p>Pega el contenido CSV (cabeceras: NUM_EMPLEADO, NOMBRE, APELLIDOS, RFC, etc.). Los registros nuevos se crean; las diferencias generan conflictos para resolver.</p>
+<form method="post" action="/integraciones/abc/importar" class="form-wide">
+  <textarea name="csvContent" rows="12" placeholder="NUM_EMPLEADO,NOMBRE,APELLIDOS,RFC,CURP,NSS,EMAIL,SALARIO_DIARIO&#10;001,Juan,Pérez,PERJ800101XXX,..." required></textarea>
+  <button type="submit">Importar y analizar</button>
+</form>
+<% } %>
+<%- include('../Partials/layout-bottom') %>

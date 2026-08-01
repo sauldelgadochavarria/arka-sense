@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Iniciar sesión — Arka-Presence</title>
+  <link rel="stylesheet" href="/css/variables.css" />
+  <link rel="stylesheet" href="/css/app.css" />
+</head>
+<body class="auth-page">
+  <div class="card">
+    <h1>Arka-Presence</h1>
+    <h2>Iniciar sesión</h2>
+    <% if (tenant) { %>
+    <p class="muted">Cuenta: <strong><%= tenant.displayName %></strong></p>
+    <% } else { %>
+    <p class="muted">Usa <code>?account=slug</code> en la URL para seleccionar tenant en desarrollo.</p>
+    <% } %>
+    <% if (error && error.length) { %>
+    <div class="alert"><%= error %></div>
+    <% } %>
+    <form method="post" action="/post-login">
+      <label>Email</label>
+      <input type="email" name="email" required autocomplete="username" />
+      <label>Contraseña</label>
+      <input type="password" name="password" required autocomplete="current-password" />
+      <button type="submit">Entrar</button>
+    </form>
+  </div>
+</body>
+</html>

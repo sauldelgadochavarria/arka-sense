@@ -1,0 +1,27 @@
+<%- include('../Partials/layout-top', { title: 'Editar tipo de período', session }) %>
+<p><a href="/prenomina/tipos-periodo">← Volver a lista</a></p>
+<h1>Editar tipo de período</h1>
+<form method="post" action="/prenomina/tipos-periodo/<%= tipo._id %>" class="form-grid form-wide">
+  <input name="codigoLegado" type="number" value="<%= tipo.codigoLegado %>" placeholder="Código legado (CLA_PERIODO)" required />
+  <input name="codigoExterno" placeholder="Código externo" value="<%= tipo.codigoExterno || '' %>" />
+  <input name="nombre" value="<%= tipo.nombre %>" placeholder="Nombre" required />
+  <select name="tipoMotor" required>
+    <% tiposMotor.forEach(function(t) { %>
+    <option value="<%= t.value %>" <%= tipo.tipoMotor === t.value ? 'selected' : '' %>><%= t.label %></option>
+    <% }); %>
+  </select>
+  <input name="diasPeriodo" type="number" min="1" value="<%= tipo.diasPeriodo %>" placeholder="Días período" />
+  <input name="diasLaborables" type="number" min="0" value="<%= tipo.diasLaborables %>" placeholder="Días laborables" />
+  <input name="leyenda" value="<%= tipo.leyenda || '' %>" placeholder="Leyenda" />
+  <select name="periodicidadPagoSat">
+    <option value="">— Periodicidad SAT —</option>
+    <% periodicidadSat.forEach(function(p) { %>
+    <option value="<%= p.value %>" <%= tipo.periodicidadPagoSat === p.value ? 'selected' : '' %>><%= p.value %> — <%= p.label %></option>
+    <% }); %>
+  </select>
+  <label><input type="checkbox" name="esSeptimo" value="1" <%= tipo.esSeptimo ? 'checked' : '' %> /> Es séptimo día</label>
+  <label><input type="checkbox" name="aplicaAsistenciaPrenomina" value="1" <%= tipo.aplicaAsistenciaPrenomina ? 'checked' : '' %> /> Aplica asistencia/pre-nómina</label>
+  <label><input type="checkbox" name="compartirConNomina" value="1" <%= tipo.compartirConNomina ? 'checked' : '' %> /> Compartir con nómina</label>
+  <button type="submit">Guardar</button>
+</form>
+<%- include('../Partials/layout-bottom') %>

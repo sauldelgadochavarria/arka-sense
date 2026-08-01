@@ -1,0 +1,49 @@
+<%- include('../Partials/layout-top', { title: 'Tipos de movimiento laboral', session }) %>
+<p><a href="/personal-empleados">← Personal</a></p>
+<h1>Catálogo de tipos de movimiento laboral</h1>
+<p class="muted">Alineado a Fortia (<code>CLA_TIPO_MOV</code>): alta, cambio de plaza, baja, reajuste, reingreso.</p>
+<% if (!empresa) { %>
+<p>No hay empresa vinculada.</p>
+<% } else { %>
+
+<h2>Nuevo tipo</h2>
+<form method="post" action="/personal/tipos-movimiento-laboral" class="form-grid">
+  <input name="codigo" placeholder="Código (ej. PROMOCION)" maxlength="30" required style="text-transform:uppercase" />
+  <input name="nombre" placeholder="Nombre" required />
+  <input name="descripcion" placeholder="Descripción" />
+  <input name="claveLegado" type="number" placeholder="Clave legado (opcional)" />
+  <input name="orden" type="number" placeholder="Orden" value="100" />
+  <label><input type="checkbox" name="afectaSalario" value="1" /> Afecta salario</label>
+  <label><input type="checkbox" name="afectaOrganizacion" value="1" /> Afecta organización</label>
+  <label><input type="checkbox" name="afectaEstatus" value="1" /> Afecta estatus</label>
+  <button type="submit">Crear tipo</button>
+</form>
+
+<table>
+  <thead>
+    <tr>
+      <th>Código</th><th>Nombre</th><th>Legado</th><th>Salario</th><th>Org.</th><th>Estatus</th><th>Orden</th><th>Activo</th><th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <% tipos.forEach(function(t) { %>
+    <tr class="<%= !t.activo ? 'row-muted' : '' %>">
+      <td><code><%= t.codigo %></code></td>
+      <td><%= t.nombre %><% if (t.descripcion) { %><br /><span class="muted"><%= t.descripcion %></span><% } %></td>
+      <td><%= t.claveLegado != null ? t.claveLegado : '—' %></td>
+      <td><%= t.afectaSalario ? 'Sí' : 'No' %></td>
+      <td><%= t.afectaOrganizacion ? 'Sí' : 'No' %></td>
+      <td><%= t.afectaEstatus ? 'Sí' : 'No' %></td>
+      <td><%= t.orden %></td>
+      <td><%= t.activo ? 'Sí' : 'No' %></td>
+      <td class="actions">
+        <form method="post" action="/personal/tipos-movimiento-laboral/<%= t._id %>/toggle" class="inline-form">
+          <button type="submit"><%= t.activo ? 'Desactivar' : 'Activar' %></button>
+        </form>
+      </td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<% } %>
+<%- include('../Partials/layout-bottom') %>

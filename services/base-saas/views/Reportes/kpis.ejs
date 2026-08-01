@@ -1,0 +1,101 @@
+<%- include('../Partials/layout-top', { title: 'Dashboard KPIs', session }) %>
+<div class="page-header">
+  <h1>Dashboard gerencial</h1>
+  <p class="page-subtitle">Indicadores de asistencia, ausentismo y alertas operativas.</p>
+</div>
+
+<% if (!empresa || !kpis) { %>
+<p>No hay empresa vinculada a este tenant.</p>
+<% } else { %>
+<div class="toolbar">
+  <a class="btn" href="/reportes">Centro de reportes</a>
+  <a class="btn" href="/incidencias/pendientes">Incidencias pendientes (<%= kpis.incidenciasPendientes %>)</a>
+</div>
+
+<div class="stats-grid">
+  <div class="stat-card ok">
+    <strong><%= kpis.asistenciaHoy.pct %>%</strong>
+    <span>Asistencia hoy</span>
+    <small><%= kpis.asistenciaHoy.ok %> / <%= kpis.asistenciaHoy.total %> registros</small>
+  </div>
+  <div class="stat-card">
+    <strong><%= kpis.asistenciaSemana.pct %>%</strong>
+    <span>Semana actual</span>
+  </div>
+  <div class="stat-card">
+    <strong><%= kpis.asistenciaMes.pct %>%</strong>
+    <span>Mes actual</span>
+  </div>
+  <div class="stat-card">
+    <strong><%= kpis.empleadosActivos %></strong>
+    <span>Empleados activos</span>
+  </div>
+  <div class="stat-card warn">
+    <strong><%= kpis.heMesMinutos %></strong>
+    <span>Minutos HE (mes)</span>
+  </div>
+  <div class="stat-card">
+    <strong><%= kpis.incidenciasPendientes %></strong>
+    <span>Solicitudes pendientes</span>
+  </div>
+</div>
+
+<% if (kpis.alertas.length) { %>
+<div class="alert-list">
+  <h2>Alertas</h2>
+  <ul>
+    <% kpis.alertas.forEach(function(a) { %>
+    <li class="alert-item alert-<%= a.tipo %>"><%= a.texto %></li>
+    <% }); %>
+  </ul>
+</div>
+<% } %>
+
+<div class="kpi-panels">
+  <section class="kpi-panel">
+    <h2>Top 10 retardos del mes</h2>
+    <% if (!kpis.topRetardos.length) { %>
+    <p>Sin retardos registrados en el mes.</p>
+    <% } else { %>
+    <table>
+      <thead><tr><th>Empleado</th><th>Minutos</th></tr></thead>
+      <tbody>
+        <% kpis.topRetardos.forEach(function(r) { %>
+        <tr><td><%= r.empleado %></td><td><%= r.minutos %></td></tr>
+        <% }); %>
+      </tbody>
+    </table>
+    <% } %>
+  </section>
+
+  <section class="kpi-panel">
+    <h2>Ausentismo por departamento</h2>
+    <table>
+      <thead><tr><th>Departamento</th><th>Empleados</th><th>% asistencia</th><th>Faltas</th></tr></thead>
+      <tbody>
+        <% kpis.ausentismoPorDepto.forEach(function(d) { %>
+        <tr>
+          <td><%= d.departamento %></td>
+          <td><%= d.empleados %></td>
+          <td><%= d.asistenciaPct %>%</td>
+          <td><%= d.faltas %></td>
+        </tr>
+        <% }); %>
+      </tbody>
+    </table>
+  </section>
+</div>
+
+<section class="kpi-panel kpi-trend">
+  <h2>Tendencia de asistencia (12 meses)</h2>
+  <div class="trend-bars">
+    <% kpis.tendencia12Meses.forEach(function(m) { %>
+    <div class="trend-bar-wrap" title="<%= m.mes %>: <%= m.pct %>%">
+      <div class="trend-bar" style="height: <%= Math.max(4, m.pct) %>%"></div>
+      <span class="trend-label"><%= m.mes %></span>
+    </div>
+    <% }); %>
+  </div>
+</section>
+<% } %>
+<%- include('../Partials/layout-bottom') %>

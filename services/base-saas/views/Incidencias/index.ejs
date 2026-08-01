@@ -1,0 +1,64 @@
+<%- include('../Partials/layout-top', { title: 'Incidencias', session }) %>
+<h1>Incidencias</h1>
+<% if (!empresa) { %>
+<p>No hay empresa vinculada a este tenant.</p>
+<% } else { %>
+<div class="toolbar">
+  <a class="btn" href="/incidencias/pendientes">Bandeja pendientes</a>
+  <a class="btn" href="/incidencias/tipos">Catálogo de tipos</a>
+  <a class="btn" href="/incidencias/vacaciones">Vacaciones</a>
+</div>
+
+<form method="get" action="/incidencias" class="toolbar inline-form">
+  <label>Desde</label><input type="date" name="fechaDesde" value="<%= fechaDesde %>" />
+  <label>Hasta</label><input type="date" name="fechaHasta" value="<%= fechaHasta %>" />
+  <select name="estatus">
+    <option value="todos" <%= estatus === 'todos' ? 'selected' : '' %>>Todos</option>
+    <% estatusOptions.forEach(function(o) { %>
+    <option value="<%= o.value %>" <%= estatus === o.value ? 'selected' : '' %>><%= o.label %></option>
+    <% }); %>
+  </select>
+  <button type="submit">Filtrar</button>
+</form>
+
+<table>
+  <thead>
+    <tr><th>Fecha</th><th>Empleado</th><th>Tipo</th><th>Días</th><th>Origen</th><th>Estatus</th><th>Motivo</th></tr>
+  </thead>
+  <tbody>
+    <% incidencias.forEach(function(i) { %>
+    <tr>
+      <td><%= new Date(i.fechaInicio).toLocaleDateString('es-MX') %></td>
+      <td><%= empMap.get(String(i.empleadoId)) || '—' %></td>
+      <td><code><%= i.codigo %></code> <%= tipoMap.get(i.codigo) || '' %></td>
+      <td><%= i.diasAfectados || '—' %></td>
+      <td><%= i.origen %></td>
+      <td><span class="badge badge-<%= i.estatus === 'aprobada' ? 'activo' : i.estatus === 'rechazada' ? 'baja' : 'suspendido' %>"><%= i.estatus %></span></td>
+      <td><%= i.motivo || '—' %></td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+
+<h2>Registrar incidencia (RRHH)</h2>
+<form method="post" action="/incidencias" class="form-grid form-wide">
+  <select name="empleadoId" required>
+    <option value="">— Empleado —</option>
+    <% empleados.forEach(function(e) { %>
+    <option value="<%= e._id %>"><%= e.firstName %> <%= e.lastName %></option>
+    <% }); %>
+  </select>
+  <select name="tipoIncidenciaId" required>
+    <option value="">— Tipo —</option>
+    <% tipos.forEach(function(t) { %>
+    <option value="<%= t._id %>"><%= t.clave %> — <%= t.nombre %></option>
+    <% }); %>
+  </select>
+  <input type="date" name="fechaInicio" required />
+  <input type="date" name="fechaFin" placeholder="Fecha fin (opcional)" />
+  <input name="motivo" placeholder="Motivo" />
+  <input name="documentoReferencia" placeholder="Referencia documento (URL o folio)" />
+  <button type="submit">Registrar</button>
+</form>
+<% } %>
+<%- include('../Partials/layout-bottom') %>

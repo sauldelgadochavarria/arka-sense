@@ -1,0 +1,26 @@
+<%- include('../Partials/layout-top', { title: 'Editar perfil', session }) %>
+<h1>Configurar perfil: <%= perfil.nombre %></h1>
+<p>Adaptador: <code><%= perfil.adaptador %></code></p>
+<div class="toolbar"><a class="btn" href="/integraciones/perfiles">← Perfiles</a></div>
+
+<form method="post" action="/integraciones/perfiles/<%= perfil._id %>" class="form-grid form-wide">
+  <label>Nombre</label>
+  <input name="nombre" value="<%= perfil.nombre %>" required />
+  <label>Activo</label>
+  <input type="checkbox" name="activo" <%= perfil.activo ? 'checked' : '' %> />
+  <label>Notas</label>
+  <input name="notas" value="<%= perfil.notas || '' %>" />
+
+  <% if (perfil.adaptador === 'csv') { %>
+  <h2>Mapeo de columnas (CSV genérico)</h2>
+  <% camposMapeables.forEach(function(c) { %>
+  <label><%= c.label %></label>
+  <input name="map_<%= c.key %>" value="<%= mapping[c.key] || '' %>" placeholder="Nombre columna CSV" />
+  <% }); %>
+  <% } else { %>
+  <p>Este adaptador usa un layout fijo del proveedor. El mapeo personalizado aplica solo al adaptador CSV genérico.</p>
+  <% } %>
+
+  <button type="submit">Guardar</button>
+</form>
+<%- include('../Partials/layout-bottom') %>

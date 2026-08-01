@@ -1,0 +1,115 @@
+<%- include('../Partials/layout-top', { title: 'Nuevo concepto', session }) %>
+<p><a href="/nomina/conceptos">← Volver a lista</a></p>
+<h1>Nuevo concepto</h1>
+<% if (!empresa) { %>
+<p>No hay empresa vinculada.</p>
+<% } else { %>
+<form method="post" action="/nomina/conceptos" class="form-grid props-form">
+  <fieldset class="props-fieldset">
+    <legend>Identidad</legend>
+    <div class="form-row-2">
+      <label>Código
+        <input name="codigo" placeholder="ej. BONO_PUNT" maxlength="32" required style="text-transform:uppercase" />
+      </label>
+      <label>Código externo
+        <input name="codigoExterno" placeholder="Código externo" />
+      </label>
+    </div>
+    <label>Nombre
+      <input name="nombre" placeholder="Nombre" required />
+    </label>
+    <div class="form-row-3">
+      <label>Tipo
+        <select name="tipo" required>
+          <% tiposConcepto.forEach(function(t) { %>
+          <option value="<%= t.value %>"><%= t.label %></option>
+          <% }); %>
+        </select>
+      </label>
+      <label>Naturaleza
+        <select name="naturaleza">
+          <% naturalezas.forEach(function(n) { %>
+          <option value="<%= n.value %>" <%= n.value === 'gravado' ? 'selected' : '' %>><%= n.label %></option>
+          <% }); %>
+        </select>
+      </label>
+      <label>Orden
+        <input name="ordenCalculo" type="number" min="1" placeholder="Orden" value="100" />
+      </label>
+    </div>
+    <div class="form-row-3">
+      <label>Fase
+        <select name="fase">
+          <option value="1">1 — Percepciones</option>
+          <option value="2">2 — Acumuladores</option>
+          <option value="3">3 — Deducciones</option>
+          <option value="4">4 — Neto</option>
+        </select>
+      </label>
+      <label>Ámbito
+        <select name="aplicaEn">
+          <option value="nomina">Solo nómina</option>
+          <option value="prenomina">Solo pre-nómina</option>
+          <option value="ambos">Ambos</option>
+        </select>
+      </label>
+      <label>Cuenta contable
+        <input name="cuentaContable" placeholder="Cuenta contable" />
+      </label>
+    </div>
+  </fieldset>
+
+  <fieldset class="props-fieldset">
+    <legend>SAT y fiscal</legend>
+    <div class="form-row-2">
+      <label>Clave SAT
+        <input name="satClave" placeholder="ej. 001" maxlength="10" />
+      </label>
+      <label>Descripción SAT
+        <input name="satDescripcion" placeholder="Descripción del catálogo" />
+      </label>
+    </div>
+    <div class="form-row-checks">
+      <label class="inline-check"><input type="checkbox" name="integraISR" checked /> Integra ISR</label>
+      <label class="inline-check"><input type="checkbox" name="integraIMSS" checked /> Integra IMSS</label>
+      <label class="inline-check"><input type="checkbox" name="integraINFONAVIT" /> Integra INFONAVIT</label>
+    </div>
+    <label>Modo de desglose
+      <select name="desgloseModo">
+        <option value="todo_gravado">Todo gravado</option>
+        <option value="todo_exento">Todo exento</option>
+        <option value="tope_uma">Tope en UMAs</option>
+        <option value="tope_monto">Tope en monto</option>
+        <option value="formula">Fórmula</option>
+        <option value="regla_ley">Regla de ley</option>
+      </select>
+    </label>
+  </fieldset>
+
+  <fieldset class="props-fieldset">
+    <legend>Pre-nómina (opcional)</legend>
+    <div class="form-row-2">
+      <label>Fórmula pre-nómina
+        <select name="formulaPrenomina">
+          <option value="">—</option>
+          <option value="salario_periodo">Salario del período</option>
+          <option value="horas_extra">Horas extra</option>
+          <option value="retardos">Retardos</option>
+          <option value="faltas">Faltas</option>
+          <option value="salida_anticipada">Salida anticipada</option>
+          <option value="manual">Manual</option>
+        </select>
+      </label>
+      <label>Clave pre-nómina
+        <input name="clavePrenomina" style="text-transform:uppercase" />
+      </label>
+    </div>
+    <label>Tipos de incidencia <span class="muted">(claves separadas por coma, ej. RET, HEO)</span>
+      <input name="tiposIncidencia" placeholder="RET, HEO" />
+    </label>
+  </fieldset>
+
+  <button type="submit">Crear concepto</button>
+</form>
+<% } %>
+<%- include('../Partials/layout-bottom') %>

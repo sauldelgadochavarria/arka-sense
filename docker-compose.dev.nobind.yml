@@ -1,0 +1,14 @@
+# Override para Windows cuando fallan bind mounts (D:, ENODEV, "file exists").
+# Uso: docker compose -f docker-compose.dev.yml -f docker-compose.dev.nobind.yml up -d --build
+#
+# Sin bind mount: el código va embebido en la imagen (rebuild tras cambios).
+# Mongo sigue con volumen nombrado. node_modules en volumen nombrado.
+
+services:
+  base-admin:
+    volumes:
+      - base_admin_node_modules:/app/node_modules
+
+  base-saas:
+    volumes:
+      - base_saas_node_modules:/app/node_modules

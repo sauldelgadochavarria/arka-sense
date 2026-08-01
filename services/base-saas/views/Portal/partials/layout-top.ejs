@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title><%= typeof title !== 'undefined' ? title + ' — Portal' : 'Portal empleado' %></title>
+  <link rel="stylesheet" href="/css/variables.css" />
+  <link rel="stylesheet" href="/css/app.css" />
+</head>
+<body class="app-shell">
+  <%
+    var soloPortal = false;
+    if (typeof isSoloPortalUser !== 'undefined') {
+      soloPortal = !!isSoloPortalUser;
+    } else if (session && session.roles && session.roles.length) {
+      var roles = session.roles;
+      var tieneAdmin = roles.some(function(r) { return r.esAdmin || r.esAdminSistema || r.adminAccesoConfig; });
+      soloPortal = !tieneAdmin && roles.every(function(r) { return r.nombre === 'Empleado' || r.esPortalEmpleado; });
+    }
+  %>
+  <header class="topbar portal-bar">
+    <div class="brand"><a href="/portal">Arka-Presence · Portal</a></div>
+    <nav class="nav" aria-label="Portal">
+      <a href="/portal">Inicio</a>
+      <a href="/portal/asistencia">Mi asistencia</a>
+      <a href="/portal/solicitudes">Mis solicitudes</a>
+      <a href="/portal/vacaciones">Vacaciones</a>
+      <% if (session.empleadoId && !soloPortal) { %><a href="/dashboard">Administración</a><% } %>
+    </nav>
+    <div class="user"><%= session.user %> · <a href="/logout">Salir</a></div>
+  </header>
+  <main class="content">
+    <%- include('../../Partials/flash') %>

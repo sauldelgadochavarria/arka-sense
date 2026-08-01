@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title><%= typeof title !== 'undefined' ? title + ' — Arka-Presence' : 'Arka-Presence' %></title>
+  <link rel="stylesheet" href="/css/variables.css" />
+  <link rel="stylesheet" href="/css/app.css" />
+</head>
+<body class="app-shell">
+  <header class="topbar<%= typeof portalMode !== 'undefined' && portalMode ? ' portal-bar' : '' %>">
+    <div class="brand"><a href="/dashboard">Arka-Presence</a></div>
+    <div class="topbar-meta">
+      <% if (typeof session !== 'undefined' && session) { %>
+        <span><%= session.user %></span>
+        <% if (session.subsidiariaActiva) { %>
+        <span class="subsidiaria-tag"><%= session.subsidiariaActiva.codigo %></span>
+        <% } %>
+        <a href="/logout">Salir</a>
+      <% } %>
+    </div>
+  </header>
+  <div class="app-body">
+    <% if (typeof menuTree !== 'undefined' && menuTree && menuTree.length) { %>
+    <aside class="sidebar">
+      <nav class="sidebar-nav" aria-label="Menú principal">
+        <% menuTree.forEach(function(item) { %>
+          <% if (item.esCategoria && item.children && item.children.length) { %>
+          <div class="nav-section">
+            <div class="nav-section-title"><%= item.menuPrincipal %></div>
+            <% item.children.forEach(function(child) { %>
+              <% if (child.children && child.children.length) { %>
+              <div class="nav-subsection">
+                <div class="nav-subsection-title"><%= child.menuPrincipal %></div>
+                <% child.children.forEach(function(grand) { %>
+                  <% if (grand.rutaApp || grand.rutaMenu) { %>
+                  <a class="nav-link nav-link-sub" href="<%= grand.rutaApp || grand.rutaMenu %>"><%= grand.menuPrincipal %></a>
+                  <% } %>
+                <% }); %>
+              </div>
+              <% } else if (child.rutaApp || child.rutaMenu) { %>
+              <a class="nav-link" href="<%= child.rutaApp || child.rutaMenu %>"><%= child.menuPrincipal %></a>
+              <% } %>
+            <% }); %>
+          </div>
+          <% } else if (!item.esCategoria && (item.rutaApp || item.rutaMenu)) { %>
+          <a class="nav-link nav-link-root" href="<%= item.rutaApp || item.rutaMenu %>"><%= item.menuPrincipal %></a>
+          <% } %>
+        <% }); %>
+      </nav>
+    </aside>
+    <% } %>
+    <main class="content">
+      <%- include('flash') %>

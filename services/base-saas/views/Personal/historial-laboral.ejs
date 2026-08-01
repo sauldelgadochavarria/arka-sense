@@ -1,0 +1,124 @@
+<%- include('../Partials/layout-top', { title: 'Historial laboral', session }) %>
+<p><a href="/personal-empleados/<%= empleado._id %>">← Expediente de <%= empleado.firstName %> <%= empleado.lastName %></a></p>
+
+<h1>Historial laboral</h1>
+<p>
+  <span class="badge badge-<%= empleado.estatus %>"><%= empleado.estatus %></span>
+  · No. <code><%= empleado.numEmpleado %></code>
+  <% if (empleado.codigoExterno) { %> · Ext. <code><%= empleado.codigoExterno %></code><% } %>
+</p>
+
+<section>
+  <h2>Registrar movimiento manual</h2>
+  <form method="post" action="/personal-empleados/<%= empleado._id %>/historial-laboral" class="form-grid form-wide">
+    <label>
+      Tipo
+      <select name="tipoMovimientoCodigo" required>
+        <% tipos.forEach(function(t) { %>
+        <option value="<%= t.codigo %>"><%= t.codigo %> — <%= t.nombre %></option>
+        <% }); %>
+      </select>
+    </label>
+    <label>
+      Fecha movimiento
+      <input type="date" name="fechaMovimiento" required />
+    </label>
+    <label>
+      Salario diario
+      <input type="number" name="salarioDiario" step="0.01" min="0" value="<%= empleado.salarioDiario != null ? empleado.salarioDiario : '' %>" />
+    </label>
+    <label>
+      Sueldo integrado
+      <input type="number" name="sueldoIntegrado" step="0.01" min="0" value="<%= empleado.nominaConfig && empleado.nominaConfig.sueldoIntegrado ? empleado.nominaConfig.sueldoIntegrado : '' %>" />
+    </label>
+    <label>
+      Tipo salario
+      <select name="tipoSalario">
+        <option value="">—</option>
+        <% tiposSalario.forEach(function(ts) { %>
+        <option value="<%= ts.value %>"><%= ts.label %></option>
+        <% }); %>
+      </select>
+    </label>
+    <label class="span-2">
+      Observaciones
+      <input name="observaciones" placeholder="Motivo o notas" />
+    </label>
+    <button type="submit">Registrar</button>
+  </form>
+</section>
+
+<h2>Línea de tiempo</h2>
+<% if (!movimientos.length) { %>
+<p class="muted">Sin movimientos registrados.</p>
+<% } else { %>
+<table class="table-compact">
+  <thead>
+    <tr>
+      <th>Folio</th>
+      <th>Fecha</th>
+      <th>Tipo</th>
+      <th>Depto / Puesto</th>
+      <th>Salario día</th>
+      <th>Salario sem.</th>
+      <th>Salario mes</th>
+      <th>Sueldo int.</th>
+      <th>Estatus</th>
+      <th>Origen</th>
+      <th>Observaciones</th>
+    </tr>
+  </thead>
+  <tbody>
+    <% movimientos.forEach(function(m) { %>
+    <tr>
+      <td><%= m.folio != null ? m.folio : '—' %></td>
+      <td><%= new Date(m.fechaMovimiento).toLocaleDateString('es-MX') %></td>
+      <td>
+        <strong><%= m.tipoMovimientoCodigo %></strong>
+        <br /><span class="muted"><%= tipoMap.get(m.tipoMovimientoCodigo) || '' %></span>
+      </td>
+      <td>
+        <%= m.departamentoId ? (deptMap.get(String(m.departamentoId)) || '—') : '—' %>
+        / <%= m.puestoId ? (puestoMap.get(String(m.puestoId)) || '—') : '—' %>
+        <% if (m.anterior && (m.anterior.departamentoId || m.anterior.puestoId)) { %>
+        <br /><span class="muted">Ant: <%= m.anterior.departamentoId ? (deptMap.get(String(m.anterior.departamentoId)) || '—') : '—' %> / <%= m.anterior.puestoId ? (puestoMap.get(String(m.anterior.puestoId)) || '—') : '—' %></span>
+        <% } %>
+      </td>
+      <td>
+        <%= m.salarioDiario != null ? m.salarioDiario.toLocaleString('es-MX', { minimumFractionDigits: 2 }) : '—' %>
+        <% if (m.anterior && m.anterior.salarioDiario != null) { %>
+        <br /><span class="muted">Ant: <%= m.anterior.salarioDiario.toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></span>
+        <% } %>
+      </td>
+      <td>
+        <%= m.salarioSemanal != null ? m.salarioSemanal.toLocaleString('es-MX', { minimumFractionDigits: 2 }) : '—' %>
+        <% if (m.anterior && m.anterior.salarioSemanal != null) { %>
+        <br /><span class="muted">Ant: <%= m.anterior.salarioSemanal.toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></span>
+        <% } %>
+      </td>
+      <td>
+        <%= m.salarioMensual != null ? m.salarioMensual.toLocaleString('es-MX', { minimumFractionDigits: 2 }) : '—' %>
+        <% if (m.anterior && m.anterior.salarioMensual != null) { %>
+        <br /><span class="muted">Ant: <%= m.anterior.salarioMensual.toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></span>
+        <% } %>
+      </td>
+      <td>
+        <%= m.sueldoIntegrado != null ? m.sueldoIntegrado.toLocaleString('es-MX', { minimumFractionDigits: 2 }) : '—' %>
+        <% if (m.anterior && m.anterior.sueldoIntegrado != null) { %>
+        <br /><span class="muted">Ant: <%= m.anterior.sueldoIntegrado.toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></span>
+        <% } %>
+      </td>
+      <td>
+        <%= m.estatus || '—' %>
+        <% if (m.anterior && m.anterior.estatus) { %>
+        <br /><span class="muted">Ant: <%= m.anterior.estatus %></span>
+        <% } %>
+      </td>
+      <td><%= m.origen %></td>
+      <td><%= m.observaciones || '—' %></td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<% } %>
+<%- include('../Partials/layout-bottom') %>

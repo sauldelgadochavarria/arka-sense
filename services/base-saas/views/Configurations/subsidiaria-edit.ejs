@@ -1,0 +1,18 @@
+<%- include('../Partials/layout-top', { title: 'Editar subsidiaria', session }) %>
+<p><a href="/config-subsidiarias">← Volver a subsidiarias</a></p>
+
+<h1>Editar subsidiaria</h1>
+<form method="post" action="/config-subsidiarias/<%= subsidiaria._id %>" class="form-grid form-wide">
+  <input name="codigo" value="<%= subsidiaria.codigo %>" placeholder="Código" required />
+  <input name="codigoLegado" type="number" placeholder="Código legado Fortia" value="<%= subsidiaria.codigoLegado != null ? subsidiaria.codigoLegado : '' %>" />
+  <input name="nombre" value="<%= subsidiaria.nombre %>" placeholder="Nombre" required />
+  <input name="direccion" value="<%= subsidiaria.direccion || '' %>" placeholder="Dirección" />
+  <input name="ciudad" value="<%= subsidiaria.ciudad || '' %>" placeholder="Ciudad" />
+  <input name="estado" value="<%= subsidiaria.estado || '' %>" placeholder="Estado" />
+  <input name="codigoPostal" value="<%= subsidiaria.codigoPostal || '' %>" placeholder="Código postal" />
+  <input name="lat" type="number" step="any" value="<%= subsidiaria.lat != null ? subsidiaria.lat : '' %>" placeholder="Latitud" />
+  <input name="lng" type="number" step="any" value="<%= subsidiaria.lng != null ? subsidiaria.lng : '' %>" placeholder="Longitud" />
+  <input name="geocercaRadioMetros" type="number" min="0" value="<%= subsidiaria.geocercaRadioMetros != null ? subsidiaria.geocercaRadioMetros : '' %>" placeholder="Radio geocerca (m)" />
+  <button type="submit">Guardar</button>
+</form>
+<%- include('../Partials/layout-bottom') %>

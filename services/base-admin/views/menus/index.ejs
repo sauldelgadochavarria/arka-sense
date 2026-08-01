@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Menús</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #ddd; padding: 8px; }
+    a.btn { padding: 8px 12px; background: #2563eb; color: #fff; text-decoration: none; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <h1>Menús globales</h1>
+  <p><a class="btn" href="/admin/menus/new">Nuevo ítem</a> · <a href="/admin/tenants">Tenants</a></p>
+  <table>
+    <thead><tr><th>Orden</th><th>Nombre</th><th>Ruta</th><th>Activo</th><th>Features</th></tr></thead>
+    <tbody>
+      <% menus.forEach(function(m) { %>
+      <tr>
+        <td><%= m.orden %></td>
+        <td><%= m.menuPrincipal %></td>
+        <td><code><%= m.rutaApp || m.rutaMenu || '' %></code></td>
+        <td><%= m.activo ? 'Sí' : 'No' %></td>
+        <td><%= (m.requiredFeatureKeys || []).join(', ') %></td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table>
+</body>
+</html>

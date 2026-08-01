@@ -1,0 +1,43 @@
+<%- include('../Partials/layout-top', { title: 'Pendientes', session }) %>
+<p><a href="/incidencias">← Incidencias</a></p>
+<h1>Bandeja de aprobación</h1>
+
+<% if (!incidencias.length) { %>
+<p class="muted">No hay incidencias pendientes.</p>
+<% } else { %>
+<form id="bulk-aprobar" method="post" action="/incidencias/aprobar-masivo"></form>
+
+<table>
+  <thead>
+    <tr>
+      <th></th><th>Fecha</th><th>Empleado</th><th>Tipo</th><th>Días</th><th>Motivo</th><th>Acciones</th>
+    </tr>
+  </thead>
+  <tbody>
+    <% incidencias.forEach(function(i) { %>
+    <tr>
+      <td><input type="checkbox" name="ids" value="<%= i._id %>" form="bulk-aprobar" /></td>
+      <td><%= new Date(i.fechaInicio).toLocaleDateString('es-MX') %></td>
+      <td><%= empMap.get(String(i.empleadoId)) || '—' %></td>
+      <td><code><%= i.codigo %></code></td>
+      <td><%= i.diasAfectados || 1 %></td>
+      <td><%= i.motivo || '—' %></td>
+      <td class="actions">
+        <form method="post" action="/incidencias/<%= i._id %>/aprobar" class="inline-form">
+          <button type="submit">Aprobar</button>
+        </form>
+        <form method="post" action="/incidencias/<%= i._id %>/rechazar" class="inline-form">
+          <input name="notasResolucion" placeholder="Motivo rechazo" />
+          <button type="submit" class="btn-danger">Rechazar</button>
+        </form>
+      </td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<div class="actions-bar">
+  <input name="notasResolucion" placeholder="Nota aprobación masiva" form="bulk-aprobar" />
+  <button type="submit" form="bulk-aprobar">Aprobar seleccionadas</button>
+</div>
+<% } %>
+<%- include('../Partials/layout-bottom') %>

@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title><%= tenant.displayName %></title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; max-width: 720px; }
+    .msg { background: #e8f4fd; padding: 12px; border-radius: 4px; margin-bottom: 1rem; }
+    label { display: block; margin-top: 0.5rem; }
+    button { margin-top: 1rem; padding: 8px 14px; cursor: pointer; }
+    .primary { background: #16a34a; color: #fff; border: none; border-radius: 4px; }
+    .danger { background: #dc2626; color: #fff; border: none; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <h1><%= tenant.displayName %></h1>
+  <p>Slug: <code><%= tenant.slug %></code> · Estado: <strong><%= tenant.status %></strong></p>
+
+  <% if (typeof message !== 'undefined' && message) { %>
+  <div class="msg"><%= message %></div>
+  <% } %>
+
+  <% if (tenant.status === 'active') { %>
+  <p><a href="<%= tenantLoginUrl(tenant.slug) %>" target="_blank">Abrir aplicación SaaS</a></p>
+
+  <h2>Usuario administrador</h2>
+  <p>Si la activación no creó el owner (ej. <code>ROLE_NOT_FOUND</code>), ejecuta el seed y usa este formulario:</p>
+  <form method="post" action="/admin/tenants/<%= tenant.tenantId %>/provision-owner">
+    <label>Email del administrador</label>
+    <input type="email" name="ownerEmail" placeholder="admin@empresa.com" required />
+    <button type="submit" class="primary">Crear usuario administrador</button>
+  </form>
+  <% } %>
+
+  <% if (tenant.status === 'pending') { %>
+  <form method="post" action="/admin/tenants/<%= tenant.tenantId %>/activate">
+    <label>Email del propietario (opcional)</label>
+    <input type="email" name="ownerEmail" placeholder="admin@empresa.com" />
+    <label>Código subsidiaria principal</label>
+    <input type="text" name="codigo" value="MAIN" />
+    <button type="submit" class="primary">Activar tenant</button>
+  </form>
+  <% } %>
+
+  <h2>Feature flags</h2>
+  <form method="post" action="/admin/tenants/<%= tenant.tenantId %>/feature-flags">
+    <% featureFlags.forEach(function(f) { %>
+    <label>
+      <input type="checkbox" name="featureFlags[<%= f.key %>]" value="true" <%= flags[f.key] ? 'checked' : '' %> />
+      <%= f.label %> — <%= f.description %>
+    </label><br/>
+    <% }); %>
+    <button type="submit">Guardar módulos</button>
+  </form>
+
+  <% if (tenant.status === 'active') { %>
+  <form method="post" action="/admin/tenants/<%= tenant.tenantId %>/suspend" style="margin-top:2rem">
+    <button type="submit" class="danger">Suspender</button>
+  </form>
+  <% } %>
+
+  <p><a href="/admin/tenants">← Volver</a></p>
+</body>
+</html>

@@ -1,0 +1,21 @@
+<%- include('../Partials/layout-top', { title: seccion.titulo, session }) %>
+<p><a href="/nomina">← Nómina</a></p>
+
+<h1><%= seccion.titulo %></h1>
+<p class="page-subtitle"><%= seccion.descripcion %></p>
+
+<% if (!empresa) { %>
+<p>No hay empresa vinculada a este tenant.</p>
+<% } else { %>
+<div class="module-banner nomina-banner">
+  <p>Esta sección está preparada en el menú y rutas. El motor de cálculo de nómina se implementará en la siguiente fase.</p>
+</div>
+
+<ul class="roadmap-list">
+  <li>Definición de conceptos y fórmulas</li>
+  <li>Integración con insumos de pre-nómina y asistencia</li>
+  <li>Cálculo de impuestos y cuotas</li>
+  <li>Timbrado y dispersión (según especificación)</li>
+</ul>
+<% } %>
+<%- include('../Partials/layout-bottom') %>

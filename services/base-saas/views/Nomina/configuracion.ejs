@@ -1,0 +1,68 @@
+<%- include('../Partials/layout-top', { title: 'Configuración fiscal', session }) %>
+<h1>Configuración fiscal</h1>
+<div class="toolbar">
+  <a class="btn" href="/nomina">← Nómina</a>
+  <a class="btn" href="/nomina/conceptos">Conceptos</a>
+  <a class="btn" href="/nomina/catalogos">Catálogos</a>
+</div>
+
+<p>Tablas y parámetros globales usados por las fórmulas (<code>aplicarTabla</code>, <code>uma</code>, etc.).</p>
+
+<div class="summary-cards">
+  <div class="card"><strong><%= satCount %></strong> claves SAT de referencia</div>
+  <div class="card"><strong><%= parametros.length %></strong> parámetros</div>
+  <div class="card"><strong><%= tablas.length %></strong> tablas fiscales</div>
+</div>
+
+<p class="muted">Seeds: <code>npm run seed:nomina-fiscal</code> · <code>npm run seed:catalogo-sat</code> · <code>npm run seed:catalogo-mapeo-legado</code> · Import legado: <code>npm run import:conceptos-legado -- --slug=&lt;tenant&gt;</code></p>
+<p><a href="/nomina/catalogos">Administrar catálogos SAT, mapeo legado y parámetros →</a></p>
+
+<h2>Parámetros generales</h2>
+<table>
+  <thead>
+    <tr><th>Clave</th><th>Valor</th><th>Vigencia desde</th><th>Descripción</th></tr>
+  </thead>
+  <tbody>
+    <% if (!parametros.length) { %>
+    <tr><td colspan="4" class="muted">Sin parámetros. Ejecuta el seed fiscal.</td></tr>
+    <% } %>
+    <% parametros.forEach(function(p) { %>
+    <tr>
+      <td><code><%= p.clave %></code></td>
+      <td><%= p.valor %></td>
+      <td><%= new Date(p.vigenciaDesde).toLocaleDateString('es-MX') %></td>
+      <td><%= p.descripcion || '—' %></td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+
+<h2>Tablas fiscales</h2>
+<p><a href="/nomina/catalogos/tablas-fiscales">Administrar tablas ISR y rangos →</a></p>
+<% if (!tablas.length) { %>
+<p class="muted">Sin tablas. Ejecuta el seed fiscal o créalas en Catálogos.</p>
+<% } %>
+<% tablas.forEach(function(t) { %>
+<section class="tabla-fiscal-block">
+  <h3><code><%= t.codigo %></code> — <%= t.nombre || t.periodicidad %></h3>
+  <p class="muted">Vigente desde <%= new Date(t.vigenciaDesde).toLocaleDateString('es-MX') %></p>
+  <% if (t.rangos && t.rangos.length) { %>
+  <table>
+    <thead>
+      <tr><th>Límite inf.</th><th>Límite sup.</th><th>Cuota fija</th><th>% excedente</th></tr>
+    </thead>
+    <tbody>
+      <% t.rangos.forEach(function(r) { %>
+      <tr>
+        <td><%= r.limiteInferior %></td>
+        <td><%= r.limiteSuperior %></td>
+        <td><%= r.cuotaFija %></td>
+        <td><%= (r.porcentajeExcedente * 100).toFixed(2) %>%</td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table>
+  <% } %>
+</section>
+<% }); %>
+<%- include('../Partials/layout-bottom') %>

@@ -1,0 +1,31 @@
+<%- include('../Partials/layout-top', { title: 'Perfiles de integración', session }) %>
+<h1>Perfiles de integración</h1>
+<div class="toolbar">
+  <a class="btn" href="/integraciones/exportacion">Exportar pre-nómina</a>
+  <a class="btn" href="/integraciones/abc">Sincronización ABC</a>
+  <a class="btn" href="/integraciones/logs">Logs de sincronización</a>
+  <a class="btn" href="/integraciones/dispositivos">Dispositivos biométricos</a>
+</div>
+<% if (!empresa) { %>
+<p>No hay empresa vinculada a este tenant.</p>
+<% } else { %>
+<p>Adaptadores configurables para exportar pre-nómina a sistemas externos.</p>
+<table>
+  <thead>
+    <tr><th>Nombre</th><th>Adaptador</th><th>Activo</th><th></th></tr>
+  </thead>
+  <tbody>
+    <% perfiles.forEach(function(p) {
+      const adaptador = adaptadores.find(function(a) { return a.value === p.adaptador; });
+    %>
+    <tr>
+      <td><%= p.nombre %></td>
+      <td><%= adaptador ? adaptador.label : p.adaptador %></td>
+      <td><span class="badge badge-<%= p.activo ? 'activo' : 'baja' %>"><%= p.activo ? 'Sí' : 'No' %></span></td>
+      <td><a href="/integraciones/perfiles/<%= p._id %>/edit">Configurar</a></td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<% } %>
+<%- include('../Partials/layout-bottom') %>

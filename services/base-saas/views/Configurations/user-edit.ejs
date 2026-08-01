@@ -1,0 +1,60 @@
+<%- include('../Partials/layout-top', { title: 'Editar usuario', session, menuTree }) %>
+
+<div class="page-header">
+  <h1>Editar usuario</h1>
+  <p class="page-subtitle"><%= user.firstName %> <%= user.lastName %> · <%= user.email %></p>
+</div>
+
+<div class="toolbar">
+  <a class="btn btn-secondary" href="/config-users">← Volver a usuarios</a>
+</div>
+
+<div class="panel">
+  <form method="post" action="/config-users/<%= user._id %>" class="form-grid form-wide">
+    <label>Nombre</label>
+    <input name="firstName" value="<%= user.firstName %>" required />
+
+    <label>Apellido</label>
+    <input name="lastName" value="<%= user.lastName %>" required />
+
+    <label>Usuario (login interno)</label>
+    <input name="userName" value="<%= user.userName %>" required />
+
+    <label>Email (login)</label>
+    <input name="email" type="email" value="<%= user.email %>" required />
+
+    <label>Nueva contraseña</label>
+    <input name="password" type="password" placeholder="Dejar vacío para no cambiar" autocomplete="new-password" />
+
+    <label>Rol</label>
+    <select name="roleId">
+      <option value="">— Sin rol —</option>
+      <% roles.forEach(function(r) { %>
+      <option value="<%= r._id %>" <%= roleId === String(r._id) ? 'selected' : '' %>><%= r.nombre %></option>
+      <% }); %>
+    </select>
+
+    <label>Empleado vinculado (portal)</label>
+    <select name="empleadoId">
+      <option value="">— Ninguno —</option>
+      <% empleados.forEach(function(e) { %>
+      <option value="<%= e._id %>" <%= user.empleadoId && String(user.empleadoId) === String(e._id) ? 'selected' : '' %>>
+        <%= e.firstName %> <%= e.lastName %> (<%= e.numEmpleado %>)
+      </option>
+      <% }); %>
+    </select>
+
+    <label class="inline-check">
+      <input type="checkbox" name="activo" <%= user.activo ? 'checked' : '' %>
+        <%= String(user._id) === String(session.userid) ? 'disabled' : '' %> />
+      Usuario activo
+    </label>
+    <% if (String(user._id) === String(session.userid)) { %>
+    <p class="hint">No puedes desactivar tu propia cuenta desde aquí.</p>
+    <% } %>
+
+    <button type="submit">Guardar cambios</button>
+  </form>
+</div>
+
+<%- include('../Partials/layout-bottom') %>

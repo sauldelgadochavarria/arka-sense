@@ -1,0 +1,149 @@
+<%- include('../Partials/layout-top', { title: meta.title, session }) %>
+<div class="page-header">
+  <h1><%= meta.title %></h1>
+  <p class="page-subtitle"><%= meta.descripcion %></p>
+</div>
+
+<% if (!empresa) { %>
+<p>No hay empresa vinculada a este tenant.</p>
+<% } else { %>
+<div class="toolbar">
+  <a class="btn" href="/reportes">← Reportes</a>
+  <% if (result && result.rows && result.rows.length) { %>
+  <a class="btn btn-primary" href="/reportes/<%= meta.slug %>/export?<%= exportQuery %>">Exportar CSV</a>
+  <% } %>
+</div>
+
+<form method="get" action="/reportes/<%= meta.slug %>" class="filter-form form-grid">
+  <% if (meta.filtros.includes('periodo') || meta.filtros.includes('periodoNomina')) { %>
+  <label>Desde <input type="date" name="desde" value="<%= filterValues.desde %>" /></label>
+  <label>Hasta <input type="date" name="hasta" value="<%= filterValues.hasta %>" /></label>
+  <% } %>
+  <% if (meta.filtros.includes('anio')) { %>
+  <label>Año <input type="number" name="anio" value="<%= filterValues.anio %>" min="2020" max="2100" /></label>
+  <% } %>
+  <% if (meta.filtros.includes('periodoNomina') && catalogs.periodos.length) { %>
+  <label>Período nómina
+    <select name="periodoId">
+      <option value="">Último del estatus</option>
+      <% catalogs.periodos.forEach(function(p) { %>
+      <option value="<%= p._id %>" <%= filterValues.periodoId === String(p._id) ? 'selected' : '' %>>
+        <%= new Date(p.fechaInicio).toLocaleDateString('es-MX') %> – <%= new Date(p.fechaFin).toLocaleDateString('es-MX') %> (<%= p.estatus %>)
+      </option>
+      <% }); %>
+    </select>
+  </label>
+  <% } %>
+  <% if (meta.filtros.includes('departamento')) { %>
+  <label>Departamento
+    <select name="departamentoId">
+      <option value="">Todos</option>
+      <% catalogs.departamentos.forEach(function(d) { %>
+      <option value="<%= d._id %>" <%= filterValues.departamentoId === String(d._id) ? 'selected' : '' %>><%= d.nombre %></option>
+      <% }); %>
+    </select>
+  </label>
+  <% } %>
+  <% if (meta.filtros.includes('turno')) { %>
+  <label>Turno
+    <select name="turnoId">
+      <option value="">Todos</option>
+      <% catalogs.turnos.forEach(function(t) { %>
+      <option value="<%= t._id %>" <%= filterValues.turnoId === String(t._id) ? 'selected' : '' %>><%= t.nombre %></option>
+      <% }); %>
+    </select>
+  </label>
+  <% } %>
+  <% if (meta.filtros.includes('empleado')) { %>
+  <label>Empleado
+    <select name="empleadoId">
+      <option value="">Todos</option>
+      <% catalogs.empleados.forEach(function(e) { %>
+      <option value="<%= e._id %>" <%= filterValues.empleadoId === String(e._id) ? 'selected' : '' %>><%= e.firstName %> <%= e.lastName %></option>
+      <% }); %>
+    </select>
+  </label>
+  <% } %>
+  <% if (meta.filtros.includes('tipoIncidencia')) { %>
+  <label>Tipo incidencia
+    <select name="tipoIncidenciaId">
+      <option value="">Todos</option>
+      <% catalogs.tiposIncidencia.forEach(function(t) { %>
+      <option value="<%= t._id %>" <%= filterValues.tipoIncidenciaId === String(t._id) ? 'selected' : '' %>><%= t.nombre %> (<%= t.clave %>)</option>
+      <% }); %>
+    </select>
+  </label>
+  <% } %>
+  <% if (meta.filtros.includes('estatusIncidencia')) { %>
+  <label>Estatus
+    <select name="estatusIncidencia">
+      <option value="">Todos</option>
+      <option value="pendiente" <%= filterValues.estatusIncidencia === 'pendiente' ? 'selected' : '' %>>Pendiente</option>
+      <option value="aprobada" <%= filterValues.estatusIncidencia === 'aprobada' ? 'selected' : '' %>>Aprobada</option>
+      <option value="rechazada" <%= filterValues.estatusIncidencia === 'rechazada' ? 'selected' : '' %>>Rechazada</option>
+    </select>
+  </label>
+  <% } %>
+  <button type="submit">Generar</button>
+</form>
+
+<% if (result && result.summary) { %>
+<div class="report-summary">
+  <% if (result.summary.total !== undefined) { %>
+  <p><strong>Total:</strong> <%= result.summary.total %> registros</p>
+  <% } %>
+  <% if (result.summary.sinCodigo !== undefined) { %>
+  <p><strong>Sin código externo:</strong> <%= result.summary.sinCodigo %> de <%= result.summary.totalAfectados %> afectados</p>
+  <% } %>
+  <% if (result.summary.totales) { %>
+  <p><strong>Totales período:</strong> neto $<%= result.summary.totales.neto || 0 %></p>
+  <% } %>
+</div>
+<% } %>
+
+<% if (!result || !result.rows.length) { %>
+<p class="empty-state">Sin resultados para los filtros seleccionados.</p>
+<% } else { %>
+<table>
+  <thead>
+    <tr>
+      <% result.columns.forEach(function(col) { %>
+      <th><%= col.label %></th>
+      <% }); %>
+    </tr>
+  </thead>
+  <tbody>
+    <% result.rows.forEach(function(row) { %>
+    <tr>
+      <% result.columns.forEach(function(col) { %>
+      <td><%= row[col.key] ?? '—' %></td>
+      <% }); %>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<% } %>
+
+<% if (result && result.resumen && result.resumen.rows && result.resumen.rows.length) { %>
+<h2><%= result.resumen.title %></h2>
+<table>
+  <thead>
+    <tr>
+      <% result.resumen.columns.forEach(function(col) { %>
+      <th><%= col.label %></th>
+      <% }); %>
+    </tr>
+  </thead>
+  <tbody>
+    <% result.resumen.rows.forEach(function(row) { %>
+    <tr>
+      <% result.resumen.columns.forEach(function(col) { %>
+      <td><%= row[col.key] ?? '—' %></td>
+      <% }); %>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<% } %>
+<% } %>
+<%- include('../Partials/layout-bottom') %>

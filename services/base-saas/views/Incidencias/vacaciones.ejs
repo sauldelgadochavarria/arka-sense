@@ -1,0 +1,27 @@
+<%- include('../Partials/layout-top', { title: 'Vacaciones', session }) %>
+<p><a href="/incidencias">← Incidencias</a></p>
+<h1>Saldos de vacaciones <%= anio %></h1>
+
+<form method="post" action="/incidencias/vacaciones/recalcular" class="toolbar inline-form">
+  <input type="hidden" name="anio" value="<%= anio %>" />
+  <button type="submit">Recalcular saldos (LFT)</button>
+</form>
+
+<table>
+  <thead>
+    <tr><th>Empleado</th><th>Antigüedad</th><th>Corresponden</th><th>Tomados</th><th>Pendientes</th><th>Prima %</th></tr>
+  </thead>
+  <tbody>
+    <% filas.forEach(function(f) { %>
+    <tr>
+      <td><%= f.empleado ? f.empleado.firstName + ' ' + f.empleado.lastName : '—' %></td>
+      <td><%= f.anios %> año(s)</td>
+      <td><%= f.saldo.diasCorresponden %></td>
+      <td><%= f.saldo.diasTomados %></td>
+      <td><strong><%= f.saldo.diasPendientes %></strong></td>
+      <td><%= f.saldo.primaVacacionalPct %>%</td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<%- include('../Partials/layout-bottom') %>
