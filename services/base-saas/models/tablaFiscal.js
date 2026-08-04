@@ -10,7 +10,7 @@ const tablaFiscalSchema = new mongoose.Schema(
     vigenciaHasta: { type: Date, default: null },
     periodicidad: {
       type: String,
-      enum: ['diario', 'semanal', 'quincenal', 'mensual', 'anual'],
+      enum: ['diario', 'semanal', 'decenal', 'catorcenal', 'quincenal', 'mensual', 'anual'],
       default: 'mensual'
     },
     activo: { type: Boolean, default: true }

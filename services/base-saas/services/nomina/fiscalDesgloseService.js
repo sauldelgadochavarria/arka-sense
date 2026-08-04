@@ -19,7 +19,7 @@ function resolveFiscalConfig(concepto = {}) {
   return defaultFiscalFromNaturaleza(concepto.naturaleza);
 }
 
-function aplicarReglaLey(codigoRegla, importe, { uma = 0 } = {}) {
+function aplicarReglaLey(codigoRegla, importe, { uma = 0, contexto = {} } = {}) {
   const regla = String(codigoRegla || '').toLowerCase();
   const monto = Number(importe) || 0;
 
@@ -39,6 +39,16 @@ function aplicarReglaLey(codigoRegla, importe, { uma = 0 } = {}) {
   if (regla === 'prima_dominical') {
     const tope = Number(uma) || 0; // 1 UMA por domingo (simplificado)
     const exento = Math.min(monto, tope);
+    return { gravado: redondear(monto - exento), exento: redondear(exento), regla };
+  }
+
+  if (regla === 'fondo_ahorro') {
+    // Preferir tope de insumos: min(% salario, 1.3×UMA anual prorrateada)
+    let tope = Number(contexto.fondoAhorroTopeExento);
+    if (!Number.isFinite(tope) || tope < 0) {
+      tope = (Number(uma) || 0) * 1.3 * (365 / 12);
+    }
+    const exento = Math.min(monto, Math.max(0, tope));
     return { gravado: redondear(monto - exento), exento: redondear(exento), regla };
   }
 
@@ -95,7 +105,7 @@ function desglosarImporte(importe, fiscalCfg, { uma = 0, contexto = {}, scope = 
       break;
     }
     case 'regla_ley': {
-      const r = aplicarReglaLey(desglose.codigoRegla, monto, { uma });
+      const r = aplicarReglaLey(desglose.codigoRegla, monto, { uma, contexto });
       gravado = r.gravado;
       exento = r.exento;
       break;

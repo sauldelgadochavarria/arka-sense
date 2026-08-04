@@ -1,0 +1,20 @@
+{
+  "rango": {
+    "desde": "2026-01-01",
+    "hasta": "2026-06-20"
+  },
+  "tipoPeriodo": "semanal",
+  "periodos": 25,
+  "empleados": [
+    "001",
+    "002",
+    "007"
+  ],
+  "filasHistorico": 75,
+  "filasAcumulados": 21,
+  "archivos": {
+    "historico": "historico_recibos_semanal_2026_ene-jun.csv",
+    "acumulados": "acumulados_2026_ene-jun.csv"
+  },
+  "nota": "Histórico: dry-run en /config-empresa/cargas/historico_recibos. Acumulados: validar+aplicar en /config-empresa/cargas/acumulados."
+}

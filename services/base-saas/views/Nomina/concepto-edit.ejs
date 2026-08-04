@@ -48,6 +48,15 @@
   const _tiposIncidenciaOpts = (typeof tiposIncidenciaOpts !== 'undefined' && tiposIncidenciaOpts)
     ? tiposIncidenciaOpts
     : [];
+  const _tiposEmpleadoOpts = (typeof tiposEmpleadoOpts !== 'undefined' && tiposEmpleadoOpts)
+    ? tiposEmpleadoOpts
+    : [];
+  const _tiposPeriodoOpts = (typeof tiposPeriodoOpts !== 'undefined' && tiposPeriodoOpts)
+    ? tiposPeriodoOpts
+    : [];
+  const _tiposNominaOpts = (typeof tiposNominaOpts !== 'undefined' && tiposNominaOpts)
+    ? tiposNominaOpts
+    : [];
   const _fases = (typeof fases !== 'undefined' && fases) ? fases : [
     { value: '1', label: 'Fase 1 — Percepciones' },
     { value: '2', label: 'Fase 2 — Acumuladores' },
@@ -84,6 +93,15 @@
   const clavePrenActual = concepto.clavePrenomina || cat.clavePrenomina || '';
   const tiposIncSet = {};
   (tiposIncActual || []).forEach(function(t) { tiposIncSet[String(t).toUpperCase()] = true; });
+  const aplicaTiposEmpActual = concepto.aplicaTiposEmpleado || [];
+  const aplicaTiposEmpSet = {};
+  (aplicaTiposEmpActual || []).forEach(function(t) { aplicaTiposEmpSet[String(t)] = true; });
+  const aplicaTiposPerActual = concepto.aplicaTiposPeriodo || [];
+  const aplicaTiposPerSet = {};
+  (aplicaTiposPerActual || []).forEach(function(t) { aplicaTiposPerSet[String(t)] = true; });
+  const aplicaTipoNomActual = concepto.aplicaTipoNomina || [];
+  const aplicaTipoNomSet = {};
+  (aplicaTipoNomActual || []).forEach(function(t) { aplicaTipoNomSet[String(t)] = true; });
 
   const _canEdit = typeof canEdit !== 'undefined' ? !!canEdit : true;
   const _modoVista = typeof modoVista !== 'undefined' ? !!modoVista : !_canEdit;
@@ -201,6 +219,62 @@
       </div>
       <label>Cuenta contable
         <input name="cuentaContable" value="<%= concepto.cuentaContable || '' %>" />
+      </label>
+    </fieldset>
+
+    <fieldset class="props-fieldset">
+      <legend>Ámbito de aplicación</legend>
+      <p class="muted small" style="margin-top:0">
+        Sin selección en un grupo = aplica a todos de ese grupo.
+        Catálogos editables en
+        <a href="/config-sistema/enums/tipo_empleado" target="_blank">tipo_empleado</a>,
+        <a href="/config-sistema/enums/tipo_periodo" target="_blank">tipo_periodo</a>,
+        <a href="/config-sistema/enums/tipo_nomina" target="_blank">tipo_nomina</a>.
+      </p>
+
+      <label>Tipos de empleado
+        <div class="form-row-checks">
+          <% if (!_tiposEmpleadoOpts.length) { %>
+          <span class="muted">Sin ítems. Agrégalos en Enums → tipo_empleado.</span>
+          <% } %>
+          <% _tiposEmpleadoOpts.forEach(function(te) { %>
+          <label class="inline-check">
+            <input type="checkbox" name="aplicaTiposEmpleado" value="<%= te.value %>"
+              <%= aplicaTiposEmpSet[te.value] ? 'checked' : '' %> />
+            <%= te.label || te.value %>
+          </label>
+          <% }); %>
+        </div>
+      </label>
+
+      <label>Tipos de período
+        <div class="form-row-checks">
+          <% if (!_tiposPeriodoOpts.length) { %>
+          <span class="muted">Sin ítems. Agrégalos en Enums → tipo_periodo.</span>
+          <% } %>
+          <% _tiposPeriodoOpts.forEach(function(tp) { %>
+          <label class="inline-check">
+            <input type="checkbox" name="aplicaTiposPeriodo" value="<%= tp.value %>"
+              <%= aplicaTiposPerSet[tp.value] ? 'checked' : '' %> />
+            <%= tp.label || tp.value %>
+          </label>
+          <% }); %>
+        </div>
+      </label>
+
+      <label>Tipos de nómina
+        <div class="form-row-checks">
+          <% if (!_tiposNominaOpts.length) { %>
+          <span class="muted">Sin ítems. Agrégalos en Enums → tipo_nomina.</span>
+          <% } %>
+          <% _tiposNominaOpts.forEach(function(tn) { %>
+          <label class="inline-check">
+            <input type="checkbox" name="aplicaTipoNomina" value="<%= tn.value %>"
+              <%= aplicaTipoNomSet[tn.value] ? 'checked' : '' %> />
+            <%= tn.label || tn.value %>
+          </label>
+          <% }); %>
+        </div>
       </label>
     </fieldset>
 
@@ -412,6 +486,13 @@
                  placeholder="ej. INCIDENCIAS.horasExtraDobles > 0" class="input-formula" autocomplete="off" spellcheck="false" />
         </div>
       </label>
+      <% if (concepto.codigo === 'PREMIO_ASISTENCIA') { %>
+      <p class="muted small" style="margin-top:-0.35rem">
+        Usa <code>diasLaborados &gt;= diasProgramados</code> (días laborables del tipo de período),
+        no <code>diasPeriodo</code> (calendario). Guarda en el <strong>mismo tipo de período</strong> del cálculo
+        (o marca «aplicar a todos»).
+      </p>
+      <% } %>
       <label>Fórmula <span class="muted">(Tab / Enter acepta sugerencia · Esc cierra)</span>
         <div class="ac-wrap">
           <textarea name="formula" id="field-formula" rows="3" required class="input-formula"
@@ -419,6 +500,21 @@
                     autocomplete="off" spellcheck="false"><%= fActiva ? fActiva.formula : '' %></textarea>
         </div>
       </label>
+      <% if (String(concepto.codigo || '').indexOf('FONDO') === 0 || concepto.codigo === 'DED_FONDO_AHORRO') { %>
+      <div class="panel" style="grid-column:1/-1;background:var(--color-surface-2,#f5f6f8);padding:0.75rem 1rem;border-radius:6px">
+        <p class="muted small" style="margin:0 0 0.35rem"><strong>Fondo de ahorro — fórmula editable (mathjs, no JS libre)</strong></p>
+        <p class="muted small" style="margin:0">
+          Condición sugerida: <code>aplicaFondoAhorro == 1</code><br />
+          Fórmula sugerida:
+          <code>aplicaFondoAhorro * (sueldoDiario * diasLaborados * porcentajeFondoAhorro / 200)</code><br />
+          (= % del salario ÷ 2; el concepto redondea a 2 decimales).<br />
+          Variables: <code>aplicaFondoAhorro</code>, <code>porcentajeFondoAhorro</code>, <code>sueldoDiario</code>,
+          <code>diasLaborados</code>, <code>uma</code>, <code>topeUmaFondoAhorro</code>, <code>diasPeriodo</code>.
+          Atajos legacy: <code>fondoAhorroEmpresa</code> / <code>fondoAhorroTrabajador</code>.
+          Evita <code>round(x, n)</code> aquí: en nómina <code>round</code> es Math.round de 1 argumento.
+        </p>
+      </div>
+      <% } %>
       <div class="form-row-2">
         <label>Dependencias <span class="muted">(códigos separados por coma · autocompletar)</span>
           <div class="ac-wrap">
@@ -564,7 +660,7 @@
         tipo: 'namespace'
       });
     });
-    ['min', 'max', 'abs', 'round', 'floor', 'ceil', 'aplicarTabla', 'topeUMA', 'isrPeriodo', 'imssObrero'].forEach(function(fn) {
+    ['min', 'max', 'abs', 'round', 'floor', 'ceil', 'aplicarTabla', 'topeUMA', 'isrPeriodo', 'imssObrero', 'imssPatronal'].forEach(function(fn) {
       if (_acSeen[fn]) return;
       _acSeen[fn] = true;
       _acItems.push({
@@ -663,7 +759,24 @@
     minutosRetardo: 0, minutosSalidaAnticipada: 0,
     diasConRetardo: 0, llegadasTarde: 0, sinRetardo: 1, sinFaltas: 1,
     uma: 113.14, salarioMinimo: 278.8, sbc: 500,
-    SUELDO: 7000, PERCEPCIONES_GRAVADAS: 7500
+    SUELDO: 7000, PERCEPCIONES_GRAVADAS: 7500,
+    // Fondo de ahorro — variables para fórmulas editables
+    aplicaFondoAhorro: 1,
+    porcentajeFondoAhorro: 13,
+    topeUmaFondoAhorro: 1.3,
+    diasAnioFondoAhorro: 365,
+    fondoAhorroEmpresa: 455,
+    fondoAhorroTrabajador: 455,
+    fondoAhorroTopeExento: 910,
+    fondoAhorroEmpresaExento: 455,
+    fondoAhorroEmpresaGravado: 0,
+    fondoAhorroSaldoFiniquito: 0,
+    FONDO_AHORRO_EMPRESA: 455,
+    FONDO_AHORRO_TRABAJADOR: 455,
+    DED_FONDO_AHORRO: 455,
+    ISR: 800,
+    IMSS_OBRERO: 150,
+    DEDUCCIONES_TOTALES: 1405
   };
 
   /* —— Autocompletado de variables / conceptos / funciones —— */

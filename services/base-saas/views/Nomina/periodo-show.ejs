@@ -7,6 +7,29 @@
   · <%= periodo.diasPeriodo %> días
   · Estatus: <span class="badge badge-<%= periodo.estatus === 'cerrado' ? 'baja' : periodo.estatus === 'calculado' ? 'activo' : periodo.estatus === 'calculando' ? 'suspendido' : 'suspendido' %>"><%= estatusLabels[periodo.estatus] || periodo.estatus %></span>
 </p>
+<%
+  function fmtDt(v) {
+    if (!v) return '—';
+    try {
+      return new Date(v).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' });
+    } catch (_) { return '—'; }
+  }
+  const fechaCalculo = periodo.fechaCalculo || periodo.calculadoAt;
+  const fechaCierre = periodo.fechaCierre || periodo.cerradoAt;
+%>
+<p class="muted small">
+  Fecha de cálculo: <strong><%= fmtDt(fechaCalculo) %></strong>
+  <% if (periodo.calculoLoteId) { %>
+  · Lote: <code><%= periodo.calculoLoteId %></code>
+  <% } %>
+  · Calculó: <strong><%= (typeof calculadoPor !== 'undefined' && calculadoPor) ? calculadoPor : (periodo.calculadoPorLabel || periodo.calculadoPorUserId || '—') %></strong>
+  · Fecha de cierre: <strong><%= fmtDt(fechaCierre) %></strong>
+  · Cerró: <strong><%= (typeof cerradoPor !== 'undefined' && cerradoPor) ? cerradoPor : (periodo.cerradoPorLabel || periodo.cerradoPorUserId || '—') %></strong>
+  <% if (periodo.cierreResumen && periodo.cierreResumen.recibosArchivados) { %>
+  · Histórico: <%= periodo.cierreResumen.recibosArchivados %> recibos ·
+  <%= periodo.cierreResumen.conceptosAcumulados || 0 %> líneas a acumulados
+  <% } %>
+</p>
 
 <% if (prenominaPeriodo) { %>
 <p class="muted">
@@ -84,7 +107,7 @@
   </form>
   <% } %>
   <% if (periodo.estatus === 'calculado') { %>
-  <form method="post" action="/nomina/periodos/<%= periodo._id %>/cerrar" class="inline-form" onsubmit="return confirm('¿Cerrar período? No se podrá recalcular.');">
+  <form method="post" action="/nomina/periodos/<%= periodo._id %>/cerrar" class="inline-form" onsubmit="return confirm('¿Cerrar período? Se archivará el histórico, se actualizarán acumulados y no se podrá recalcular.');">
     <button type="submit">Cerrar período</button>
   </form>
   <% } %>
@@ -112,18 +135,21 @@
     <tr>
       <th>No.</th>
       <th>Empleado</th>
+      <th>ID cálculo</th>
       <th>Días lab.</th>
       <th>Faltas</th>
       <th>Origen insumos</th>
       <th>Percepciones</th>
       <th>Deducciones</th>
       <th>Neto</th>
+      <th>Cálculo</th>
+      <th>Cierre</th>
       <th></th>
     </tr>
   </thead>
   <tbody id="recibos-body">
     <% if (!recibos.length) { %>
-    <tr><td colspan="9" class="muted">Sin recibos. Ejecuta el cálculo del período.</td></tr>
+    <tr><td colspan="12" class="muted">Sin recibos. Ejecuta el cálculo del período.</td></tr>
     <% } %>
     <% recibos.forEach(function(r) {
          const fuente = r.insumosFuente || 'default';
@@ -133,17 +159,44 @@
     <tr>
       <td><%= r.numEmpleado %></td>
       <td><%= r.empleadoNombre %></td>
+      <td class="muted small"><code title="<%= r.calculoLoteId || '' %>"><%= r.calculoId || '—' %></code></td>
       <td><%= r.diasLaborados %></td>
       <td><%= r.faltas %></td>
       <td class="muted small"><%= fuenteLabel %></td>
       <td>$<%= r.totalPercepciones.toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></td>
       <td>$<%= r.totalDeducciones.toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></td>
       <td>$<%= r.netoPagar.toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></td>
+      <td class="muted small"><%= fmtDt(r.fechaCalculo) %></td>
+      <td class="muted small"><%= fmtDt(r.fechaCierre) %></td>
       <td><a href="/nomina/periodos/<%= periodo._id %>/recibos/<%= r._id %>">Detalle</a></td>
     </tr>
     <% }); %>
   </tbody>
 </table>
+
+<% if (typeof auditoria !== 'undefined' && auditoria && auditoria.length) { %>
+<h2>Bitácora de auditoría</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Fecha</th>
+      <th>Acción</th>
+      <th>Usuario</th>
+      <th>Mensaje</th>
+    </tr>
+  </thead>
+  <tbody>
+    <% auditoria.forEach(function(a) { %>
+    <tr>
+      <td class="muted small"><%= fmtDt(a.createdAt) %></td>
+      <td><code><%= a.accion %></code></td>
+      <td class="muted small"><%= a.userLabel || a.userId || '—' %></td>
+      <td><%= a.mensaje || '—' %></td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<% } %>
 
 <script>
 (function() {

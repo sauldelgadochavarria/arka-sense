@@ -54,11 +54,11 @@
 <h2>Períodos</h2>
 <table>
   <thead>
-    <tr><th>Tipo período</th><th>Tipo nómina</th><th>Inicio</th><th>Fin</th><th>Pre-nómina</th><th>Estatus</th><th>Empleados</th><th>Neto</th><th></th></tr>
+    <tr><th>Tipo período</th><th>Tipo nómina</th><th>Inicio</th><th>Fin</th><th>Pre-nómina</th><th>Estatus</th><th>Calculó</th><th>Cerró</th><th>Empleados</th><th>Neto</th><th></th></tr>
   </thead>
   <tbody>
     <% if (!periodos.length) { %>
-    <tr><td colspan="9" class="muted">Sin períodos. Al abrir el primero se sembrarán conceptos y fórmulas base.</td></tr>
+    <tr><td colspan="11" class="muted">Sin períodos. Al abrir el primero se sembrarán conceptos y fórmulas base.</td></tr>
     <% } %>
     <% periodos.forEach(function(p) { %>
     <tr>
@@ -68,6 +68,8 @@
       <td><%= new Date(p.fechaFin).toLocaleDateString('es-MX') %></td>
       <td class="muted small"><%= p.payrollPeriodId ? 'Vinculada' : 'Sin vincular' %></td>
       <td><span class="badge badge-<%= p.estatus === 'cerrado' ? 'baja' : p.estatus === 'calculado' ? 'activo' : 'suspendido' %>"><%= estatusLabels[p.estatus] || p.estatus %></span></td>
+      <td class="muted small"><%= p.calculadoPorLabel || '—' %></td>
+      <td class="muted small"><%= p.cerradoPorLabel || '—' %></td>
       <td><%= p.totales?.empleados || 0 %></td>
       <td>$<%= (p.totales?.neto || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></td>
       <td><a href="/nomina/periodos/<%= p._id %>">Ver</a></td>

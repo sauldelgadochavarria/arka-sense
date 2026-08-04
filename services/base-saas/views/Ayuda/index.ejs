@@ -1,0 +1,43 @@
+<%- include('../Partials/layout-top', { title: title || 'Ayuda', session }) %>
+<h1>Centro de ayuda</h1>
+<p class="muted">Base de conocimiento para operar nómina, asistencia y configuración.</p>
+
+<div class="toolbar">
+  <form method="get" action="/ayuda" class="inline-form form-grid" style="flex:1">
+    <input type="search" name="q" placeholder="Buscar (fondo de ahorro, conceptos…)" value="<%= q || '' %>" />
+    <select name="categoria">
+      <option value="">Todas las categorías</option>
+      <% categorias.forEach(function(c) { %>
+      <option value="<%= c.value %>" <%= categoria === c.value ? 'selected' : '' %>><%= c.label %></option>
+      <% }); %>
+    </select>
+    <button type="submit">Buscar</button>
+  </form>
+  <% if (canManage) { %>
+  <a class="btn" href="/ayuda/admin">Administrar</a>
+  <a class="btn btn-primary" href="/ayuda/admin/nuevo">+ Artículo</a>
+  <% } %>
+</div>
+
+<% if (!articulos.length) { %>
+<p class="muted">No hay artículos<% if (q || categoria) { %> con ese filtro<% } %>. <% if (canManage) { %>Crea el primero o ejecuta <code>npm run seed:ayuda</code>.<% } %></p>
+<% } %>
+
+<% grupos.forEach(function(g) { %>
+<section class="kb-section">
+  <h2 class="kb-section-title"><%= g.label %></h2>
+  <div class="card-grid">
+    <% g.articulos.forEach(function(a) { %>
+    <a class="module-card kb-card" href="/ayuda/<%= a.slug %>">
+      <h3><%= a.titulo %></h3>
+      <p><%= a.resumen || 'Sin resumen' %></p>
+      <% if (a.tags && a.tags.length) { %>
+      <p class="muted small"><%= a.tags.join(' · ') %></p>
+      <% } %>
+    </a>
+    <% }); %>
+  </div>
+</section>
+<% }); %>
+
+<%- include('../Partials/layout-bottom') %>

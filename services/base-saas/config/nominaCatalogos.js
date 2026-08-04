@@ -14,7 +14,7 @@ const TIPOS_MAPEO_LEGADO = [
 ];
 
 const PARAMETROS_FISCALES_PERMITIDOS = [
-  { clave: 'UMA', label: 'UMA', descripcion: 'Unidad de Medida y Actualización' },
+  { clave: 'UMA', label: 'UMA', descripcion: 'Unidad de Medida y Actualización (diaria; editable cada año)' },
   {
     clave: 'SALARIO_MINIMO',
     label: 'Salario mínimo',
@@ -23,13 +23,54 @@ const PARAMETROS_FISCALES_PERMITIDOS = [
   {
     clave: 'FONDO_AHORRO_PORC',
     label: '% Fondo de ahorro',
-    descripcion: 'Porcentaje base para cálculo de fondo de ahorro (default 13)'
+    descripcion: 'Porcentaje máximo del salario (default 13). Tope exento = menor entre este % y 1.3×UMA anual'
+  },
+  {
+    clave: 'FONDO_AHORRO_TOPE_UMA',
+    label: 'Fondo ahorro — factor UMA',
+    descripcion: 'Veces la UMA anual para tope exento (default 1.3 → ≈ 1.3×UMA×365)'
+  },
+  {
+    clave: 'FONDO_AHORRO_DIAS_ANIO',
+    label: 'Fondo ahorro — días año UMA',
+    descripcion: 'Días para UMA anual (default 365)'
+  },
+  {
+    clave: 'IMSS_TOPE_UMA',
+    label: 'Tope SBC (veces UMA)',
+    descripcion: 'Tope de SBC en veces UMA (default 25)'
   }
 ];
 
 const CODIGOS_TABLA_FISCAL = [
-  { value: 'ISR_MENSUAL', label: 'ISR mensual (Art. 96 LISR)' }
+  { value: 'ISR_MENSUAL', label: 'ISR mensual (Art. 96 LISR)', tipo: 'isr' },
+  {
+    value: 'IMSS_CUOTAS',
+    label: 'IMSS cuotas obrero-patronal (ramos)',
+    tipo: 'imss_cuotas'
+  },
+  {
+    value: 'IMSS_CEAV_PATRONAL',
+    label: 'IMSS CEAV patronal por tramos SBC',
+    tipo: 'imss_ceav'
+  },
+  // Legado (se sigue mostrando si existe en BD)
+  {
+    value: 'IMSS_OBRERO',
+    label: 'IMSS obrero (legado)',
+    tipo: 'imss'
+  },
+  {
+    value: 'IMSS_PATRONAL',
+    label: 'IMSS patronal (legado)',
+    tipo: 'imss'
+  }
 ];
+
+function tipoTablaFiscal(codigo) {
+  const found = CODIGOS_TABLA_FISCAL.find((c) => c.value === String(codigo || '').toUpperCase());
+  return found?.tipo || 'isr';
+}
 
 const PERIODICIDADES_TABLA = [
   { value: 'diario', label: 'Diario' },
@@ -59,5 +100,6 @@ module.exports = {
   TIPOS_HORA_EXTRA_MOTOR,
   CODIGOS_TABLA_FISCAL,
   PERIODICIDADES_TABLA,
-  TIPOS_CREDITO_INFONAVIT
+  TIPOS_CREDITO_INFONAVIT,
+  tipoTablaFiscal
 };

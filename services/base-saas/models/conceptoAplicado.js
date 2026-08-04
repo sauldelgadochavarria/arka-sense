@@ -15,6 +15,7 @@ const conceptoAplicadoSchema = new mongoose.Schema(
     exento: { type: Number, default: 0 },
     desgloseModo: { type: String, default: '' },
     claveSAT: { type: String, default: '' },
+    tipo: { type: String, default: '' },
     requiereRevision: { type: Boolean, default: false },
     errorCalculo: { type: String, default: '' },
     versionFormula: { type: Number, default: 1 }

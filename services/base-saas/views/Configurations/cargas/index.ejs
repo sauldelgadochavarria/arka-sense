@@ -1,0 +1,77 @@
+<%- include('../../Partials/layout-top', { title: 'Cargas iniciales', session }) %>
+<h1>Cargas iniciales de empresa</h1>
+<div class="toolbar">
+  <a class="btn" href="/config-empresa">← Datos de empresa</a>
+  <a class="btn" href="/nomina/configuracion">Políticas de nómina</a>
+  <a class="btn" href="/personal-empleados">Empleados</a>
+</div>
+
+<% if (!empresa) { %>
+<p>No hay empresa vinculada a este tenant.</p>
+<% } else { %>
+
+<p class="muted">
+  Onboarding: importa datos maestros y saldos para arrancar nómina sin romper el cálculo.
+  Flujo: <strong>plantilla → pegar CSV → dry-run → confirmar</strong>.
+</p>
+
+<div class="card-grid">
+  <% cargas.forEach(function(c) { %>
+  <a class="module-card" href="<%= c.aplica ? '/config-empresa/cargas/' + c.codigo : '#' %>"
+     <% if (!c.aplica) { %>style="opacity:0.65;pointer-events:none"<% } %>>
+    <h3><%= c.titulo %></h3>
+    <p><%= c.descripcion %></p>
+    <span class="badge <%= c.aplica ? 'badge-suspendido' : 'badge-baja' %>">
+      <%= c.aplica ? ('Fase ' + c.fase) : 'Próximamente' %>
+    </span>
+  </a>
+  <% }); %>
+</div>
+
+<section class="panel" style="margin-top:1.5rem">
+  <h2 class="panel-title">Otros canales (ya existentes)</h2>
+  <p class="muted small">No duplicamos estos flujos: el hub los enlaza para el go-live.</p>
+  <ul class="vars-list">
+    <li><a href="/integraciones/abc">Sync ABC — import/export empleados (CSV)</a></li>
+    <li><a href="/prenomina/movimientos">Movimientos asistencia → nómina</a></li>
+    <li><a href="/nomina/catalogos/mapeo-legado">Mapeo de conceptos legado</a></li>
+    <li><a href="/personal/tipos-movimiento-laboral">Tipos de movimiento laboral</a></li>
+    <li class="muted">CLI: <code>npm run import:historial-legado</code> · <code>import:movimientos-asistencia</code> · <code>import:conceptos-legado</code></li>
+  </ul>
+</section>
+
+<section class="panel" style="margin-top:1.5rem">
+  <h2 class="panel-title">Jobs recientes</h2>
+  <% if (!jobs.length) { %>
+  <p class="muted">Aún no hay cargas.</p>
+  <% } else { %>
+  <table>
+    <thead>
+      <tr>
+        <th>Fecha</th>
+        <th>Tipo</th>
+        <th>Archivo</th>
+        <th>OK / Error</th>
+        <th>Aplicadas</th>
+        <th>Estatus</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      <% jobs.forEach(function(j) { %>
+      <tr>
+        <td><%= new Date(j.createdAt).toLocaleString('es-MX') %></td>
+        <td><code><%= j.tipo %></code></td>
+        <td><%= j.archivoNombre || '—' %></td>
+        <td><%= j.filasOk || 0 %> / <%= j.filasError || 0 %></td>
+        <td><%= j.filasAplicadas || 0 %></td>
+        <td><span class="badge"><%= j.estatus %></span></td>
+        <td><a href="/config-empresa/cargas/jobs/<%= j._id %>">Ver</a></td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table>
+  <% } %>
+</section>
+<% } %>
+<%- include('../../Partials/layout-bottom') %>

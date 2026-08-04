@@ -23,7 +23,7 @@ function mapeosLegadoPorDefecto() {
 
     for (const [claveLegado, sat] of Object.entries(mapa)) {
       entradas.push({
-        fuente: 'fortia',
+        fuente: 'legado',
         tipoMapeo,
         claveLegado: String(claveLegado),
         tipoConcepto,
@@ -38,7 +38,7 @@ function mapeosLegadoPorDefecto() {
 
   for (const [claveLegado, tipoHoraExtra] of Object.entries(HORA_EXTRA_LEGACY)) {
     entradas.push({
-      fuente: 'fortia',
+      fuente: 'legado',
       tipoMapeo: 'tipo_hora_extra_sat',
       claveLegado: String(claveLegado),
       tipoConcepto: '',
@@ -95,15 +95,20 @@ async function toggleCatalogoSat(id) {
   await doc.save();
 }
 
-async function listMapeosLegado(fuente = 'fortia') {
+async function listMapeosLegado(fuente = 'legado') {
   const CatalogoMapeoLegado = await getCatalogoMapeoLegadoModel();
-  return CatalogoMapeoLegado.find({ fuente }).sort({ tipoMapeo: 1, claveLegado: 1 }).lean();
+  // Compat: registros antiguos usaban fuente "fortia"
+  const filtroFuente =
+    !fuente || fuente === 'legado' || fuente === 'fortia'
+      ? { $in: ['legado', 'fortia'] }
+      : fuente;
+  return CatalogoMapeoLegado.find({ fuente: filtroFuente }).sort({ tipoMapeo: 1, claveLegado: 1 }).lean();
 }
 
 async function crearMapeoLegado(data) {
   const CatalogoMapeoLegado = await getCatalogoMapeoLegadoModel();
   const payload = {
-    fuente: data.fuente || 'fortia',
+    fuente: data.fuente || 'legado',
     tipoMapeo: data.tipoMapeo,
     claveLegado: String(data.claveLegado).trim(),
     tipoConcepto: data.tipoConcepto || '',
@@ -115,7 +120,7 @@ async function crearMapeoLegado(data) {
   };
 
   const exists = await CatalogoMapeoLegado.findOne({
-    fuente: payload.fuente,
+    fuente: { $in: ['legado', 'fortia', payload.fuente] },
     tipoMapeo: payload.tipoMapeo,
     claveLegado: payload.claveLegado
   }).lean();
@@ -166,9 +171,13 @@ async function crearParametroFiscal(data) {
 /**
  * Estructura para importación legado: mapas por tipoMapeo + claveLegado.
  */
-async function obtenerMapeosLegadoActivos(fuente = 'fortia') {
+async function obtenerMapeosLegadoActivos(fuente = 'legado') {
   const CatalogoMapeoLegado = await getCatalogoMapeoLegadoModel();
-  let docs = await CatalogoMapeoLegado.find({ fuente, activo: true }).lean();
+  const filtroFuente =
+    !fuente || fuente === 'legado' || fuente === 'fortia'
+      ? { $in: ['legado', 'fortia'] }
+      : fuente;
+  let docs = await CatalogoMapeoLegado.find({ fuente: filtroFuente, activo: true }).lean();
 
   if (!docs.length) {
     docs = mapeosLegadoPorDefecto();
@@ -205,21 +214,47 @@ async function obtenerMapeosLegadoActivos(fuente = 'fortia') {
   return { porTipoPerded, porHoraExtra, porOtroPago };
 }
 
-async function seedMapeosLegadoFortia() {
+async function seedMapeosLegado() {
   const CatalogoMapeoLegado = await getCatalogoMapeoLegadoModel();
+  // Normalizar fuente antigua
+  await CatalogoMapeoLegado.updateMany({ fuente: 'fortia' }, { $set: { fuente: 'legado' } });
+
   const entradas = mapeosLegadoPorDefecto();
   let creados = 0;
 
   for (const e of entradas) {
     const res = await CatalogoMapeoLegado.updateOne(
-      { fuente: e.fuente, tipoMapeo: e.tipoMapeo, claveLegado: e.claveLegado },
-      { $setOnInsert: e },
+      {
+        fuente: { $in: ['legado', 'fortia'] },
+        tipoMapeo: e.tipoMapeo,
+        claveLegado: e.claveLegado
+      },
+      {
+        $set: {
+          fuente: 'legado',
+          tipoConcepto: e.tipoConcepto,
+          catalogoSat: e.catalogoSat,
+          claveSat: e.claveSat,
+          descripcion: e.descripcion,
+          tipoHoraExtra: e.tipoHoraExtra,
+          activo: true
+        },
+        $setOnInsert: {
+          tipoMapeo: e.tipoMapeo,
+          claveLegado: e.claveLegado
+        }
+      },
       { upsert: true }
     );
     if (res.upsertedCount) creados++;
   }
 
   return { creados, total: entradas.length };
+}
+
+/** @deprecated usar seedMapeosLegado */
+async function seedMapeosLegadoFortia() {
+  return seedMapeosLegado();
 }
 
 async function listTablasFiscales() {
@@ -241,10 +276,16 @@ async function listTablasFiscales() {
 async function getTablaFiscalConRangos(tablaId) {
   const TablaFiscal = await getTablaFiscalModel();
   const RangoFiscal = await getRangoFiscalModel();
+  const { tipoTablaFiscal } = require('../../config/nominaCatalogos');
   const tabla = await TablaFiscal.findById(tablaId).lean();
   if (!tabla) return null;
-  const rangos = await RangoFiscal.find({ tablaId: tabla._id }).sort({ limiteInferior: 1 }).lean();
-  return { tabla, rangos };
+  const tipo = tipoTablaFiscal(tabla.codigo);
+  const sort =
+    tipo === 'imss_cuotas' || tipo === 'imss' || tipo === 'imss_ceav'
+      ? { clave: 1, limiteInferior: 1 }
+      : { limiteInferior: 1 };
+  const rangos = await RangoFiscal.find({ tablaId: tabla._id }).sort(sort).lean();
+  return { tabla, rangos, tipo };
 }
 
 async function crearTablaFiscal(data) {
@@ -282,8 +323,77 @@ async function toggleTablaFiscal(id) {
 async function crearRangoFiscal(tablaId, data) {
   const TablaFiscal = await getTablaFiscalModel();
   const RangoFiscal = await getRangoFiscalModel();
+  const { tipoTablaFiscal } = require('../../config/nominaCatalogos');
   const tabla = await TablaFiscal.findById(tablaId).lean();
   if (!tabla) throw new Error('Tabla fiscal no encontrada');
+
+  const tipo = tipoTablaFiscal(tabla.codigo);
+
+  if (tipo === 'imss_cuotas' || tipo === 'imss') {
+    const clave = String(data.clave || '').trim().toUpperCase();
+    const nombre = String(data.nombre || '').trim();
+    if (!clave) throw new Error('La clave del ramo IMSS es requerida');
+    if (!nombre) throw new Error('El nombre del ramo IMSS es requerido');
+
+    const tasaObrero = data.tasaObrero !== undefined && data.tasaObrero !== ''
+      ? Number(data.tasaObrero)
+      : Number(data.porcentajeExcedente) || 0;
+    const tasaPatronal =
+      data.tasaPatronal !== undefined && data.tasaPatronal !== ''
+        ? Number(data.tasaPatronal)
+        : 0;
+    const baseCalculo = String(data.baseCalculo || 'sbc').trim() || 'sbc';
+
+    if (tasaObrero < 0 || tasaPatronal < 0) throw new Error('Las tasas no pueden ser negativas');
+
+    const dup = await RangoFiscal.findOne({ tablaId: tabla._id, clave }).lean();
+    if (dup) throw new Error(`Ya existe el ramo ${clave} en esta tabla`);
+
+    return RangoFiscal.create({
+      tablaId: tabla._id,
+      clave,
+      nombre,
+      limiteInferior: 0,
+      limiteSuperior: 999999999,
+      cuotaFija: 0,
+      porcentajeExcedente: tasaObrero,
+      tasaObrero,
+      tasaPatronal,
+      baseCalculo,
+      limiteInfUnidad: '',
+      limiteSupUnidad: ''
+    });
+  }
+
+  if (tipo === 'imss_ceav') {
+    const clave = String(data.clave || '').trim().toUpperCase() || `TRAMO_${Date.now()}`;
+    const nombre = String(data.nombre || '').trim() || clave;
+    const tasaPatronal = Number(data.tasaPatronal ?? data.porcentajeExcedente) || 0;
+    const limiteInferior = Number(data.limiteInferior);
+    const limiteSuperior = Number(data.limiteSuperior);
+    const limiteInfUnidad = String(data.limiteInfUnidad || 'uma').trim();
+    const limiteSupUnidad = String(data.limiteSupUnidad || 'uma').trim();
+
+    if (!Number.isFinite(limiteInferior) || !Number.isFinite(limiteSuperior)) {
+      throw new Error('Límites del tramo CEAV son requeridos');
+    }
+    if (tasaPatronal < 0) throw new Error('La tasa no puede ser negativa');
+
+    return RangoFiscal.create({
+      tablaId: tabla._id,
+      clave,
+      nombre,
+      limiteInferior,
+      limiteSuperior,
+      cuotaFija: 0,
+      porcentajeExcedente: tasaPatronal,
+      tasaObrero: 0,
+      tasaPatronal,
+      baseCalculo: 'ceav_tramo',
+      limiteInfUnidad,
+      limiteSupUnidad
+    });
+  }
 
   const limiteInferior = Number(data.limiteInferior);
   const limiteSuperior = Number(data.limiteSuperior);
@@ -299,10 +409,17 @@ async function crearRangoFiscal(tablaId, data) {
 
   return RangoFiscal.create({
     tablaId: tabla._id,
+    clave: '',
+    nombre: '',
     limiteInferior,
     limiteSuperior,
     cuotaFija,
-    porcentajeExcedente
+    porcentajeExcedente,
+    tasaObrero: null,
+    tasaPatronal: null,
+    baseCalculo: '',
+    limiteInfUnidad: '',
+    limiteSupUnidad: ''
   });
 }
 
@@ -328,10 +445,17 @@ async function copiarTablaNuevaVigencia(tablaId, vigenciaDesde) {
     await RangoFiscal.insertMany(
       origen.rangos.map((r) => ({
         tablaId: nueva._id,
+        clave: r.clave || '',
+        nombre: r.nombre || '',
         limiteInferior: r.limiteInferior,
         limiteSuperior: r.limiteSuperior,
         cuotaFija: r.cuotaFija,
-        porcentajeExcedente: r.porcentajeExcedente
+        porcentajeExcedente: r.porcentajeExcedente,
+        tasaObrero: r.tasaObrero ?? null,
+        tasaPatronal: r.tasaPatronal ?? null,
+        baseCalculo: r.baseCalculo || '',
+        limiteInfUnidad: r.limiteInfUnidad || '',
+        limiteSupUnidad: r.limiteSupUnidad || ''
       }))
     );
   }
@@ -351,6 +475,7 @@ module.exports = {
   listParametrosFiscales,
   crearParametroFiscal,
   obtenerMapeosLegadoActivos,
+  seedMapeosLegado,
   seedMapeosLegadoFortia,
   listTablasFiscales,
   getTablaFiscalConRangos,

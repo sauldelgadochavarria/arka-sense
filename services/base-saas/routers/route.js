@@ -5,6 +5,7 @@ const usersController = require('../controllers/usersController');
 const rolesController = require('../controllers/rolesController');
 const subsidiariasController = require('../controllers/subsidiariasController');
 const empresaController = require('../controllers/empresaController');
+const cargasInicialesController = require('../controllers/cargasInicialesController');
 const departamentosController = require('../controllers/departamentosController');
 const puestosController = require('../controllers/puestosController');
 const empleadosController = require('../controllers/empleadosController');
@@ -29,6 +30,7 @@ const dispositivosController = require('../controllers/dispositivosController');
 const gruposDispositivosController = require('../controllers/gruposDispositivosController');
 const rotacionesController = require('../controllers/rotacionesController');
 const reportesController = require('../controllers/reportesController');
+const ayudaController = require('../controllers/ayudaController');
 const { getDashboardKpis } = require('../services/dashboardKpiService');
 const { requireEmpresaForTenant } = require('../libs/tenantScope');
 const { requirePortalEmpleado } = require('../middleware/requirePortalEmpleado');
@@ -72,6 +74,13 @@ router.post('/config-roles', rolesController.createRole);
 
 router.get('/config-empresa', empresaController.showEmpresa);
 router.post('/config-empresa', empresaController.updateEmpresa);
+router.get('/config-empresa/cargas', cargasInicialesController.index);
+router.get('/config-empresa/cargas/creditos-saldos', cargasInicialesController.proximamenteCreditos);
+router.get('/config-empresa/cargas/jobs/:id', cargasInicialesController.showJob);
+router.post('/config-empresa/cargas/jobs/:id/aplicar', cargasInicialesController.applyJobAction);
+router.get('/config-empresa/cargas/:tipo/plantilla.csv', cargasInicialesController.downloadTemplate);
+router.get('/config-empresa/cargas/:tipo', cargasInicialesController.showTipo);
+router.post('/config-empresa/cargas/:tipo/validar', cargasInicialesController.dryRun);
 
 router.get('/config-subsidiarias', subsidiariasController.listSubsidiarias);
 router.post('/config-subsidiarias', subsidiariasController.createSubsidiaria);
@@ -170,6 +179,8 @@ router.post('/nomina/conceptos/:codigo/toggle', nominaController.toggleConceptoA
 router.post('/nomina/conceptos/validar-formula', nominaController.validarFormulaApi);
 router.post('/nomina/conceptos/probar-formula', nominaController.probarFormulaApi);
 router.get('/nomina/configuracion', nominaController.configuracion);
+router.post('/nomina/configuracion/isr-motor', nominaController.saveIsrMotorConfig);
+router.post('/nomina/configuracion/dias-pagados', nominaController.saveDiasPagadosConfig);
 router.get('/nomina/placeholder/:slug', nominaPlaceholderController.show);
 router.get('/nomina/catalogos', nominaCatalogosController.index);
 router.get('/nomina/catalogos/sat', nominaCatalogosController.catalogoSat);
@@ -257,5 +268,14 @@ router.get('/reportes', requireReportesAccess, reportesController.index);
 router.get('/reportes/kpis', requireReportesAccess, reportesController.dashboardKpis);
 router.get('/reportes/:slug/export', requireReportesAccess, reportesController.exportCsv);
 router.get('/reportes/:slug', requireReportesAccess, reportesController.show);
+
+router.get('/ayuda', ayudaController.index);
+router.get('/ayuda/admin', ayudaController.admin);
+router.get('/ayuda/admin/nuevo', ayudaController.nuevoForm);
+router.post('/ayuda/admin', ayudaController.create);
+router.get('/ayuda/admin/:id/edit', ayudaController.editForm);
+router.post('/ayuda/admin/:id', ayudaController.update);
+router.post('/ayuda/admin/:id/toggle', ayudaController.toggle);
+router.get('/ayuda/:slug', ayudaController.show);
 
 module.exports = router;

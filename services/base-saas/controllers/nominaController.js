@@ -5,6 +5,7 @@ const getReciboNominaModel = require('../models/reciboNomina');
 const getConceptoAplicadoModel = require('../models/conceptoAplicado');
 const getPayrollPeriodModel = require('../models/payrollPeriod');
 const getEmpleadoModel = require('../models/empleado');
+const getConceptoNominaModel = require('../models/conceptoNomina');
 const getTablaFiscalModel = require('../models/tablaFiscal');
 const getRangoFiscalModel = require('../models/rangoFiscal');
 const getParametroGeneralModel = require('../models/parametroGeneral');
@@ -14,6 +15,7 @@ const { tenantHasFeature } = require('../libs/tenantFeatureFlags');
 const { resolveNominaConceptoModo, userCanEditNomina, userCanViewNomina } = require('../libs/roleAccess');
 const { resolvePeriodRange } = require('../libs/payrollPeriodDates');
 const { trimString, parseDate } = require('../libs/formHelpers');
+const { parseBodyStringList } = require('../libs/conceptoAplicabilidad');
 const { startOfDay, endOfDay, diasCalendarioInclusive } = require('../libs/timeHelpers');
 const {
   MODULO_NOMINA,
@@ -39,6 +41,21 @@ const {
   validarDependenciasGrupo
 } = require('../services/nomina/nominaConceptoService');
 const { cerrarPeriodo } = require('../services/nomina/calculoNominaService');
+const {
+  registrarAuditoriaNomina,
+  listAuditoriaPeriodo
+} = require('../services/nomina/nominaAuditoriaService');
+const { resolveUserLabel } = require('../libs/userLabel');
+
+function sessionActor(req) {
+  const userId = req.session.userid || req.session.userId || '';
+  const userLabel =
+    req.session.user ||
+    req.session.email ||
+    req.session.username ||
+    '';
+  return { userId, userLabel };
+}
 const { encolarCalculo, obtenerEstadoJob } = require('../services/nomina/nominaCalculoJobService');
 const { validatePeriodoForCalculo } = require('../services/nomina/nominaPreflightService');
 const {
@@ -192,6 +209,24 @@ async function createPeriodo(req, res) {
       notas: trimString(req.body.notas)
     });
 
+    await registrarAuditoriaNomina({
+      tenantId,
+      accion: 'PERIODO_CREAR',
+      entidad: 'periodo',
+      periodoId: periodo._id,
+      ...sessionActor(req),
+      mensaje: `Período abierto ${tipoPeriodo}/${tipoNomina}`,
+      detalle: {
+        tipoPeriodo,
+        tipoNomina,
+        fechaInicio: periodo.fechaInicio,
+        fechaFin: periodo.fechaFin,
+        payrollPeriodId: payrollPeriodId || null
+      },
+      ip: req.ip,
+      userAgent: req.get('user-agent') || ''
+    });
+
     req.flash('success', 'Período de nómina abierto');
     res.redirect(`/nomina/periodos/${periodo._id}`);
   } catch (err) {
@@ -253,6 +288,17 @@ async function showPeriodo(req, res) {
           .lean()
       : [];
 
+  const auditoria = await listAuditoriaPeriodo(tenantId, periodo._id, 30);
+
+  let calculadoPor = periodo.calculadoPorLabel || '';
+  let cerradoPor = periodo.cerradoPorLabel || '';
+  if (!calculadoPor && periodo.calculadoPorUserId) {
+    calculadoPor = await resolveUserLabel(periodo.calculadoPorUserId);
+  }
+  if (!cerradoPor && periodo.cerradoPorUserId) {
+    cerradoPor = await resolveUserLabel(periodo.cerradoPorUserId);
+  }
+
   res.render('Nomina/periodo-show', {
     periodo,
     recibos: filas,
@@ -260,6 +306,9 @@ async function showPeriodo(req, res) {
     calculoJob,
     prenominaPeriodo,
     prenominaCandidatos,
+    auditoria,
+    calculadoPor,
+    cerradoPor,
     estatusLabels: ESTATUS_PERIODO_NOMINA,
     session: req.session
   });
@@ -313,6 +362,18 @@ async function vincularPrenominaAction(req, res) {
     }
     await periodo.save();
 
+    await registrarAuditoriaNomina({
+      tenantId,
+      accion: 'PERIODO_VINCULAR_PRENOMINA',
+      entidad: 'periodo',
+      periodoId: periodo._id,
+      ...sessionActor(req),
+      mensaje: `Pre-nómina vinculada ${payrollPeriodId}`,
+      detalle: { payrollPeriodId, fechaInicio, fechaFin },
+      ip: req.ip,
+      userAgent: req.get('user-agent') || ''
+    });
+
     req.flash(
       'success',
       `Pre-nómina vinculada. Fechas alineadas a ${fechaInicio.toLocaleDateString('es-MX')} – ${startOfDay(fechaFin).toLocaleDateString('es-MX')}. Recalcula para aplicar asistencia.`
@@ -344,11 +405,25 @@ async function calcularPeriodoAction(req, res) {
       return res.redirect(`/nomina/periodos/${req.params.id}`);
     }
 
+    const actor = sessionActor(req);
     const { job, yaEncolado } = await encolarCalculo(
       req.session.tenantId,
       req.params.id,
-      req.session.userId || ''
+      actor.userId,
+      actor.userLabel
     );
+
+    await registrarAuditoriaNomina({
+      tenantId: req.session.tenantId,
+      accion: 'PERIODO_CALCULAR',
+      entidad: 'periodo',
+      periodoId: req.params.id,
+      ...actor,
+      mensaje: yaEncolado ? 'Reintento: cálculo ya en curso' : 'Cálculo encolado',
+      detalle: { jobId: job?._id, yaEncolado },
+      ip: req.ip,
+      userAgent: req.get('user-agent') || ''
+    });
 
     req.flash(
       'success',
@@ -358,6 +433,15 @@ async function calcularPeriodoAction(req, res) {
     );
   } catch (err) {
     console.error('[nomina calcular]', err);
+    await registrarAuditoriaNomina({
+      tenantId: req.session.tenantId,
+      accion: 'PERIODO_CALCULAR_ERROR',
+      entidad: 'periodo',
+      periodoId: req.params.id,
+      ...sessionActor(req),
+      mensaje: err.message || 'Error al encolar cálculo',
+      detalle: { error: err.message }
+    });
     req.flash('error', err.message || 'Error al encolar cálculo');
   }
   res.redirect(`/nomina/periodos/${req.params.id}`);
@@ -391,10 +475,28 @@ async function estadoCalculoApi(req, res) {
 
 async function cerrarPeriodoAction(req, res) {
   if (requireNominaFeature(req, res) === false) return;
+  const actor = sessionActor(req);
   try {
-    await cerrarPeriodo(req.session.tenantId, req.params.id, req.session.userId || '');
-    req.flash('success', 'Período cerrado');
+    const cierre = await cerrarPeriodo(
+      req.session.tenantId,
+      req.params.id,
+      actor.userId,
+      actor.userLabel
+    );
+    req.flash(
+      'success',
+      `Período cerrado. Archivados ${cierre?.archivados || 0} recibos; acumulados actualizados.`
+    );
   } catch (err) {
+    await registrarAuditoriaNomina({
+      tenantId: req.session.tenantId,
+      accion: 'PERIODO_CERRAR_ERROR',
+      entidad: 'periodo',
+      periodoId: req.params.id,
+      ...actor,
+      mensaje: err.message || 'No se pudo cerrar',
+      detalle: { error: err.message }
+    });
     req.flash('error', err.message || 'No se pudo cerrar');
   }
   res.redirect(`/nomina/periodos/${req.params.id}`);
@@ -414,17 +516,30 @@ async function showRecibo(req, res) {
     return res.redirect(`/nomina/periodos/${req.params.id}`);
   }
 
-  const [periodo, empleado, conceptos] = await Promise.all([
+  const ConceptoNomina = await getConceptoNominaModel();
+
+  const [periodo, empleado, conceptos, catalogo] = await Promise.all([
     PeriodoNomina.findOne({ _id: recibo.periodoId }).lean(),
     Empleado.findOne({ _id: recibo.empleadoId }).lean(),
-    ConceptoAplicado.find({ tenantId, reciboId: recibo._id }).sort({ conceptoCodigo: 1 }).lean()
+    ConceptoAplicado.find({ tenantId, reciboId: recibo._id }).sort({ conceptoCodigo: 1 }).lean(),
+    ConceptoNomina.find({ tenantId }).select('codigo naturaleza tipo metadata').lean()
   ]);
+
+  const conceptosMeta = {};
+  for (const c of catalogo) {
+    conceptosMeta[c.codigo] = {
+      naturaleza: c.naturaleza,
+      tipo: c.tipo,
+      informativo: !!(c.metadata && c.metadata.informativo) || c.naturaleza === 'informativo'
+    };
+  }
 
   res.render('Nomina/recibo', {
     recibo,
     periodo,
     empleado,
     conceptos,
+    conceptosMeta,
     session: req.session
   });
 }
@@ -466,12 +581,29 @@ async function conceptos(req, res) {
   });
 }
 
+async function loadConceptoAmbitoEnums() {
+  const { getEnumItems, ensureSystemEnums } = require('../services/nomina/systemEnumService');
+  try {
+    await ensureSystemEnums();
+  } catch (_) {
+    /* seed opcional */
+  }
+  const [tiposEmpleadoOpts, tiposPeriodoOpts, tiposNominaOpts] = await Promise.all([
+    getEnumItems('tipo_empleado').catch(() => []),
+    getEnumItems('tipo_periodo').catch(() => []),
+    getEnumItems('tipo_nomina').catch(() => [])
+  ]);
+  return { tiposEmpleadoOpts, tiposPeriodoOpts, tiposNominaOpts };
+}
+
 async function newConcepto(req, res) {
   if (requireNominaEditOrRedirect(req, res) === false) return;
   const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const ambitoEnums = await loadConceptoAmbitoEnums();
   res.render('Nomina/concepto-nuevo', {
     tiposConcepto: TIPOS_CONCEPTO,
     naturalezas: NATURALEZAS_CONCEPTO,
+    ...ambitoEnums,
     empresa,
     error: error || null,
     session: req.session
@@ -507,7 +639,10 @@ async function createConcepto(req, res) {
       integraISR: req.body.integraISR,
       integraIMSS: req.body.integraIMSS,
       integraINFONAVIT: req.body.integraINFONAVIT,
-      desgloseModo: req.body.desgloseModo
+      desgloseModo: req.body.desgloseModo,
+      aplicaTiposEmpleado: parseBodyStringList(req.body.aplicaTiposEmpleado),
+      aplicaTiposPeriodo: parseBodyStringList(req.body.aplicaTiposPeriodo),
+      aplicaTipoNomina: parseBodyStringList(req.body.aplicaTipoNomina)
     });
     req.flash('success', 'Concepto creado');
   } catch (err) {
@@ -538,9 +673,19 @@ async function showConcepto(req, res) {
   }
 
   const formulasPorClave = {};
+  const byKey = new Map();
   for (const f of data.formulas) {
     const key = `${f.tipoPeriodo}|${f.tipoNomina}`;
-    if (formulasPorClave[key]) continue;
+    if (!byKey.has(key)) byKey.set(key, []);
+    byKey.get(key).push(f);
+  }
+  const pickPreferida =
+    typeof data.pickFormulaPreferida === 'function'
+      ? data.pickFormulaPreferida
+      : (arr) => arr[0];
+  for (const [key, candidatas] of byKey) {
+    const f = pickPreferida(candidatas);
+    if (!f) continue;
     formulasPorClave[key] = {
       tipoPeriodo: f.tipoPeriodo,
       tipoNomina: f.tipoNomina,
@@ -602,6 +747,11 @@ async function showConcepto(req, res) {
       { value: 'EVENTUAL', label: 'Eventual' }
     ];
   }
+  const {
+    tiposEmpleadoOpts,
+    tiposPeriodoOpts,
+    tiposNominaOpts
+  } = await loadConceptoAmbitoEnums();
 
   let variablesBase = [...VARIABLES_CONTEXTO];
   try {
@@ -704,6 +854,9 @@ async function showConcepto(req, res) {
     desgloseModos,
     formulasPrenomina,
     ambitosAplicaEn,
+    tiposEmpleadoOpts,
+    tiposPeriodoOpts,
+    tiposNominaOpts,
     canEdit,
     modoVista,
     modo,
@@ -719,11 +872,10 @@ async function saveConceptoPropsAction(req, res) {
   try {
     const tenantId = req.session.tenantId;
     const { empresa } = await requireEmpresaForTenant(tenantId);
-    const tiposIncidencia = Array.isArray(req.body.tiposIncidencia)
-      ? req.body.tiposIncidencia
-      : req.body.tiposIncidencia
-        ? [req.body.tiposIncidencia]
-        : [];
+    const tiposIncidencia = parseBodyStringList(req.body.tiposIncidencia);
+    const aplicaTiposEmpleado = parseBodyStringList(req.body.aplicaTiposEmpleado);
+    const aplicaTiposPeriodo = parseBodyStringList(req.body.aplicaTiposPeriodo);
+    const aplicaTipoNomina = parseBodyStringList(req.body.aplicaTipoNomina);
 
     await actualizarConcepto(
       tenantId,
@@ -738,6 +890,9 @@ async function saveConceptoPropsAction(req, res) {
         codigoExterno: req.body.codigoExterno,
         cuentaContable: req.body.cuentaContable,
         clavePrenomina: req.body.clavePrenomina,
+        aplicaTiposEmpleado,
+        aplicaTiposPeriodo,
+        aplicaTipoNomina,
         formulaPrenomina: req.body.formulaPrenomina,
         tiposIncidencia,
         insumosContexto: req.body.insumosContexto,
@@ -916,11 +1071,14 @@ async function configuracion(req, res) {
   const RangoFiscal = await getRangoFiscalModel();
   const ParametroGeneral = await getParametroGeneralModel();
   const CatalogoSat = await getCatalogoSatModel();
+  const getEmpresaModel = require('../models/empresa');
+  const Empresa = await getEmpresaModel();
 
-  const [tablas, parametros, satCount] = await Promise.all([
+  const [tablas, parametros, satCount, empresa] = await Promise.all([
     TablaFiscal.find({ activo: true }).sort({ codigo: 1, vigenciaDesde: -1 }).lean(),
     ParametroGeneral.find().sort({ clave: 1, vigenciaDesde: -1 }).lean(),
-    CatalogoSat.countDocuments({ activo: true })
+    CatalogoSat.countDocuments({ activo: true }),
+    Empresa.findOne({ tenantId: req.session.tenantId }).lean()
   ]);
 
   const tablasConRangos = [];
@@ -933,8 +1091,74 @@ async function configuracion(req, res) {
     tablas: tablasConRangos,
     parametros,
     satCount,
+    empresa,
+    isrModo: empresa?.nominaIsr?.modo || 'inteligente_alerta',
+    isrActivo: empresa?.nominaIsr?.activo !== false,
+    politicaDias: require('../libs/diasPagadosMotor').mergePolitica(empresa?.nominaDias || {}),
     session: req.session
   });
+}
+
+async function saveIsrMotorConfig(req, res) {
+  if (requireNominaFeature(req, res) === false) return;
+  try {
+    const getEmpresaModel = require('../models/empresa');
+    const Empresa = await getEmpresaModel();
+    const modo = String(req.body.modo || 'inteligente_alerta');
+    const allowed = new Set(['sat', 'inteligente_alerta', 'inteligente_retencion']);
+    await Empresa.updateOne(
+      { tenantId: req.session.tenantId },
+      {
+        $set: {
+          'nominaIsr.modo': allowed.has(modo) ? modo : 'inteligente_alerta',
+          'nominaIsr.activo': req.body.activo === 'on' || req.body.activo === '1' || req.body.activo === true
+        }
+      }
+    );
+    req.flash('success', 'Motor ISR actualizado');
+  } catch (err) {
+    req.flash('error', err.message || 'No se pudo guardar');
+  }
+  res.redirect('/nomina/configuracion');
+}
+
+async function saveDiasPagadosConfig(req, res) {
+  if (requireNominaFeature(req, res) === false) return;
+  try {
+    const getEmpresaModel = require('../models/empresa');
+    const { mergePolitica } = require('../libs/diasPagadosMotor');
+    const Empresa = await getEmpresaModel();
+    const flag = (name) =>
+      req.body[name] === 'on' || req.body[name] === '1' || req.body[name] === true;
+    const numOrNull = (v) => {
+      if (v == null || String(v).trim() === '') return null;
+      const n = Number(v);
+      return Number.isFinite(n) ? n : null;
+    };
+    const modos = new Set(['todo_o_nada', 'proporcional', 'conservar', 'ninguno']);
+    const modoDescanso = modos.has(String(req.body.modoDescanso || ''))
+      ? String(req.body.modoDescanso)
+      : 'todo_o_nada';
+
+    const nominaDias = mergePolitica({
+      activo: flag('activo'),
+      modoDescanso,
+      pierdeDescansoConUnaFaltaInjustificada: flag('pierdeDescansoConUnaFaltaInjustificada'),
+      pagaDescansoConIncapacidad: flag('pagaDescansoConIncapacidad'),
+      pagaDescansoConVacaciones: flag('pagaDescansoConVacaciones'),
+      pagaDescansoConPermisoConGoce: flag('pagaDescansoConPermisoConGoce'),
+      cuentaJustificadasComoCumplidas: flag('cuentaJustificadasComoCumplidas'),
+      imssUsaDiasPagados: flag('imssUsaDiasPagados'),
+      diasProgramadosPorPeriodo: numOrNull(req.body.diasProgramadosPorPeriodo),
+      diasDescansoPorPeriodo: numOrNull(req.body.diasDescansoPorPeriodo)
+    });
+
+    await Empresa.updateOne({ tenantId: req.session.tenantId }, { $set: { nominaDias } });
+    req.flash('success', 'Política de días pagados guardada');
+  } catch (err) {
+    req.flash('error', err.message || 'No se pudo guardar');
+  }
+  res.redirect('/nomina/configuracion');
 }
 
 module.exports = {
@@ -956,5 +1180,7 @@ module.exports = {
   toggleConceptoAction,
   validarFormulaApi,
   probarFormulaApi,
-  configuracion
+  configuracion,
+  saveIsrMotorConfig,
+  saveDiasPagadosConfig
 };

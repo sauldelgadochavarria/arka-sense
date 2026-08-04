@@ -1,0 +1,16 @@
+<%- include('../../Partials/layout-top', { title: titulo, session }) %>
+<h1><%= titulo %></h1>
+<div class="toolbar">
+  <a class="btn" href="/config-empresa/cargas">← Cargas iniciales</a>
+  <a class="btn" href="/config-empresa">Datos de empresa</a>
+</div>
+
+<section class="panel">
+  <h2 class="panel-title">Próximamente</h2>
+  <p><%= descripcion %></p>
+  <p class="muted small">
+    Cuando se active, entrará al hub de cargas con plantilla CSV (tipo, saldo, referencia por empleado).
+  </p>
+  <span class="badge badge-baja">Roadmap · fase 2</span>
+</section>
+<%- include('../../Partials/layout-bottom') %>

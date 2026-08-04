@@ -1,0 +1,36 @@
+<%- include('../Partials/layout-top', { title: title || 'Artículo', session }) %>
+<%
+  const a = articulo || {};
+  const isNew = !articulo;
+%>
+<h1><%= isNew ? 'Nuevo artículo' : 'Editar artículo' %></h1>
+<div class="toolbar">
+  <a class="btn" href="/ayuda/admin">← Administrar</a>
+</div>
+
+<form method="post" action="<%= isNew ? '/ayuda/admin' : '/ayuda/admin/' + a._id %>" class="form-grid form-wide">
+  <input name="titulo" placeholder="Título" required value="<%= a.titulo || '' %>" />
+  <input name="slug" placeholder="Slug (vacío = desde título)" value="<%= a.slug || '' %>" />
+  <select name="categoria" required>
+    <% categorias.forEach(function(c) { %>
+    <option value="<%= c.value %>" <%= (a.categoria || 'general') === c.value ? 'selected' : '' %>><%= c.label %></option>
+    <% }); %>
+  </select>
+  <select name="ambito">
+    <option value="global" <%= !a.tenantId ? 'selected' : '' %>>Global (todos los tenants)</option>
+    <option value="tenant" <%= a.tenantId ? 'selected' : '' %>>Solo este tenant</option>
+  </select>
+  <input name="orden" type="number" placeholder="Orden" value="<%= a.orden != null ? a.orden : 100 %>" />
+  <input name="tags" placeholder="Tags (coma: fondo, isr, conceptos)" value="<%= (a.tags || []).join(', ') %>" />
+  <input name="resumen" placeholder="Resumen corto (tarjeta del índice)" value="<%= a.resumen || '' %>" style="grid-column:1/-1" />
+  <label class="checkbox-inline" style="grid-column:1/-1">
+    <input type="checkbox" name="publicado" value="1" <%= a.publicado !== false ? 'checked' : '' %> /> Publicado
+  </label>
+  <textarea name="cuerpo" rows="18" placeholder="Cuerpo en Markdown (# título, **negrita**, `código`, listas - )" style="grid-column:1/-1"><%= a.cuerpo || '' %></textarea>
+  <p class="muted small" style="grid-column:1/-1">
+    Markdown básico: encabezados <code># ## ###</code>, <code>**negrita**</code>, <code>`código`</code>, listas con <code>-</code>, bloques <code>```</code>.
+  </p>
+  <button type="submit"><%= isNew ? 'Crear' : 'Guardar' %></button>
+</form>
+
+<%- include('../Partials/layout-bottom') %>

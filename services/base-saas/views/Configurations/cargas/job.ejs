@@ -1,0 +1,70 @@
+<%- include('../../Partials/layout-top', { title: 'Job de carga', session }) %>
+<h1>Job de carga</h1>
+<div class="toolbar">
+  <a class="btn" href="/config-empresa/cargas">← Cargas</a>
+  <% if (carga) { %>
+  <a class="btn" href="/config-empresa/cargas/<%= carga.codigo %>">Volver a <%= carga.titulo %></a>
+  <% } %>
+</div>
+
+<div class="summary-cards">
+  <div class="card"><strong><%= job.tipo %></strong> tipo</div>
+  <div class="card"><strong><%= job.estatus %></strong> estatus</div>
+  <div class="card"><strong><%= job.totalFilas || 0 %></strong> filas</div>
+  <div class="card"><strong><%= job.filasOk || 0 %></strong> OK</div>
+  <div class="card"><strong><%= job.filasError || 0 %></strong> errores</div>
+  <div class="card"><strong><%= job.filasAplicadas || 0 %></strong> aplicadas</div>
+</div>
+
+<p class="muted small">
+  Archivo: <strong><%= job.archivoNombre || '—' %></strong>
+  · <%= new Date(job.createdAt).toLocaleString('es-MX') %>
+  <% if (job.userLabel) { %> · por <%= job.userLabel %><% } %>
+</p>
+<% if (job.notas) { %><p><%= job.notas %></p><% } %>
+
+<% if (job.resumen && job.resumen.nota) { %>
+<p class="muted small"><%= job.resumen.nota %></p>
+<% } %>
+
+<% if ((job.estatus === 'validado' || job.estatus === 'parcial') && !job.aplicadoAt) { %>
+<section class="panel">
+  <h2 class="panel-title">2. Confirmar aplicación</h2>
+  <p class="muted small">Se aplicarán las <strong><%= job.filasOk %></strong> filas válidas. Esta acción escribe en la base de datos.</p>
+  <% if (job.tipo === 'historico_recibos') { %>
+  <p class="muted small">Los recibos se guardan como histórico importado (sin período local vinculado).</p>
+  <% } %>
+  <form method="post" action="/config-empresa/cargas/jobs/<%= job._id %>/aplicar"
+        onsubmit="return confirm('¿Aplicar <%= job.filasOk %> fila(s) válidas?');">
+    <button type="submit">Aplicar filas válidas</button>
+  </form>
+</section>
+<% } %>
+
+<% if (job.muestraOk && job.muestraOk.length) { %>
+<section class="panel">
+  <h2 class="panel-title">Muestra de filas OK</h2>
+  <pre class="muted small" style="max-height:240px;overflow:auto"><%= JSON.stringify(job.muestraOk, null, 2) %></pre>
+</section>
+<% } %>
+
+<% if (job.errores && job.errores.length) { %>
+<section class="panel">
+  <h2 class="panel-title">Errores</h2>
+  <table>
+    <thead><tr><th>Fila</th><th>Campo</th><th>Mensaje</th><th>Valor</th></tr></thead>
+    <tbody>
+      <% job.errores.forEach(function(e) { %>
+      <tr>
+        <td><%= e.fila %></td>
+        <td><code><%= e.campo || '—' %></code></td>
+        <td><%= e.mensaje %></td>
+        <td><code><%= e.valor || '' %></code></td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table>
+</section>
+<% } %>
+
+<%- include('../../Partials/layout-bottom') %>

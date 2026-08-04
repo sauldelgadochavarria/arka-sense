@@ -33,7 +33,7 @@ const SECCIONES_NOMINA = [
   {
     slug: 'catalogos',
     titulo: 'Catálogos',
-    descripcion: 'SAT, mapeo legado Fortia y parámetros fiscales editables.',
+    descripcion: 'SAT, mapeo legado → SAT y parámetros fiscales editables.',
     ruta: '/nomina/catalogos',
     estado: 'activo'
   }
@@ -114,8 +114,32 @@ const VARIABLES_CONTEXTO = [
     label: 'Días laborados',
     tipo: 'number',
     categoria: 'periodo',
-    descripcion: 'Días efectivamente trabajados (presente/retardo) en el período.',
-    ejemplo: 14
+    descripcion: 'Días efectivamente trabajados (presente/retardo). No incluye descanso pagado.',
+    ejemplo: 4
+  },
+  {
+    key: 'diasPagados',
+    label: 'Días pagados',
+    tipo: 'number',
+    categoria: 'periodo',
+    descripcion: 'Resultado del motor: laborados + descanso pagado (usar en SUELDO).',
+    ejemplo: 7
+  },
+  {
+    key: 'diasCotizacion',
+    label: 'Días cotización',
+    tipo: 'number',
+    categoria: 'periodo',
+    descripcion: 'Días para IMSS (por defecto = días pagados según política).',
+    ejemplo: 7
+  },
+  {
+    key: 'diasDescansoPagados',
+    label: 'Días de descanso pagados',
+    tipo: 'number',
+    categoria: 'periodo',
+    descripcion: 'Descanso semanal pagado según política de la empresa.',
+    ejemplo: 2
   },
   {
     key: 'faltas',
@@ -262,20 +286,69 @@ const VARIABLES_CONTEXTO = [
     ejemplo: 800
   },
   {
-    key: 'fondoAhorroEmpresa',
-    label: 'Fondo de ahorro (empresa)',
+    key: 'aplicaFondoAhorro',
+    label: 'Aplica fondo de ahorro (0/1)',
     tipo: 'number',
     categoria: 'prestaciones',
-    descripcion: 'Aportación patronal al fondo de ahorro del período.',
+    descripcion: '1 si el empleado tiene activo el check de fondo de ahorro.',
+    ejemplo: 1
+  },
+  {
+    key: 'porcentajeFondoAhorro',
+    label: '% fondo de ahorro',
+    tipo: 'number',
+    categoria: 'prestaciones',
+    descripcion: '% del salario del período (empleado o parámetro FONDO_AHORRO_PORC).',
+    ejemplo: 13
+  },
+  {
+    key: 'topeUmaFondoAhorro',
+    label: 'Factor UMA tope fondo',
+    tipo: 'number',
+    categoria: 'prestaciones',
+    descripcion: 'Veces UMA para tope exento (parámetro FONDO_AHORRO_TOPE_UMA).',
+    ejemplo: 1.3
+  },
+  {
+    key: 'fondoAhorroEmpresa',
+    label: 'Fondo de ahorro (empresa) — atajo JS',
+    tipo: 'number',
+    categoria: 'prestaciones',
+    descripcion:
+      'Aportación = % salario ÷ 2. Fórmula editable: aplicaFondoAhorro * (sueldoDiario * diasLaborados * porcentajeFondoAhorro / 200)',
     ejemplo: 200
   },
   {
     key: 'fondoAhorroTrabajador',
-    label: 'Fondo de ahorro (trabajador)',
+    label: 'Fondo de ahorro (trabajador) — atajo JS',
     tipo: 'number',
     categoria: 'prestaciones',
-    descripcion: 'Aportación del trabajador al fondo de ahorro del período.',
+    descripcion: 'Atajo precalculado (misma expresión que la aportación empresa al 50%).',
     ejemplo: 200
+  },
+  {
+    key: 'fondoAhorroTopeExento',
+    label: 'Tope exento fondo de ahorro',
+    tipo: 'number',
+    categoria: 'prestaciones',
+    descripcion: 'Menor entre % del salario y factor×UMA×días del período.',
+    ejemplo: 4636.08
+  },
+  {
+    key: 'fondoAhorroEmpresaExento',
+    label: 'Fondo empresa exento',
+    tipo: 'number',
+    categoria: 'prestaciones',
+    descripcion: 'Parte exenta de la aportación patronal (hasta el tope).',
+    ejemplo: 200
+  },
+  {
+    key: 'fondoAhorroEmpresaGravado',
+    label: 'Fondo empresa gravado',
+    tipo: 'number',
+    categoria: 'prestaciones',
+    descripcion: 'Excedente patronal sobre el tope; suma a la base de ISR.',
+    ejemplo: 0
   },
   {
     key: 'diasPrimaVacacional',
@@ -316,6 +389,14 @@ const VARIABLES_CONTEXTO = [
     categoria: 'salario',
     descripcion: 'Horas de jornada del empleado / turno (default 8).',
     ejemplo: 8
+  },
+  {
+    key: 'EMPLEADO.tipoEmpleado',
+    label: 'EMPLEADO.tipoEmpleado',
+    tipo: 'string',
+    categoria: 'salario',
+    descripcion: 'Valor del enum tipo_empleado del colaborador (p.ej. confianza). El filtro principal es aplicaTiposEmpleado en el concepto.',
+    ejemplo: 'confianza'
   },
   {
     key: 'PERIODO.diasTrabajados',

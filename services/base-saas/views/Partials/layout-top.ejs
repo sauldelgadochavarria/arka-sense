@@ -12,6 +12,7 @@
     <div class="brand"><a href="/dashboard">Arka-Presence</a></div>
     <div class="topbar-meta">
       <% if (typeof session !== 'undefined' && session) { %>
+        <a class="topbar-help" href="/ayuda" title="Centro de ayuda">Ayuda</a>
         <span><%= session.user %></span>
         <% if (session.subsidiariaActiva) { %>
         <span class="subsidiaria-tag"><%= session.subsidiariaActiva.codigo %></span>

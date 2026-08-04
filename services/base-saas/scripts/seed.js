@@ -8,6 +8,7 @@ const mongoose = require('mongoose');
 const dbConfig = require('../config/db');
 const menuSchema = require('../models/menuSchemaDefinition');
 const { COLLECTION_ROLES } = require('../config/constants');
+const { seedAyudaMenus } = require('./seed-ayuda-conocimiento');
 
 const ROLES = [
   {
@@ -124,6 +125,7 @@ async function seedMenus(conn, adminRoleId) {
     await seedNominaMenus(Menu, adminRoleId);
     await seedIntegracionesMenus(Menu, adminRoleId);
     await seedReportesMenus(Menu, adminRoleId);
+    await seedAyudaMenus(Menu);
     await cleanupLegacyCatalogMenus(Menu);
     await syncOperationalMenuRoles(Menu, adminRoleId);
     return;
@@ -154,6 +156,7 @@ async function seedMenus(conn, adminRoleId) {
   await seedNominaMenus(Menu, adminRoleId);
   await seedIntegracionesMenus(Menu, adminRoleId);
   await seedReportesMenus(Menu, adminRoleId);
+  await seedAyudaMenus(Menu);
   await cleanupLegacyCatalogMenus(Menu);
   await syncOperationalMenuRoles(Menu, adminRoleId);
   console.log('✓ Menús sembrados');
@@ -811,7 +814,9 @@ async function seedPersonalMenus(Menu, adminRoleId) {
   const personalItems = [
     { menuPrincipal: 'Tipos mov. laboral', rutaApp: '/personal/tipos-movimiento-laboral', orden: 52 },
     { menuPrincipal: 'Puestos', rutaApp: '/personal-puestos', orden: 54 },
-    { menuPrincipal: 'Empresa', rutaApp: '/config-empresa', orden: 55 }
+    { menuPrincipal: 'Empresa', rutaApp: '/config-empresa', orden: 55 },
+    { menuPrincipal: 'Cargas iniciales', rutaApp: '/config-empresa/cargas', orden: 56 },
+    { menuPrincipal: 'Créditos / saldos (próx.)', rutaApp: '/config-empresa/cargas/creditos-saldos', orden: 57 }
   ];
 
   for (const item of personalItems) {

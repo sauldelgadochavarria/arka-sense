@@ -12,7 +12,12 @@ const {
 
 function defaultTipoAplicacion(codigo) {
   if (codigo === 'SUELDO' || codigo === 'SALARIO_PERIODO') return 'FIJO';
-  if (String(codigo).startsWith('HORAS_EXTRA') || codigo === 'PREMIO_PUNTUALIDAD' || codigo === 'HE_PRENOMINA') {
+  if (
+    String(codigo).startsWith('HORAS_EXTRA') ||
+    codigo === 'PREMIO_PUNTUALIDAD' ||
+    codigo === 'PREMIO_ASISTENCIA' ||
+    codigo === 'HE_PRENOMINA'
+  ) {
     return 'EVENTUAL';
   }
   if (['RETARDOS', 'FALTAS', 'SALIDA_ANTICIPADA'].includes(codigo)) return 'EVENTUAL';
@@ -231,8 +236,13 @@ async function resolveConceptosParaEmpresa(tenantId, empresaId, { tipoPeriodo, t
     const prevIsCompany = prev.empresaId != null;
     const curIsCompany = f.empresaId != null;
     if (curIsCompany && !prevIsCompany) formulaByCodigo.set(key, f);
-    else if (curIsCompany === prevIsCompany && new Date(f.vigenciaDesde) > new Date(prev.vigenciaDesde)) {
-      formulaByCodigo.set(key, f);
+    else if (curIsCompany === prevIsCompany) {
+      const curVer = Number(f.version) || 0;
+      const prevVer = Number(prev.version) || 0;
+      if (curVer > prevVer) formulaByCodigo.set(key, f);
+      else if (curVer === prevVer && new Date(f.vigenciaDesde) > new Date(prev.vigenciaDesde)) {
+        formulaByCodigo.set(key, f);
+      }
     }
   }
 

@@ -22,12 +22,12 @@ const empleadoSchema = new mongoose.Schema(
     departamentoId: { type: mongoose.Schema.Types.ObjectId, ref: 'Departamento' },
     puestoId: { type: mongoose.Schema.Types.ObjectId, ref: 'Puesto' },
     turnoId: { type: mongoose.Schema.Types.ObjectId, ref: 'Turno' },
+    /** Tipo de período de pago (catálogo tipos_periodo_nomina: semanal, quincenal, etc.) */
+    tipoPeriodoId: { type: mongoose.Schema.Types.ObjectId, ref: 'TipoPeriodoNomina', default: null },
     supervisorId: { type: mongoose.Schema.Types.ObjectId, ref: 'Empleado' },
-    tipoContrato: {
-      type: String,
-      enum: ['indefinido', 'temporal', 'proyecto'],
-      default: 'indefinido'
-    },
+    tipoContrato: { type: String, trim: true, default: 'indefinido' },
+    /** Clasificación laboral (enum sistema: tipo_empleado) */
+    tipoEmpleado: { type: String, trim: true, default: '' },
     salarioDiario: { type: Number, min: 0 },
     fechaIngreso: { type: Date },
     fechaBaja: { type: Date },
@@ -69,6 +69,7 @@ const empleadoSchema = new mongoose.Schema(
 );
 
 empleadoSchema.index({ tenantId: 1, numEmpleado: 1 }, { unique: true });
+empleadoSchema.index({ tenantId: 1, tipoPeriodoId: 1 });
 empleadoSchema.index(
   { tenantId: 1, codigoExterno: 1 },
   { unique: true, partialFilterExpression: { codigoExterno: { $type: 'string', $ne: '' } } }

@@ -3,7 +3,14 @@
 
 <h1>Editar empleado</h1>
 <form method="post" action="/personal-empleados/<%= empleado._id %>" class="form-grid form-wide">
-  <%- include('partials/empleado-fields', { empleado, subsidiarias, departamentos, puestos, turnos, supervisores, gruposDispositivos, plantillas, asignacionCtx, tiposRegistro, tiposContrato, estatusOptions, motivosBaja, toDateInputValue, showNominaConfig, tiposCreditoInfonavit }) %>
+  <%- include('partials/empleado-fields', {
+    empleado, subsidiarias, departamentos, puestos, turnos,
+    tiposPeriodo: typeof tiposPeriodo !== 'undefined' ? tiposPeriodo : [],
+    supervisores, gruposDispositivos, plantillas, asignacionCtx,
+    tiposRegistro, tiposContrato,
+    tiposEmpleado: typeof tiposEmpleado !== 'undefined' ? tiposEmpleado : [],
+    estatusOptions, motivosBaja, toDateInputValue, showNominaConfig, tiposCreditoInfonavit
+  }) %>
   <button type="submit">Guardar cambios</button>
 </form>
 <%- include('../Partials/layout-bottom') %>

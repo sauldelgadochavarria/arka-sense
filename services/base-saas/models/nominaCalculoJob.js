@@ -34,6 +34,7 @@ const nominaCalculoJobSchema = new mongoose.Schema(
       neto: { type: Number, default: 0 }
     },
     userId: { type: String, default: '' },
+    userLabel: { type: String, default: '' },
     error: { type: String, default: '' },
     startedAt: { type: Date },
     completedAt: { type: Date }

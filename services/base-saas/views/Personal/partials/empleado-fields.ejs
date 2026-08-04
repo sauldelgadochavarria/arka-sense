@@ -50,6 +50,15 @@
     <% }); %>
   </select>
   <p class="hint">El turno directo aplica si no hay plantilla asignada, o como respaldo.</p>
+  <select name="tipoPeriodoId">
+    <option value="">— Tipo de período de pago —</option>
+    <% (tiposPeriodo || []).forEach(function(tp) { %>
+    <option value="<%= tp._id %>" <%= empleado && empleado.tipoPeriodoId && String(empleado.tipoPeriodoId) === String(tp._id) ? 'selected' : '' %>>
+      <%= tp.nombre %> (<%= tp.tipoMotor %><% if (tp.codigoLegado != null) { %> · <%= tp.codigoLegado %><% } %>)
+    </option>
+    <% }); %>
+  </select>
+  <p class="hint">Define en qué periodicidad entra el empleado (semanal, quincenal, etc.). Se usa al calcular pre-nómina y nómina.</p>
   <select name="supervisorId">
     <option value="">— Supervisor —</option>
     <% supervisores.forEach(function(s) { %>
@@ -100,10 +109,25 @@
   <legend>Datos laborales</legend>
   <input name="fechaIngreso" type="date" value="<%= empleado && empleado.fechaIngreso ? toDateInputValue(empleado.fechaIngreso) : '' %>" />
   <select name="tipoContrato">
-    <% tiposContrato.forEach(function(t) { %>
+    <option value="">— Tipo de contrato —</option>
+    <% (tiposContrato || []).forEach(function(t) { %>
     <option value="<%= t.value %>" <%= empleado && empleado.tipoContrato === t.value ? 'selected' : (!empleado && t.value === 'indefinido' ? 'selected' : '') %>><%= t.label %></option>
     <% }); %>
   </select>
+  <select name="tipoEmpleado">
+    <option value="">— Tipo de empleado —</option>
+    <% (tiposEmpleado || []).forEach(function(t) { %>
+    <option value="<%= t.value %>" <%= empleado && empleado.tipoEmpleado === t.value ? 'selected' : '' %>><%= t.label %></option>
+    <% }); %>
+  </select>
+  <p class="hint" style="grid-column:1/-1">
+    <strong>Tipo de contrato</strong> = modalidad jurídica (indefinido, temporal…).
+    <strong>Tipo de empleado</strong> = clasificación laboral (confianza / sindicalizado).
+    Editables en
+    <a href="/config-sistema/enums/tipo_contrato" target="_blank">Enums → Contrato</a>
+    y
+    <a href="/config-sistema/enums/tipo_empleado" target="_blank">Tipo de empleado</a>.
+  </p>
   <input name="salarioDiario" type="number" min="0" step="0.01" placeholder="Salario diario" value="<%= empleado && empleado.salarioDiario != null ? empleado.salarioDiario : '' %>" />
   <% if (empleado) { %>
   <select name="estatus">
@@ -152,6 +176,11 @@
     <label><input type="checkbox" name="nomina_aplicaFondoAhorro" value="1" <%= nc.aplicaFondoAhorro ? 'checked' : '' %> /> Aplica fondo de ahorro</label>
   </div>
   <input name="nomina_porcentajeFondoAhorro" type="number" min="0" max="100" step="0.01" placeholder="% fondo de ahorro (vacío = parámetro global)" value="<%= nc.porcentajeFondoAhorro > 0 ? nc.porcentajeFondoAhorro : '' %>" />
+  <p class="muted small" style="grid-column:1/-1">
+    Tope exento global: menor entre este % del salario y
+    <code>FONDO_AHORRO_TOPE_UMA × UMA × días año</code>
+    (catálogo Parámetros). El excedente patronal es gravable para ISR.
+  </p>
 
   <select name="nomina_tipoCreditoInfonavit" id="nomina_tipoCreditoInfonavit">
     <% (tiposCreditoInfonavit || []).forEach(function(t) { %>

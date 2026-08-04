@@ -14,6 +14,8 @@
     "seed:nomina-arquitectura": "node scripts/seed-nomina-arquitectura.js",
     "seed:catalogo-sat": "node scripts/seed-catalogo-sat.js",
     "seed:catalogo-mapeo-legado": "node scripts/seed-catalogo-mapeo-legado.js",
+    "limpiar:conceptos": "node scripts/limpiar-conceptos-empresa.js",
+    "seed:ayuda": "node scripts/seed-ayuda-conocimiento.js",
     "seed:tipos-movimiento-laboral": "node scripts/seed-tipos-movimiento-laboral.js",
     "seed:org-legado-demo": "node scripts/seed-org-legado-demo.js",
     "seed:historial-empleados-demo": "node scripts/seed-historial-empleados-demo.js",

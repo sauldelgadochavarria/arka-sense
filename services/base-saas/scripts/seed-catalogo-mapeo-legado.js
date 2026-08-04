@@ -6,15 +6,15 @@ require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
 const mongoose = require('mongoose');
 const dbConfig = require('../config/db');
-const { seedMapeosLegadoFortia } = require('../services/nomina/catalogosNominaService');
+const { seedMapeosLegado } = require('../services/nomina/catalogosNominaService');
 
 async function main() {
   const uri = dbConfig.connectionStringConfig;
   console.log('Conectando a', uri);
   await mongoose.connect(uri);
 
-  const { creados, total } = await seedMapeosLegadoFortia();
-  console.log(`Mapeo legado Fortia: ${creados} nuevos, ${total} verificados`);
+  const { creados, total } = await seedMapeosLegado();
+  console.log(`Mapeo legado → SAT: ${creados} nuevos, ${total} verificados`);
 
   await mongoose.disconnect();
 }

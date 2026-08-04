@@ -28,9 +28,22 @@ const periodoNominaSchema = new mongoose.Schema(
     calculoJobId: { type: mongoose.Schema.Types.ObjectId, ref: 'NominaCalculoJob', default: null },
     payrollPeriodId: { type: mongoose.Schema.Types.ObjectId, ref: 'PayrollPeriod', default: null },
     calculadoAt: { type: Date },
+    /** Alias explícito de calculadoAt (UI / reportes). */
+    fechaCalculo: { type: Date },
+    /** Última corrida de cálculo (auditoría). */
+    calculoLoteId: { type: String, trim: true, default: '', index: true },
     calculadoPorUserId: { type: String, default: '' },
+    calculadoPorLabel: { type: String, default: '' },
     cerradoAt: { type: Date },
+    /** Alias explícito de cerradoAt (UI / reportes). */
+    fechaCierre: { type: Date },
     cerradoPorUserId: { type: String, default: '' },
+    cerradoPorLabel: { type: String, default: '' },
+    /** Resumen del archivo histórico al cerrar. */
+    cierreResumen: {
+      recibosArchivados: { type: Number, default: 0 },
+      conceptosAcumulados: { type: Number, default: 0 }
+    },
     notas: { type: String, default: '' },
     totales: {
       empleados: { type: Number, default: 0 },

@@ -13,7 +13,21 @@ const { buildEmpleadoPayload } = require('../libs/empleadoPayload');
 const { toDateInputValue } = require('../libs/formHelpers');
 const { tenantHasFeature } = require('../libs/tenantFeatureFlags');
 const { TIPOS_CREDITO_INFONAVIT } = require('../config/nominaCatalogos');
-const { MOTIVOS_BAJA, TIPOS_CONTRATO, ESTATUS_EMPLEADO, TIPOS_REGISTRO } = require('../config/catalogos');
+const { MOTIVOS_BAJA, TIPOS_CONTRATO, TIPOS_EMPLEADO, ESTATUS_EMPLEADO, TIPOS_REGISTRO } = require('../config/catalogos');
+const { getEnumItems, ensureSystemEnums } = require('../services/nomina/systemEnumService');
+
+function enumOptionsOrFallback(items, fallback) {
+  if (items && items.length) {
+    return items.map((i) => ({ value: i.value, label: i.label || i.value }));
+  }
+  return fallback;
+}
+
+function labelFromOptions(options, value) {
+  if (!value) return '—';
+  const found = (options || []).find((o) => o.value === value);
+  return found ? found.label : value;
+}
 const {
   syncAsignacionFromBody,
   loadPlantillasActivas,
@@ -26,6 +40,22 @@ const {
   listHistorialEmpleado
 } = require('../services/historialLaboralService');
 const getTipoMovimientoLaboralModel = require('../models/tipoMovimientoLaboral');
+const {
+  listTiposPeriodo,
+  ensureTiposPeriodoForTenant
+} = require('../services/tipoPeriodoNominaService');
+
+async function loadEmpleadoEnums() {
+  await ensureSystemEnums();
+  const [tipoContratoItems, tipoEmpleadoItems] = await Promise.all([
+    getEnumItems('tipo_contrato'),
+    getEnumItems('tipo_empleado')
+  ]);
+  return {
+    tiposContrato: enumOptionsOrFallback(tipoContratoItems, TIPOS_CONTRATO),
+    tiposEmpleado: enumOptionsOrFallback(tipoEmpleadoItems, TIPOS_EMPLEADO)
+  };
+}
 
 function showNominaConfig(req) {
   const flags = req.tenant?.featureFlags || req.session?.featureFlags || {};
@@ -46,9 +76,12 @@ async function loadEmpleadoCatalogs(tenantId, empresa) {
       supervisores: [],
       turnos: [],
       gruposDispositivos: [],
-      plantillas: []
+      plantillas: [],
+      tiposPeriodo: []
     };
   }
+
+  await ensureTiposPeriodoForTenant(tenantId, empresa._id);
 
   const Empleado = await getEmpleadoModel();
   const Departamento = await getDepartamentoModel();
@@ -56,7 +89,7 @@ async function loadEmpleadoCatalogs(tenantId, empresa) {
   const Subsidiaria = await getSubsidiariaModel();
   const Turno = await getTurnoModel();
   const GrupoDispositivos = await getGrupoDispositivosModel();
-  const [empleados, departamentos, puestos, subsidiarias, turnos, gruposDispositivos, plantillas] =
+  const [empleados, departamentos, puestos, subsidiarias, turnos, gruposDispositivos, plantillas, tiposPeriodo] =
     await Promise.all([
     Empleado.find({ tenantId }).sort({ lastName: 1, firstName: 1 }).lean(),
     Departamento.find({ tenantId, activo: true }).sort({ nombre: 1 }).lean(),
@@ -64,12 +97,23 @@ async function loadEmpleadoCatalogs(tenantId, empresa) {
     Subsidiaria.find({ empresaId: empresa._id, activo: true }).sort({ nombre: 1 }).lean(),
     Turno.find({ tenantId, activo: true }).sort({ nombre: 1 }).lean(),
     GrupoDispositivos.find({ tenantId, activo: true }).sort({ nombre: 1 }).lean(),
-    loadPlantillasActivas(tenantId)
+    loadPlantillasActivas(tenantId),
+    listTiposPeriodo(tenantId, true)
   ]);
 
   const supervisores = empleados.filter((e) => e.estatus === 'activo');
 
-  return { empleados, departamentos, puestos, subsidiarias, supervisores, turnos, gruposDispositivos, plantillas };
+  return {
+    empleados,
+    departamentos,
+    puestos,
+    subsidiarias,
+    supervisores,
+    turnos,
+    gruposDispositivos,
+    plantillas,
+    tiposPeriodo
+  };
 }
 
 function buildLookupMaps(departamentos, puestos, subsidiarias, empleados) {
@@ -90,16 +134,23 @@ async function loadCatalogMaps(tenantId, empresaId) {
   const Empleado = await getEmpleadoModel();
   const Turno = await getTurnoModel();
 
-  const [departamentos, puestos, subsidiarias, empleados, turnos] = await Promise.all([
+  const [departamentos, puestos, subsidiarias, empleados, turnos, tiposPeriodo] = await Promise.all([
     Departamento.find({ tenantId }).lean(),
     Puesto.find({ tenantId }).lean(),
     empresaId ? Subsidiaria.find({ empresaId }).lean() : [],
     Empleado.find({ tenantId }).lean(),
-    Turno.find({ tenantId }).lean()
+    Turno.find({ tenantId }).lean(),
+    listTiposPeriodo(tenantId, false)
   ]);
 
   const maps = buildLookupMaps(departamentos, puestos, subsidiarias, empleados);
   maps.turnoMap = new Map(turnos.map((t) => [String(t._id), t.nombre]));
+  maps.tipoPeriodoMap = new Map(
+    tiposPeriodo.map((t) => [
+      String(t._id),
+      `${t.nombre} (${t.tipoMotor}${t.codigoLegado != null ? ` · ${t.codigoLegado}` : ''})`
+    ])
+  );
   return maps;
 }
 
@@ -118,17 +169,19 @@ async function listEmpleados(req, res) {
 
   const maps = empresa
     ? await loadCatalogMaps(req.session.tenantId, empresa._id)
-    : buildLookupMaps([], [], [], []);
+    : { ...buildLookupMaps([], [], [], []), turnoMap: new Map(), tipoPeriodoMap: new Map() };
+
+  const enumsEmp = await loadEmpleadoEnums();
 
   res.render('Personal/empleados', {
     empleados,
     ...catalogs,
     ...maps,
+    ...enumsEmp,
     empresa,
     estatus,
     estatusOptions: ESTATUS_EMPLEADO,
     tiposRegistro: TIPOS_REGISTRO,
-    tiposContrato: TIPOS_CONTRATO,
     toDateInputValue,
     showNominaConfig: showNominaConfig(req),
     tiposCreditoInfonavit: TIPOS_CREDITO_INFONAVIT,
@@ -170,7 +223,7 @@ async function showEmpleado(req, res) {
   const catalogs = await loadEmpleadoCatalogs(req.session.tenantId, empresa);
   const maps = empresa
     ? await loadCatalogMaps(req.session.tenantId, empresa._id)
-    : buildLookupMaps([], [], [], []);
+    : { ...buildLookupMaps([], [], [], []), turnoMap: new Map(), tipoPeriodoMap: new Map() };
 
   let grupoNombre = '—';
   if (empleado.grupoDispositivosId && empresa) {
@@ -195,15 +248,19 @@ async function showEmpleado(req, res) {
       ? maps.turnoMap.get(String(turnoVigente.turno._id)) || turnoVigente.turno.nombre
       : '—';
 
-  const [historialReciente, tiposMov] = await Promise.all([
+  const [historialReciente, tiposMov, enumsEmp] = await Promise.all([
     listHistorialEmpleado(req.session.tenantId, empleado._id, 5),
-    getTipoMovimientoLaboralModel().then((M) => M.find({ tenantId: req.session.tenantId }).lean())
+    getTipoMovimientoLaboralModel().then((M) => M.find({ tenantId: req.session.tenantId }).lean()),
+    loadEmpleadoEnums()
   ]);
   const tipoMovMap = new Map(tiposMov.map((t) => [t.codigo, t.nombre]));
 
   res.render('Personal/empleado-show', {
     empleado,
     ...maps,
+    ...enumsEmp,
+    labelTipoContrato: labelFromOptions(enumsEmp.tiposContrato, empleado.tipoContrato),
+    labelTipoEmpleado: labelFromOptions(enumsEmp.tiposEmpleado, empleado.tipoEmpleado),
     grupoNombre,
     tipoRegistroLabel,
     asignacionCtx,
@@ -229,15 +286,17 @@ async function editEmpleado(req, res) {
   const catalogs = await loadEmpleadoCatalogs(req.session.tenantId, empresa);
   catalogs.supervisores = catalogs.supervisores.filter((e) => String(e._id) !== String(empleado._id));
   const asignacionCtx = await loadAsignacionEmpleado(req.session.tenantId, empleado._id);
+  const enumsEmp = await loadEmpleadoEnums();
 
   res.render('Personal/empleado-edit', {
     empleado,
     ...catalogs,
+    ...enumsEmp,
     asignacionCtx,
     tiposRegistro: TIPOS_REGISTRO,
     empresa,
     motivosBaja: MOTIVOS_BAJA,
-    tiposContrato: TIPOS_CONTRATO,
+    tiposContrato: enumsEmp.tiposContrato,
     estatusOptions: ESTATUS_EMPLEADO,
     showNominaConfig: showNominaConfig(req),
     tiposCreditoInfonavit: TIPOS_CREDITO_INFONAVIT,

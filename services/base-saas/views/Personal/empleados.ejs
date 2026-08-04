@@ -25,6 +25,7 @@
       <th>Sucursal</th>
       <th>Departamento</th>
       <th>Puesto</th>
+      <th>Período</th>
       <th>Ingreso</th>
       <th>Estatus</th>
       <th></th>
@@ -32,7 +33,7 @@
   </thead>
   <tbody>
     <% if (!empleados.length) { %>
-    <tr><td colspan="10" class="muted">No hay empleados con este filtro.</td></tr>
+    <tr><td colspan="11" class="muted">No hay empleados con este filtro.</td></tr>
     <% } %>
     <% empleados.forEach(function(e) { %>
     <tr class="<%= e.estatus !== 'activo' ? 'row-muted' : '' %>">
@@ -43,6 +44,7 @@
       <td><%= e.subsidiariaId ? (subMap.get(String(e.subsidiariaId)) || '—') : '—' %></td>
       <td><%= e.departamentoId ? (deptMap.get(String(e.departamentoId)) || '—') : '—' %></td>
       <td><%= e.puestoId ? (puestoMap.get(String(e.puestoId)) || '—') : '—' %></td>
+      <td><%= e.tipoPeriodoId && tipoPeriodoMap ? (tipoPeriodoMap.get(String(e.tipoPeriodoId)) || '—') : '—' %></td>
       <td><%= e.fechaIngreso ? new Date(e.fechaIngreso).toLocaleDateString('es-MX') : '—' %></td>
       <td><span class="badge badge-<%= e.estatus %>"><%= e.estatus %></span></td>
       <td class="actions">
@@ -55,7 +57,19 @@
 
 <h2>Nuevo empleado</h2>
 <form method="post" action="/personal-empleados" class="form-grid form-wide">
-  <%- include('partials/empleado-fields', { empleado: null, subsidiarias, departamentos, puestos, turnos, supervisores, gruposDispositivos, plantillas, asignacionCtx: null, tiposRegistro, tiposContrato, toDateInputValue, showNominaConfig, tiposCreditoInfonavit }) %>
+  <%- include('partials/empleado-fields', {
+    empleado: null,
+    subsidiarias, departamentos, puestos, turnos,
+    tiposPeriodo: typeof tiposPeriodo !== 'undefined' ? tiposPeriodo : [],
+    supervisores, gruposDispositivos, plantillas,
+    asignacionCtx: null,
+    tiposRegistro,
+    tiposContrato,
+    tiposEmpleado: typeof tiposEmpleado !== 'undefined' ? tiposEmpleado : [],
+    toDateInputValue,
+    showNominaConfig,
+    tiposCreditoInfonavit
+  }) %>
   <button type="submit">Crear empleado</button>
 </form>
 <% } %>

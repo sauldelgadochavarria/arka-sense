@@ -1476,3 +1476,143 @@ button.btn-danger {
     padding: 1rem;
   }
 }
+
+/* —— Centro de ayuda / knowledge base —— */
+.kb-section {
+  margin: 1.5rem 0 2rem;
+}
+
+.kb-section-title {
+  font-size: 1.05rem;
+  margin: 0 0 0.75rem;
+  color: var(--color-text-muted, #5c6570);
+  font-weight: 600;
+}
+
+.kb-card h3 {
+  margin-bottom: 0.35rem;
+}
+
+.kb-article {
+  max-width: 48rem;
+}
+
+.kb-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.kb-article .lead {
+  font-size: 1.05rem;
+  color: var(--color-text-muted, #5c6570);
+  margin: 0 0 1.25rem;
+}
+
+.kb-body {
+  line-height: 1.55;
+}
+
+.kb-body h1,
+.kb-body h2,
+.kb-body h3 {
+  margin: 1.25rem 0 0.5rem;
+  line-height: 1.3;
+}
+
+.kb-body p {
+  margin: 0 0 0.75rem;
+}
+
+.kb-body ul {
+  margin: 0 0 0.85rem 1.15rem;
+}
+
+.kb-body li {
+  margin-bottom: 0.25rem;
+}
+
+.kb-body code {
+  font-size: 0.88em;
+  padding: 0.1em 0.35em;
+  border-radius: 3px;
+  background: var(--color-surface-2, #f0f2f5);
+}
+
+.kb-pre {
+  overflow-x: auto;
+  padding: 0.85rem 1rem;
+  margin: 0 0 1rem;
+  border-radius: var(--radius-sm, 6px);
+  background: var(--color-surface-2, #f0f2f5);
+  font-size: 0.85rem;
+}
+
+.kb-pre code {
+  padding: 0;
+  background: transparent;
+}
+
+.checkbox-inline {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+/* -- Impresi�n de recibo de n�mina --------------------- */
+@media print {
+  .topbar,
+  .sidebar,
+  .toolbar,
+  .no-print,
+  .flash-messages,
+  .alert {
+    display: none !important;
+  }
+
+  .app-shell,
+  .app-body,
+  .main-content,
+  .content {
+    display: block !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+    box-shadow: none !important;
+  }
+
+  .no-print-detail {
+    display: none !important;
+  }
+
+  .recibo-print {
+    padding: 0;
+  }
+
+  .recibo-print-header h1 {
+    margin-bottom: 0.35rem;
+    font-size: 1.35rem;
+  }
+
+  .recibo-print-footer {
+    margin-top: 1.25rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid #ccc;
+  }
+
+  .recibo-conceptos-table th.no-print-detail,
+  .recibo-conceptos-table td.no-print-detail {
+    display: none !important;
+  }
+
+  .summary-cards .card {
+    break-inside: avoid;
+  }
+
+  a[href]::after {
+    content: none !important;
+  }
+}

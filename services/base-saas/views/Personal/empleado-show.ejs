@@ -36,6 +36,10 @@
       <dt>Departamento</dt><dd><%= empleado.departamentoId ? (deptMap.get(String(empleado.departamentoId)) || '—') : '—' %></dd>
       <dt>Puesto</dt><dd><%= empleado.puestoId ? (puestoMap.get(String(empleado.puestoId)) || '—') : '—' %></dd>
       <dt>Turno directo</dt><dd><%= empleado.turnoId ? (turnoMap.get(String(empleado.turnoId)) || '—') : '—' %></dd>
+      <dt>Tipo de período</dt>
+      <dd><%= empleado.tipoPeriodoId && typeof tipoPeriodoMap !== 'undefined' && tipoPeriodoMap.get(String(empleado.tipoPeriodoId))
+        ? tipoPeriodoMap.get(String(empleado.tipoPeriodoId))
+        : '—' %></dd>
       <dt>Plantilla de horario</dt>
       <dd>
         <% if (asignacionCtx && asignacionCtx.plantilla) { %>
@@ -73,7 +77,8 @@
   <section>
     <h2>Laboral</h2>
     <dl>
-      <dt>Tipo contrato</dt><dd><%= empleado.tipoContrato || '—' %></dd>
+      <dt>Tipo contrato</dt><dd><%= typeof labelTipoContrato !== 'undefined' ? labelTipoContrato : (empleado.tipoContrato || '—') %></dd>
+      <dt>Tipo empleado</dt><dd><%= typeof labelTipoEmpleado !== 'undefined' ? labelTipoEmpleado : (empleado.tipoEmpleado || '—') %></dd>
       <dt>Salario diario</dt><dd><%= empleado.salarioDiario != null ? empleado.salarioDiario : '—' %></dd>
       <dt>Fecha ingreso</dt><dd><%= empleado.fechaIngreso ? new Date(empleado.fechaIngreso).toLocaleDateString('es-MX') : '—' %></dd>
       <% if (empleado.estatus === 'baja') { %>

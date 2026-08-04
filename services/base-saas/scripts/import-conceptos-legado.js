@@ -71,7 +71,7 @@ async function main() {
   if (claEmpresa != null) console.log(`Filtro CLA_EMPRESA: ${claEmpresa}`);
   if (dryRun) console.log('Modo: dry-run (sin escribir en BD)');
 
-  const mapeos = await obtenerMapeosLegadoActivos('fortia');
+  const mapeos = await obtenerMapeosLegadoActivos('legado');
   console.log('Mapeos legado cargados desde catálogo');
 
   const resultado = await importarConceptosLegadoCapaA(tenant.tenantId, empresa._id, filePath, {

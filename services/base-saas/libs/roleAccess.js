@@ -62,6 +62,7 @@ function resolveNominaConceptoModo(session, query = {}) {
 
 module.exports = {
   isSoloPortalUser,
+  sessionRoles,
   userCanEditNomina,
   userCanViewNomina,
   resolveNominaConceptoModo

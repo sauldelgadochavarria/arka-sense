@@ -12,9 +12,16 @@ const MOTIVOS_BAJA = [
 ];
 
 const TIPOS_CONTRATO = [
-  { value: 'indefinido', label: 'Indefinido' },
+  { value: 'indefinido', label: 'Indefinido (planta)' },
   { value: 'temporal', label: 'Temporal' },
-  { value: 'proyecto', label: 'Por proyecto' }
+  { value: 'eventual', label: 'Eventual' },
+  { value: 'proyecto', label: 'Por proyecto' },
+  { value: 'capacitacion', label: 'Aprendizaje / capacitación' }
+];
+
+const TIPOS_EMPLEADO = [
+  { value: 'confianza', label: 'Confianza' },
+  { value: 'sindicalizado', label: 'Sindicalizado' }
 ];
 
 const ESTATUS_EMPLEADO = [
@@ -41,6 +48,7 @@ const FORMULAS_CONCEPTO = [
 module.exports = {
   MOTIVOS_BAJA,
   TIPOS_CONTRATO,
+  TIPOS_EMPLEADO,
   ESTATUS_EMPLEADO,
   TIPOS_REGISTRO,
   FORMULAS_CONCEPTO

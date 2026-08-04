@@ -60,6 +60,52 @@
   </fieldset>
 
   <fieldset class="props-fieldset">
+    <legend>Ámbito de aplicación</legend>
+    <p class="muted small" style="margin-top:0">
+      Sin selección = aplica a todos. Opciones desde
+      <a href="/config-sistema/enums" target="_blank">Config sistema → Enums</a>.
+    </p>
+    <%
+      const _tiposEmpNuevo = (typeof tiposEmpleadoOpts !== 'undefined' && tiposEmpleadoOpts) ? tiposEmpleadoOpts : [];
+      const _tiposPerNuevo = (typeof tiposPeriodoOpts !== 'undefined' && tiposPeriodoOpts) ? tiposPeriodoOpts : [];
+      const _tiposNomNuevo = (typeof tiposNominaOpts !== 'undefined' && tiposNominaOpts) ? tiposNominaOpts : [];
+    %>
+    <label>Tipos de empleado
+      <div class="form-row-checks">
+        <% if (!_tiposEmpNuevo.length) { %><span class="muted">Sin ítems en tipo_empleado.</span><% } %>
+        <% _tiposEmpNuevo.forEach(function(te) { %>
+        <label class="inline-check">
+          <input type="checkbox" name="aplicaTiposEmpleado" value="<%= te.value %>" />
+          <%= te.label || te.value %>
+        </label>
+        <% }); %>
+      </div>
+    </label>
+    <label>Tipos de período
+      <div class="form-row-checks">
+        <% if (!_tiposPerNuevo.length) { %><span class="muted">Sin ítems en tipo_periodo.</span><% } %>
+        <% _tiposPerNuevo.forEach(function(tp) { %>
+        <label class="inline-check">
+          <input type="checkbox" name="aplicaTiposPeriodo" value="<%= tp.value %>" />
+          <%= tp.label || tp.value %>
+        </label>
+        <% }); %>
+      </div>
+    </label>
+    <label>Tipos de nómina
+      <div class="form-row-checks">
+        <% if (!_tiposNomNuevo.length) { %><span class="muted">Sin ítems en tipo_nomina.</span><% } %>
+        <% _tiposNomNuevo.forEach(function(tn) { %>
+        <label class="inline-check">
+          <input type="checkbox" name="aplicaTipoNomina" value="<%= tn.value %>" />
+          <%= tn.label || tn.value %>
+        </label>
+        <% }); %>
+      </div>
+    </label>
+  </fieldset>
+
+  <fieldset class="props-fieldset">
     <legend>SAT y fiscal</legend>
     <div class="form-row-2">
       <label>Clave SAT

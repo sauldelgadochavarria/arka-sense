@@ -17,7 +17,7 @@ async function obtenerJobActivo(tenantId, periodoId) {
     .lean();
 }
 
-async function encolarCalculo(tenantId, periodoId, userId = '') {
+async function encolarCalculo(tenantId, periodoId, userId = '', userLabel = '') {
   const PeriodoNomina = await getPeriodoNominaModel();
   const NominaCalculoJob = await getNominaCalculoJobModel();
 
@@ -35,6 +35,7 @@ async function encolarCalculo(tenantId, periodoId, userId = '') {
     periodoId,
     estatus: 'pending',
     userId,
+    userLabel: userLabel || '',
     progreso: { total: 0, procesados: 0, exitos: 0, errores: 0 },
     erroresDetalle: []
   });
@@ -71,6 +72,7 @@ async function procesarJob(jobId) {
       claimed.periodoId,
       {
         userId: claimed.userId,
+        userLabel: claimed.userLabel || '',
         onProgress: async (progreso) => {
           await NominaCalculoJob.updateOne(
             { _id: jobId },

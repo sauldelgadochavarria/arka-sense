@@ -1,10 +1,13 @@
 <%- include('../../Partials/layout-top', { title: 'Mapeo legado', session }) %>
-<h1>Mapeo legado Fortia → SAT</h1>
+<h1>Mapeo legado → SAT</h1>
 <div class="toolbar">
   <a class="btn" href="/nomina/catalogos">← Catálogos</a>
 </div>
 
-<p>Usado por <code>import:conceptos-legado</code> para asignar claves SAT a conceptos importados (<code>L####</code>).</p>
+<p>
+  Traduce claves de un catálogo externo/legado a claves SAT al importar conceptos
+  (<code>import:conceptos-legado</code>, códigos <code>L####</code>).
+</p>
 
 <h2>Nuevo mapeo</h2>
 <form method="post" action="/nomina/catalogos/mapeo-legado" class="form-grid">

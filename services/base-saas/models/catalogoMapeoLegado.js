@@ -4,7 +4,7 @@ const { COLLECTION_CATALOGO_MAPEO_LEGADO } = require('../config/constants');
 
 const catalogoMapeoLegadoSchema = new mongoose.Schema(
   {
-    fuente: { type: String, required: true, trim: true, default: 'fortia' },
+    fuente: { type: String, required: true, trim: true, default: 'legado' },
     tipoMapeo: {
       type: String,
       required: true,

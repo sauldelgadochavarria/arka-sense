@@ -52,7 +52,7 @@ async function index(req, res) {
 
   const [sat, mapeos, parametros, tablas] = await Promise.all([
     listCatalogoSatTodos(),
-    listMapeosLegado('fortia'),
+    listMapeosLegado('legado'),
     listParametrosFiscales(),
     listTablasFiscales()
   ]);
@@ -112,7 +112,7 @@ async function toggleCatalogoSatAction(req, res) {
 async function mapeoLegado(req, res) {
   if (requireNominaFeature(req, res) === false) return;
 
-  const mapeos = await listMapeosLegado('fortia');
+  const mapeos = await listMapeosLegado('legado');
 
   res.render('Nomina/catalogos/mapeo-legado', {
     mapeos,
@@ -129,7 +129,7 @@ async function createMapeoLegado(req, res) {
   if (requireNominaFeature(req, res) === false) return;
   try {
     await crearMapeoLegado({
-      fuente: 'fortia',
+      fuente: 'legado',
       tipoMapeo: trimString(req.body.tipoMapeo),
       claveLegado: trimString(req.body.claveLegado),
       tipoConcepto: trimString(req.body.tipoConcepto),
@@ -207,9 +207,14 @@ async function showTablaFiscal(req, res) {
   const data = await getTablaFiscalConRangos(req.params.id);
   if (!data) return res.status(404).send('Tabla no encontrada');
 
+  const { BASES_CALCULO_IMSS, UNIDADES_LIMITE_CEAV } = require('../config/imssCuotas');
+
   res.render('Nomina/catalogos/tabla-fiscal-show', {
     tabla: data.tabla,
     rangos: data.rangos,
+    tipo: data.tipo,
+    basesCalculo: BASES_CALCULO_IMSS,
+    unidadesLimite: UNIDADES_LIMITE_CEAV,
     session: req.session
   });
 }
@@ -246,12 +251,19 @@ async function createRangoFiscal(req, res) {
   if (requireNominaFeature(req, res) === false) return;
   try {
     await crearRangoFiscal(req.params.id, {
+      clave: req.body.clave,
+      nombre: req.body.nombre,
+      tasaObrero: req.body.tasaObrero,
+      tasaPatronal: req.body.tasaPatronal,
+      baseCalculo: req.body.baseCalculo,
       limiteInferior: req.body.limiteInferior,
       limiteSuperior: req.body.limiteSuperior,
+      limiteInfUnidad: req.body.limiteInfUnidad,
+      limiteSupUnidad: req.body.limiteSupUnidad,
       cuotaFija: req.body.cuotaFija,
       porcentajeExcedente: req.body.porcentajeExcedente
     });
-    req.flash('success', 'Rango agregado');
+    req.flash('success', 'Fila agregada');
   } catch (err) {
     req.flash('error', err.message || 'Error al agregar rango');
   }

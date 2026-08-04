@@ -79,6 +79,29 @@ const SYSTEM_ENUMS_SEED = [
     ]
   },
   {
+    grupo: 'tipo_contrato',
+    nombre: 'Tipo de contrato',
+    descripcion: 'Naturaleza jurídica del contrato (duración / modalidad). No confundir con tipo de empleado.',
+    editable: true,
+    items: [
+      { value: 'indefinido', label: 'Indefinido (planta)', orden: 1 },
+      { value: 'temporal', label: 'Temporal', orden: 2 },
+      { value: 'eventual', label: 'Eventual', orden: 3 },
+      { value: 'proyecto', label: 'Por proyecto', orden: 4 },
+      { value: 'capacitacion', label: 'Aprendizaje / capacitación', orden: 5 }
+    ]
+  },
+  {
+    grupo: 'tipo_empleado',
+    nombre: 'Tipo de empleado',
+    descripcion: 'Clasificación laboral (confianza / sindicalizado). Independiente del tipo de contrato.',
+    editable: true,
+    items: [
+      { value: 'confianza', label: 'Confianza', orden: 1 },
+      { value: 'sindicalizado', label: 'Sindicalizado', orden: 2 }
+    ]
+  },
+  {
     grupo: 'ambito_concepto',
     nombre: 'Ámbito del concepto',
     descripcion: 'Dónde aplica el concepto del catálogo único',
@@ -337,53 +360,30 @@ const CONCEPT_CATALOG_SEED = [
     descripcion: 'Nómina formal: salario diario × días laborados netos de faltas.'
   },
   {
-    clave: 'L0002',
-    codigo: 'HORAS_EXTRA_DOBLES',
-    nombre: 'Horas extra dobles',
-    tipo: 'percepcion',
-    naturaleza: 'mixto',
-    fase: 1,
-    aplicaEn: 'nomina',
-    formulaPrenomina: '',
-    tiposIncidencia: ['HE'],
-    insumosContexto: ['INCIDENCIAS.horasExtraDobles'],
-    claveSAT: '019',
-    sat: { tipo: 'percepcion', clave: '019', descripcion: 'Horas extra' },
-    fiscal: {
-      naturaleza: 'mixto',
-      integraISR: true,
-      integraIMSS: true,
-      integraINFONAVIT: false,
-      desglose: { modo: 'regla_ley', codigoRegla: 'horas_extra' }
-    },
-    ordenDefault: 110,
-    descripcion: 'Nómina formal: HE dobles; desglose gravado/exento por regla de ley (tope 5 UMA simplificado).'
-  },
-  {
-    clave: 'L0003',
-    codigo: 'HORAS_EXTRA_TRIPLES',
-    nombre: 'Horas extra triples',
-    tipo: 'percepcion',
-    naturaleza: 'mixto',
-    fase: 1,
-    aplicaEn: 'nomina',
-    formulaPrenomina: '',
-    tiposIncidencia: ['HE'],
-    insumosContexto: ['INCIDENCIAS.horasExtraTriples'],
-    claveSAT: '019',
-    sat: { tipo: 'percepcion', clave: '019', descripcion: 'Horas extra' },
-    fiscal: {
-      naturaleza: 'mixto',
-      integraISR: true,
-      integraIMSS: true,
-      integraINFONAVIT: false,
-      desglose: { modo: 'regla_ley', codigoRegla: 'horas_extra' }
-    },
-    ordenDefault: 111,
-    descripcion: 'Nómina formal: HE triples; desglose por regla de ley.'
-  },
-  {
     clave: 'L0016',
+    codigo: 'PREMIO_ASISTENCIA',
+    nombre: 'Premio de asistencia',
+    tipo: 'percepcion',
+    naturaleza: 'exento',
+    fase: 1,
+    aplicaEn: 'nomina',
+    formulaPrenomina: '',
+    tiposIncidencia: ['FI'],
+    insumosContexto: ['INCIDENCIAS.sinFaltas', 'INCIDENCIAS.faltas'],
+    claveSAT: '049',
+    sat: { tipo: 'percepcion', clave: '049', descripcion: 'Premios por asistencia' },
+    fiscal: {
+      naturaleza: 'exento',
+      integraISR: false,
+      integraIMSS: false,
+      integraINFONAVIT: false,
+      desglose: { modo: 'todo_exento', codigoRegla: '' }
+    },
+    ordenDefault: 119,
+    descripcion: 'Nómina formal: eventual si no hay faltas (incidencia FI).'
+  },
+  {
+    clave: 'L0017',
     codigo: 'PREMIO_PUNTUALIDAD',
     nombre: 'Premio de puntualidad',
     tipo: 'percepcion',
@@ -419,23 +419,13 @@ const DEFAULT_FORMULA_TEMPLATES = [
     dependencias: []
   },
   {
-    conceptoCodigo: 'HORAS_EXTRA_DOBLES',
+    conceptoCodigo: 'PREMIO_ASISTENCIA',
     fase: 1,
     tipoAplicacion: 'EVENTUAL',
     tipoPeriodo: 'quincenal',
     tipoNomina: 'ordinaria',
-    formula: '(EMPLEADO.salarioDiario / EMPLEADO.horasJornada) * INCIDENCIAS.horasExtraDobles * 2',
-    condicion: 'INCIDENCIAS.horasExtraDobles > 0',
-    dependencias: []
-  },
-  {
-    conceptoCodigo: 'HORAS_EXTRA_TRIPLES',
-    fase: 1,
-    tipoAplicacion: 'EVENTUAL',
-    tipoPeriodo: 'quincenal',
-    tipoNomina: 'ordinaria',
-    formula: '(EMPLEADO.salarioDiario / EMPLEADO.horasJornada) * INCIDENCIAS.horasExtraTriples * 3',
-    condicion: 'INCIDENCIAS.horasExtraTriples > 0',
+    formula: '500',
+    condicion: 'diasLaborados >= diasProgramados',
     dependencias: []
   },
   {

@@ -14,7 +14,7 @@ const {
   evaluateCondicion,
   extractVariablesUsadas
 } = require('./formulaEvaluator');
-const { aplicarTabla, obtenerParametrosVigentes, cargarRangosTabla, aplicarTablaSync, isrDelPeriodo, imssObreroDelPeriodo, sbcDiario } = require('./tablasFiscalesService');
+const { aplicarTabla, obtenerParametrosVigentes, cargarRangosTabla, aplicarTablaSync, isrDelPeriodo, imssObreroDelPeriodo, imssPatronalDelPeriodo, sbcDiario, cargarRangosIsrParaPeriodo } = require('./tablasFiscalesService');
 const { obtenerInsumosPrenomina, tieneActividadPrenomina } = require('./prenominaBridge');
 const { resolverInsumosNominaEmpleado } = require('../../libs/nominaEmpleadoInsumos');
 const getPayrollDetailModel = require('../../models/payrollDetail');
@@ -24,6 +24,17 @@ const {
   mergeResolvedWithLegacy
 } = require('./conceptResolutionService');
 const { requireEmpresaForTenant } = require('../../libs/tenantScope');
+const { filterEmpleadosByTipoMotor } = require('../../libs/empleadoTipoPeriodo');
+const { conceptoAplicaEnCalculo } = require('../../libs/conceptoAplicabilidad');
+const { listTiposPeriodo } = require('../tipoPeriodoNominaService');
+const { archivarYAcumularCierre } = require('./nominaCierreService');
+const { registrarAuditoriaNomina } = require('./nominaAuditoriaService');
+const { calcularDiasPagados, mergePolitica } = require('../../libs/diasPagadosMotor');
+const { generateCalculoLoteId, generateCalculoId } = require('../../libs/calculoId');
+const {
+  calcularMotorIsrInteligente,
+  lineasInformativasIsr
+} = require('./isrProyeccionService');
 const {
   resolveFiscalConfig,
   desglosarImporte,
@@ -44,9 +55,28 @@ function diasEntre(inicio, fin) {
   return diasCalendarioInclusive(inicio, fin);
 }
 
-async function obtenerFormulasVigentes(tenantId, periodo) {
+/** Fecha de vigencia de fórmulas: en períodos abiertos usa "hoy" para que un cambio reciente aplique al recalcular. */
+function fechaVigenciaFormulas(periodo) {
+  if (periodo?.estatus === 'cerrado') {
+    return new Date(periodo.fechaCierre || periodo.fechaFin || periodo.fechaInicio || Date.now());
+  }
+  return new Date();
+}
+
+function elegirMejorFormula(prev, cur) {
+  if (!prev) return cur;
+  const prevEmp = prev.empresaId != null ? 1 : 0;
+  const curEmp = cur.empresaId != null ? 1 : 0;
+  if (curEmp !== prevEmp) return curEmp > prevEmp ? cur : prev;
+  if ((cur.version || 0) !== (prev.version || 0)) {
+    return (cur.version || 0) > (prev.version || 0) ? cur : prev;
+  }
+  return new Date(cur.vigenciaDesde) > new Date(prev.vigenciaDesde) ? cur : prev;
+}
+
+async function obtenerFormulasVigentes(tenantId, periodo, fechaRef = null) {
   const FormulaConcepto = await getFormulaConceptoModel();
-  const ref = new Date(periodo.fechaInicio);
+  const ref = fechaRef ? new Date(fechaRef) : fechaVigenciaFormulas(periodo);
 
   const formulas = await FormulaConcepto.find({
     tenantId,
@@ -55,12 +85,13 @@ async function obtenerFormulasVigentes(tenantId, periodo) {
     vigenciaDesde: { $lte: ref },
     $or: [{ vigenciaHasta: null }, { vigenciaHasta: { $gte: ref } }],
     activo: true
-  }).lean();
+  })
+    .sort({ version: -1, vigenciaDesde: -1, updatedAt: -1 })
+    .lean();
 
   const porConcepto = new Map();
   for (const f of formulas) {
-    const key = f.conceptoCodigo;
-    if (!porConcepto.has(key)) porConcepto.set(key, f);
+    porConcepto.set(f.conceptoCodigo, elegirMejorFormula(porConcepto.get(f.conceptoCodigo), f));
   }
   return [...porConcepto.values()];
 }
@@ -76,7 +107,19 @@ async function limpiarCalculoPeriodo(tenantId, periodoId) {
   }
 }
 
-async function calcularReciboEmpleado(empleado, periodo, ordenCalculo, parametros, tiposPorCodigo, informativos, fiscalCtx, conceptosByCodigo = new Map()) {
+async function calcularReciboEmpleado(
+  empleado,
+  periodo,
+  ordenCalculo,
+  parametros,
+  tiposPorCodigo,
+  informativos,
+  fiscalCtx,
+  conceptosByCodigo = new Map(),
+  isrMotorOpts = {},
+  diasOpts = {},
+  calcMeta = {}
+) {
   const insumos = await obtenerInsumosPrenomina(
     periodo.tenantId,
     empleado._id,
@@ -87,19 +130,45 @@ async function calcularReciboEmpleado(empleado, periodo, ordenCalculo, parametro
   const diasLaborados =
     insumos.diasTrabajados != null ? insumos.diasTrabajados : diasPeriodo - (insumos.faltas || 0);
 
+  const faltasInjustificadas = Number(insumos.faltas) || 0;
+  const faltasJustificadas = Number(insumos.faltasJustificadas) || 0;
+  const diasIncapacidad = Number(insumos.diasIncapacidad) || 0;
+  const diasVacaciones = Number(insumos.diasVacaciones) || 0;
+  const diasPermisoConGoce = Number(insumos.diasPermisoConGoce) || 0;
+
+  const diasPago = calcularDiasPagados({
+    periodo: { ...periodo, diasPeriodo },
+    tipoPeriodoRef: diasOpts.tipoPeriodoRef || null,
+    politica: diasOpts.politica || {},
+    diasLaborados,
+    faltasInjustificadas,
+    faltasJustificadas,
+    diasIncapacidad,
+    diasVacaciones,
+    diasPermisoConGoce
+  });
+
   const sueldoDiario = insumos.sueldoDiario ?? empleado.salarioDiario ?? 0;
   const horasJornada = empleado.turnoHorasJornada || empleado.nominaConfig?.horasJornada || 8;
 
+  const cfgNomina = empleado.nominaConfig || {};
   const extras = resolverInsumosNominaEmpleado(
     empleado,
     {
       diasPeriodo,
-      diasLaborados,
-      faltas: insumos.faltas || 0,
+      diasLaborados: diasPago.diasLaborados,
+      diasPagados: diasPago.diasPagados,
+      faltas: faltasInjustificadas,
       sueldoDiario
     },
     parametros
   );
+
+  const porcentajeFondoAhorro =
+    Number(cfgNomina.porcentajeFondoAhorro) > 0
+      ? Number(cfgNomina.porcentajeFondoAhorro)
+      : Number(parametros.porcentajeFondoAhorro) || 13;
+  const aplicaFondoAhorro = cfgNomina.aplicaFondoAhorro ? 1 : 0;
 
   const contexto = buildNamespacedContext({
     empleado: {
@@ -107,31 +176,60 @@ async function calcularReciboEmpleado(empleado, periodo, ordenCalculo, parametro
       horasJornada,
       antiguedadAnios: calcularAntiguedadAnios(empleado.fechaIngreso, periodo.fechaInicio),
       sbc: sbcDiario(sueldoDiario, parametros.uma),
-      atributos: { horasJornada }
+      tipoEmpleado: empleado.tipoEmpleado || '',
+      atributos: { horasJornada },
+      nominaConfig: cfgNomina
     },
     periodo: {
       diasPeriodo,
-      diasTrabajados: diasLaborados,
-      diasLaborados,
-      faltas: insumos.faltas || 0
+      diasTrabajados: diasPago.diasLaborados,
+      diasLaborados: diasPago.diasLaborados,
+      diasPagados: diasPago.diasPagados,
+      diasCotizacion: diasPago.diasCotizacion,
+      diasProgramados: diasPago.diasProgramados,
+      diasDescanso: diasPago.diasDescanso,
+      diasDescansoPagados: diasPago.diasDescansoPagados,
+      faltas: faltasInjustificadas
     },
     incidencias: {
-      faltas: insumos.faltas || 0,
+      faltas: faltasInjustificadas,
+      faltasInjustificadas,
+      faltasJustificadas,
+      diasIncapacidad,
+      diasVacaciones,
+      diasPermisoConGoce,
       horasExtraDobles: insumos.horasExtraDobles || 0,
       horasExtraTriples: insumos.horasExtraTriples || 0,
       minutosRetardo: insumos.minutosRetardo || 0,
       minutosSalidaAnticipada: insumos.minutosSalidaAnticipada || 0,
       diasConRetardo: insumos.diasConRetardo || 0,
-      llegadasTarde: insumos.llegadasTarde || insumos.diasConRetardo || 0
+      llegadasTarde: insumos.llegadasTarde || insumos.diasConRetardo || 0,
+      sinRetardo:
+        (insumos.minutosRetardo || 0) === 0 &&
+        (insumos.diasConRetardo || insumos.llegadasTarde || 0) === 0
+          ? 1
+          : 0,
+      sinFaltas: faltasInjustificadas === 0 ? 1 : 0
     },
     parametros: {
       uma: parametros.uma,
-      salarioMinimo: parametros.salarioMinimo
+      salarioMinimo: parametros.salarioMinimo,
+      porcentajeFondoAhorro,
+      topeUmaFondoAhorro: parametros.topeUmaFondoAhorro || 1.3,
+      diasAnioFondoAhorro: parametros.diasAnioFondoAhorro || 365
     },
     resultadosPrevios: {
       percepcionPrenomina: insumos.percepcionPrenomina || 0,
       deduccionPrenomina: insumos.deduccionPrenomina || 0,
       tipoPeriodo: periodo.tipoPeriodo,
+      aplicaFondoAhorro,
+      porcentajeFondoAhorro,
+      topeUmaFondoAhorro: parametros.topeUmaFondoAhorro || 1.3,
+      diasAnioFondoAhorro: parametros.diasAnioFondoAhorro || 365,
+      diasPagados: diasPago.diasPagados,
+      diasCotizacion: diasPago.diasCotizacion,
+      diasDescansoPagados: diasPago.diasDescansoPagados,
+      diasProgramados: diasPago.diasProgramados,
       ...extras
     }
   });
@@ -145,7 +243,10 @@ async function calcularReciboEmpleado(empleado, periodo, ordenCalculo, parametro
     topeUMA: (valor, veces) => Math.min(Number(valor) || 0, parametros.uma * (veces || 1)),
     isrPeriodo: (gravado) =>
       isrDelPeriodo(gravado, periodo.tipoPeriodo, diasPeriodo, fiscalCtx.rangosIsr),
-    imssObrero: (sdi, dias) => imssObreroDelPeriodo(sdi, dias, parametros.uma)
+    imssObrero: (sdi, dias) =>
+      imssObreroDelPeriodo(sdi, dias, parametros.uma, fiscalCtx.imssCtx || {}),
+    imssPatronal: (sdi, dias) =>
+      imssPatronalDelPeriodo(sdi, dias, parametros.uma, fiscalCtx.imssCtx || {})
   });
 
   const detalle = [];
@@ -156,6 +257,16 @@ async function calcularReciboEmpleado(empleado, periodo, ordenCalculo, parametro
     const conceptoMeta = conceptosByCodigo.get(formula.conceptoCodigo) || {};
     const fiscalCfg = resolveFiscalConfig(conceptoMeta);
     try {
+      if (
+        !conceptoAplicaEnCalculo(conceptoMeta, {
+          tipoEmpleado: empleado.tipoEmpleado,
+          tipoPeriodo: periodo.tipoPeriodo,
+          tipoNomina: periodo.tipoNomina
+        })
+      ) {
+        contexto[formula.conceptoCodigo] = 0;
+        continue;
+      }
       const aplica = evaluateCondicion(formula.condicion, contexto, scope);
       if (!aplica) {
         contexto[formula.conceptoCodigo] = 0;
@@ -214,6 +325,52 @@ async function calcularReciboEmpleado(empleado, periodo, ordenCalculo, parametro
   const bases = acumularBasesFiscales(detalle);
   Object.assign(contexto, bases);
 
+  let isrMotor = null;
+  const isrLine = detalle.find((d) => d.conceptoCodigo === 'ISR' && !d.requiereRevision);
+  const isrSatVal = isrLine ? Number(isrLine.importe) || 0 : 0;
+  const gravadoPeriodo =
+    Number(bases.PERCEPCIONES_GRAVADAS) ||
+    Number(contexto.PERCEPCIONES_GRAVADAS) ||
+    0;
+
+  const modoIsr = isrMotorOpts.modo || 'inteligente_alerta';
+  if (isrMotorOpts.activo !== false && modoIsr !== 'sat' && fiscalCtx?.rangosIsr?.length) {
+    try {
+      isrMotor = await calcularMotorIsrInteligente({
+        tenantId: periodo.tenantId,
+        empleado,
+        periodo,
+        gravadoPeriodo,
+        isrSat: isrSatVal,
+        diasLaboradosPeriodo: contexto.diasLaborados,
+        rangosIsr: fiscalCtx.rangosIsr,
+        rangosIsrAnual: fiscalCtx.rangosIsrAnual || [],
+        modo: modoIsr === 'inteligente_retencion' ? 'retencion' : 'alerta'
+      });
+      const infoLines = lineasInformativasIsr(isrMotor);
+      for (const line of infoLines) {
+        informativos.add(line.conceptoCodigo);
+        detalle.push(line);
+        contexto[line.conceptoCodigo] = line.importe;
+      }
+    } catch (err) {
+      console.warn('[isrMotor]', empleado.numEmpleado || empleado._id, err.message);
+    }
+  } else if (isrSatVal || gravadoPeriodo) {
+    isrMotor = {
+      modo: 'sat',
+      motorSat: true,
+      isrSat: isrSatVal,
+      isrProyectado: isrSatVal,
+      isrAjustado: isrSatVal,
+      diferenciaPeriodo: 0,
+      diferenciaAcumulada: 0,
+      proyeccion: null,
+      alertas: [],
+      isrRetenidoCfdi: isrSatVal
+    };
+  }
+
   const totalPercepciones = redondear(
     detalle
       .filter((d) => d.tipo === 'percepcion' && !informativos.has(d.conceptoCodigo) && !d.requiereRevision)
@@ -221,29 +378,39 @@ async function calcularReciboEmpleado(empleado, periodo, ordenCalculo, parametro
   );
   const totalDeducciones = redondear(
     detalle
-      .filter((d) => d.tipo === 'deduccion' && !d.requiereRevision)
+      .filter((d) => d.tipo === 'deduccion' && !informativos.has(d.conceptoCodigo) && !d.requiereRevision)
       .reduce((s, d) => s + (d.importe || 0), 0)
   );
+  const netoPagar = redondear(totalPercepciones - totalDeducciones);
 
   const ReciboNomina = await getReciboNominaModel();
   const ConceptoAplicado = await getConceptoAplicadoModel();
+
+  const calculoLoteId = calcMeta.calculoLoteId || generateCalculoLoteId();
+  const calculoId =
+    calcMeta.calculoId || generateCalculoId(calculoLoteId, empleado.numEmpleado || empleado._id);
 
   const recibo = await ReciboNomina.create({
     tenantId: periodo.tenantId,
     empleadoId: empleado._id,
     periodoId: periodo._id,
-    diasLaborados: contexto.diasLaborados,
-    faltas: contexto.faltas,
+    diasLaborados: diasPago.diasLaborados,
+    faltas: faltasInjustificadas,
+    diasPago,
     totalPercepciones,
     totalDeducciones,
-    netoPagar: redondear(totalPercepciones - totalDeducciones),
+    netoPagar,
     fechaCalculo: new Date(),
+    calculoId,
+    calculoLoteId,
     errorCalculo: tieneRevision ? 'Uno o más conceptos requieren revisión' : '',
     basesFiscales: bases,
+    isrMotor,
     insumosFuente: insumos.fuente || 'default',
     insumosResumen: {
-      diasTrabajados: diasLaborados,
-      faltas: insumos.faltas || 0,
+      diasTrabajados: diasPago.diasLaborados,
+      diasPagados: diasPago.diasPagados,
+      faltas: faltasInjustificadas,
       minutosRetardo: insumos.minutosRetardo || 0,
       horasExtraDobles: insumos.horasExtraDobles || 0,
       horasExtraTriples: insumos.horasExtraTriples || 0,
@@ -265,6 +432,7 @@ async function calcularReciboEmpleado(empleado, periodo, ordenCalculo, parametro
       exento: d.exento || 0,
       desgloseModo: d.desgloseModo || '',
       claveSAT: d.claveSAT || '',
+      tipo: d.tipo || '',
       requiereRevision: Boolean(d.requiereRevision),
       errorCalculo: d.errorCalculo || '',
       versionFormula: d.versionFormula || 1
@@ -292,15 +460,18 @@ async function calcularPeriodo(tenantId, periodoId, options = {}) {
 
   await limpiarCalculoPeriodo(tenantId, periodoId);
 
-  const legacyFormulas = await obtenerFormulasVigentes(tenantId, periodo);
+  const fechaFormula = fechaVigenciaFormulas(periodo);
+  const legacyFormulas = await obtenerFormulasVigentes(tenantId, periodo, fechaFormula);
   let resolved = [];
+  let empresaDoc = null;
   try {
     const { empresa } = await requireEmpresaForTenant(tenantId);
+    empresaDoc = empresa;
     if (empresa) {
       resolved = await resolveConceptosParaEmpresa(tenantId, empresa._id, {
         tipoPeriodo: periodo.tipoPeriodo,
         tipoNomina: periodo.tipoNomina,
-        fecha: new Date(periodo.fechaInicio)
+        fecha: fechaFormula
       });
     }
   } catch (err) {
@@ -312,8 +483,53 @@ async function calcularPeriodo(tenantId, periodoId, options = {}) {
 
   const ordenCalculo = ordenarPorDependencias(formulas);
   const parametros = await obtenerParametrosVigentes(periodo.fechaInicio);
-  const rangosIsr = await cargarRangosTabla('ISR_MENSUAL', periodo.fechaInicio);
-  const fiscalCtx = { rangosIsr, tablasCache: { ISR_MENSUAL: rangosIsr } };
+  const [
+    { codigo: codigoTablaIsr, rangos: rangosIsr },
+    rangosIsrAnual,
+    rangosIsrMensual,
+    cuotasImss,
+    tramosCeav,
+    cuotasLegadoObrero,
+    cuotasLegadoPatronal
+  ] = await Promise.all([
+    cargarRangosIsrParaPeriodo(periodo.tipoPeriodo, periodo.fechaInicio),
+    cargarRangosTabla('ISR_ANUAL', periodo.fechaInicio),
+    cargarRangosTabla('ISR_MENSUAL', periodo.fechaInicio),
+    cargarRangosTabla('IMSS_CUOTAS', periodo.fechaInicio),
+    cargarRangosTabla('IMSS_CEAV_PATRONAL', periodo.fechaInicio),
+    cargarRangosTabla('IMSS_OBRERO', periodo.fechaInicio),
+    cargarRangosTabla('IMSS_PATRONAL', periodo.fechaInicio)
+  ]);
+
+  const primaRt =
+    empresaDoc?.primaRiesgoTrabajo != null
+      ? Number(empresaDoc.primaRiesgoTrabajo) || 0.00543
+      : 0.00543;
+
+  const imssCtx = {
+    uma: parametros.uma,
+    salarioMinimo: parametros.salarioMinimo,
+    topeUma: parametros.topeUmaImss,
+    cuotasImss,
+    tramosCeav,
+    cuotasLegadoObrero,
+    cuotasLegadoPatronal,
+    primaRt
+  };
+
+  const fiscalCtx = {
+    rangosIsr,
+    rangosIsrAnual: rangosIsrAnual || [],
+    codigoTablaIsr,
+    imssCtx,
+    tablasCache: {
+      ISR_MENSUAL: rangosIsrMensual || [],
+      [codigoTablaIsr]: rangosIsr,
+      ISR_ANUAL: rangosIsrAnual || [],
+      IMSS_CUOTAS: cuotasImss,
+      IMSS_CEAV_PATRONAL: tramosCeav
+    }
+  };
 
   const conceptos = await ConceptoNomina.find({
     tenantId,
@@ -325,6 +541,12 @@ async function calcularPeriodo(tenantId, periodoId, options = {}) {
   const informativos = new Set(
     conceptos.filter((c) => c.naturaleza === 'informativo').map((c) => c.codigo)
   );
+  ['ISR_SAT', 'ISR_PROYECTADO', 'ISR_AJUSTADO', 'ISR_DIFERENCIA'].forEach((c) => informativos.add(c));
+
+  const isrMotorOpts = {
+    activo: empresaDoc?.nominaIsr?.activo !== false,
+    modo: empresaDoc?.nominaIsr?.modo || 'inteligente_alerta'
+  };
 
   const empleadosQuery = {
     tenantId,
@@ -334,6 +556,15 @@ async function calcularPeriodo(tenantId, periodoId, options = {}) {
   };
 
   let empleados;
+  const tiposPeriodo = await listTiposPeriodo(tenantId, false);
+
+  const politicaDias = mergePolitica(empresaDoc?.nominaDias || {});
+  const tipoPeriodoRef =
+    (tiposPeriodo || []).find(
+      (t) => String(t.tipoMotor || '').toLowerCase() === String(periodo.tipoPeriodo || '').toLowerCase()
+    ) || null;
+  const diasOpts = { politica: politicaDias, tipoPeriodoRef };
+
   if (periodo.payrollPeriodId) {
     // Con pre-nómina vinculada: solo quien tuvo días/HE/percepciones (no “solo faltas”)
     const PayrollDetail = await getPayrollDetailModel();
@@ -354,10 +585,21 @@ async function calcularPeriodo(tenantId, periodoId, options = {}) {
     empleados = await Empleado.find(empleadosQuery).lean();
   }
 
+  empleados = filterEmpleadosByTipoMotor(empleados, tiposPeriodo, periodo.tipoPeriodo, {
+    strict: false
+  });
+  if (!empleados.length) {
+    throw new Error(
+      `No hay empleados para tipo de período «${periodo.tipoPeriodo}». Asigna tipo de período en Personal → Empleado.`
+    );
+  }
+
   const total = empleados.length;
   let procesados = 0;
   let exitos = 0;
   let errores = 0;
+
+  const calculoLoteId = generateCalculoLoteId();
 
   const resultados = [];
   for (const empleado of empleados) {
@@ -370,7 +612,10 @@ async function calcularPeriodo(tenantId, periodoId, options = {}) {
         tiposPorCodigo,
         informativos,
         fiscalCtx,
-        conceptosByCodigo
+        conceptosByCodigo,
+        isrMotorOpts,
+        diasOpts,
+        { calculoLoteId, calculoId: generateCalculoId(calculoLoteId, empleado.numEmpleado) }
       );
       exitos++;
       resultados.push({
@@ -378,6 +623,8 @@ async function calcularPeriodo(tenantId, periodoId, options = {}) {
         numEmpleado: empleado.numEmpleado,
         nombre: `${empleado.firstName} ${empleado.lastName}`.trim(),
         reciboId: recibo._id,
+        calculoId: recibo.calculoId,
+        calculoLoteId,
         ok: true
       });
     } catch (err) {
@@ -392,7 +639,7 @@ async function calcularPeriodo(tenantId, periodoId, options = {}) {
     }
     procesados++;
     if (options.onProgress) {
-      await options.onProgress({ total, procesados, exitos, errores });
+      await options.onProgress({ total, procesados, exitos, errores, calculoLoteId });
     }
   }
 
@@ -410,22 +657,47 @@ async function calcularPeriodo(tenantId, periodoId, options = {}) {
     neto: redondear(recibos.reduce((s, r) => s + r.netoPagar, 0))
   };
 
+  const now = new Date();
+  const userId = options.userId || '';
+  const userLabel =
+    options.userLabel ||
+    (await require('../../libs/userLabel').resolveUserLabel(userId));
+
   await PeriodoNomina.updateOne(
     { _id: periodoId },
     {
       $set: {
         estatus: 'calculado',
-        calculadoAt: new Date(),
-        calculadoPorUserId: options.userId || '',
+        calculadoAt: now,
+        fechaCalculo: now,
+        calculoLoteId,
+        calculadoPorUserId: userId,
+        calculadoPorLabel: userLabel,
         totales
       }
     }
   );
 
-  return { resultados, totales };
+  await registrarAuditoriaNomina({
+    tenantId,
+    accion: 'PERIODO_CALCULAR_OK',
+    entidad: 'periodo',
+    periodoId,
+    userId,
+    userLabel,
+    mensaje: `Cálculo completado: ${totales.empleados} recibos, neto ${totales.neto}`,
+    detalle: {
+      totales,
+      errores: totales.empleadosConError || 0,
+      calculoLoteId,
+      calculoIds: recibosOk.map((r) => r.calculoId).filter(Boolean)
+    }
+  });
+
+  return { resultados, totales, calculoLoteId };
 }
 
-async function cerrarPeriodo(tenantId, periodoId, userId = '') {
+async function cerrarPeriodo(tenantId, periodoId, userId = '', userLabel = '') {
   const PeriodoNomina = await getPeriodoNominaModel();
   const periodo = await PeriodoNomina.findOne({ tenantId, _id: periodoId }).lean();
   if (!periodo) throw new Error('Período no encontrado');
@@ -433,10 +705,49 @@ async function cerrarPeriodo(tenantId, periodoId, userId = '') {
     throw new Error('Solo se pueden cerrar períodos en estatus calculado');
   }
 
+  const label =
+    userLabel || (await require('../../libs/userLabel').resolveUserLabel(userId));
+  const cierre = await archivarYAcumularCierre({
+    tenantId,
+    periodo,
+    userId,
+    userLabel: label
+  });
+  const fechaCierre = cierre.fechaCierre || new Date();
+
   await PeriodoNomina.updateOne(
     { _id: periodoId },
-    { $set: { estatus: 'cerrado', cerradoAt: new Date(), cerradoPorUserId: userId } }
+    {
+      $set: {
+        estatus: 'cerrado',
+        cerradoAt: fechaCierre,
+        fechaCierre,
+        cerradoPorUserId: userId || '',
+        cerradoPorLabel: label,
+        cierreResumen: {
+          recibosArchivados: cierre.archivados || 0,
+          conceptosAcumulados: cierre.conceptosAcumulados || 0
+        }
+      }
+    }
   );
+
+  await registrarAuditoriaNomina({
+    tenantId,
+    accion: 'PERIODO_CERRAR',
+    entidad: 'periodo',
+    periodoId,
+    userId,
+    userLabel: label,
+    mensaje: `Período cerrado: ${cierre.archivados || 0} recibos archivados, ${cierre.conceptosAcumulados || 0} líneas a acumulados`,
+    detalle: {
+      archivados: cierre.archivados,
+      conceptosAcumulados: cierre.conceptosAcumulados,
+      totales: periodo.totales || {}
+    }
+  });
+
+  return cierre;
 }
 
 module.exports = {

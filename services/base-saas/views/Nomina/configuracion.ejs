@@ -4,9 +4,97 @@
   <a class="btn" href="/nomina">← Nómina</a>
   <a class="btn" href="/nomina/conceptos">Conceptos</a>
   <a class="btn" href="/nomina/catalogos">Catálogos</a>
+  <a class="btn" href="/config-empresa/cargas">Cargas iniciales</a>
 </div>
 
 <p>Tablas y parámetros globales usados por las fórmulas (<code>aplicarTabla</code>, <code>uma</code>, etc.).</p>
+
+<section class="panel">
+  <h2 class="panel-title">Motor ISR (SAT + Inteligente)</h2>
+  <p class="muted small">
+    El <strong>Motor SAT</strong> es el oficial: tabla del período → ISR que se retiene y reporta en CFDI.
+    El <strong>Motor Inteligente</strong> proyecta ingreso anual y sugiere una retención uniforme
+    (conceptos informativos <code>ISR_SAT</code>, <code>ISR_PROYECTADO</code>, <code>ISR_AJUSTADO</code>, <code>ISR_DIFERENCIA</code>).
+    En v1 el neto/CFDI <em>siempre</em> usa ISR SAT.
+  </p>
+  <form method="post" action="/nomina/configuracion/isr-motor" class="form-grid">
+    <label class="inline-check">
+      <input type="checkbox" name="activo" <%= typeof isrActivo === 'undefined' || isrActivo ? 'checked' : '' %> />
+      Activar motor inteligente / proyección
+    </label>
+    <label>Modo
+      <select name="modo">
+        <option value="sat" <%= typeof isrModo !== 'undefined' && isrModo === 'sat' ? 'selected' : '' %>>Solo SAT (oficial)</option>
+        <option value="inteligente_alerta" <%= typeof isrModo === 'undefined' || isrModo === 'inteligente_alerta' ? 'selected' : '' %>>SAT + alertas / proyección (recomendado)</option>
+        <option value="inteligente_retencion" <%= typeof isrModo !== 'undefined' && isrModo === 'inteligente_retencion' ? 'selected' : '' %>>Retención uniforme (experimental; CFDI sigue en SAT)</option>
+      </select>
+    </label>
+    <button type="submit">Guardar motor ISR</button>
+  </form>
+</section>
+
+<section class="panel">
+  <h2 class="panel-title">Política de días pagados / descanso semanal</h2>
+  <p class="muted small">
+    El sueldo usa <code>diasPagados</code> (laborados + descanso pagado), no solo días laborados.
+    La «pérdida del séptimo» no es regla única de la LFT: configúrala según contrato / CCT / reglamento.
+  </p>
+  <%
+    const pd = (typeof politicaDias !== 'undefined' && politicaDias) ? politicaDias : {};
+    const modoD = pd.modoDescanso || 'todo_o_nada';
+  %>
+  <form method="post" action="/nomina/configuracion/dias-pagados" class="form-grid">
+    <label class="inline-check">
+      <input type="checkbox" name="activo" <%= pd.activo !== false ? 'checked' : '' %> />
+      Activar motor de días pagados
+    </label>
+    <label>Modo de descanso
+      <select name="modoDescanso">
+        <option value="todo_o_nada" <%= modoD === 'todo_o_nada' ? 'selected' : '' %>>Todo o nada (falta injustificada → pierde descanso)</option>
+        <option value="proporcional" <%= modoD === 'proporcional' ? 'selected' : '' %>>Proporcional al cumplimiento</option>
+        <option value="conservar" <%= modoD === 'conservar' ? 'selected' : '' %>>Siempre pagar descanso</option>
+        <option value="ninguno" <%= modoD === 'ninguno' ? 'selected' : '' %>>Nunca agregar descanso al sueldo</option>
+      </select>
+    </label>
+    <label class="inline-check">
+      <input type="checkbox" name="pierdeDescansoConUnaFaltaInjustificada" <%= pd.pierdeDescansoConUnaFaltaInjustificada !== false ? 'checked' : '' %> />
+      Pierde descanso con ≥1 falta injustificada
+    </label>
+    <label class="inline-check">
+      <input type="checkbox" name="pagaDescansoConIncapacidad" <%= pd.pagaDescansoConIncapacidad !== false ? 'checked' : '' %> />
+      Incapacidad cuenta para no perder descanso
+    </label>
+    <label class="inline-check">
+      <input type="checkbox" name="pagaDescansoConVacaciones" <%= pd.pagaDescansoConVacaciones !== false ? 'checked' : '' %> />
+      Vacaciones cuentan para no perder descanso
+    </label>
+    <label class="inline-check">
+      <input type="checkbox" name="pagaDescansoConPermisoConGoce" <%= pd.pagaDescansoConPermisoConGoce !== false ? 'checked' : '' %> />
+      Permiso con goce cuenta para no perder descanso
+    </label>
+    <label class="inline-check">
+      <input type="checkbox" name="cuentaJustificadasComoCumplidas" <%= pd.cuentaJustificadasComoCumplidas !== false ? 'checked' : '' %> />
+      Faltas justificadas cuentan como cumplidas
+    </label>
+    <label class="inline-check">
+      <input type="checkbox" name="imssUsaDiasPagados" <%= pd.imssUsaDiasPagados !== false ? 'checked' : '' %> />
+      IMSS usa días pagados (cotización)
+    </label>
+    <div class="form-row-2">
+      <label>Días programados (opcional)
+        <input type="number" name="diasProgramadosPorPeriodo" min="0" step="1"
+          value="<%= pd.diasProgramadosPorPeriodo != null ? pd.diasProgramadosPorPeriodo : '' %>"
+          placeholder="Vacío = según tipo de período (ej. 5 semanal)" />
+      </label>
+      <label>Días de descanso (opcional)
+        <input type="number" name="diasDescansoPorPeriodo" min="0" step="1"
+          value="<%= pd.diasDescansoPorPeriodo != null ? pd.diasDescansoPorPeriodo : '' %>"
+          placeholder="Vacío = calendario − programados (ej. 2)" />
+      </label>
+    </div>
+    <button type="submit">Guardar política de días</button>
+  </form>
+</section>
 
 <div class="summary-cards">
   <div class="card"><strong><%= satCount %></strong> claves SAT de referencia</div>

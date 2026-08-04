@@ -1,4 +1,20 @@
 <%- include('../../Partials/layout-top', { title: tabla.codigo, session }) %>
+<%
+  const tipoTabla = typeof tipo !== 'undefined' ? tipo : 'isr';
+  const esCuotas = tipoTabla === 'imss_cuotas' || tipoTabla === 'imss';
+  const esCeav = tipoTabla === 'imss_ceav';
+  const bases = typeof basesCalculo !== 'undefined' ? basesCalculo : [];
+  const unidades = typeof unidadesLimite !== 'undefined' ? unidadesLimite : [];
+  function pct(n) {
+    const v = Number(n);
+    if (!Number.isFinite(v)) return '—';
+    return (v * 100).toFixed(4) + '%';
+  }
+  function labelBase(b) {
+    const f = bases.find(function(x) { return x.value === b; });
+    return f ? f.label : (b || '—');
+  }
+%>
 <h1><code><%= tabla.codigo %></code></h1>
 <div class="toolbar">
   <a class="btn" href="/nomina/catalogos/tablas-fiscales">← Tablas fiscales</a>
@@ -9,6 +25,112 @@
 
 <p><strong><%= tabla.nombre %></strong> · <%= tabla.periodicidad %> · vigente desde <%= new Date(tabla.vigenciaDesde).toLocaleDateString('es-MX') %></p>
 
+<% if (esCuotas) { %>
+<p class="muted">
+  Cuotas IMSS por ramo (patrón / trabajador / base). Tasas en decimal (1.125% → <code>0.01125</code>).
+  Referencia: tabla oficial / Nominax. INFONAVIT va aparte (concepto propio).
+</p>
+
+<h2>Agregar ramo</h2>
+<form method="post" action="/nomina/catalogos/tablas-fiscales/<%= tabla._id %>/rangos" class="form-grid">
+  <input name="clave" placeholder="Clave (ej. EM_DINERO)" required />
+  <input name="nombre" placeholder="Nombre del ramo" required />
+  <input name="tasaPatronal" type="number" step="0.000001" placeholder="Tasa patrón (ej. 0.007)" value="0" />
+  <input name="tasaObrero" type="number" step="0.000001" placeholder="Tasa trabajador (ej. 0.0025)" value="0" />
+  <select name="baseCalculo" required>
+    <% bases.forEach(function(b) { %>
+    <option value="<%= b.value %>" <%= b.value === 'sbc' ? 'selected' : '' %>><%= b.label %></option>
+    <% }); %>
+  </select>
+  <button type="submit">Agregar ramo</button>
+</form>
+
+<h2>Cuotas (<%= rangos.length %>)</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Clave</th>
+      <th>Seguro / prestaciones</th>
+      <th>Patrón</th>
+      <th>Trabajador</th>
+      <th>Base</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <% if (!rangos.length) { %>
+    <tr><td colspan="6" class="muted">Sin cuotas. Ejecuta <code>seed:nomina-fiscal</code>.</td></tr>
+    <% } %>
+    <% rangos.forEach(function(r) { %>
+    <tr>
+      <td><code><%= r.clave || '—' %></code></td>
+      <td><%= r.nombre || '—' %></td>
+      <td><%= r.baseCalculo === 'prima_rt' ? 'Prima RT empresa' : pct(r.tasaPatronal) %></td>
+      <td><%= pct(r.tasaObrero != null ? r.tasaObrero : r.porcentajeExcedente) %></td>
+      <td class="muted small"><%= labelBase(r.baseCalculo || 'sbc') %></td>
+      <td>
+        <form method="post" action="/nomina/catalogos/tablas-fiscales/<%= tabla._id %>/rangos/<%= r._id %>/delete" class="inline-form">
+          <button type="submit">Eliminar</button>
+        </form>
+      </td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+
+<% } else if (esCeav) { %>
+<p class="muted">
+  Tramos de Cesantía y Vejez (patronal). Los límites se expresan en múltiplos de SM o UMA
+  (ej. de 1.01 SM a 1.50 UMA). La tasa aplica sobre SBC del período.
+</p>
+
+<h2>Agregar tramo</h2>
+<form method="post" action="/nomina/catalogos/tablas-fiscales/<%= tabla._id %>/rangos" class="form-grid">
+  <input name="clave" placeholder="Clave (ej. CEAV_T2)" />
+  <input name="nombre" placeholder="Descripción del tramo" />
+  <input name="limiteInferior" type="number" step="0.01" placeholder="Límite inf. (múltiplo)" required />
+  <select name="limiteInfUnidad">
+    <% unidades.forEach(function(u) { %>
+    <option value="<%= u.value %>" <%= u.value === 'sm' ? 'selected' : '' %>><%= u.label %></option>
+    <% }); %>
+  </select>
+  <input name="limiteSuperior" type="number" step="0.01" placeholder="Límite sup. (múltiplo)" required />
+  <select name="limiteSupUnidad">
+    <% unidades.forEach(function(u) { %>
+    <option value="<%= u.value %>" <%= u.value === 'uma' ? 'selected' : '' %>><%= u.label %></option>
+    <% }); %>
+  </select>
+  <input name="tasaPatronal" type="number" step="0.000001" placeholder="Tasa patrón (ej. 0.03544)" required />
+  <button type="submit">Agregar tramo</button>
+</form>
+
+<h2>Tramos CEAV (<%= rangos.length %>)</h2>
+<table>
+  <thead>
+    <tr><th>Clave</th><th>Descripción</th><th>Desde</th><th>Hasta</th><th>Tasa patrón</th><th></th></tr>
+  </thead>
+  <tbody>
+    <% if (!rangos.length) { %>
+    <tr><td colspan="6" class="muted">Sin tramos. Ejecuta <code>seed:nomina-fiscal</code>.</td></tr>
+    <% } %>
+    <% rangos.forEach(function(r) { %>
+    <tr>
+      <td><code><%= r.clave || '—' %></code></td>
+      <td><%= r.nombre || '—' %></td>
+      <td><%= r.limiteInferior %> <%= r.limiteInfUnidad || '' %></td>
+      <td><%= r.limiteSuperior %> <%= r.limiteSupUnidad || '' %></td>
+      <td><%= pct(r.tasaPatronal != null ? r.tasaPatronal : r.porcentajeExcedente) %></td>
+      <td>
+        <form method="post" action="/nomina/catalogos/tablas-fiscales/<%= tabla._id %>/rangos/<%= r._id %>/delete" class="inline-form">
+          <button type="submit">Eliminar</button>
+        </form>
+      </td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+
+<% } else { %>
 <h2>Agregar rango</h2>
 <form method="post" action="/nomina/catalogos/tablas-fiscales/<%= tabla._id %>/rangos" class="form-grid">
   <input name="limiteInferior" type="number" step="0.01" placeholder="Límite inferior" required />
@@ -33,7 +155,7 @@
       <td><%= r.limiteInferior %></td>
       <td><%= r.limiteSuperior %></td>
       <td><%= r.cuotaFija %></td>
-      <td><%= (r.porcentajeExcedente * 100).toFixed(4) %>%</td>
+      <td><%= pct(r.porcentajeExcedente) %></td>
       <td>
         <form method="post" action="/nomina/catalogos/tablas-fiscales/<%= tabla._id %>/rangos/<%= r._id %>/delete" class="inline-form">
           <button type="submit">Eliminar</button>
@@ -43,10 +165,11 @@
     <% }); %>
   </tbody>
 </table>
+<% } %>
 
-<h2>Nueva vigencia (copiar rangos)</h2>
+<h2>Nueva vigencia (copiar filas)</h2>
 <form method="post" action="/nomina/catalogos/tablas-fiscales/<%= tabla._id %>/copiar" class="form-grid">
   <input name="vigenciaDesde" type="date" required />
-  <button type="submit">Copiar tabla y rangos</button>
+  <button type="submit">Copiar tabla</button>
 </form>
 <%- include('../../Partials/layout-bottom') %>

@@ -1,0 +1,70 @@
+<%- include('../../Partials/layout-top', { title: 'Carga: ' + carga.titulo, session }) %>
+<h1><%= carga.titulo %></h1>
+<div class="toolbar">
+  <a class="btn" href="/config-empresa/cargas">← Cargas</a>
+  <a class="btn" href="/config-empresa/cargas/<%= carga.codigo %>/plantilla.csv">Descargar plantilla CSV</a>
+</div>
+
+<p class="muted"><%= carga.descripcion %></p>
+<p class="muted small">
+  Columnas: <% carga.columnas.forEach(function(col, i) { %><code><%= col %></code><%= i < carga.columnas.length - 1 ? ', ' : '' %><% }); %>
+</p>
+
+<% if (!empresa) { %>
+<p>Sin empresa.</p>
+<% } else if (!carga.aplica) { %>
+<p class="alert alert-warning">Esta carga aún no está habilitada.</p>
+<% } else { %>
+
+<section class="panel">
+  <h2 class="panel-title">1. Validar (dry-run)</h2>
+  <form method="post" action="/config-empresa/cargas/<%= carga.codigo %>/validar" class="form-grid" id="form-carga">
+    <label>Nombre de archivo (opcional)
+      <input name="archivoNombre" placeholder="<%= carga.codigo %>.csv" />
+    </label>
+    <label>CSV
+      <input type="file" id="file-csv" accept=".csv,text/csv,text/plain" />
+    </label>
+    <label>Contenido
+      <textarea name="csvText" id="csv-text" rows="12" required
+        placeholder="Pega aquí el CSV o elige un archivo…"></textarea>
+    </label>
+    <button type="submit">Validar CSV</button>
+  </form>
+</section>
+
+<section class="panel">
+  <h2 class="panel-title">Jobs de este tipo</h2>
+  <% if (!jobs.length) { %>
+  <p class="muted">Sin jobs todavía.</p>
+  <% } else { %>
+  <ul class="vars-list">
+    <% jobs.forEach(function(j) { %>
+    <li>
+      <a href="/config-empresa/cargas/jobs/<%= j._id %>">
+        <%= new Date(j.createdAt).toLocaleString('es-MX') %> · <%= j.estatus %> · <%= j.filasOk %>/<%= j.filasError %>
+      </a>
+    </li>
+    <% }); %>
+  </ul>
+  <% } %>
+</section>
+
+<script>
+(function () {
+  var input = document.getElementById('file-csv');
+  var area = document.getElementById('csv-text');
+  if (!input || !area) return;
+  input.addEventListener('change', function () {
+    var f = input.files && input.files[0];
+    if (!f) return;
+    var nameInput = document.querySelector('input[name="archivoNombre"]');
+    if (nameInput && !nameInput.value) nameInput.value = f.name;
+    var reader = new FileReader();
+    reader.onload = function () { area.value = String(reader.result || ''); };
+    reader.readAsText(f);
+  });
+})();
+</script>
+<% } %>
+<%- include('../../Partials/layout-bottom') %>

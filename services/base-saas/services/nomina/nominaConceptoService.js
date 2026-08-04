@@ -53,7 +53,7 @@ async function ensureNominaConceptsForTenant(tenantId, empresaId) {
           sat: c.sat || {},
           metadata: c.metadata || {},
           activo: true,
-          aplicaTipoNomina: ['ordinaria', 'extraordinaria', 'finiquito']
+          aplicaTipoNomina: []
         }
       },
       { upsert: true }
@@ -110,7 +110,7 @@ async function ensureCapaBConceptosForTenant(tenantId, empresaId) {
           sat: c.sat || {},
           metadata: c.metadata || {},
           activo: true,
-          aplicaTipoNomina: c.aplicaTipoNomina || ['ordinaria', 'extraordinaria', 'finiquito', 'aguinaldo']
+          aplicaTipoNomina: c.aplicaTipoNomina || []
         }
       },
       { upsert: true }
@@ -211,7 +211,7 @@ async function syncFormulasCapaB(tenantId) {
   }
 }
 
-/** Conceptos y fórmulas Capa C (INFONAVIT, fondo de ahorro, finiquito) */
+/** Conceptos y fórmulas Capa C (fondo de ahorro) */
 async function ensureCapaCConceptosForTenant(tenantId, empresaId) {
   const ConceptoNomina = await getConceptoNominaModel();
 
@@ -230,17 +230,12 @@ async function ensureCapaCConceptosForTenant(tenantId, empresaId) {
           sat: c.sat || {},
           metadata: c.metadata || {},
           activo: true,
-          aplicaTipoNomina: c.aplicaTipoNomina || ['ordinaria', 'extraordinaria', 'finiquito', 'aguinaldo']
+          aplicaTipoNomina: c.aplicaTipoNomina || []
         }
       },
       { upsert: true }
     );
   }
-
-  await ConceptoNomina.updateOne(
-    { tenantId, codigo: 'PRIMA_VACACIONAL' },
-    { $unset: { 'metadata.pendienteMotor': '' } }
-  );
 
   await syncFormulasCapaC(tenantId);
 }
@@ -490,6 +485,24 @@ async function listConceptos(tenantId) {
   return ConceptoNomina.find({ tenantId }).sort({ ordenCalculo: 1, codigo: 1 }).lean();
 }
 
+function pickFormulaPreferida(candidatas) {
+  if (!candidatas.length) return null;
+  const ahora = Date.now();
+  const vigentes = candidatas.filter((f) => {
+    if (f.vigenciaHasta == null) return true;
+    return new Date(f.vigenciaHasta).getTime() >= ahora;
+  });
+  const pool = vigentes.length ? vigentes : candidatas;
+  pool.sort((a, b) => {
+    const aEmp = a.empresaId != null ? 1 : 0;
+    const bEmp = b.empresaId != null ? 1 : 0;
+    if (bEmp !== aEmp) return bEmp - aEmp;
+    if ((b.version || 0) !== (a.version || 0)) return (b.version || 0) - (a.version || 0);
+    return new Date(b.vigenciaDesde) - new Date(a.vigenciaDesde);
+  });
+  return pool[0];
+}
+
 async function getConceptoConFormulas(tenantId, codigo) {
   const ConceptoNomina = await getConceptoNominaModel();
   const FormulaConcepto = await getFormulaConceptoModel();
@@ -497,10 +510,10 @@ async function getConceptoConFormulas(tenantId, codigo) {
   if (!concepto) return null;
 
   const formulas = await FormulaConcepto.find({ tenantId, conceptoCodigo: concepto.codigo, activo: true })
-    .sort({ tipoPeriodo: 1, tipoNomina: 1, vigenciaDesde: -1 })
+    .sort({ tipoPeriodo: 1, tipoNomina: 1, version: -1, vigenciaDesde: -1 })
     .lean();
 
-  return { concepto, formulas };
+  return { concepto, formulas, pickFormulaPreferida };
 }
 
 async function validarDependenciasGrupo(tenantId, tipoPeriodo, tipoNomina, conceptoCodigo, dependencias) {
@@ -736,7 +749,9 @@ async function crearConcepto(tenantId, empresaId, data) {
     ...satFiscal,
     cuentaContable: String(data.cuentaContable || '').trim(),
     activo: true,
-    aplicaTipoNomina: data.aplicaTipoNomina || ['ordinaria', 'extraordinaria', 'finiquito']
+    aplicaTipoNomina: parseStringList(data.aplicaTipoNomina),
+    aplicaTiposEmpleado: parseStringList(data.aplicaTiposEmpleado),
+    aplicaTiposPeriodo: parseStringList(data.aplicaTiposPeriodo)
   });
 }
 
@@ -786,6 +801,15 @@ async function actualizarConcepto(tenantId, codigo, data, { empresaId = null, sy
   }
   if (data.insumosContexto !== undefined) {
     patch.insumosContexto = parseStringList(data.insumosContexto);
+  }
+  if (data.aplicaTiposEmpleado !== undefined) {
+    patch.aplicaTiposEmpleado = parseStringList(data.aplicaTiposEmpleado);
+  }
+  if (data.aplicaTiposPeriodo !== undefined) {
+    patch.aplicaTiposPeriodo = parseStringList(data.aplicaTiposPeriodo);
+  }
+  if (data.aplicaTipoNomina !== undefined) {
+    patch.aplicaTipoNomina = parseStringList(data.aplicaTipoNomina);
   }
 
   const tipoEff = patch.tipo || concepto.tipo;
@@ -869,6 +893,7 @@ module.exports = {
   recalcularDependientes,
   listConceptos,
   getConceptoConFormulas,
+  pickFormulaPreferida,
   validarDependenciasGrupo,
   guardarFormula,
   crearConcepto,

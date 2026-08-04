@@ -54,14 +54,22 @@ function buildNamespacedContext({ empleado, periodo, incidencias, parametros, ex
     horasJornada: toNum(emp.horasJornada ?? atributos.horasJornada, 8),
     antiguedadAnios: toNum(emp.antiguedadAnios),
     sbc: toNum(emp.sbc),
+    tipoEmpleado: String(emp.tipoEmpleado || '').trim(),
     atributos
   };
 
   const diasTrabajados = toNum(per.diasTrabajados ?? per.diasLaborados);
+  const diasPagados = toNum(per.diasPagados ?? per.diasLaborados ?? diasTrabajados);
+  const diasCotizacion = toNum(per.diasCotizacion ?? diasPagados);
   const PERIODO = {
     diasPeriodo: toNum(per.diasPeriodo),
     diasTrabajados,
     diasLaborados: diasTrabajados,
+    diasPagados,
+    diasCotizacion,
+    diasProgramados: toNum(per.diasProgramados),
+    diasDescanso: toNum(per.diasDescanso),
+    diasDescansoPagados: toNum(per.diasDescansoPagados),
     faltas: toNum(per.faltas ?? inc.faltas)
   };
 
@@ -96,6 +104,11 @@ function buildNamespacedContext({ empleado, periodo, incidencias, parametros, ex
     diasPeriodo: PERIODO.diasPeriodo,
     diasLaborados: PERIODO.diasLaborados,
     diasTrabajados: PERIODO.diasTrabajados,
+    diasPagados: PERIODO.diasPagados,
+    diasCotizacion: PERIODO.diasCotizacion,
+    diasProgramados: PERIODO.diasProgramados,
+    diasDescanso: PERIODO.diasDescanso,
+    diasDescansoPagados: PERIODO.diasDescansoPagados,
     faltas: INCIDENCIAS.faltas,
     sueldoDiario: EMPLEADO.salarioDiario,
     salarioDiario: EMPLEADO.salarioDiario,

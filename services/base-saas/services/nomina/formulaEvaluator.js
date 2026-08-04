@@ -2,7 +2,7 @@
 
 const { create, all, parse } = require('mathjs');
 
-const FUNCIONES_PERMITIDAS = ['min', 'max', 'abs', 'round', 'floor', 'ceil', 'aplicarTabla', 'topeUMA', 'isrPeriodo', 'imssObrero'];
+const FUNCIONES_PERMITIDAS = ['min', 'max', 'abs', 'round', 'floor', 'ceil', 'aplicarTabla', 'topeUMA', 'isrPeriodo', 'imssObrero', 'imssPatronal'];
 
 function redondear(valor, decimales = 2) {
   const n = Number(valor);
@@ -29,6 +29,7 @@ function createFormulaScope(parametros = {}, tablaFns = {}) {
       topeUMA: tablaFns.topeUMA || ((valor, veces) => Math.min(Number(valor) || 0, (parametros.uma || 0) * (veces || 1))),
       isrPeriodo: tablaFns.isrPeriodo || (() => 0),
       imssObrero: tablaFns.imssObrero || (() => 0),
+      imssPatronal: tablaFns.imssPatronal || (() => 0),
       min: Math.min,
       max: Math.max,
       abs: Math.abs,

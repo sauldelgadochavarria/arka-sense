@@ -4,7 +4,11 @@
   <a class="btn" href="/nomina/catalogos">← Catálogos</a>
 </div>
 
-<p>Tablas usadas por <code>aplicarTabla()</code> e <code>isrPeriodo()</code> en el motor de nómina.</p>
+<p>
+  ISR (rangos Art. 96), <strong>IMSS cuotas</strong> obrero-patronal por ramo y
+  <strong>CEAV patronal</strong> por tramos de SBC.
+  Funciones: <code>isrPeriodo()</code>, <code>imssObrero()</code>, <code>imssPatronal()</code>.
+</p>
 
 <h2>Nueva tabla / vigencia</h2>
 <form method="post" action="/nomina/catalogos/tablas-fiscales" class="form-grid">
@@ -26,16 +30,23 @@
 
 <table>
   <thead>
-    <tr><th>Código</th><th>Nombre</th><th>Periodicidad</th><th>Vigencia</th><th>Rangos</th><th>Activa</th><th></th></tr>
+    <tr><th>Código</th><th>Nombre</th><th>Tipo</th><th>Periodicidad</th><th>Vigencia</th><th>Filas</th><th>Activa</th><th></th></tr>
   </thead>
   <tbody>
     <% if (!tablas.length) { %>
-    <tr><td colspan="7" class="muted">Sin tablas. Ejecuta <code>seed:nomina-fiscal</code>.</td></tr>
+    <tr><td colspan="8" class="muted">Sin tablas. Ejecuta <code>seed:nomina-fiscal</code>.</td></tr>
     <% } %>
-    <% tablas.forEach(function(t) { %>
+    <% tablas.forEach(function(t) {
+         const cod = String(t.codigo || '');
+         let tipoLabel = 'ISR rangos';
+         if (cod === 'IMSS_CUOTAS') tipoLabel = 'IMSS cuotas';
+         else if (cod === 'IMSS_CEAV_PATRONAL') tipoLabel = 'IMSS CEAV';
+         else if (cod.indexOf('IMSS_') === 0) tipoLabel = 'IMSS (legado)';
+    %>
     <tr class="<%= !t.activo ? 'row-muted' : '' %>">
       <td><code><%= t.codigo %></code></td>
       <td><%= t.nombre || '—' %></td>
+      <td><%= tipoLabel %></td>
       <td><%= t.periodicidad %></td>
       <td>
         <%= new Date(t.vigenciaDesde).toLocaleDateString('es-MX') %>
@@ -43,7 +54,7 @@
       </td>
       <td><%= t.rangosCount %></td>
       <td><%= t.activo ? 'Sí' : 'No' %></td>
-      <td><a href="/nomina/catalogos/tablas-fiscales/<%= t._id %>">Editar rangos</a></td>
+      <td><a href="/nomina/catalogos/tablas-fiscales/<%= t._id %>">Editar</a></td>
     </tr>
     <% }); %>
   </tbody>

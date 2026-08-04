@@ -7,25 +7,118 @@
     : (fuente === 'prenomina_sin_detalle'
       ? 'Pre-nómina vinculada, pero sin detalle del empleado'
       : 'Sin pre-nómina: calendario del período + expediente');
+  const money = function(n) {
+    return '$' + Number(n || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 });
+  };
 %>
-<p><a href="/nomina/periodos/<%= periodo._id %>">← Volver al período</a></p>
+<div class="toolbar no-print">
+  <a class="btn" href="/nomina/periodos/<%= periodo._id %>">← Volver al período</a>
+  <button type="button" class="btn" id="btn-imprimir-recibo">Imprimir recibo</button>
+</div>
 
-<h1>Recibo de nómina</h1>
-<% if (empleado) { %>
-<p>
-  <strong><%= empleado.firstName %> <%= empleado.lastName %></strong>
-  (No. <%= empleado.numEmpleado %>)
-</p>
-<% } %>
+<article class="recibo-print" id="recibo-print-root">
+<header class="recibo-print-header">
+  <h1>Recibo de nómina</h1>
+  <% if (empleado) { %>
+  <p>
+    <strong><%= empleado.firstName %> <%= empleado.lastName %></strong>
+    (No. <%= empleado.numEmpleado %>)
+  </p>
+  <% } %>
+  <% if (periodo) { %>
+  <p class="muted small">
+    Período <%= periodo.tipoPeriodo %> ·
+    <%= periodo.fechaInicio ? new Date(periodo.fechaInicio).toLocaleDateString('es-MX') : '—' %>
+    –
+    <%= periodo.fechaFin ? new Date(periodo.fechaFin).toLocaleDateString('es-MX') : '—' %>
+  </p>
+  <% } %>
+  <p class="muted small recibo-ids">
+    ID cálculo: <code><%= recibo.calculoId || '—' %></code>
+    <% if (recibo.calculoLoteId) { %>
+    · Lote: <code><%= recibo.calculoLoteId %></code>
+    <% } %>
+  </p>
+</header>
 
 <div class="summary-cards">
   <div class="card"><strong><%= recibo.diasLaborados %></strong> días laborados</div>
-  <div class="card"><strong>$<%= recibo.totalPercepciones.toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></strong> percepciones</div>
-  <div class="card"><strong>$<%= recibo.totalDeducciones.toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></strong> deducciones</div>
-  <div class="card"><strong>$<%= recibo.netoPagar.toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></strong> neto</div>
+  <div class="card"><strong><%= money(recibo.totalPercepciones) %></strong> percepciones</div>
+  <div class="card"><strong><%= money(recibo.totalDeducciones) %></strong> deducciones</div>
+  <div class="card"><strong><%= money(recibo.netoPagar) %></strong> neto</div>
 </div>
+<p class="muted small">
+  Fecha de cálculo:
+  <strong><%= recibo.fechaCalculo ? new Date(recibo.fechaCalculo).toLocaleString('es-MX') : '—' %></strong>
+  · Fecha de cierre:
+  <strong><%= recibo.fechaCierre ? new Date(recibo.fechaCierre).toLocaleString('es-MX') : (periodo.fechaCierre || periodo.cerradoAt ? new Date(periodo.fechaCierre || periodo.cerradoAt).toLocaleString('es-MX') : '—') %></strong>
+  <% if (recibo.cerrado) { %> · <span class="badge badge-baja">Cerrado</span><% } %>
+</p>
 
-<section class="panel">
+<% if (recibo.diasPago) {
+     const dp = recibo.diasPago;
+%>
+<section class="panel no-print-detail">
+  <h2 class="panel-title">Días pagados (motor de reglas)</h2>
+  <p class="muted small">
+    Modo: <strong><%= dp.modoDescanso || '—' %></strong>
+    · Regla: <code><%= dp.reglaAplicada || '—' %></code>.
+    El sueldo debe usar <code>diasPagados</code>, no solo laborados.
+  </p>
+  <div class="summary-cards">
+    <div class="card"><strong><%= dp.diasCalendario %></strong> calendario</div>
+    <div class="card"><strong><%= dp.diasProgramados %></strong> programados</div>
+    <div class="card"><strong><%= dp.diasLaborados %></strong> laborados</div>
+    <div class="card"><strong><%= dp.faltasInjustificadas %></strong> faltas injust.</div>
+    <div class="card"><strong><%= dp.diasDescanso %></strong> descanso</div>
+    <div class="card"><strong><%= dp.diasDescansoPagados %></strong> descanso pagado</div>
+    <div class="card"><strong><%= dp.diasPagados %></strong> días pagados</div>
+    <div class="card"><strong><%= dp.diasCotizacion %></strong> cotización IMSS</div>
+  </div>
+</section>
+<% } %>
+
+<% if (recibo.isrMotor) {
+     const m = recibo.isrMotor;
+%>
+<section class="panel no-print-detail">
+  <h2 class="panel-title">Motor ISR</h2>
+  <p class="muted small">
+    Modo: <strong><%= m.modo || 'sat' %></strong>.
+    La deducción <code>ISR</code> del recibo (CFDI) es siempre el <strong>Motor SAT</strong>.
+    La proyección es informativa para estabilizar expectativas de retención.
+  </p>
+  <div class="summary-cards">
+    <div class="card"><strong><%= money(m.isrSat) %></strong> ISR SAT</div>
+    <div class="card"><strong><%= money(m.isrProyectado) %></strong> ISR proyectado</div>
+    <div class="card"><strong><%= money(m.isrAjustado) %></strong> ISR ajustado</div>
+    <div class="card <%= Number(m.diferenciaPeriodo) < 0 ? 'warn' : '' %>">
+      <strong><%= money(m.diferenciaPeriodo) %></strong> diferencia período
+    </div>
+    <div class="card"><strong><%= money(m.diferenciaAcumulada) %></strong> diferencia acumulada</div>
+  </div>
+  <% if (m.proyeccion) { %>
+  <ul class="vars-list">
+    <li>Ingreso acumulado (gravado): <code><%= money(m.proyeccion.ingresoAcumulado) %></code></li>
+    <li>Días acumulados: <code><%= m.proyeccion.diasAcumulados %></code> · Promedio diario: <code><%= money(m.proyeccion.promedioDiario) %></code></li>
+    <li>Proyección anual: <code><%= money(m.proyeccion.ingresoAnualEsperado) %></code> · ISR anual esperado: <code><%= money(m.proyeccion.isrAnualEsperado) %></code></li>
+    <li>Períodos pendientes (incl. actual): <code><%= m.proyeccion.periodosPendientes %></code></li>
+  </ul>
+  <% } %>
+  <% if (m.alertas && m.alertas.length) { %>
+  <div class="alert alert-warning">
+    <strong>Alertas del motor inteligente</strong>
+    <ul>
+      <% m.alertas.forEach(function(a) { %>
+      <li><%= a.mensaje %></li>
+      <% }); %>
+    </ul>
+  </div>
+  <% } %>
+</section>
+<% } %>
+
+<section class="panel no-print-detail">
   <h2 class="panel-title">Origen de asistencia e insumos</h2>
   <p><strong><%= fuenteLabel %></strong></p>
   <% if (fuente === 'prenomina') { %>
@@ -49,7 +142,7 @@
   <ul class="vars-list">
     <li>Días trabajados usados: <code><%= resumen.diasTrabajados != null ? resumen.diasTrabajados : recibo.diasLaborados %></code></li>
     <li>Faltas: <code><%= resumen.faltas != null ? resumen.faltas : recibo.faltas %></code></li>
-    <li>Salario diario: <code>$<%= Number(resumen.sueldoDiario || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></code></li>
+    <li>Salario diario: <code><%= money(resumen.sueldoDiario || 0) %></code></li>
     <li>Minutos retardo: <code><%= resumen.minutosRetardo || 0 %></code></li>
     <li>HE dobles / triples: <code><%= resumen.horasExtraDobles || 0 %></code> / <code><%= resumen.horasExtraTriples || 0 %></code></li>
     <% if (periodo.payrollPeriodId) { %>
@@ -60,21 +153,37 @@
   </ul>
 </section>
 
-<h2>Conceptos aplicados (trazabilidad)</h2>
-<table>
+<h2>Conceptos aplicados</h2>
+<p class="muted small no-print">
+  El encabezado suma solo conceptos <strong>no informativos</strong>
+  (excluye acumuladores como <code>PERCEPCIONES_GRAVADAS</code> / <code>DEDUCCIONES_TOTALES</code>
+  e informativos como <code>IMSS_PATRONAL</code>).
+</p>
+<table class="recibo-conceptos-table">
   <thead>
-    <tr><th>Código</th><th>Importe</th><th>Fórmula</th><th>Variables usadas</th></tr>
+    <tr>
+      <th>Código</th>
+      <th>Importe</th>
+      <th>Rol</th>
+      <th class="no-print-detail">Fórmula</th>
+      <th class="no-print-detail">Variables usadas</th>
+    </tr>
   </thead>
   <tbody>
     <% if (!conceptos.length) { %>
-    <tr><td colspan="4" class="muted">Sin detalle.</td></tr>
+    <tr><td colspan="5" class="muted">Sin detalle.</td></tr>
     <% } %>
-    <% conceptos.forEach(function(c) { %>
-    <tr>
+    <% conceptos.forEach(function(c) {
+         const meta = (typeof conceptosMeta !== 'undefined' && conceptosMeta[c.conceptoCodigo]) || {};
+         const esInfo = meta.naturaleza === 'informativo' || meta.informativo;
+         const rol = esInfo ? 'Informativo' : (c.tipo === 'deduccion' ? 'Deducción' : (c.tipo === 'otro_pago' ? 'Otro pago' : 'Percepción'));
+    %>
+    <tr class="<%= esInfo ? 'row-muted' : '' %>">
       <td><code><%= c.conceptoCodigo %></code></td>
-      <td>$<%= c.importe.toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></td>
-      <td><code class="formula-cell"><%= c.formulaUsada || '—' %></code></td>
-      <td>
+      <td><%= money(c.importe || 0) %></td>
+      <td><span class="muted small"><%= rol %></span></td>
+      <td class="no-print-detail"><code class="formula-cell"><%= c.formulaUsada || '—' %></code></td>
+      <td class="no-print-detail">
         <% if (c.variablesUsadas && Object.keys(c.variablesUsadas).length) { %>
         <ul class="vars-list">
           <% Object.keys(c.variablesUsadas).forEach(function(k) { %>
@@ -87,4 +196,20 @@
     <% }); %>
   </tbody>
 </table>
+
+<footer class="recibo-print-footer muted small">
+  Documento generado para auditoría · ID cálculo <code><%= recibo.calculoId || '—' %></code>
+  <% if (recibo.calculoLoteId) { %> · lote <code><%= recibo.calculoLoteId %></code><% } %>
+</footer>
+</article>
+
+<script>
+(function () {
+  var btn = document.getElementById('btn-imprimir-recibo');
+  if (btn) btn.addEventListener('click', function () { window.print(); });
+  if (/[?&]print=1(?:&|$)/.test(location.search)) {
+    setTimeout(function () { window.print(); }, 250);
+  }
+})();
+</script>
 <%- include('../Partials/layout-bottom') %>

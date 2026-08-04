@@ -1,0 +1,44 @@
+<%- include('../Partials/layout-top', { title: 'Administrar ayuda', session }) %>
+<h1>Administrar base de conocimiento</h1>
+<div class="toolbar">
+  <a class="btn" href="/ayuda">← Ver ayuda</a>
+  <a class="btn btn-primary" href="/ayuda/admin/nuevo">+ Nuevo artículo</a>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th>Título</th>
+      <th>Slug</th>
+      <th>Categoría</th>
+      <th>Ámbito</th>
+      <th>Estado</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <% if (!articulos.length) { %>
+    <tr><td colspan="6" class="muted">Sin artículos. Ejecuta <code>npm run seed:ayuda</code> o crea uno.</td></tr>
+    <% } %>
+    <% articulos.forEach(function(a) { %>
+    <tr class="<%= !a.activo || !a.publicado ? 'row-muted' : '' %>">
+      <td><a href="/ayuda/<%= a.slug %>"><%= a.titulo %></a></td>
+      <td><code><%= a.slug %></code></td>
+      <td><%= labelCategoria(a.categoria) %></td>
+      <td><%= a.tenantId ? 'Tenant' : 'Global' %></td>
+      <td>
+        <%= a.activo ? 'Activo' : 'Inactivo' %>
+        · <%= a.publicado ? 'Publicado' : 'Borrador' %>
+      </td>
+      <td class="actions">
+        <a href="/ayuda/admin/<%= a._id %>/edit">Editar</a>
+        <form method="post" action="/ayuda/admin/<%= a._id %>/toggle" class="inline-form">
+          <button type="submit"><%= a.activo ? 'Desactivar' : 'Activar' %></button>
+        </form>
+      </td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+
+<%- include('../Partials/layout-bottom') %>

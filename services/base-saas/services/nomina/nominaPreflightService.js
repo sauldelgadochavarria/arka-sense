@@ -70,11 +70,39 @@ async function validatePeriodoForCalculo(tenantId, periodo) {
 
   const usaIsr = conceptosActivos.some((c) => c.codigo === 'ISR');
   if (usaIsr) {
-    const tablaIsr = await obtenerTablaVigente('ISR_MENSUAL', periodo.fechaInicio);
+    const { codigoTablaIsrParaPeriodo } = require('../../config/isrTablas2026');
+    const codigoIsr = codigoTablaIsrParaPeriodo(periodo.tipoPeriodo);
+    const tablaIsr = await obtenerTablaVigente(codigoIsr, periodo.fechaInicio);
     if (!tablaIsr) {
       bloqueos.push({
         codigo: 'SIN_TABLA_ISR',
-        mensaje: 'Concepto ISR activo pero no hay tabla ISR_MENSUAL vigente'
+        mensaje: `Concepto ISR activo pero no hay tabla ${codigoIsr} vigente. Ejecuta seed:nomina-fiscal.`
+      });
+    }
+  }
+
+  const usaImssObrero = conceptosActivos.some((c) => c.codigo === 'IMSS_OBRERO');
+  if (usaImssObrero) {
+    const tablaImss = await obtenerTablaVigente('IMSS_CUOTAS', periodo.fechaInicio);
+    if (!tablaImss) {
+      const legado = await obtenerTablaVigente('IMSS_OBRERO', periodo.fechaInicio);
+      if (!legado) {
+        advertencias.push({
+          codigo: 'SIN_TABLA_IMSS',
+          mensaje:
+            'Sin tabla IMSS_CUOTAS vigente: se usará tasa fallback. Ejecuta seed:nomina-fiscal.'
+        });
+      }
+    }
+  }
+
+  const usaImssPatronal = conceptosActivos.some((c) => c.codigo === 'IMSS_PATRONAL');
+  if (usaImssPatronal) {
+    const tablaPat = await obtenerTablaVigente('IMSS_CUOTAS', periodo.fechaInicio);
+    if (!tablaPat) {
+      advertencias.push({
+        codigo: 'SIN_TABLA_IMSS_PATRONAL',
+        mensaje: 'Sin IMSS_CUOTAS vigente para imssPatronal(). Ejecuta seed:nomina-fiscal.'
       });
     }
   }

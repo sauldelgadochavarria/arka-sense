@@ -13,6 +13,8 @@ const {
 } = require('./movimientoAsistenciaNominaService');
 const { validateCodigoExternoForPeriod } = require('./payrollPreflightService');
 const { startOfDay, endOfDay } = require('../libs/timeHelpers');
+const { filterEmpleadosByTipoMotor } = require('../libs/empleadoTipoPeriodo');
+const { listTiposPeriodo } = require('./tipoPeriodoNominaService');
 
 function roundMoney(n) {
   return Math.round((Number(n) || 0) * 100) / 100;
@@ -228,7 +230,12 @@ async function calculatePayrollPeriod(periodId, tenantId, userId = '') {
   const Incidencia = await getIncidenciaModel();
   const PayrollDetail = await getPayrollDetailModel();
 
-  const empleados = await Empleado.find({ tenantId, estatus: 'activo', activo: true }).lean();
+  const empleadosAll = await Empleado.find({ tenantId, estatus: 'activo', activo: true }).lean();
+  const tiposPeriodo = await listTiposPeriodo(tenantId, false);
+  const tipoMotor = period.tipo || null;
+  const empleados = filterEmpleadosByTipoMotor(empleadosAll, tiposPeriodo, tipoMotor, {
+    strict: false
+  });
   const inicio = startOfDay(period.fechaInicio);
   const fin = endOfDay(period.fechaFin);
   const usaAsistencia = period.aplicaAsistenciaPrenomina !== false;

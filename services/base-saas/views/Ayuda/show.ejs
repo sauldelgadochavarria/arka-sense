@@ -1,0 +1,26 @@
+<%- include('../Partials/layout-top', { title: articulo.titulo, session }) %>
+<div class="toolbar">
+  <a class="btn" href="/ayuda">← Ayuda</a>
+  <% if (canManage) { %>
+  <a class="btn" href="/ayuda/admin/<%= articulo._id %>/edit">Editar</a>
+  <% } %>
+</div>
+
+<article class="kb-article">
+  <p class="kb-meta">
+    <span class="badge"><%= labelCategoria(articulo.categoria) %></span>
+    <% if (!articulo.tenantId) { %><span class="muted small">Global</span><% } %>
+    <% if (articulo.tags && articulo.tags.length) { %>
+    <span class="muted small"><%= articulo.tags.join(' · ') %></span>
+    <% } %>
+  </p>
+  <h1><%= articulo.titulo %></h1>
+  <% if (articulo.resumen) { %>
+  <p class="lead"><%= articulo.resumen %></p>
+  <% } %>
+  <div class="kb-body">
+    <%- cuerpoHtml %>
+  </div>
+</article>
+
+<%- include('../Partials/layout-bottom') %>

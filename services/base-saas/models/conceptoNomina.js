@@ -41,8 +41,12 @@ const conceptoNominaSchema = new mongoose.Schema(
     fiscal: { type: fiscalSubSchema, default: () => ({}) },
     aplicaTipoNomina: {
       type: [String],
-      default: ['ordinaria', 'extraordinaria', 'finiquito']
+      default: []
     },
+    /** Vacío = todos. Valores del enum sistema tipo_empleado. */
+    aplicaTiposEmpleado: { type: [String], default: [] },
+    /** Vacío = todos. Valores del enum sistema tipo_periodo (semanal, quincenal…). */
+    aplicaTiposPeriodo: { type: [String], default: [] },
     ordenCalculo: { type: Number, default: 100 },
     dependientes: { type: [String], default: [] },
     cuentaContable: { type: String, trim: true, default: '' },

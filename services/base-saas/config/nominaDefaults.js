@@ -2,7 +2,7 @@
 
 /**
  * Conceptos y fórmulas base para sembrar un tenant nuevo.
- * Funciones fiscales: isrPeriodo(), imssObrero(), variables de pre-nómina.
+ * Set limpio: sueldo, impuestos, acumuladores. Premios y fondo van en capas B/C.
  */
 
 const CONCEPTOS_BASE = [
@@ -13,30 +13,6 @@ const CONCEPTOS_BASE = [
     naturaleza: 'gravado',
     ordenCalculo: 10,
     sat: { tipo: 'percepcion', clave: '001', descripcion: 'Sueldos, salarios y rayas' }
-  },
-  {
-    codigo: 'SEPTIMO_DIA',
-    nombre: 'Séptimo día',
-    tipo: 'percepcion',
-    naturaleza: 'gravado',
-    ordenCalculo: 15,
-    sat: { tipo: 'percepcion', clave: '001', descripcion: 'Sueldos, salarios y rayas' }
-  },
-  {
-    codigo: 'HORAS_EXTRA_DOBLES',
-    nombre: 'Horas extra dobles',
-    tipo: 'percepcion',
-    naturaleza: 'gravado',
-    ordenCalculo: 20,
-    sat: { tipo: 'percepcion', clave: '019', descripcion: 'Horas extra', tipoHoraExtra: 'DO' }
-  },
-  {
-    codigo: 'HORAS_EXTRA_TRIPLES',
-    nombre: 'Horas extra triples',
-    tipo: 'percepcion',
-    naturaleza: 'gravado',
-    ordenCalculo: 21,
-    sat: { tipo: 'percepcion', clave: '019', descripcion: 'Horas extra', tipoHoraExtra: 'TE' }
   },
   {
     codigo: 'PERCEPCIONES_GRAVADAS',
@@ -61,66 +37,69 @@ const CONCEPTOS_BASE = [
     tipo: 'deduccion',
     naturaleza: 'fiscal',
     ordenCalculo: 55,
+    metadata: { requiereTablaFiscal: 'IMSS_CUOTAS' },
     sat: { tipo: 'deduccion', clave: '001', descripcion: 'Seguridad social' }
+  },
+  {
+    codigo: 'IMSS_PATRONAL',
+    nombre: 'IMSS patronal (informativo)',
+    tipo: 'deduccion',
+    naturaleza: 'informativo',
+    ordenCalculo: 56,
+    metadata: { informativo: true, requiereTablaFiscal: 'IMSS_CUOTAS' }
+  },
+  {
+    codigo: 'ISR_SAT',
+    nombre: 'ISR Motor SAT (oficial / CFDI)',
+    tipo: 'deduccion',
+    naturaleza: 'informativo',
+    ordenCalculo: 57,
+    metadata: { informativo: true, motorIsr: 'sat' }
+  },
+  {
+    codigo: 'ISR_PROYECTADO',
+    nombre: 'ISR Motor Inteligente (proyección anual)',
+    tipo: 'deduccion',
+    naturaleza: 'informativo',
+    ordenCalculo: 58,
+    metadata: { informativo: true, motorIsr: 'inteligente' }
+  },
+  {
+    codigo: 'ISR_AJUSTADO',
+    nombre: 'ISR ajustado (referencia uniforme)',
+    tipo: 'deduccion',
+    naturaleza: 'informativo',
+    ordenCalculo: 59,
+    metadata: { informativo: true, motorIsr: 'inteligente' }
+  },
+  {
+    codigo: 'ISR_DIFERENCIA',
+    nombre: 'Diferencia ISR proyectado − SAT',
+    tipo: 'deduccion',
+    naturaleza: 'informativo',
+    ordenCalculo: 60,
+    metadata: { informativo: true, motorIsr: 'inteligente' }
   }
 ];
 
 const TIPOS_PERIODO_FORMULA = ['semanal', 'quincenal', 'catorcenal', 'mensual'];
 
-function percepcionesGravadasFormula(tipoPeriodo) {
-  if (tipoPeriodo === 'semanal') {
-    return {
-      formula: 'SUELDO + SEPTIMO_DIA + HORAS_EXTRA_DOBLES + HORAS_EXTRA_TRIPLES',
-      dependencias: ['SUELDO', 'SEPTIMO_DIA', 'HORAS_EXTRA_DOBLES', 'HORAS_EXTRA_TRIPLES']
-    };
-  }
-  return {
-    formula: 'SUELDO + HORAS_EXTRA_DOBLES + HORAS_EXTRA_TRIPLES',
-    dependencias: ['SUELDO', 'HORAS_EXTRA_DOBLES', 'HORAS_EXTRA_TRIPLES']
-  };
-}
-
 function buildFormulasForPeriodo(tipoPeriodo) {
-  const pg = percepcionesGravadasFormula(tipoPeriodo);
   return [
     {
       conceptoCodigo: 'SUELDO',
       tipoPeriodo,
       tipoNomina: 'ordinaria',
-      formula: 'sueldoDiario * diasLaborados',
+      formula: 'sueldoDiario * diasPagados',
       dependencias: [],
       condicion: ''
-    },
-    {
-      conceptoCodigo: 'SEPTIMO_DIA',
-      tipoPeriodo,
-      tipoNomina: 'ordinaria',
-      formula: 'sueldoDiario * 1',
-      dependencias: [],
-      condicion: tipoPeriodo === 'semanal' ? 'diasLaborados >= 6' : 'false'
-    },
-    {
-      conceptoCodigo: 'HORAS_EXTRA_DOBLES',
-      tipoPeriodo,
-      tipoNomina: 'ordinaria',
-      formula: 'sueldoDiario / 8 * horasExtraDobles * 2',
-      dependencias: [],
-      condicion: 'horasExtraDobles > 0'
-    },
-    {
-      conceptoCodigo: 'HORAS_EXTRA_TRIPLES',
-      tipoPeriodo,
-      tipoNomina: 'ordinaria',
-      formula: 'sueldoDiario / 8 * horasExtraTriples * 3',
-      dependencias: [],
-      condicion: 'horasExtraTriples > 0'
     },
     {
       conceptoCodigo: 'PERCEPCIONES_GRAVADAS',
       tipoPeriodo,
       tipoNomina: 'ordinaria',
-      formula: pg.formula,
-      dependencias: pg.dependencias,
+      formula: 'SUELDO',
+      dependencias: ['SUELDO'],
       condicion: ''
     },
     {
@@ -135,9 +114,17 @@ function buildFormulasForPeriodo(tipoPeriodo) {
       conceptoCodigo: 'IMSS_OBRERO',
       tipoPeriodo,
       tipoNomina: 'ordinaria',
-      formula: 'imssObrero(sueldoDiario, diasLaborados)',
+      formula: 'imssObrero(sueldoDiario, diasCotizacion)',
       dependencias: [],
-      condicion: 'diasLaborados > 0'
+      condicion: 'diasCotizacion > 0'
+    },
+    {
+      conceptoCodigo: 'IMSS_PATRONAL',
+      tipoPeriodo,
+      tipoNomina: 'ordinaria',
+      formula: 'imssPatronal(sueldoDiario, diasCotizacion)',
+      dependencias: [],
+      condicion: 'diasCotizacion > 0'
     }
   ];
 }
@@ -146,9 +133,7 @@ const FORMULAS_BASE = TIPOS_PERIODO_FORMULA.flatMap((tp) => buildFormulasForPeri
 
 /** Fórmulas ISR/IMSS v2 para actualizar tenants existentes */
 const FORMULAS_FISCALES_V2 = FORMULAS_BASE.filter((f) =>
-  ['ISR', 'IMSS_OBRERO', 'HORAS_EXTRA_TRIPLES', 'PERCEPCIONES_GRAVADAS', 'HORAS_EXTRA_DOBLES'].includes(
-    f.conceptoCodigo
-  )
+  ['ISR', 'IMSS_OBRERO', 'IMSS_PATRONAL', 'PERCEPCIONES_GRAVADAS'].includes(f.conceptoCodigo)
 );
 
 const VIGENCIA_INICIAL = new Date('2025-01-01');

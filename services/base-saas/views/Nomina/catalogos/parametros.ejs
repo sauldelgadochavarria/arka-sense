@@ -1,8 +1,48 @@
 <%- include('../../Partials/layout-top', { title: 'Parámetros fiscales', session }) %>
+<%
+  function vigenteDe(clave) {
+    const rows = (parametros || []).filter(function(p) { return p.clave === clave; });
+    if (!rows.length) return null;
+    const abiertos = rows.filter(function(p) { return !p.vigenciaHasta; });
+    const lista = abiertos.length ? abiertos : rows;
+    lista.sort(function(a, b) { return new Date(b.vigenciaDesde) - new Date(a.vigenciaDesde); });
+    return lista[0];
+  }
+  const umaP = vigenteDe('UMA');
+  const porcP = vigenteDe('FONDO_AHORRO_PORC');
+  const factorP = vigenteDe('FONDO_AHORRO_TOPE_UMA');
+  const diasP = vigenteDe('FONDO_AHORRO_DIAS_ANIO');
+  const uma = umaP ? Number(umaP.valor) : 0;
+  const porc = porcP ? Number(porcP.valor) : 13;
+  const factor = factorP ? Number(factorP.valor) : 1.3;
+  const diasAnio = diasP ? Number(diasP.valor) : 365;
+  const topeAnual = uma > 0 ? factor * uma * diasAnio : 0;
+  const topeMensual = topeAnual > 0 ? topeAnual / 12 : 0;
+%>
 <h1>Parámetros fiscales</h1>
 <div class="toolbar">
   <a class="btn" href="/nomina/catalogos">← Catálogos</a>
-  <a class="btn" href="/nomina/configuracion">Ver tablas ISR</a>
+  <a class="btn" href="/nomina/catalogos/tablas-fiscales">Tablas ISR / IMSS</a>
+</div>
+
+<div class="alert alert-info" style="margin-bottom:1.25rem">
+  <strong>Fondo de ahorro — tope exento</strong>
+  <p class="muted" style="margin:0.35rem 0 0">
+    El tope exento del período es el <em>menor</em> entre:
+    <code><%= porc %>%</code> del salario del trabajador y
+    <code><%= factor %></code> × UMA anual
+    (<code><%= factor %> × UMA × <%= diasAnio %></code>).
+    El excedente de la aportación <strong>patronal</strong> es gravable para ISR.
+  </p>
+  <ul style="margin:0.5rem 0 0; padding-left:1.2rem">
+    <li>UMA diaria vigente: <strong><%= uma > 0 ? '$' + uma.toLocaleString('es-MX', { minimumFractionDigits: 2 }) : '— (registra UMA)' %></strong></li>
+    <li>Tope anual (<%= factor %>×UMA×<%= diasAnio %>): <strong><%= topeAnual > 0 ? '$' + topeAnual.toLocaleString('es-MX', { minimumFractionDigits: 2 }) : '—' %></strong></li>
+    <li>Tope mensual aprox.: <strong><%= topeMensual > 0 ? '$' + topeMensual.toLocaleString('es-MX', { minimumFractionDigits: 2 }) : '—' %></strong></li>
+  </ul>
+  <p class="muted small" style="margin:0.5rem 0 0">
+    Referencia 2026 ≈ \$55,663.60 anuales / \$4,636.08 mensuales con UMA ≈ \$117.31.
+    Ajusta la <code>UMA</code> cada año; el tope se recalcula solo.
+  </p>
 </div>
 
 <h2>Nueva vigencia</h2>
@@ -12,12 +52,12 @@
     <option value="<%= p.clave %>"><%= p.label %> — <%= p.descripcion %></option>
     <% }); %>
   </select>
-  <input name="valor" type="number" step="0.01" min="0.01" placeholder="Valor" required />
+  <input name="valor" type="number" step="0.0001" min="0.0001" placeholder="Valor" required />
   <input name="vigenciaDesde" type="date" />
   <input name="descripcion" placeholder="Descripción (opcional)" />
   <button type="submit">Registrar vigencia</button>
 </form>
-<p class="muted">Al registrar una nueva vigencia, la anterior del mismo parámetro se cierra automáticamente.</p>
+<p class="muted">Al registrar una nueva vigencia, la anterior del mismo parámetro se cierra automáticamente. La UMA debe actualizarse cada año.</p>
 
 <table>
   <thead>

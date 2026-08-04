@@ -28,6 +28,12 @@ async function updateEmpresa(req, res) {
     empresa.codigoPostal = trimString(req.body.codigoPostal);
     empresa.giro = trimString(req.body.giro);
     empresa.telefono = trimString(req.body.telefono);
+    if (req.body.primaRiesgoTrabajo !== undefined && req.body.primaRiesgoTrabajo !== '') {
+      const prima = Number(req.body.primaRiesgoTrabajo);
+      if (Number.isFinite(prima) && prima >= 0) {
+        empresa.primaRiesgoTrabajo = Math.min(0.15, Math.max(0.005, prima));
+      }
+    }
     await empresa.save();
 
     req.flash('success', 'Datos de empresa actualizados');

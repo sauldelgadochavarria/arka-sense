@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Capa B: conceptos prioritarios del catálogo legado con fórmulas mathjs.
+ * Capa B: premios + acumuladores de neto.
  * MAPEO_CANONICO_LEGADO vincula CLA_PERDED → código del motor PayPilot.
  */
 
@@ -12,68 +12,33 @@ const VIGENCIA_CAPA_B = VIGENCIA_FISCAL_V2;
 /** IDs legado → código canónico PayPilot (metadatos en concepto L####) */
 const MAPEO_CANONICO_LEGADO = {
   1: 'SUELDO',
-  2: 'SEPTIMO_DIA',
-  6: 'PRIMA_DOMINICAL',
-  27: 'PTU',
-  66: 'AGUINALDO',
-  1210: 'AGUINALDO',
-  1050: 'HORAS_EXTRA_DOBLES',
+  16: 'PREMIO_ASISTENCIA',
+  17: 'PREMIO_PUNTUALIDAD',
   403: 'ISR',
-  406: 'IMSS_OBRERO',
-  2020: 'SUBSIDIO_EMPLEO'
+  406: 'IMSS_OBRERO'
 };
 
-/** ~30 conceptos prioritarios para traducción a mathjs (oleada 1) */
-const PRIORIDAD_CAPA_B_IDS = [
-  1, 2, 6, 1050, 16, 17, 27, 66, 1210, 1215, 1430, 20, 22, 30, 54, 55, 403, 406, 2020, 177,
-  2146, 2147, 2149, 156, 2110, 5, 19, 83, 87, 1051
-];
+/** IDs legado prioritarios (referencia; el set activo es CONCEPTOS_CAPA_B) */
+const PRIORIDAD_CAPA_B_IDS = [1, 16, 17, 54, 55, 402, 403, 406];
 
 const CONCEPTOS_CAPA_B = [
   {
-    codigo: 'PRIMA_DOMINICAL',
-    nombre: 'Prima dominical',
+    codigo: 'PREMIO_PUNTUALIDAD',
+    nombre: 'Premio de puntualidad',
     tipo: 'percepcion',
-    naturaleza: 'gravado',
-    ordenCalculo: 18,
-    sat: { tipo: 'percepcion', clave: '020', descripcion: 'Prima dominical' },
-    metadata: { legadoClaPerded: 6 }
+    naturaleza: 'exento',
+    ordenCalculo: 30,
+    sat: { tipo: 'percepcion', clave: '010', descripcion: 'Premios por puntualidad' },
+    metadata: { legadoClaPerded: 17 }
   },
   {
-    codigo: 'PTU',
-    nombre: 'Participación de utilidades (PTU)',
+    codigo: 'PREMIO_ASISTENCIA',
+    nombre: 'Premio de asistencia',
     tipo: 'percepcion',
-    naturaleza: 'gravado',
-    ordenCalculo: 35,
-    sat: { tipo: 'percepcion', clave: '003', descripcion: 'PTU' },
-    metadata: { legadoClaPerded: 27, requiereCapturaManual: true }
-  },
-  {
-    codigo: 'AGUINALDO',
-    nombre: 'Aguinaldo',
-    tipo: 'percepcion',
-    naturaleza: 'gravado',
-    ordenCalculo: 5,
-    sat: { tipo: 'percepcion', clave: '002', descripcion: 'Aguinaldo' },
-    metadata: { legadoClaPerded: 1210, topeExentoUMA: 30 }
-  },
-  {
-    codigo: 'PRIMA_VACACIONAL',
-    nombre: 'Prima vacacional',
-    tipo: 'percepcion',
-    naturaleza: 'gravado',
-    ordenCalculo: 25,
-    sat: { tipo: 'percepcion', clave: '021', descripcion: 'Prima vacacional' },
-    metadata: { legadoClaPerded: 22, pendienteMotor: true }
-  },
-  {
-    codigo: 'SUBSIDIO_EMPLEO',
-    nombre: 'Subsidio al empleo',
-    tipo: 'otro_pago',
-    naturaleza: 'fiscal',
-    ordenCalculo: 52,
-    sat: { tipo: 'otro_pago', clave: '002', descripcion: 'Subsidio para el empleo' },
-    metadata: { legadoClaPerded: 2020, pendienteMotor: true }
+    naturaleza: 'exento',
+    ordenCalculo: 31,
+    sat: { tipo: 'percepcion', clave: '049', descripcion: 'Premios por asistencia' },
+    metadata: { legadoClaPerded: 16 }
   },
   {
     codigo: 'DEDUCCIONES_TOTALES',
@@ -95,82 +60,56 @@ const CONCEPTOS_CAPA_B = [
 
 const TIPOS_PERIODO_FORMULA = ['semanal', 'quincenal', 'catorcenal', 'mensual'];
 
-function percepcionesGravadasCapaB(tipoPeriodo) {
-  const base = ['SUELDO', 'PRIMA_DOMINICAL', 'HORAS_EXTRA_DOBLES', 'HORAS_EXTRA_TRIPLES'];
-  if (tipoPeriodo === 'semanal') {
-    base.splice(1, 0, 'SEPTIMO_DIA');
-  }
-  return {
-    formula: base.join(' + '),
-    dependencias: [...base]
-  };
-}
-
 function buildCapaBFormulasForPeriodo(tipoPeriodo) {
-  const pg = percepcionesGravadasCapaB(tipoPeriodo);
-  const formulas = [
+  return [
     {
-      conceptoCodigo: 'PRIMA_DOMINICAL',
+      conceptoCodigo: 'PREMIO_PUNTUALIDAD',
       tipoPeriodo,
       tipoNomina: 'ordinaria',
-      formula: 'sueldoDiario * 2 * 0.125',
+      formula: '500',
       dependencias: [],
-      condicion: tipoPeriodo === 'semanal' ? 'diasLaborados >= 6' : 'false'
+      condicion: 'INCIDENCIAS.sinRetardo == 1'
     },
     {
-      conceptoCodigo: 'PTU',
+      conceptoCodigo: 'PREMIO_ASISTENCIA',
       tipoPeriodo,
-      tipoNomina: 'extraordinaria',
-      formula: '0',
+      tipoNomina: 'ordinaria',
+      formula: '500',
       dependencias: [],
-      condicion: 'false'
-    },
-    {
-      conceptoCodigo: 'AGUINALDO',
-      tipoPeriodo,
-      tipoNomina: 'aguinaldo',
-      formula: 'sueldoDiario * min(15, diasPeriodo)',
-      dependencias: [],
-      condicion: 'sueldoDiario > 0'
+      condicion: 'diasLaborados >= diasProgramados'
     },
     {
       conceptoCodigo: 'PERCEPCIONES_GRAVADAS',
       tipoPeriodo,
       tipoNomina: 'ordinaria',
-      formula: pg.formula,
-      dependencias: pg.dependencias,
+      formula: 'SUELDO',
+      dependencias: ['SUELDO'],
       condicion: ''
     },
     {
       conceptoCodigo: 'DEDUCCIONES_TOTALES',
       tipoPeriodo,
       tipoNomina: 'ordinaria',
-      formula: 'ISR + IMSS_OBRERO',
-      dependencias: ['ISR', 'IMSS_OBRERO'],
+      formula: 'ISR + IMSS_OBRERO + DED_FONDO_AHORRO',
+      dependencias: ['ISR', 'IMSS_OBRERO', 'DED_FONDO_AHORRO'],
       condicion: ''
     },
     {
       conceptoCodigo: 'NETO_PAGAR',
       tipoPeriodo,
       tipoNomina: 'ordinaria',
-      formula: 'PERCEPCIONES_GRAVADAS - DEDUCCIONES_TOTALES',
-      dependencias: ['PERCEPCIONES_GRAVADAS', 'DEDUCCIONES_TOTALES'],
+      formula:
+        'SUELDO + PREMIO_PUNTUALIDAD + PREMIO_ASISTENCIA + FONDO_AHORRO_EMPRESA - DEDUCCIONES_TOTALES',
+      dependencias: [
+        'SUELDO',
+        'PREMIO_PUNTUALIDAD',
+        'PREMIO_ASISTENCIA',
+        'FONDO_AHORRO_EMPRESA',
+        'DEDUCCIONES_TOTALES'
+      ],
       condicion: ''
     }
   ];
-
-  if (tipoPeriodo === 'semanal') {
-    formulas.push({
-      conceptoCodigo: 'AGUINALDO',
-      tipoPeriodo,
-      tipoNomina: 'aguinaldo',
-      formula: 'sueldoDiario * min(15, diasPeriodo)',
-      dependencias: [],
-      condicion: 'sueldoDiario > 0'
-    });
-  }
-
-  return formulas;
 }
 
 const FORMULAS_CAPA_B = TIPOS_PERIODO_FORMULA.flatMap((tp) => buildCapaBFormulasForPeriodo(tp));
