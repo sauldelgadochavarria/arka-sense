@@ -182,6 +182,14 @@ const VARIABLES_CONTEXTO = [
     ejemplo: 278.8
   },
   {
+    key: 'sdi',
+    label: 'Salario Diario Integrado (SDI)',
+    tipo: 'number',
+    categoria: 'fiscal',
+    descripcion: 'SDI del empleado (fijo/variable/mixto). Si vacío, se usa salario diario. IMSS cotiza sobre min(SDI, 25×UMA).',
+    ejemplo: 520
+  },
+  {
     key: 'sbc',
     label: 'Salario base de cotización',
     tipo: 'number',
@@ -315,7 +323,7 @@ const VARIABLES_CONTEXTO = [
     tipo: 'number',
     categoria: 'prestaciones',
     descripcion:
-      'Aportación = % salario ÷ 2. Fórmula editable: aplicaFondoAhorro * (sueldoDiario * diasLaborados * porcentajeFondoAhorro / 200)',
+      'Aportación = % salario ÷ 2. Fórmula: si(aplicaFondoAhorro == 1, fondoAhorroEmpresa, 0)',
     ejemplo: 200
   },
   {

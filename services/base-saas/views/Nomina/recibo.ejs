@@ -10,60 +10,205 @@
   const money = function(n) {
     return '$' + Number(n || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 });
   };
+  const perc = typeof percepciones !== 'undefined' ? percepciones : [];
+  const ded = typeof deducciones !== 'undefined' ? deducciones : [];
+  const otros = typeof otrosPagos !== 'undefined' ? otrosPagos : [];
+  const empNombre = empleado
+    ? ((empleado.firstName || '') + ' ' + (empleado.lastName || '')).trim()
+    : '—';
+  const empresaNombre = (empresa && (empresa.nombreComercial || empresa.razonSocial)) || '—';
+  const fmtDate = function(d) {
+    return d ? new Date(d).toLocaleDateString('es-MX') : '—';
+  };
+  const netoLetra = (function(n) {
+    try {
+      const entero = Math.floor(Math.abs(Number(n) || 0));
+      const cents = Math.round((Math.abs(Number(n) || 0) - entero) * 100);
+      return entero.toLocaleString('es-MX') + ' PESOS ' + String(cents).padStart(2, '0') + '/100 M.N.';
+    } catch (_) {
+      return '';
+    }
+  })(recibo.netoPagar);
 %>
 <div class="toolbar no-print">
   <a class="btn" href="/nomina/periodos/<%= periodo._id %>">← Volver al período</a>
   <button type="button" class="btn" id="btn-imprimir-recibo">Imprimir recibo</button>
 </div>
 
-<article class="recibo-print" id="recibo-print-root">
-<header class="recibo-print-header">
-  <h1>Recibo de nómina</h1>
-  <% if (empleado) { %>
-  <p>
-    <strong><%= empleado.firstName %> <%= empleado.lastName %></strong>
-    (No. <%= empleado.numEmpleado %>)
-  </p>
-  <% } %>
-  <% if (periodo) { %>
-  <p class="muted small">
-    Período <%= periodo.tipoPeriodo %> ·
-    <%= periodo.fechaInicio ? new Date(periodo.fechaInicio).toLocaleDateString('es-MX') : '—' %>
-    –
-    <%= periodo.fechaFin ? new Date(periodo.fechaFin).toLocaleDateString('es-MX') : '—' %>
-  </p>
-  <% } %>
-  <p class="muted small recibo-ids">
-    ID cálculo: <code><%= recibo.calculoId || '—' %></code>
-    <% if (recibo.calculoLoteId) { %>
-    · Lote: <code><%= recibo.calculoLoteId %></code>
-    <% } %>
-  </p>
-</header>
+<article class="pre-recibo" id="recibo-print-root">
+  <header class="pre-recibo-top">
+    <div class="pre-recibo-brand">
+      <p class="pre-recibo-eyebrow">Recibo de nómina</p>
+      <h1><%= empresaNombre %></h1>
+      <% if (empresa && empresa.rfc) { %>
+      <p class="muted small">RFC <strong><%= empresa.rfc %></strong></p>
+      <% } %>
+    </div>
+    <div class="pre-recibo-meta">
+      <div class="pre-recibo-chip">
+        <span>Período</span>
+        <strong>
+          <%= periodo ? periodo.tipoPeriodo : '—' %>
+          <% if (periodo && periodo.numeroPeriodo != null) { %> #<%= periodo.numeroPeriodo %><% } %>
+        </strong>
+      </div>
+      <div class="pre-recibo-chip">
+        <span>Del</span>
+        <strong><%= periodo ? fmtDate(periodo.fechaInicio) : '—' %></strong>
+      </div>
+      <div class="pre-recibo-chip">
+        <span>Al</span>
+        <strong><%= periodo ? fmtDate(periodo.fechaFin) : '—' %></strong>
+      </div>
+      <div class="pre-recibo-chip pre-recibo-chip-neto">
+        <span>Neto a pagar</span>
+        <strong><%= money(recibo.netoPagar) %></strong>
+      </div>
+    </div>
+  </header>
 
-<div class="summary-cards">
-  <div class="card"><strong><%= recibo.diasLaborados %></strong> días laborados</div>
-  <div class="card"><strong><%= money(recibo.totalPercepciones) %></strong> percepciones</div>
-  <div class="card"><strong><%= money(recibo.totalDeducciones) %></strong> deducciones</div>
-  <div class="card"><strong><%= money(recibo.netoPagar) %></strong> neto</div>
-</div>
-<p class="muted small">
-  Fecha de cálculo:
-  <strong><%= recibo.fechaCalculo ? new Date(recibo.fechaCalculo).toLocaleString('es-MX') : '—' %></strong>
-  · Fecha de cierre:
-  <strong><%= recibo.fechaCierre ? new Date(recibo.fechaCierre).toLocaleString('es-MX') : (periodo.fechaCierre || periodo.cerradoAt ? new Date(periodo.fechaCierre || periodo.cerradoAt).toLocaleString('es-MX') : '—') %></strong>
-  <% if (recibo.cerrado) { %> · <span class="badge badge-baja">Cerrado</span><% } %>
-</p>
+  <section class="pre-recibo-empleado">
+    <div>
+      <span class="label">Empleado</span>
+      <strong><%= empNombre %></strong>
+      <span class="muted small">No. <%= empleado ? empleado.numEmpleado : '—' %></span>
+    </div>
+    <div>
+      <span class="label">RFC</span>
+      <strong><%= empleado && empleado.rfc ? empleado.rfc : '—' %></strong>
+    </div>
+    <div>
+      <span class="label">Días laborados</span>
+      <strong><%= recibo.diasLaborados %></strong>
+    </div>
+    <div>
+      <span class="label">Faltas</span>
+      <strong><%= recibo.faltas || 0 %></strong>
+    </div>
+    <div>
+      <span class="label">ID cálculo</span>
+      <code class="pre-recibo-id"><%= recibo.calculoId || '—' %></code>
+    </div>
+  </section>
 
+  <section class="pre-recibo-split">
+    <div class="pre-recibo-col pre-recibo-col-perc">
+      <header class="pre-recibo-col-head">
+        <h2>Percepciones</h2>
+        <span><%= money(recibo.totalPercepciones) %></span>
+      </header>
+      <table>
+        <thead>
+          <tr>
+            <th>Clave</th>
+            <th>Concepto</th>
+            <th class="num">Importe</th>
+            <th class="num">ISR gravado</th>
+            <th class="num">ISR exento</th>
+            <th class="num">IMSS integra</th>
+            <th class="num">IMSS no int.</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% if (!perc.length) { %>
+          <tr><td colspan="7" class="muted">Sin percepciones</td></tr>
+          <% } %>
+          <% perc.forEach(function(c) { %>
+          <tr>
+            <td><code><%= c.conceptoCodigo %></code></td>
+            <td><%= c.nombre %></td>
+            <td class="num"><strong><%= money(c.importe) %></strong></td>
+            <td class="num"><%= money((c.isr && c.isr.gravado != null) ? c.isr.gravado : c.gravado) %></td>
+            <td class="num"><%= money((c.isr && c.isr.exento != null) ? c.isr.exento : c.exento) %></td>
+            <td class="num"><%= money(c.imss && c.imss.integraSBC != null ? c.imss.integraSBC : ((c.fiscal && c.fiscal.integraIMSS === false) ? 0 : c.importe)) %></td>
+            <td class="num"><%= money(c.imss && c.imss.noIntegra != null ? c.imss.noIntegra : ((c.fiscal && c.fiscal.integraIMSS === false) ? c.importe : 0)) %></td>
+          </tr>
+          <% }); %>
+        </tbody>
+      </table>
+      <% if (otros.length) { %>
+      <div class="pre-recibo-otros">
+        <h3>Otros pagos</h3>
+        <table>
+          <tbody>
+            <% otros.forEach(function(c) { %>
+            <tr>
+              <td><code><%= c.conceptoCodigo %></code></td>
+              <td><%= c.nombre %></td>
+              <td class="num"><%= money(c.importe) %></td>
+            </tr>
+            <% }); %>
+          </tbody>
+        </table>
+      </div>
+      <% } %>
+    </div>
+
+    <div class="pre-recibo-col pre-recibo-col-ded">
+      <header class="pre-recibo-col-head">
+        <h2>Deducciones</h2>
+        <span><%= money(recibo.totalDeducciones) %></span>
+      </header>
+      <table>
+        <thead>
+          <tr>
+            <th>Clave</th>
+            <th>Concepto</th>
+            <th class="num">Importe</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% if (!ded.length) { %>
+          <tr><td colspan="3" class="muted">Sin deducciones</td></tr>
+          <% } %>
+          <% ded.forEach(function(c) { %>
+          <tr>
+            <td><code><%= c.conceptoCodigo %></code></td>
+            <td><%= c.nombre %></td>
+            <td class="num"><strong><%= money(c.importe) %></strong></td>
+          </tr>
+          <% }); %>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="pre-recibo-totales">
+    <div class="pre-recibo-tot-item">
+      <span>Total percepciones</span>
+      <strong><%= money(recibo.totalPercepciones) %></strong>
+    </div>
+    <div class="pre-recibo-tot-item">
+      <span>Total deducciones</span>
+      <strong><%= money(recibo.totalDeducciones) %></strong>
+    </div>
+    <div class="pre-recibo-tot-item pre-recibo-tot-neto">
+      <span>Neto a pagar</span>
+      <strong><%= money(recibo.netoPagar) %></strong>
+    </div>
+  </section>
+
+  <p class="pre-recibo-letra muted small">
+    Neto con referencia: <strong><%= netoLetra %></strong>
+  </p>
+
+  <footer class="pre-recibo-foot muted small">
+    Calculado: <%= recibo.fechaCalculo ? new Date(recibo.fechaCalculo).toLocaleString('es-MX') : '—' %>
+    <% if (recibo.calculoLoteId) { %> · Lote <code><%= recibo.calculoLoteId %></code><% } %>
+    <% if (recibo.cerrado) { %> · <span class="badge badge-baja">Cerrado</span><% } %>
+  </footer>
+</article>
+
+<!-- Detalle técnico (solo pantalla) -->
+<div class="no-print">
 <% if (recibo.diasPago) {
      const dp = recibo.diasPago;
 %>
-<section class="panel no-print-detail">
+<section class="panel">
   <h2 class="panel-title">Días pagados (motor de reglas)</h2>
   <p class="muted small">
     Modo: <strong><%= dp.modoDescanso || '—' %></strong>
     · Regla: <code><%= dp.reglaAplicada || '—' %></code>.
-    El sueldo debe usar <code>diasPagados</code>, no solo laborados.
   </p>
   <div class="summary-cards">
     <div class="card"><strong><%= dp.diasCalendario %></strong> calendario</div>
@@ -81,127 +226,64 @@
 <% if (recibo.isrMotor) {
      const m = recibo.isrMotor;
 %>
-<section class="panel no-print-detail">
+<section class="panel">
   <h2 class="panel-title">Motor ISR</h2>
-  <p class="muted small">
-    Modo: <strong><%= m.modo || 'sat' %></strong>.
-    La deducción <code>ISR</code> del recibo (CFDI) es siempre el <strong>Motor SAT</strong>.
-    La proyección es informativa para estabilizar expectativas de retención.
-  </p>
   <div class="summary-cards">
     <div class="card"><strong><%= money(m.isrSat) %></strong> ISR SAT</div>
     <div class="card"><strong><%= money(m.isrProyectado) %></strong> ISR proyectado</div>
     <div class="card"><strong><%= money(m.isrAjustado) %></strong> ISR ajustado</div>
-    <div class="card <%= Number(m.diferenciaPeriodo) < 0 ? 'warn' : '' %>">
-      <strong><%= money(m.diferenciaPeriodo) %></strong> diferencia período
-    </div>
-    <div class="card"><strong><%= money(m.diferenciaAcumulada) %></strong> diferencia acumulada</div>
+    <div class="card"><strong><%= money(m.diferenciaPeriodo) %></strong> diferencia período</div>
   </div>
-  <% if (m.proyeccion) { %>
-  <ul class="vars-list">
-    <li>Ingreso acumulado (gravado): <code><%= money(m.proyeccion.ingresoAcumulado) %></code></li>
-    <li>Días acumulados: <code><%= m.proyeccion.diasAcumulados %></code> · Promedio diario: <code><%= money(m.proyeccion.promedioDiario) %></code></li>
-    <li>Proyección anual: <code><%= money(m.proyeccion.ingresoAnualEsperado) %></code> · ISR anual esperado: <code><%= money(m.proyeccion.isrAnualEsperado) %></code></li>
-    <li>Períodos pendientes (incl. actual): <code><%= m.proyeccion.periodosPendientes %></code></li>
-  </ul>
-  <% } %>
-  <% if (m.alertas && m.alertas.length) { %>
-  <div class="alert alert-warning">
-    <strong>Alertas del motor inteligente</strong>
-    <ul>
-      <% m.alertas.forEach(function(a) { %>
-      <li><%= a.mensaje %></li>
-      <% }); %>
-    </ul>
-  </div>
-  <% } %>
 </section>
 <% } %>
 
-<section class="panel no-print-detail">
+<section class="panel">
   <h2 class="panel-title">Origen de asistencia e insumos</h2>
   <p><strong><%= fuenteLabel %></strong></p>
-  <% if (fuente === 'prenomina') { %>
-  <p class="muted small">
-    Cadena: checadas / asistencia diaria → cálculo de pre-nómina (<code>PayrollDetail</code>) →
-    puente a nómina formal. El sueldo y conceptos usan estos valores en el contexto de fórmulas
-    (<code>PERIODO.diasTrabajados</code>, <code>EMPLEADO.salarioDiario</code>, <code>INCIDENCIAS.*</code>).
-  </p>
-  <% } else if (fuente === 'default') { %>
-  <p class="muted small">
-    No hubo período de pre-nómina vinculado (o no se usó). Entonces:
-    <code>diasTrabajados = diasPeriodo − faltas</code> (faltas=0) y
-    <code>salarioDiario</code> del expediente del empleado.
-  </p>
-  <% } else { %>
-  <p class="muted small">
-    El período de nómina apunta a una pre-nómina, pero este empleado no tiene detalle calculado ahí.
-    Se usaron defaults de calendario / expediente.
-  </p>
-  <% } %>
   <ul class="vars-list">
     <li>Días trabajados usados: <code><%= resumen.diasTrabajados != null ? resumen.diasTrabajados : recibo.diasLaborados %></code></li>
     <li>Faltas: <code><%= resumen.faltas != null ? resumen.faltas : recibo.faltas %></code></li>
     <li>Salario diario: <code><%= money(resumen.sueldoDiario || 0) %></code></li>
     <li>Minutos retardo: <code><%= resumen.minutosRetardo || 0 %></code></li>
     <li>HE dobles / triples: <code><%= resumen.horasExtraDobles || 0 %></code> / <code><%= resumen.horasExtraTriples || 0 %></code></li>
-    <% if (periodo.payrollPeriodId) { %>
-    <li>Pre-nómina:
-      <a href="/prenomina-periodos/<%= periodo.payrollPeriodId %>">ver período</a>
-    </li>
-    <% } %>
   </ul>
 </section>
 
-<h2>Conceptos aplicados</h2>
-<p class="muted small no-print">
-  El encabezado suma solo conceptos <strong>no informativos</strong>
-  (excluye acumuladores como <code>PERCEPCIONES_GRAVADAS</code> / <code>DEDUCCIONES_TOTALES</code>
-  e informativos como <code>IMSS_PATRONAL</code>).
-</p>
-<table class="recibo-conceptos-table">
-  <thead>
-    <tr>
-      <th>Código</th>
-      <th>Importe</th>
-      <th>Rol</th>
-      <th class="no-print-detail">Fórmula</th>
-      <th class="no-print-detail">Variables usadas</th>
-    </tr>
-  </thead>
-  <tbody>
-    <% if (!conceptos.length) { %>
-    <tr><td colspan="5" class="muted">Sin detalle.</td></tr>
-    <% } %>
-    <% conceptos.forEach(function(c) {
-         const meta = (typeof conceptosMeta !== 'undefined' && conceptosMeta[c.conceptoCodigo]) || {};
-         const esInfo = meta.naturaleza === 'informativo' || meta.informativo;
-         const rol = esInfo ? 'Informativo' : (c.tipo === 'deduccion' ? 'Deducción' : (c.tipo === 'otro_pago' ? 'Otro pago' : 'Percepción'));
-    %>
-    <tr class="<%= esInfo ? 'row-muted' : '' %>">
-      <td><code><%= c.conceptoCodigo %></code></td>
-      <td><%= money(c.importe || 0) %></td>
-      <td><span class="muted small"><%= rol %></span></td>
-      <td class="no-print-detail"><code class="formula-cell"><%= c.formulaUsada || '—' %></code></td>
-      <td class="no-print-detail">
-        <% if (c.variablesUsadas && Object.keys(c.variablesUsadas).length) { %>
-        <ul class="vars-list">
-          <% Object.keys(c.variablesUsadas).forEach(function(k) { %>
-          <li><code><%= k %></code> = <%= c.variablesUsadas[k] %></li>
-          <% }); %>
-        </ul>
-        <% } else { %>—<% } %>
-      </td>
-    </tr>
-    <% }); %>
-  </tbody>
-</table>
-
-<footer class="recibo-print-footer muted small">
-  Documento generado para auditoría · ID cálculo <code><%= recibo.calculoId || '—' %></code>
-  <% if (recibo.calculoLoteId) { %> · lote <code><%= recibo.calculoLoteId %></code><% } %>
-</footer>
-</article>
+<section class="panel">
+  <h2 class="panel-title">Trazabilidad de fórmulas</h2>
+  <table class="recibo-conceptos-table">
+    <thead>
+      <tr><th>Código</th><th>Importe</th><th>Rol</th><th>Fórmula</th><th>Variables</th></tr>
+    </thead>
+    <tbody>
+      <% if (!conceptos.length) { %>
+      <tr><td colspan="5" class="muted">Sin detalle.</td></tr>
+      <% } %>
+      <% conceptos.forEach(function(c) {
+           const meta = (typeof conceptosMeta !== 'undefined' && conceptosMeta[c.conceptoCodigo]) || {};
+           const esInfo = meta.naturaleza === 'informativo' || meta.informativo;
+           const rol = esInfo ? 'Informativo' : (c.tipo === 'deduccion' ? 'Deducción' : (c.tipo === 'otro_pago' ? 'Otro pago' : 'Percepción'));
+      %>
+      <tr class="<%= esInfo ? 'row-muted' : '' %>">
+        <td><code><%= c.conceptoCodigo %></code></td>
+        <td><%= money(c.importe || 0) %></td>
+        <td><span class="muted small"><%= rol %></span></td>
+        <td><code class="formula-cell"><%= c.formulaUsada || '—' %></code></td>
+        <td>
+          <% if (c.variablesUsadas && Object.keys(c.variablesUsadas).length) { %>
+          <ul class="vars-list">
+            <% Object.keys(c.variablesUsadas).forEach(function(k) { %>
+            <li><code><%= k %></code> = <%= c.variablesUsadas[k] %></li>
+            <% }); %>
+          </ul>
+          <% } else { %>—<% } %>
+        </td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table>
+</section>
+</div>
 
 <script>
 (function () {

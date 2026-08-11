@@ -10,6 +10,13 @@ const { requireEmpresaForTenant } = require('../libs/tenantScope');
 const { trimString } = require('../libs/formHelpers');
 
 async function listEnums(req, res) {
+  await ensureSystemEnums();
+  try {
+    const { ensureFormulaFunctionsSeeded } = require('../services/nomina/formulaFunctionsService');
+    await ensureFormulaFunctionsSeeded();
+  } catch (_) {
+    /* catálogo funciones opcional */
+  }
   const enums = await listSystemEnums();
   res.render('ConfigSistema/enums', { enums, session: req.session });
 }
@@ -49,6 +56,12 @@ async function saveEnum(req, res) {
 async function bootstrapArquitectura(req, res) {
   try {
     await ensureSystemEnums();
+    try {
+      const { ensureFormulaFunctionsSeeded } = require('../services/nomina/formulaFunctionsService');
+      await ensureFormulaFunctionsSeeded();
+    } catch (_) {
+      /* ignore */
+    }
     await ensureConceptCatalog();
     const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
     if (error || !empresa) {

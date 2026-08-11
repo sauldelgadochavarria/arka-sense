@@ -24,4 +24,53 @@ function calcularAniosServicio(fechaIngreso, referencia = new Date()) {
   return Math.max(0, years);
 }
 
-module.exports = { diasVacacionesPorAntiguedad, calcularAniosServicio };
+/**
+ * ¿El aniversario laboral (mes/día de ingreso) cae dentro del período?
+ * Compara YYYY-MM-DD en zona México.
+ */
+function aniversarioCaeEnPeriodo(fechaIngreso, fechaInicio, fechaFin, timeZone) {
+  if (!fechaIngreso || !fechaInicio || !fechaFin) return false;
+  const { ymdInTimeZone, DEFAULT_TZ } = require('../libs/timeHelpers');
+  const tz = timeZone || DEFAULT_TZ;
+  const ingresoYmd = ymdInTimeZone(fechaIngreso, tz);
+  const startYmd = ymdInTimeZone(fechaInicio, tz);
+  const endYmd = ymdInTimeZone(fechaFin, tz);
+  if (!ingresoYmd || !startYmd || !endYmd) return false;
+
+  const mmdd = ingresoYmd.slice(5); // MM-DD
+  const yearStart = Number(startYmd.slice(0, 4));
+  const yearEnd = Number(endYmd.slice(0, 4));
+  for (let y = yearStart; y <= yearEnd; y += 1) {
+    const anniYmd = `${y}-${mmdd}`;
+    if (anniYmd >= startYmd && anniYmd <= endYmd) return true;
+  }
+  return false;
+}
+
+/**
+ * Fecha del aniversario que cae en el período (mediodía UTC del YMD), o null.
+ */
+function fechaAniversarioEnPeriodo(fechaIngreso, fechaInicio, fechaFin, timeZone) {
+  if (!aniversarioCaeEnPeriodo(fechaIngreso, fechaInicio, fechaFin, timeZone)) return null;
+  const { ymdInTimeZone, DEFAULT_TZ } = require('../libs/timeHelpers');
+  const tz = timeZone || DEFAULT_TZ;
+  const mmdd = ymdInTimeZone(fechaIngreso, tz).slice(5);
+  const yearStart = Number(ymdInTimeZone(fechaInicio, tz).slice(0, 4));
+  const yearEnd = Number(ymdInTimeZone(fechaFin, tz).slice(0, 4));
+  const startYmd = ymdInTimeZone(fechaInicio, tz);
+  const endYmd = ymdInTimeZone(fechaFin, tz);
+  for (let y = yearStart; y <= yearEnd; y += 1) {
+    const anniYmd = `${y}-${mmdd}`;
+    if (anniYmd >= startYmd && anniYmd <= endYmd) {
+      return new Date(`${anniYmd}T12:00:00.000Z`);
+    }
+  }
+  return null;
+}
+
+module.exports = {
+  diasVacacionesPorAntiguedad,
+  calcularAniosServicio,
+  aniversarioCaeEnPeriodo,
+  fechaAniversarioEnPeriodo
+};

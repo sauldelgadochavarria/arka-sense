@@ -1,0 +1,94 @@
+<%- include('../../Partials/layout-top', { title: 'Funciones de fórmula', session }) %>
+<h1>Funciones de fórmula</h1>
+<div class="toolbar">
+  <a class="btn" href="/nomina/catalogos">← Catálogos</a>
+  <a class="btn" href="/nomina/conceptos">Conceptos</a>
+</div>
+
+<p class="muted">
+  Catálogo de funciones <strong>mathjs</strong> para fórmulas de conceptos: crear, validar, probar y publicar.
+  Solo las <em>publicadas</em> entran al cálculo. Las nativas vienen del motor.
+</p>
+
+<div class="alert alert-info" style="margin-bottom:1rem">
+  Scripts <strong>JavaScript</strong> (sandbox avanzado) se administran en la consola de plataforma
+  (<code>:4004/admin/formula-scripts</code>), no desde el tenant.
+  Uso en concepto:
+  <code>si(aplicaFondoAhorro == 1, fondoMitad(sueldoDiario, diasLaborados, porcentajeFondoAhorro), 0)</code>
+</div>
+
+<section class="panel" style="margin-bottom:1.5rem">
+  <h2 style="margin-top:0;font-size:1rem">Nueva función (expresión mathjs)</h2>
+  <form method="post" action="/nomina/catalogos/formula-functions" class="form-grid">
+    <input type="hidden" name="tipo" value="expresion" />
+    <label>Nombre (camelCase)
+      <input name="name" required pattern="[a-z][a-zA-Z0-9_]*" placeholder="fondoMitad" autocomplete="off" />
+    </label>
+    <label>Argumentos (coma)
+      <input name="args" placeholder="sueldo, dias, porc" autocomplete="off" />
+    </label>
+    <label style="grid-column:1/-1">Cuerpo mathjs
+      <textarea name="cuerpo" required rows="4" class="input-formula" placeholder="sueldo * dias * porc / 200" style="font-family:ui-monospace,monospace;width:100%"></textarea>
+    </label>
+    <label>Firma (opcional)
+      <input name="signature" placeholder="fondoMitad(sueldo, dias, porc)" />
+    </label>
+    <label>Descripción
+      <input name="descripcion" placeholder="Mitad del % del salario del período" />
+    </label>
+    <label style="grid-column:1/-1">
+      <input type="checkbox" name="publicar" value="1" /> Crear ya publicada (si no, queda en borrador)
+    </label>
+    <div class="form-actions" style="grid-column:1/-1">
+      <button type="submit" class="btn btn-primary">Crear función</button>
+    </div>
+  </form>
+</section>
+
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>Nombre</th>
+      <th>Tipo</th>
+      <th>Estado</th>
+      <th>Firma / cuerpo</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <% (funciones || []).forEach(function(f) { %>
+    <tr>
+      <td>
+        <code><%= f.name %></code>
+        <% if (f.esSistema) { %><span class="badge">sistema</span><% } %>
+        <span class="muted small">v<%= f.version || 1 %></span>
+      </td>
+      <td><%= f.tipo %></td>
+      <td>
+        <%= f.estado || (f.esSistema ? 'publicado' : '—') %>
+        · <%= f.activo ? 'activa' : 'inactiva' %>
+      </td>
+      <td>
+        <div class="muted small"><%= f.signature || '' %></div>
+        <% if (f.tipo === 'expresion' || f.tipo === 'javascript') { %>
+        <code class="small"><%= (f.cuerpo || '').slice(0, 80) %><%= (f.cuerpo || '').length > 80 ? '…' : '' %></code>
+        <% } %>
+      </td>
+      <td style="white-space:nowrap">
+        <% if (f.tipo === 'javascript' && !f.esSistema) { %>
+        <span class="muted small">Solo en admin plataforma</span>
+        <% } else { %>
+        <a class="btn btn-sm" href="/nomina/catalogos/formula-functions/<%= f._id %>">Editar / script</a>
+        <% } %>
+        <% if (!f.esSistema && f.tipo !== 'javascript') { %>
+        <form method="post" action="/nomina/catalogos/formula-functions/<%= f._id %>/toggle" style="display:inline">
+          <button type="submit" class="btn btn-sm"><%= f.activo ? 'Desactivar' : 'Activar' %></button>
+        </form>
+        <% } %>
+      </td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+
+<%- include('../../Partials/layout-bottom') %>

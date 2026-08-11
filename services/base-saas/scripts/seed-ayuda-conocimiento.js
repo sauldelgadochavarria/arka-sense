@@ -57,8 +57,8 @@ Sin el check, el motor deja \`fondoAhorroTrabajador\` / \`fondoAhorroEmpresa\` e
 ## 2. Parámetros globales
 En **Nómina → Catálogos → Parámetros**:
 - \`FONDO_AHORRO_PORC\` — % máximo del salario
-- \`FONDO_AHORRO_TOPE_UMA\` — factor UMA (1.3)
-- \`FONDO_AHORRO_DIAS_ANIO\` — días para UMA anual (365)
+- \`FONDO_AHORRO_TOPE_UMA\` — factor UMA mensual (1.3 → tope = 1.3 × UMA × 30.4)
+- Prorrateo al período: quincena = mitad (ej. \$4,636 / 2 = \$2,318)
 - \`UMA\` — valor vigente
 
 Tope exento = menor entre (% del salario) y (factor × UMA prorrateada al período).

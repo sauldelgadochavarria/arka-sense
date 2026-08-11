@@ -30,6 +30,7 @@ const conceptCatalogSchema = new mongoose.Schema(
     esAcumulador: { type: Boolean, default: false },
     activo: { type: Boolean, default: true },
     ordenDefault: { type: Number, default: 100 },
+    aplicaTipoNomina: { type: [String], default: [] },
     metadata: { type: mongoose.Schema.Types.Mixed, default: {} }
   },
   { timestamps: true, collection: COLLECTION_CONCEPT_CATALOG }

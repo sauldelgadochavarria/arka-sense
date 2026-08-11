@@ -1,5 +1,10 @@
 <%- include('../Partials/layout-top', { title: 'Período de nómina', session }) %>
-<h1>Período <%= periodo.tipoPeriodo %> · <%= periodo.tipoNomina %></h1>
+<h1>
+  Período <%= periodo.tipoPeriodo %>
+  <% if (periodo.numeroPeriodo != null) { %>#<%= periodo.numeroPeriodo %><% } %>
+  · <%= periodo.tipoNomina %>
+  <% if (periodo.anio) { %><span class="muted small">(<%= periodo.anio %>)</span><% } %>
+</h1>
 <p>
   <strong><%= new Date(periodo.fechaInicio).toLocaleDateString('es-MX') %></strong>
   al
@@ -31,6 +36,56 @@
   <% } %>
 </p>
 
+<%
+  const prest = periodo.prestaciones || {};
+  const estatusPrest = String(periodo.estatus || '').toLowerCase();
+  const puedeEditarPrest = estatusPrest === 'abierto' || estatusPrest === 'calculado';
+  const fmtMoney = function (n) {
+    return Number(n || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 });
+  };
+%>
+<section class="panel" style="margin:1rem 0">
+  <h2 class="panel-title">Prestaciones del período</h2>
+  <% if (puedeEditarPrest) { %>
+  <p class="muted small">Puedes marcar si este período paga despensa. Tras guardar, vuelve a <strong>Calcular nómina</strong> para aplicar el cambio.</p>
+  <form method="post" action="/nomina/periodos/<%= periodo._id %>/prestaciones" class="form-grid">
+    <div class="checkbox-group" style="grid-column:1/-1">
+      <label>
+        <input type="hidden" name="pagaDespensa" value="0" />
+        <input type="checkbox" name="pagaDespensa" value="1" <%= prest.pagaDespensa ? 'checked' : '' %> />
+        Paga despensa / vales en este período
+      </label>
+      <label>
+        <input type="hidden" name="despensaPagoMensual" value="0" />
+        <input type="checkbox" name="despensaPagoMensual" value="1" <%= prest.despensaPagoMensual !== false ? 'checked' : '' %> />
+        Pago mensual completo (tope IMSS = 40% UMA mensual)
+      </label>
+    </div>
+    <label>Override monto despensa ($)
+      <input type="number" name="despensaMontoOverride" min="0" step="0.01"
+        value="<%= prest.despensaMontoOverride > 0 ? prest.despensaMontoOverride : '' %>"
+        placeholder="Vacío = política del empleado" />
+    </label>
+    <button type="submit">Guardar prestaciones</button>
+  </form>
+  <% } else { %>
+  <p class="banner-readonly" style="margin:0 0 0.75rem">Solo consulta — el período está <strong><%= estatusLabels[periodo.estatus] || periodo.estatus %></strong>; no se puede editar.</p>
+  <dl class="flag-labels">
+    <div class="flag-readonly <%= prest.pagaDespensa ? 'is-on' : '' %>">
+      <input type="checkbox" <%= prest.pagaDespensa ? 'checked' : '' %> disabled />
+      Paga despensa: <strong><%= prest.pagaDespensa ? 'sí' : 'no' %></strong>
+    </div>
+    <div class="flag-readonly <%= prest.despensaPagoMensual !== false ? 'is-on' : '' %>">
+      <input type="checkbox" <%= prest.despensaPagoMensual !== false ? 'checked' : '' %> disabled />
+      Tope IMSS <%= prest.despensaPagoMensual !== false ? 'mensual' : 'prorrateado' %>
+    </div>
+  </dl>
+  <% if (prest.despensaMontoOverride > 0) { %>
+  <p class="muted" style="margin:0.5rem 0 0">Override monto: <strong>$<%= fmtMoney(prest.despensaMontoOverride) %></strong></p>
+  <% } %>
+  <% } %>
+</section>
+
 <% if (prenominaPeriodo) { %>
 <p class="muted">
   Pre-nómina vinculada:
@@ -50,6 +105,10 @@
   El recálculo usa calendario/expediente (todos los activos, <%= periodo.diasPeriodo %> días).
   La asistencia de pre-nómina <em>no</em> aplica hasta vincular.
   <% if (typeof prenominaCandidatos !== 'undefined' && prenominaCandidatos.length) { %>
+  <p class="muted small" style="grid-column:1/-1">
+    Solo puedes vincular una pre-nómina del <strong>mismo tipo</strong> (<%= periodo.tipoPeriodo %>).
+    Vincular <em>no</em> cambia el tipo del período de nómina.
+  </p>
   <form method="post" action="/nomina/periodos/<%= periodo._id %>/vincular-prenomina" class="form-grid" style="margin-top:0.75rem">
     <label>Vincular pre-nómina (alinea fechas a ese período)
       <select name="payrollPeriodId" required>

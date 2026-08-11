@@ -1,0 +1,228 @@
+<%- include('../../Partials/layout-top', { title: 'Script ' + fn.name, session }) %>
+<style>
+  .fn-layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 1.25rem; align-items: start; }
+  @media (max-width: 960px) { .fn-layout { grid-template-columns: 1fr; } }
+  .fn-helper { border: 1px solid #e2e8f0; border-radius: 8px; background: #f8fafc; position: sticky; top: 1rem; max-height: calc(100vh - 6rem); display: flex; flex-direction: column; }
+  .fn-helper-head { padding: 0.75rem 1rem; border-bottom: 1px solid #e2e8f0; }
+  .fn-helper-head h2 { margin: 0; font-size: 1rem; }
+  .fn-helper-body { overflow: auto; padding: 0.5rem 0.75rem 1rem; flex: 1; }
+  .fn-helper-section { margin-top: 0.75rem; }
+  .fn-helper-section h3 { margin: 0 0 0.35rem; font-size: 0.75rem; text-transform: uppercase; color: #475569; }
+  .fn-helper-item { border: 1px solid #e2e8f0; border-radius: 6px; padding: 0.4rem 0.55rem; margin: 0.25rem 0; background: #fff; cursor: pointer; }
+  .fn-helper-item:hover { border-color: #93c5fd; background: #eff6ff; }
+  .fn-helper-item .desc { display: block; color: #64748b; font-size: 0.75rem; margin-top: 0.15rem; }
+  .fn-helper-actions { margin-top: 0.25rem; display: flex; gap: 0.35rem; }
+  .fn-helper-actions button { font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; border: 1px solid #cbd5e1; background: #fff; cursor: pointer; }
+  .fn-note { font-size: 0.8rem; color: #475569; background: #eff6ff; border: 1px solid #bfdbfe; padding: 0.5rem 0.65rem; border-radius: 6px; }
+</style>
+
+<h1>
+  <code><%= fn.name %></code>
+  <% if (fn.esSistema) { %><span class="badge">sistema</span><% } %>
+  <span class="badge"><%= fn.estado || '—' %></span>
+  <span class="muted small">v<%= fn.version || 1 %></span>
+</h1>
+
+<div class="toolbar">
+  <a class="btn" href="/nomina/catalogos/formula-functions">← Funciones</a>
+  <a class="btn" href="/nomina/conceptos">Conceptos</a>
+</div>
+
+<% if (fn.tipo === 'nativa' || fn.esSistema) { %>
+<div class="alert alert-info">
+  Función <strong>nativa</strong> del motor. Se documenta aquí; la implementación está en
+  <code>config/formulaSystemFunctions.js</code> y no se edita desde la UI.
+</div>
+<p><%= fn.descripcion || '' %></p>
+<p class="muted">Firma: <code><%= fn.signature %></code></p>
+<p class="muted">Ejemplo: <code><%= fn.ejemplo || '—' %></code></p>
+<% } else if (fn.tipo === 'javascript') { %>
+<div class="alert alert-info">
+  Esta función es un <strong>script JavaScript</strong>. Por seguridad solo se edita en la consola de plataforma:
+  <code>http://localhost:4004/admin/formula-scripts</code>
+</div>
+<p class="muted">Estado: <%= fn.estado %> · Activa: <%= fn.activo ? 'sí' : 'no' %></p>
+<pre style="background:#f6f7f9;padding:1rem;border-radius:6px;overflow:auto"><%= fn.cuerpo || '' %></pre>
+<% } else { %>
+
+<div class="fn-layout">
+  <div>
+    <p class="muted">
+      Flujo: edita la expresión mathjs → <strong>Validar</strong> → <strong>Probar</strong> → <strong>Publicar</strong>.
+    </p>
+
+    <form method="post" action="/nomina/catalogos/formula-functions/<%= fn._id %>" id="fn-form" class="form-grid">
+      <input type="hidden" name="tipo" value="expresion" />
+      <label>Argumentos (coma)
+        <input name="args" id="fn-args" value="<%= (fn.args || []).join(', ') %>" placeholder="sueldo, dias, porc" />
+      </label>
+      <label>Firma
+        <input name="signature" value="<%= fn.signature || '' %>" />
+      </label>
+      <label>Descripción
+        <input name="descripcion" value="<%= fn.descripcion || '' %>" />
+      </label>
+      <label style="grid-column:1/-1">Ejemplo de uso en concepto
+        <input name="ejemplo" value="<%= fn.ejemplo || '' %>" />
+      </label>
+
+      <label style="grid-column:1/-1">
+        Cuerpo (mathjs)
+        <textarea name="cuerpo" id="fn-cuerpo" rows="12" class="input-formula" style="font-family:ui-monospace,monospace;width:100%"><%= fn.cuerpo || '' %></textarea>
+      </label>
+
+      <div class="form-actions" style="grid-column:1/-1;display:flex;gap:.5rem;flex-wrap:wrap">
+        <button type="submit" name="accion" value="guardar" class="btn">Guardar borrador</button>
+        <button type="button" class="btn" id="btn-validar">Validar</button>
+        <button type="button" class="btn" id="btn-probar">Probar</button>
+        <button type="submit" name="accion" value="publicar" class="btn btn-primary">Publicar</button>
+      </div>
+    </form>
+
+    <section class="panel" style="margin-top:1.5rem">
+      <h2 style="margin-top:0;font-size:1rem">Probar con valores</h2>
+      <div id="fn-test-args" class="form-grid"></div>
+      <pre id="fn-test-out" class="muted" style="margin-top:1rem;min-height:3rem;padding:.75rem;background:#f6f7f9;border-radius:6px">—</pre>
+    </section>
+  </div>
+
+  <aside class="fn-helper">
+    <div class="fn-helper-head">
+      <h2>Ayuda — catálogo</h2>
+      <input id="fn-helper-filter" type="search" placeholder="Filtrar…" style="width:100%;margin-top:.5rem" autocomplete="off" />
+    </div>
+    <div class="fn-helper-body">
+      <p class="fn-note"><%= (helper && helper.notaJs) || 'Clic para insertar en el cuerpo.' %></p>
+      <div id="fn-helper-sections"></div>
+    </div>
+  </aside>
+</div>
+
+<script>
+(function () {
+  const catalog = <%- JSON.stringify(helper || { argsComunes: [], contextVars: [], parametros: [], funciones: [] }) %>;
+  const argsEl = document.getElementById('fn-args');
+  const cuerpoEl = document.getElementById('fn-cuerpo');
+  const testArgsEl = document.getElementById('fn-test-args');
+  const outEl = document.getElementById('fn-test-out');
+  const sectionsEl = document.getElementById('fn-helper-sections');
+  const filterEl = document.getElementById('fn-helper-filter');
+  const id = <%- JSON.stringify(String(fn._id)) %>;
+
+  function parseArgs() {
+    return String(argsEl.value || '').split(/[,;\s]+/).map((s) => s.trim()).filter(Boolean);
+  }
+  function renderTestInputs() {
+    testArgsEl.innerHTML = parseArgs().map((a, i) => (
+      '<label>' + a +
+      '<input type="number" step="any" class="fn-arg-val" value="' + (i === 0 ? '2587.93' : i === 1 ? '14' : '13') + '" />' +
+      '</label>'
+    )).join('');
+  }
+  argsEl.addEventListener('blur', renderTestInputs);
+  argsEl.addEventListener('input', renderTestInputs);
+  renderTestInputs();
+
+  function insertAtCursor(textarea, text) {
+    const start = textarea.selectionStart || 0;
+    const end = textarea.selectionEnd || 0;
+    const val = textarea.value || '';
+    textarea.value = val.slice(0, start) + text + val.slice(end);
+    const pos = start + text.length;
+    textarea.focus();
+    textarea.setSelectionRange(pos, pos);
+  }
+  function addArg(name) {
+    const short = String(name || '').split('.').pop();
+    const cur = parseArgs();
+    if (cur.includes(short) || cur.includes(name)) return;
+    cur.push(short);
+    argsEl.value = cur.join(', ');
+    renderTestInputs();
+  }
+
+  function renderHelper(filter) {
+    const q = String(filter || '').trim().toLowerCase();
+    const groups = [
+      { title: 'Args frecuentes', items: catalog.argsComunes || [], mode: 'ident' },
+      { title: 'Variables de contexto', items: catalog.contextVars || [], mode: 'ident' },
+      { title: 'Parámetros fiscales', items: catalog.parametros || [], mode: 'ident' },
+      { title: 'Funciones', items: catalog.funciones || [], mode: 'call' }
+    ];
+    sectionsEl.innerHTML = groups.map((g) => {
+      const items = (g.items || []).filter((it) => {
+        if (!q) return true;
+        return [it.key, it.label, it.descripcion].join(' ').toLowerCase().includes(q);
+      });
+      if (!items.length) return '';
+      return '<div class="fn-helper-section"><h3>' + g.title + ' (' + items.length + ')</h3>' +
+        items.map((it) => {
+          const insertText = g.mode === 'call'
+            ? (it.key + '(' + ((it.args || []).join(', ') || '') + ')')
+            : it.key;
+          return '<div class="fn-helper-item" data-insert="' + insertText.replace(/"/g, '&quot;') +
+            '" data-arg="' + String(it.key).replace(/"/g, '&quot;') + '">' +
+            '<code>' + (it.label || it.key) + '</code>' +
+            (it.descripcion ? '<span class="desc">' + it.descripcion + '</span>' : '') +
+            '<span class="fn-helper-actions">' +
+            '<button type="button" class="btn-ins">Insertar</button>' +
+            '<button type="button" class="btn-arg">+ arg</button>' +
+            '</span></div>';
+        }).join('') + '</div>';
+    }).join('') || '<p class="muted">Sin coincidencias</p>';
+  }
+
+  sectionsEl.addEventListener('click', (ev) => {
+    const item = ev.target.closest('.fn-helper-item');
+    if (!item) return;
+    if (ev.target.closest('.btn-arg')) {
+      addArg(item.getAttribute('data-arg'));
+      return;
+    }
+    insertAtCursor(cuerpoEl, item.getAttribute('data-insert') || '');
+  });
+  filterEl.addEventListener('input', () => renderHelper(filterEl.value));
+  renderHelper('');
+
+  async function postJson(url, body) {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    return data;
+  }
+  function payload() {
+    return {
+      id,
+      tipo: 'expresion',
+      cuerpo: cuerpoEl.value,
+      args: argsEl.value,
+      valores: Array.from(document.querySelectorAll('.fn-arg-val')).map((el) => el.value)
+    };
+  }
+  document.getElementById('btn-validar').addEventListener('click', async () => {
+    outEl.textContent = 'Validando…';
+    try {
+      const data = await postJson('/nomina/catalogos/formula-functions/validate', payload());
+      outEl.textContent = '✓ Válido (' + data.tipo + ') args: ' + (data.args || []).join(', ');
+    } catch (e) {
+      outEl.textContent = '✗ ' + e.message;
+    }
+  });
+  document.getElementById('btn-probar').addEventListener('click', async () => {
+    outEl.textContent = 'Probando…';
+    try {
+      const data = await postJson('/nomina/catalogos/formula-functions/test', payload());
+      outEl.textContent = '✓ Resultado: ' + data.resultado;
+    } catch (e) {
+      outEl.textContent = '✗ ' + e.message;
+    }
+  });
+})();
+</script>
+<% } %>
+
+<%- include('../../Partials/layout-bottom') %>

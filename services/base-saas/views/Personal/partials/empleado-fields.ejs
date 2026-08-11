@@ -1,18 +1,138 @@
+<%
+  const dom = (empleado && empleado.domicilio) ? empleado.domicilio : {};
+  const _entidades = (typeof entidadesFederativas !== 'undefined' && entidadesFederativas) ? entidadesFederativas : [];
+  const _estadosCiviles = (typeof estadosCiviles !== 'undefined' && estadosCiviles) ? estadosCiviles : [];
+  const _tiposSalario = (typeof tiposBaseCotizacion !== 'undefined' && tiposBaseCotizacion) ? tiposBaseCotizacion : [
+    { value: 'fijo', label: 'Fija' },
+    { value: 'variable', label: 'Variable' },
+    { value: 'mixto', label: 'Mixta' }
+  ];
+  const apPat = empleado ? (empleado.apellidoPaterno || '') : '';
+  const apMat = empleado ? (empleado.apellidoMaterno || '') : '';
+  const lastFallback = empleado && !apPat && !apMat ? (empleado.lastName || '') : '';
+%>
 <fieldset class="form-section">
-  <legend>Identificación</legend>
-  <input name="numEmpleado" placeholder="No. empleado" value="<%= empleado ? empleado.numEmpleado : '' %>" required />
-  <input name="firstName" placeholder="Nombre(s)" value="<%= empleado ? empleado.firstName : '' %>" required />
-  <input name="lastName" placeholder="Apellido(s)" value="<%= empleado ? empleado.lastName : '' %>" required />
-  <input name="curp" placeholder="CURP" maxlength="18" value="<%= empleado ? empleado.curp : '' %>" />
-  <input name="rfc" placeholder="RFC" maxlength="13" value="<%= empleado ? empleado.rfc : '' %>" />
-  <input name="nss" placeholder="NSS" value="<%= empleado ? empleado.nss : '' %>" />
-  <input name="fechaNacimiento" type="date" value="<%= empleado && empleado.fechaNacimiento ? toDateInputValue(empleado.fechaNacimiento) : '' %>" />
+  <legend>Datos generales / identificación</legend>
+  <input name="numEmpleado" placeholder="Código / No. empleado *" value="<%= empleado ? empleado.numEmpleado : '' %>" required />
+  <input name="firstName" placeholder="Nombre(s) *" value="<%= empleado ? empleado.firstName : '' %>" required />
+  <input name="apellidoPaterno" placeholder="Apellido paterno *" value="<%= apPat || lastFallback %>" required />
+  <input name="apellidoMaterno" placeholder="Apellido materno" value="<%= apMat %>" />
+  <input type="hidden" name="lastName" value="<%= empleado ? empleado.lastName : '' %>" />
+  <input name="fechaIngreso" type="date" title="Fecha de alta" value="<%= empleado && empleado.fechaIngreso ? toDateInputValue(empleado.fechaIngreso) : '' %>" />
+  <select name="tipoContrato" required>
+    <option value="">— Tipo de contrato * —</option>
+    <% (tiposContrato || []).forEach(function(t) { %>
+    <option value="<%= t.value %>" <%= empleado && empleado.tipoContrato === t.value ? 'selected' : (!empleado && t.value === 'indefinido' ? 'selected' : '') %>><%= t.label %></option>
+    <% }); %>
+  </select>
+  <select name="tipoEmpleado">
+    <option value="">— Tipo de empleado —</option>
+    <% (tiposEmpleado || []).forEach(function(t) { %>
+    <option value="<%= t.value %>" <%= empleado && empleado.tipoEmpleado === t.value ? 'selected' : '' %>><%= t.label %></option>
+    <% }); %>
+  </select>
+  <p class="hint" style="grid-column:1/-1">
+    <strong>Fecha de alta</strong> = inicio de la relación laboral.
+    <strong>Tipo de contrato</strong> = modalidad jurídica.
+    <strong>Tipo de empleado</strong> = confianza / sindicalizado
+    (<a href="/config-sistema/enums/tipo_contrato" target="_blank">enums</a>).
+  </p>
+</fieldset>
+
+<fieldset class="form-section">
+  <legend>Información salarial (SDI / SBC)</legend>
+  <input name="salarioDiario" type="number" min="0" step="0.01" placeholder="Salario diario (parte fija)" value="<%= empleado && empleado.salarioDiario != null ? empleado.salarioDiario : '' %>" />
+  <select name="tipoSalario" id="tipoSalario">
+    <% _tiposSalario.forEach(function(t) { %>
+    <option value="<%= t.value %>" <%= (empleado && (empleado.tipoSalario || 'fijo') === t.value) ? 'selected' : (!empleado && t.value === 'fijo' ? 'selected' : '') %>><%= t.label %></option>
+    <% }); %>
+  </select>
+  <input name="sdi" id="campoSdi" type="number" min="0" step="0.01" placeholder="SDI — Salario Diario Integrado" value="<%= empleado && empleado.sdi > 0 ? empleado.sdi : '' %>" />
+  <input type="text" id="sbcTopadoPreview" readonly placeholder="SBC topado (25×UMA) — se calcula al guardar / en nómina" value="" />
+  <% if (empleado && empleado._id) { %>
+  <div style="grid-column:1/-1;display:flex;gap:0.75rem;flex-wrap:wrap;align-items:center">
+    <button type="button" id="btnCalcularSdi" class="btn btn-secondary">Calcular SDI</button>
+    <span id="sdiCalcMsg" class="muted small"></span>
+    <a href="/personal/prestaciones" target="_blank" class="muted small">Tablas de prestaciones</a>
+  </div>
+  <pre id="sdiCalcDetalle" class="muted small" style="grid-column:1/-1;white-space:pre-wrap;display:none"></pre>
+  <% } %>
+  <p class="hint" style="grid-column:1/-1">
+    <strong>Base de cotización</strong>: fija (SD × factor + extras diarios), variable (promedio 2 meses) o mixta.
+    Factor LFT desde tabla (aguinaldo/vacaciones/prima). SGMM, vales, fondo, etc. se configuran como
+    <em>otras prestaciones</em>.
+    Resolución: <strong>tabla del empleado</strong> (si se asigna) → puesto → depto → tipo → global.
+    <strong>SBC</strong> = <code>min(SDI, 25 × UMA)</code>.
+  </p>
+  <label style="grid-column:1/-1">Tabla de prestaciones
+    <select name="tablaPrestacionesId">
+      <option value="">— Automática (puesto → depto → tipo → global) —</option>
+      <% (typeof tablasPrestaciones !== 'undefined' && tablasPrestaciones ? tablasPrestaciones : []).forEach(function(t) { %>
+      <option value="<%= t._id %>" <%= empleado && empleado.tablaPrestacionesId && String(empleado.tablaPrestacionesId) === String(t._id) ? 'selected' : '' %>>
+        <%= t.nombre %> (<%= t.ambito %><% if (t.primaVacacionalPct != null) { %> · prima <%= t.primaVacacionalPct %>%<% } %>)
+      </option>
+      <% }); %>
+    </select>
+  </label>
+  <% if (empleado) { %>
+  <select name="estatus">
+    <% estatusOptions.forEach(function(o) { %>
+    <option value="<%= o.value %>" <%= empleado.estatus === o.value ? 'selected' : '' %>><%= o.label %></option>
+    <% }); %>
+  </select>
+  <input name="fechaBaja" type="date" value="<%= empleado.fechaBaja ? toDateInputValue(empleado.fechaBaja) : '' %>" />
+  <select name="motivoBaja">
+    <option value="">— Motivo baja —</option>
+    <% motivosBaja.forEach(function(m) { %>
+    <option value="<%= m %>" <%= empleado.motivoBaja === m ? 'selected' : '' %>><%= m %></option>
+    <% }); %>
+  </select>
+  <% } %>
+</fieldset>
+
+<fieldset class="form-section">
+  <legend>Datos para el IMSS</legend>
+  <input name="nss" placeholder="NSS (Número de Seguridad Social)" value="<%= empleado ? empleado.nss : '' %>" />
+  <input name="registroPatronal" placeholder="Registro patronal IMSS" maxlength="20" value="<%= empleado ? (empleado.registroPatronal || '') : '' %>" />
+  <input name="umf" placeholder="UMF (Unidad de Medicina Familiar)" value="<%= empleado ? (empleado.umf || '') : '' %>" />
+  <select name="estadoCivil">
+    <option value="">— Estado civil —</option>
+    <% _estadosCiviles.forEach(function(e) { %>
+    <option value="<%= e.value %>" <%= empleado && empleado.estadoCivil === e.value ? 'selected' : '' %>><%= e.label %></option>
+    <% }); %>
+  </select>
+</fieldset>
+
+<fieldset class="form-section">
+  <legend>Datos fiscales (RFC / CURP)</legend>
+  <input name="rfc" placeholder="RFC" maxlength="13" pattern="[A-ZÑ&amp;]{3,4}[0-9]{6}[A-Z0-9]{3}" value="<%= empleado ? empleado.rfc : '' %>" />
+  <input name="curp" placeholder="CURP" maxlength="18" pattern="[A-Z]{4}[0-9]{6}[HM][A-Z]{5}[A-Z0-9]{2}" value="<%= empleado ? empleado.curp : '' %>" />
   <select name="sexo">
     <option value="">— Sexo —</option>
     <option value="M" <%= empleado && empleado.sexo === 'M' ? 'selected' : '' %>>Masculino</option>
     <option value="F" <%= empleado && empleado.sexo === 'F' ? 'selected' : '' %>>Femenino</option>
     <option value="X" <%= empleado && empleado.sexo === 'X' ? 'selected' : '' %>>Otro</option>
   </select>
+  <input name="fechaNacimiento" type="date" value="<%= empleado && empleado.fechaNacimiento ? toDateInputValue(empleado.fechaNacimiento) : '' %>" />
+  <select name="entidadNacimiento">
+    <option value="">— Entidad federativa de nacimiento —</option>
+    <% _entidades.forEach(function(e) { %>
+    <option value="<%= e.value %>" <%= empleado && empleado.entidadNacimiento === e.value ? 'selected' : '' %>><%= e.label %></option>
+    <% }); %>
+  </select>
+  <input name="ciudadNacimiento" placeholder="Ciudad de nacimiento" value="<%= empleado ? (empleado.ciudadNacimiento || '') : '' %>" />
+</fieldset>
+
+<fieldset class="form-section">
+  <legend>Domicilio del empleado</legend>
+  <input name="domicilio_calle" placeholder="Calle / dirección" value="<%= dom.calle || '' %>" />
+  <input name="domicilio_numeroExt" placeholder="No. exterior" value="<%= dom.numeroExt || '' %>" />
+  <input name="domicilio_numeroInt" placeholder="No. interior" value="<%= dom.numeroInt || '' %>" />
+  <input name="domicilio_colonia" placeholder="Colonia" value="<%= dom.colonia || '' %>" />
+  <input name="domicilio_poblacion" placeholder="Población / ciudad" value="<%= dom.poblacion || '' %>" />
+  <input name="domicilio_entidad" placeholder="Entidad federativa (domicilio)" value="<%= dom.entidad || '' %>" />
+  <input name="domicilio_codigoPostal" placeholder="C.P. * (CFDI)" maxlength="5" pattern="[0-9]{5}" value="<%= dom.codigoPostal || '' %>" />
+  <p class="hint" style="grid-column:1/-1">El <strong>código postal</strong> del trabajador es obligatorio para el timbrado del CFDI de nómina.</p>
 </fieldset>
 
 <fieldset class="form-section">
@@ -92,58 +212,78 @@
   const sel = document.getElementById('plantillaRotacionId');
   const label = document.getElementById('labelFechaAncla');
   const input = document.getElementById('plantillaFechaAncla');
-  if (!sel || !label) return;
-  function sync() {
-    const on = !!sel.value;
-    label.style.display = on ? '' : 'none';
-    if (on && input && !input.value) {
-      input.value = new Date().toISOString().slice(0, 10);
+  if (sel && label) {
+    function sync() {
+      const on = !!sel.value;
+      label.style.display = on ? '' : 'none';
+      if (on && input && !input.value) {
+        input.value = new Date().toISOString().slice(0, 10);
+      }
     }
+    sel.addEventListener('change', sync);
+    sync();
   }
-  sel.addEventListener('change', sync);
-  sync();
+
+  const uma = Number(<%= typeof umaVigente !== 'undefined' && umaVigente ? Number(umaVigente) : 0 %>) || 0;
+  const topeUma = 25;
+  const sdiEl = document.getElementById('campoSdi');
+  const sdEl = document.querySelector('input[name="salarioDiario"]');
+  const preview = document.getElementById('sbcTopadoPreview');
+  function refreshSbc() {
+    if (!preview) return;
+    const sd = Number(sdEl && sdEl.value) || 0;
+    const sdi = Number(sdiEl && sdiEl.value) || sd;
+    if (!uma || !sdi) {
+      preview.value = uma ? '' : 'UMA no disponible — SBC se calcula en nómina';
+      return;
+    }
+    const tope = uma * topeUma;
+    const sbc = Math.min(sdi, tope);
+    preview.value = 'SBC topado: $' + sbc.toFixed(2) + ' (tope 25×UMA = $' + tope.toFixed(2) + ')';
+  }
+  if (sdiEl) sdiEl.addEventListener('input', refreshSbc);
+  if (sdEl) sdEl.addEventListener('input', refreshSbc);
+  refreshSbc();
+
+  const btnSdi = document.getElementById('btnCalcularSdi');
+  if (btnSdi) {
+    btnSdi.addEventListener('click', async function () {
+      const msg = document.getElementById('sdiCalcMsg');
+      const det = document.getElementById('sdiCalcDetalle');
+      msg.textContent = 'Calculando…';
+      try {
+        const tipo = document.getElementById('tipoSalario')?.value || 'fijo';
+        const sd = document.querySelector('input[name="salarioDiario"]')?.value || '';
+        const res = await fetch('<%= empleado && empleado._id ? "/personal-empleados/" + empleado._id + "/calcular-sdi" : "#" %>', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify({ tipoSalario: tipo, salarioDiario: sd, aplicar: false })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Error');
+        if (sdiEl) sdiEl.value = data.sdi;
+        refreshSbc();
+        msg.textContent = 'SDI $' + Number(data.sdi).toFixed(2) + ' · SBC $' + Number(data.sbc).toFixed(2) + ' (tabla: ' + (data.tabla && data.tabla.nombre) + ')';
+        if (det) {
+          det.style.display = '';
+          det.textContent = JSON.stringify({
+            tipo: data.tipoSalario,
+            factor: data.factorIntegracion,
+            parteFija: data.parteFija,
+            extrasDiarios: data.extrasDiarios,
+            otrasPrestaciones: data.otrasPrestaciones,
+            promedioVariable: data.promedioVariable,
+            tabla: data.tabla,
+            formula: data.formula
+          }, null, 2);
+        }
+      } catch (e) {
+        msg.textContent = e.message || 'No se pudo calcular';
+      }
+    });
+  }
 })();
 </script>
-
-<fieldset class="form-section">
-  <legend>Datos laborales</legend>
-  <input name="fechaIngreso" type="date" value="<%= empleado && empleado.fechaIngreso ? toDateInputValue(empleado.fechaIngreso) : '' %>" />
-  <select name="tipoContrato">
-    <option value="">— Tipo de contrato —</option>
-    <% (tiposContrato || []).forEach(function(t) { %>
-    <option value="<%= t.value %>" <%= empleado && empleado.tipoContrato === t.value ? 'selected' : (!empleado && t.value === 'indefinido' ? 'selected' : '') %>><%= t.label %></option>
-    <% }); %>
-  </select>
-  <select name="tipoEmpleado">
-    <option value="">— Tipo de empleado —</option>
-    <% (tiposEmpleado || []).forEach(function(t) { %>
-    <option value="<%= t.value %>" <%= empleado && empleado.tipoEmpleado === t.value ? 'selected' : '' %>><%= t.label %></option>
-    <% }); %>
-  </select>
-  <p class="hint" style="grid-column:1/-1">
-    <strong>Tipo de contrato</strong> = modalidad jurídica (indefinido, temporal…).
-    <strong>Tipo de empleado</strong> = clasificación laboral (confianza / sindicalizado).
-    Editables en
-    <a href="/config-sistema/enums/tipo_contrato" target="_blank">Enums → Contrato</a>
-    y
-    <a href="/config-sistema/enums/tipo_empleado" target="_blank">Tipo de empleado</a>.
-  </p>
-  <input name="salarioDiario" type="number" min="0" step="0.01" placeholder="Salario diario" value="<%= empleado && empleado.salarioDiario != null ? empleado.salarioDiario : '' %>" />
-  <% if (empleado) { %>
-  <select name="estatus">
-    <% estatusOptions.forEach(function(o) { %>
-    <option value="<%= o.value %>" <%= empleado.estatus === o.value ? 'selected' : '' %>><%= o.label %></option>
-    <% }); %>
-  </select>
-  <input name="fechaBaja" type="date" value="<%= empleado.fechaBaja ? toDateInputValue(empleado.fechaBaja) : '' %>" />
-  <select name="motivoBaja">
-    <option value="">— Motivo baja —</option>
-    <% motivosBaja.forEach(function(m) { %>
-    <option value="<%= m %>" <%= empleado.motivoBaja === m ? 'selected' : '' %>><%= m %></option>
-    <% }); %>
-  </select>
-  <% } %>
-</fieldset>
 
 <fieldset class="form-section">
   <legend>Administración e integración</legend>
@@ -169,17 +309,44 @@
 <% if (typeof showNominaConfig !== 'undefined' && showNominaConfig) { %>
 <% const nc = empleado && empleado.nominaConfig ? empleado.nominaConfig : {}; %>
 <fieldset class="form-section">
-  <legend>Nómina formal</legend>
-  <p class="hint">Parámetros usados por el motor de nómina (INFONAVIT, fondo de ahorro, finiquito). Requiere módulo <code>nomina</code> activo.</p>
+  <legend>Nómina formal (INFONAVIT / fondo / finiquito)</legend>
+  <p class="hint">Parámetros del motor (INFONAVIT, fondo de ahorro, finiquito). El SDI/SBC para IMSS está en «Información salarial».</p>
 
   <div class="checkbox-group">
     <label><input type="checkbox" name="nomina_aplicaFondoAhorro" value="1" <%= nc.aplicaFondoAhorro ? 'checked' : '' %> /> Aplica fondo de ahorro</label>
   </div>
   <input name="nomina_porcentajeFondoAhorro" type="number" min="0" max="100" step="0.01" placeholder="% fondo de ahorro (vacío = parámetro global)" value="<%= nc.porcentajeFondoAhorro > 0 ? nc.porcentajeFondoAhorro : '' %>" />
+
+  <h3 class="form-subtitle">Despensa / vales (previsión social)</h3>
+  <select name="nomina_despensaModalidad" id="nomina_despensaModalidad">
+    <%
+      const despensaMod = nc.despensaModalidad || ((nc.despensaMonto > 0 || nc.despensaMontoMensual > 0) ? 'fijo' : 'ninguna');
+    %>
+    <option value="ninguna" <%= despensaMod === 'ninguna' ? 'selected' : '' %>>Sin despensa</option>
+    <option value="fijo" <%= despensaMod === 'fijo' ? 'selected' : '' %>>Importe fijo mensual</option>
+    <option value="porcentaje" <%= despensaMod === 'porcentaje' ? 'selected' : '' %>>% del sueldo mensual + tope</option>
+  </select>
+  <input name="nomina_despensaMontoMensual" type="number" min="0" step="0.01" placeholder="Monto fijo mensual ($)" value="<%= (nc.despensaMontoMensual || nc.despensaMonto) > 0 ? (nc.despensaMontoMensual || nc.despensaMonto) : '' %>" />
+  <input name="nomina_despensaPorcentaje" type="number" min="0" max="100" step="0.01" placeholder="% del sueldo mensual (ej. 10)" value="<%= nc.despensaPorcentaje > 0 ? nc.despensaPorcentaje : '' %>" />
+  <select name="nomina_despensaTopeModo">
+    <% const topeMod = nc.despensaTopeModo || 'imss_40_uma'; %>
+    <option value="imss_40_uma" <%= topeMod === 'imss_40_uma' ? 'selected' : '' %>>Tope IMSS (40% UMA mensual ≈ $1,426)</option>
+    <option value="uma_mensual" <%= topeMod === 'uma_mensual' ? 'selected' : '' %>>Tope 1 UMA mensual (previsión / deducible)</option>
+    <option value="monto" <%= topeMod === 'monto' ? 'selected' : '' %>>Tope monto fijo</option>
+    <option value="sin_tope" <%= topeMod === 'sin_tope' ? 'selected' : '' %>>Sin tope</option>
+  </select>
+  <input name="nomina_despensaTopeMonto" type="number" min="0" step="0.01" placeholder="Tope monto fijo (si aplica)" value="<%= nc.despensaTopeMonto > 0 ? nc.despensaTopeMonto : '' %>" />
   <p class="muted small" style="grid-column:1/-1">
-    Tope exento global: menor entre este % del salario y
-    <code>FONDO_AHORRO_TOPE_UMA × UMA × días año</code>
-    (catálogo Parámetros). El excedente patronal es gravable para ISR.
+    La despensa se paga cuando el <strong>período</strong> tiene «Paga despensa» (2ª quincena / 3ª semana habitualmente).
+    El motor resuelve <code>despensaMonto</code> con fijo o % topado.
+    ISR: exento hasta <strong>1 UMA mensual</strong> (~$3,566) si el pago es mensual; en semanal, <strong>7 × UMA diaria</strong>. El excedente grava.
+  </p>
+
+  <input name="nomina_seguroVidaMonto" type="number" min="0" step="0.01" placeholder="Seguro de vida (monto del período)" value="<%= nc.seguroVidaMonto > 0 ? nc.seguroVidaMonto : '' %>" />
+  <input name="nomina_sgmmMonto" type="number" min="0" step="0.01" placeholder="SGMM (monto del período)" value="<%= nc.sgmmMonto > 0 ? nc.sgmmMonto : '' %>" />
+  <p class="muted small" style="grid-column:1/-1">
+    Tope exento fondo: menor entre % del salario y 1.3 × UMA mensual prorrateada.
+    Vida / SGMM: montos del período (<code>seguroVidaMonto</code>, <code>sgmmMonto</code>).
   </p>
 
   <select name="nomina_tipoCreditoInfonavit" id="nomina_tipoCreditoInfonavit">
@@ -189,11 +356,16 @@
   </select>
   <input name="nomina_tasaInfonavit" type="number" min="0" step="0.0001" placeholder="Tasa / valor INFONAVIT (% o monto según tipo)" value="<%= nc.tasaInfonavit > 0 ? nc.tasaInfonavit : '' %>" />
   <input name="nomina_infonavitDescuento" type="number" min="0" step="0.01" placeholder="Descuento fijo por período (opcional, anula cálculo)" value="<%= nc.infonavitDescuento > 0 ? nc.infonavitDescuento : '' %>" />
-  <input name="nomina_sueldoIntegrado" type="number" min="0" step="0.01" placeholder="Sueldo integrado período (INFONAVIT %)" value="<%= nc.sueldoIntegrado > 0 ? nc.sueldoIntegrado : '' %>" />
-  <input name="nomina_diasCotizacionImss" type="number" min="0" step="1" placeholder="Días cotización IMSS/INFONAVIT" value="<%= nc.diasCotizacionImss > 0 ? nc.diasCotizacionImss : '' %>" />
+  <input name="nomina_sueldoIntegrado" type="number" min="0" step="0.01" placeholder="Base INFONAVIT % del período (opcional)" value="<%= nc.sueldoIntegrado > 0 ? nc.sueldoIntegrado : '' %>" />
+  <input name="nomina_diasCotizacionImss" type="number" min="0" step="1" placeholder="Override días cotización IMSS/INFONAVIT" value="<%= nc.diasCotizacionImss > 0 ? nc.diasCotizacionImss : '' %>" />
 
   <h3 class="form-subtitle">Extraordinaria / finiquito</h3>
-  <input name="nomina_diasPrimaVacacional" type="number" min="0" step="0.01" placeholder="Días prima vacacional" value="<%= nc.diasPrimaVacacional > 0 ? nc.diasPrimaVacacional : '' %>" />
+  <p class="muted small" style="grid-column:1/-1">
+    <strong>Prima vacacional:</strong> el % sale de la tabla de prestaciones (o override abajo).
+    Si capturas días aquí, se usan como override; si no, y el aniversario cae en el período, se usan los días de la tabla por antigüedad × %.
+  </p>
+  <input name="nomina_diasPrimaVacacional" type="number" min="0" step="0.01" placeholder="Días prima vacacional (override opcional)" value="<%= nc.diasPrimaVacacional > 0 ? nc.diasPrimaVacacional : '' %>" />
+  <input name="nomina_primaVacacionalPct" type="number" min="0" max="100" step="0.01" placeholder="% prima (vacío = tabla)" value="<%= nc.primaVacacionalPct > 0 ? nc.primaVacacionalPct : '' %>" />
   <input name="nomina_proporcionAguinaldoFiniquito" type="number" min="0" step="0.01" placeholder="Monto aguinaldo finiquito" value="<%= nc.proporcionAguinaldoFiniquito > 0 ? nc.proporcionAguinaldoFiniquito : '' %>" />
   <input name="nomina_fondoAhorroSaldoFiniquito" type="number" min="0" step="0.01" placeholder="Saldo fondo de ahorro finiquito" value="<%= nc.fondoAhorroSaldoFiniquito > 0 ? nc.fondoAhorroSaldoFiniquito : '' %>" />
 </fieldset>

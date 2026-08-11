@@ -2,6 +2,7 @@
 
 const getPayrollDetailModel = require('../../models/payrollDetail');
 const getPayrollPeriodModel = require('../../models/payrollPeriod');
+const { repartirHorasExtraTotal } = require('../../libs/horasExtraClasificacion');
 
 function sumarLineas(lineas, tipo) {
   return (lineas || [])
@@ -9,10 +10,26 @@ function sumarLineas(lineas, tipo) {
     .reduce((s, l) => s + (Number(l.monto) || 0), 0);
 }
 
-function repartirHorasExtra(totalHoras) {
-  const h = Number(totalHoras) || 0;
-  if (h <= 9) return { horasExtraDobles: h, horasExtraTriples: 0 };
-  return { horasExtraDobles: 9, horasExtraTriples: h - 9 };
+/** Preferir minutos ya clasificados (LFT); si no, repartir total con tope de 9 h. */
+function horasExtraDesdeDetail(detail) {
+  const tieneClasificado =
+    detail &&
+    (detail.minutosHEDoble != null ||
+      detail.minutosHETriple != null ||
+      detail.minutosHEOrdinaria != null);
+
+  if (tieneClasificado) {
+    const minDobles =
+      (Number(detail.minutosHEDoble) || 0) + (Number(detail.minutosHEOrdinaria) || 0);
+    const minTriples = Number(detail.minutosHETriple) || 0;
+    return {
+      horasExtraDobles: minDobles / 60,
+      horasExtraTriples: minTriples / 60
+    };
+  }
+
+  const minutosHE = Number(detail?.minutosHorasExtra) || 0;
+  return repartirHorasExtraTotal(minutosHE / 60);
 }
 
 async function obtenerInsumosPrenomina(tenantId, empleadoId, payrollPeriodId) {
@@ -42,7 +59,6 @@ async function obtenerInsumosPrenomina(tenantId, empleadoId, payrollPeriodId) {
   ]);
 
   if (!detail) {
-    // Vinculado a pre-nómina pero sin detalle: no inventar días del calendario
     return {
       ...vacio,
       fuente: 'prenomina_sin_detalle',
@@ -51,9 +67,7 @@ async function obtenerInsumosPrenomina(tenantId, empleadoId, payrollPeriodId) {
     };
   }
 
-  const minutosHE = detail.minutosHorasExtra || 0;
-  const horasExtra = minutosHE / 60;
-  const { horasExtraDobles, horasExtraTriples } = repartirHorasExtra(horasExtra);
+  const { horasExtraDobles, horasExtraTriples } = horasExtraDesdeDetail(detail);
   const diasConRetardo = detail.diasConRetardo || 0;
 
   return {
@@ -78,9 +92,14 @@ function tieneActividadPrenomina(detail) {
   if (!detail) return false;
   const dias = Number(detail.diasTrabajados) || 0;
   const he = Number(detail.minutosHorasExtra) || 0;
-  const perc = Number(detail.totalPercepciones) || 0;
-  // Solo faltas / ceros → no entra a nómina formal
-  return dias > 0 || he > 0 || perc > 0;
+  const perc = sumarLineas(detail.percepciones, 'percepcion');
+  const ded = sumarLineas(detail.deducciones, 'deduccion');
+  return dias > 0 || he > 0 || perc > 0 || ded > 0;
 }
 
-module.exports = { obtenerInsumosPrenomina, repartirHorasExtra, tieneActividadPrenomina };
+module.exports = {
+  obtenerInsumosPrenomina,
+  tieneActividadPrenomina,
+  horasExtraDesdeDetail,
+  repartirHorasExtra: repartirHorasExtraTotal
+};

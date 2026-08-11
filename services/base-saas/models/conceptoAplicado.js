@@ -13,6 +13,14 @@ const conceptoAplicadoSchema = new mongoose.Schema(
     importe: { type: Number, default: 0 },
     gravado: { type: Number, default: 0 },
     exento: { type: Number, default: 0 },
+    isr: {
+      gravado: { type: Number, default: 0 },
+      exento: { type: Number, default: 0 }
+    },
+    imss: {
+      integraSBC: { type: Number, default: 0 },
+      noIntegra: { type: Number, default: 0 }
+    },
     desgloseModo: { type: String, default: '' },
     claveSAT: { type: String, default: '' },
     tipo: { type: String, default: '' },

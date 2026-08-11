@@ -1,0 +1,183 @@
+<%- include('../Partials/layout-top', { title: tabla ? 'Editar prestaciones' : 'Nueva prestaciones', session }) %>
+<p><a href="/personal/prestaciones">← Tablas de prestaciones</a></p>
+
+<h1><%= tabla ? 'Editar' : 'Nueva' %> tabla de prestaciones</h1>
+
+<form method="post" action="<%= tabla ? '/personal/prestaciones/' + tabla._id : '/personal/prestaciones' %>" class="form-grid form-wide">
+  <fieldset class="form-section">
+    <legend>Identificación</legend>
+    <input name="nombre" required placeholder="Nombre" value="<%= tabla ? tabla.nombre : '' %>" />
+    <select name="ambito" id="ambitoPrestacion" required>
+      <% ['global','tipo_empleado','departamento','puesto'].forEach(function(a) { %>
+      <option value="<%= a %>" <%= tabla && tabla.ambito === a ? 'selected' : (!tabla && a === 'global' ? 'selected' : '') %>><%= a %></option>
+      <% }); %>
+    </select>
+    <select name="tipoEmpleado" id="campoTipoEmpleado">
+      <option value="">— Tipo empleado —</option>
+      <% (tiposEmpleado || []).forEach(function(t) { %>
+      <option value="<%= t.value %>" <%= tabla && tabla.tipoEmpleado === t.value ? 'selected' : '' %>><%= t.label %></option>
+      <% }); %>
+    </select>
+    <select name="departamentoId" id="campoDepartamento">
+      <option value="">— Departamento —</option>
+      <% (departamentos || []).forEach(function(d) { %>
+      <option value="<%= d._id %>" <%= tabla && String(tabla.departamentoId) === String(d._id) ? 'selected' : '' %>><%= d.nombre %></option>
+      <% }); %>
+    </select>
+    <select name="puestoId" id="campoPuesto">
+      <option value="">— Puesto —</option>
+      <% (puestos || []).forEach(function(p) { %>
+      <option value="<%= p._id %>" <%= tabla && String(tabla.puestoId) === String(p._id) ? 'selected' : '' %>><%= p.nombre %></option>
+      <% }); %>
+    </select>
+    <label class="inline-check"><input type="checkbox" name="activo" value="1" <%= !tabla || tabla.activo !== false ? 'checked' : '' %> /> Activa</label>
+  </fieldset>
+
+  <fieldset class="form-section">
+    <legend>Prestaciones fijas (factor de integración LFT)</legend>
+    <input name="diasAguinaldo" type="number" min="0" step="1" placeholder="Días aguinaldo" value="<%= tabla ? tabla.diasAguinaldo : 15 %>" />
+    <input name="primaVacacionalPct" type="number" min="0" max="100" step="0.01" placeholder="% prima vacacional" value="<%= tabla ? tabla.primaVacacionalPct : 25 %>" />
+    <p class="hint" style="grid-column:1/-1">
+      Solo aguinaldo + vacaciones × prima entra al factor legal.
+      Factor = 1 + (aguinaldo/365) + (vacaciones × prima%/100 / 365) + (días extra/365).
+      Luego SDI = SD × factor + extras diarios + promedio variable.
+    </p>
+  </fieldset>
+
+  <fieldset class="form-section">
+    <legend>Vacaciones por antigüedad</legend>
+    <p class="hint" style="grid-column:1/-1">Tramos (años desde–hasta). Deja «hasta» vacío para sin tope.</p>
+    <table class="data-table" style="grid-column:1/-1">
+      <thead><tr><th>Desde</th><th>Hasta</th><th>Días vacaciones</th></tr></thead>
+      <tbody>
+        <% (tramos || []).forEach(function(t) { %>
+        <tr>
+          <td><input name="tramoAniosDesde" type="number" min="0" value="<%= t.aniosDesde %>" /></td>
+          <td><input name="tramoAniosHasta" type="number" min="0" value="<%= t.aniosHasta == null ? '' : t.aniosHasta %>" /></td>
+          <td><input name="tramoDiasVacaciones" type="number" min="0" value="<%= t.diasVacaciones %>" /></td>
+        </tr>
+        <% }); %>
+      </tbody>
+    </table>
+  </fieldset>
+
+  <fieldset class="form-section">
+    <legend>Otras prestaciones (SGMM, vales, fondo…)</legend>
+    <p class="hint" style="grid-column:1/-1">
+      No van en el factor LFT. Elige tratamiento:
+      <strong>Solo nómina</strong> (no integra SDI — típico SGMM / vales / fondo dentro de exención),
+      <strong>Monto diario → SDI</strong> (excedente o ayuda fija que integra),
+      <strong>Días/año → factor</strong> (prestación contractual en días de sueldo).
+    </p>
+    <div style="grid-column:1/-1;display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.5rem">
+      <select id="catalogoOtraSelect">
+        <option value="">— Agregar del catálogo —</option>
+        <% (typeof catalogoOtras !== 'undefined' && catalogoOtras ? catalogoOtras : []).forEach(function(c, idx) { %>
+        <option value="<%= idx %>"><%= c.codigo %> — <%= c.nombre %></option>
+        <% }); %>
+      </select>
+      <button type="button" id="btnAddOtra" class="btn btn-secondary">Agregar</button>
+    </div>
+    <table class="data-table" id="tablaOtras" style="grid-column:1/-1">
+      <thead>
+        <tr>
+          <th>Código</th>
+          <th>Nombre</th>
+          <th>Tratamiento</th>
+          <th>Valor</th>
+          <th>Activa</th>
+          <th>Notas</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="otrasBody">
+        <% (typeof otrasPrestaciones !== 'undefined' && otrasPrestaciones ? otrasPrestaciones : []).forEach(function(p) { %>
+        <tr>
+          <td><input name="otraCodigo" value="<%= p.codigo %>" /></td>
+          <td><input name="otraNombre" value="<%= p.nombre %>" /></td>
+          <td>
+            <select name="otraTratamiento">
+              <% (typeof tratamientos !== 'undefined' && tratamientos ? tratamientos : []).forEach(function(t) { %>
+              <option value="<%= t.value %>" <%= p.tratamiento === t.value ? 'selected' : '' %>><%= t.label %></option>
+              <% }); %>
+            </select>
+          </td>
+          <td><input name="otraValor" type="number" min="0" step="0.01" value="<%= p.valor != null ? p.valor : 0 %>" title="$/día o días/año según tratamiento" /></td>
+          <td>
+            <select name="otraActivo">
+              <option value="1" <%= p.activo !== false ? 'selected' : '' %>>Sí</option>
+              <option value="0" <%= p.activo === false ? 'selected' : '' %>>No</option>
+            </select>
+          </td>
+          <td><input name="otraNotas" value="<%= p.notas || '' %>" /></td>
+          <td><button type="button" class="btn-link btnRemoveOtra">Quitar</button></td>
+        </tr>
+        <% }); %>
+      </tbody>
+    </table>
+  </fieldset>
+
+  <label style="grid-column:1/-1">Notas
+    <textarea name="notas" rows="2"><%= tabla ? (tabla.notas || '') : '' %></textarea>
+  </label>
+
+  <button type="submit">Guardar</button>
+</form>
+
+<script>
+(function () {
+  const ambito = document.getElementById('ambitoPrestacion');
+  const tipo = document.getElementById('campoTipoEmpleado');
+  const depto = document.getElementById('campoDepartamento');
+  const puesto = document.getElementById('campoPuesto');
+  function sync() {
+    const a = ambito.value;
+    tipo.style.display = a === 'tipo_empleado' ? '' : 'none';
+    depto.style.display = a === 'departamento' ? '' : 'none';
+    puesto.style.display = a === 'puesto' ? '' : 'none';
+  }
+  ambito.addEventListener('change', sync);
+  sync();
+
+  const catalogo = <%- JSON.stringify(typeof catalogoOtras !== 'undefined' && catalogoOtras ? catalogoOtras : []) %>;
+  const tratamientos = <%- JSON.stringify(typeof tratamientos !== 'undefined' && tratamientos ? tratamientos : []) %>;
+  const body = document.getElementById('otrasBody');
+
+  function tratamientoOptions(selected) {
+    return tratamientos.map(function (t) {
+      return '<option value="' + t.value + '"' + (t.value === selected ? ' selected' : '') + '>' + t.label + '</option>';
+    }).join('');
+  }
+
+  function addRow(p) {
+    const tr = document.createElement('tr');
+    tr.innerHTML =
+      '<td><input name="otraCodigo" value="' + (p.codigo || '') + '" /></td>' +
+      '<td><input name="otraNombre" value="' + (p.nombre || '') + '" /></td>' +
+      '<td><select name="otraTratamiento">' + tratamientoOptions(p.tratamiento || 'solo_nomina') + '</select></td>' +
+      '<td><input name="otraValor" type="number" min="0" step="0.01" value="' + (p.valor != null ? p.valor : 0) + '" /></td>' +
+      '<td><select name="otraActivo"><option value="1" selected>Sí</option><option value="0">No</option></select></td>' +
+      '<td><input name="otraNotas" value="' + (p.notas || '').replace(/"/g, '&quot;') + '" /></td>' +
+      '<td><button type="button" class="btn-link btnRemoveOtra">Quitar</button></td>';
+    body.appendChild(tr);
+  }
+
+  document.getElementById('btnAddOtra').addEventListener('click', function () {
+    const sel = document.getElementById('catalogoOtraSelect');
+    const idx = sel.value;
+    if (idx === '') {
+      addRow({ codigo: 'OTRA', nombre: 'Otra prestación', tratamiento: 'solo_nomina', valor: 0, notas: '' });
+      return;
+    }
+    addRow(catalogo[Number(idx)] || {});
+    sel.value = '';
+  });
+
+  body.addEventListener('click', function (e) {
+    if (e.target && e.target.classList.contains('btnRemoveOtra')) {
+      e.target.closest('tr').remove();
+    }
+  });
+})();
+</script>
+<%- include('../Partials/layout-bottom') %>

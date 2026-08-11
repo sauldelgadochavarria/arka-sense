@@ -106,25 +106,25 @@ function buildFormulasForPeriodo(tipoPeriodo) {
       conceptoCodigo: 'ISR',
       tipoPeriodo,
       tipoNomina: 'ordinaria',
-      formula: 'isrPeriodo(PERCEPCIONES_GRAVADAS)',
+      formula: 'si(PERCEPCIONES_GRAVADAS > 0, isrPeriodo(PERCEPCIONES_GRAVADAS), 0)',
       dependencias: ['PERCEPCIONES_GRAVADAS'],
-      condicion: 'PERCEPCIONES_GRAVADAS > 0'
+      condicion: ''
     },
     {
       conceptoCodigo: 'IMSS_OBRERO',
       tipoPeriodo,
       tipoNomina: 'ordinaria',
-      formula: 'imssObrero(sueldoDiario, diasCotizacion)',
+      formula: 'si(diasCotizacion > 0, imssObrero(sueldoDiario, diasCotizacion), 0)',
       dependencias: [],
-      condicion: 'diasCotizacion > 0'
+      condicion: ''
     },
     {
       conceptoCodigo: 'IMSS_PATRONAL',
       tipoPeriodo,
       tipoNomina: 'ordinaria',
-      formula: 'imssPatronal(sueldoDiario, diasCotizacion)',
+      formula: 'si(diasCotizacion > 0, imssPatronal(sueldoDiario, diasCotizacion), 0)',
       dependencias: [],
-      condicion: 'diasCotizacion > 0'
+      condicion: ''
     }
   ];
 }

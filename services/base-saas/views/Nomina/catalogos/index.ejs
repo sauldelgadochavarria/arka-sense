@@ -23,6 +23,11 @@
     <p>UMA, salario mínimo y vigencias para fórmulas.</p>
     <span class="badge"><%= parametrosCount %> registros</span>
   </a>
+  <a class="module-card" href="/nomina/catalogos/formula-functions">
+    <h3>Funciones de fórmula</h3>
+    <p>Expresiones mathjs publicables (si, redondear, custom). JS solo en admin plataforma.</p>
+    <span class="badge"><%= typeof funcionesActivas !== 'undefined' ? funcionesActivas : 0 %> activas</span>
+  </a>
   <a class="module-card" href="/nomina/catalogos/tablas-fiscales">
     <h3>Tablas fiscales</h3>
     <p>ISR, IMSS cuotas obrero-patronal y CEAV por tramos.</p>

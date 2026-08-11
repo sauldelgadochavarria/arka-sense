@@ -724,13 +724,27 @@ async function seedNominaMenus(Menu, adminRoleId) {
   await upsertMenuNode(Menu, { ...common, menuPrincipal: 'Conceptos', rutaApp: '/nomina/conceptos', parentId: configuracionesId, orden: 353 });
   await upsertMenuNode(Menu, {
     ...common,
+    menuPrincipal: 'Prestaciones (SDI)',
+    rutaApp: '/personal/prestaciones',
+    parentId: configuracionesId,
+    orden: 354
+  });
+  await upsertMenuNode(Menu, {
+    ...common,
     menuPrincipal: 'Enums sistema',
     rutaApp: '/config-sistema/enums',
     parentId: configuracionesId,
-    orden: 354,
+    orden: 355,
     requiredFeatureKeys: ['nomina']
   });
-  await upsertMenuNode(Menu, { ...common, menuPrincipal: 'Plantilla', rutaApp: '/nomina/placeholder/plantilla', parentId: configuracionesId, orden: 355 });
+  await upsertMenuNode(Menu, { ...common, menuPrincipal: 'Plantilla', rutaApp: '/nomina/placeholder/plantilla', parentId: configuracionesId, orden: 356 });
+  await upsertMenuNode(Menu, {
+    ...common,
+    menuPrincipal: 'Funciones de fórmula',
+    rutaApp: '/nomina/catalogos/formula-functions',
+    parentId: configuracionesId,
+    orden: 357
+  });
 
   await upsertMenuNode(Menu, {
     ...common,

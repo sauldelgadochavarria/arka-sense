@@ -1,8 +1,13 @@
 'use strict';
 
 const { create, all, parse } = require('mathjs');
+const {
+  FORMULA_SYSTEM_FUNCTION_NAMES,
+  FORMULA_SYSTEM_FUNCTIONS,
+  buildSystemFunctionImplementations
+} = require('../../config/formulaSystemFunctions');
 
-const FUNCIONES_PERMITIDAS = ['min', 'max', 'abs', 'round', 'floor', 'ceil', 'aplicarTabla', 'topeUMA', 'isrPeriodo', 'imssObrero', 'imssPatronal'];
+const FUNCIONES_PERMITIDAS = FORMULA_SYSTEM_FUNCTION_NAMES;
 
 function redondear(valor, decimales = 2) {
   const n = Number(valor);
@@ -21,25 +26,21 @@ function normalizeConditionComparisons(expr) {
   return String(expr).replace(/(?<![!<>=])=(?!=)/g, '==');
 }
 
-function createFormulaScope(parametros = {}, tablaFns = {}) {
+function createFormulaScope(parametros = {}, tablaFns = {}, catalogFns = null) {
   const scope = create(all, { override: true });
-  scope.import(
-    {
-      aplicarTabla: tablaFns.aplicarTabla || (() => 0),
-      topeUMA: tablaFns.topeUMA || ((valor, veces) => Math.min(Number(valor) || 0, (parametros.uma || 0) * (veces || 1))),
-      isrPeriodo: tablaFns.isrPeriodo || (() => 0),
-      imssObrero: tablaFns.imssObrero || (() => 0),
-      imssPatronal: tablaFns.imssPatronal || (() => 0),
-      min: Math.min,
-      max: Math.max,
-      abs: Math.abs,
-      round: Math.round,
-      floor: Math.floor,
-      ceil: Math.ceil
-    },
-    { override: true }
-  );
+  const base = buildSystemFunctionImplementations(parametros, tablaFns);
+  const merged = catalogFns && typeof catalogFns === 'object' ? { ...base, ...catalogFns } : base;
+  scope.import(merged, { override: true });
   return scope;
+}
+
+/**
+ * Crea scope incluyendo funciones del catálogo admin (async).
+ */
+async function createFormulaScopeWithCatalog(parametros = {}, tablaFns = {}) {
+  const { buildCatalogFunctionImplementations } = require('./formulaFunctionsService');
+  const catalogFns = await buildCatalogFunctionImplementations(parametros, tablaFns);
+  return createFormulaScope(parametros, tablaFns, catalogFns);
 }
 
 function evaluateExpression(expr, contexto, scope) {
@@ -54,7 +55,20 @@ function evaluateExpression(expr, contexto, scope) {
 function evaluateCondicion(condicion, contexto, scope) {
   if (!condicion || !String(condicion).trim()) return true;
   const normalizada = normalizeConditionComparisons(condicion);
-  const result = evaluateExpression(normalizada, contexto, scope);
+  // Símbolos aún no calculados → 0 (evita tumbar ISR si el orden falla)
+  let tree;
+  try {
+    tree = parse(normalizada);
+  } catch {
+    return Boolean(evaluateExpression(normalizada, contexto, scope));
+  }
+  const ctx = { ...contexto };
+  tree.traverse((node) => {
+    if (node.isSymbolNode && !Object.prototype.hasOwnProperty.call(ctx, node.name)) {
+      ctx[node.name] = 0;
+    }
+  });
+  const result = evaluateExpression(normalizada, ctx, scope);
   if (typeof result === 'boolean') return result;
   if (typeof result === 'number') return result !== 0;
   return Boolean(result);
@@ -93,9 +107,12 @@ function validateFormulaSyntax(formula) {
 module.exports = {
   redondear,
   createFormulaScope,
+  createFormulaScopeWithCatalog,
   evaluateExpression,
   evaluateCondicion,
   extractVariablesUsadas,
   validateFormulaSyntax,
-  normalizeConditionComparisons
+  normalizeConditionComparisons,
+  FUNCIONES_PERMITIDAS,
+  FORMULA_SYSTEM_FUNCTIONS
 };

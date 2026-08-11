@@ -82,7 +82,10 @@ nomina_conceptos (colección única por tenant)
 ### Catálogo
 
 - `SUELDO` — fase 1, percepción, gravado  
-- `HORAS_EXTRA_DOBLES` — fase 1, percepción, mixto  
+- `HORAS_EXTRA_DOBLES` — fase 1, percepción, mixto (ISR 50% exento tope N×UMA; **no** integra SBC)  
+- `HORAS_EXTRA_TRIPLES` — fase 1, percepción, gravado (100% ISR + integra SBC)  
+
+Clasificación LFT: ≤3 h/día y ≤9 h/semana → dobles; excedente → triples. ISR e IMSS se clasifican por separado en cada línea del recibo (`isr` / `imss`).
 
 ### Fórmulas
 
@@ -95,6 +98,11 @@ SUELDO:
 HORAS_EXTRA_DOBLES:
   expresion: (EMPLEADO.salarioDiario / EMPLEADO.horasJornada) * INCIDENCIAS.horasExtraDobles * 2
   condicion: INCIDENCIAS.horasExtraDobles > 0
+  tipoAplicacion (config): EVENTUAL
+
+HORAS_EXTRA_TRIPLES:
+  expresion: (EMPLEADO.salarioDiario / EMPLEADO.horasJornada) * INCIDENCIAS.horasExtraTriples * 3
+  condicion: INCIDENCIAS.horasExtraTriples > 0
   tipoAplicacion (config): EVENTUAL
 ```
 

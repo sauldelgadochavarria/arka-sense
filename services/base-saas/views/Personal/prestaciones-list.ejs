@@ -1,0 +1,62 @@
+<%- include('../Partials/layout-top', { title: 'Tablas de prestaciones', session }) %>
+<p><a href="/personal-empleados">← Empleados</a></p>
+
+<h1>Tablas de prestaciones (SDI)</h1>
+<p class="muted">
+  Definen días de aguinaldo, vacaciones y % prima para el <strong>factor de integración</strong>.
+  Prioridad: <strong>puesto → departamento → tipo de empleado → global</strong>.
+</p>
+
+<p>
+  <a class="btn" href="/personal/prestaciones/nueva">Nueva tabla</a>
+  <form method="post" action="/personal/prestaciones/seed-global" style="display:inline">
+    <button type="submit" class="btn btn-secondary">Asegurar tabla LFT global</button>
+  </form>
+</p>
+
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>Nombre</th>
+      <th>Ámbito</th>
+      <th>Alcance</th>
+      <th>Aguinaldo</th>
+      <th>Prima %</th>
+      <th>Activa</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <% if (!tablas.length) { %>
+    <tr><td colspan="7" class="muted">Sin tablas. Crea la global LFT.</td></tr>
+    <% } %>
+    <% tablas.forEach(function(t) {
+      let alcance = '—';
+      if (t.ambito === 'global') alcance = 'Toda la empresa';
+      else if (t.ambito === 'tipo_empleado') alcance = t.tipoEmpleado || '—';
+      else if (t.ambito === 'departamento') {
+        const d = (departamentos || []).find(function(x) { return String(x._id) === String(t.departamentoId); });
+        alcance = d ? d.nombre : String(t.departamentoId || '—');
+      } else if (t.ambito === 'puesto') {
+        const p = (puestos || []).find(function(x) { return String(x._id) === String(t.puestoId); });
+        alcance = p ? p.nombre : String(t.puestoId || '—');
+      }
+    %>
+    <tr>
+      <td><%= t.nombre %></td>
+      <td><code><%= t.ambito %></code></td>
+      <td><%= alcance %></td>
+      <td><%= t.diasAguinaldo %></td>
+      <td><%= t.primaVacacionalPct %>%</td>
+      <td><%= t.activo ? 'Sí' : 'No' %></td>
+      <td>
+        <a href="/personal/prestaciones/<%= t._id %>/edit">Editar</a>
+        <form method="post" action="/personal/prestaciones/<%= t._id %>/toggle" style="display:inline">
+          <button type="submit" class="linkish"><%= t.activo ? 'Desactivar' : 'Activar' %></button>
+        </form>
+      </td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<%- include('../Partials/layout-bottom') %>

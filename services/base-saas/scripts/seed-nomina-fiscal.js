@@ -21,7 +21,7 @@ const { TABLAS_ISR_2026, VIGENCIA_ISR_2026 } = require('../config/isrTablas2026'
 const VIGENCIA = VIGENCIA_ISR_2026;
 
 const PARAMETROS = [
-  { clave: 'UMA', valor: 113.14, descripcion: 'Unidad de Medida y Actualización (editar cada año; p.ej. ~117.31 para tope fondo ≈ $55,663.60)' },
+  { clave: 'UMA', valor: 117.31, descripcion: 'UMA diaria 2026 (vigente desde 1-feb-2026; DOF)' },
   { clave: 'SALARIO_MINIMO', valor: 278.8, descripcion: 'Salario mínimo diario general 2026' },
   { clave: 'FONDO_AHORRO_PORC', valor: 13, descripcion: '% máximo del salario para fondo de ahorro (tope exento)' },
   { clave: 'FONDO_AHORRO_TOPE_UMA', valor: 1.3, descripcion: 'Veces la UMA anual para tope exento del fondo de ahorro' },

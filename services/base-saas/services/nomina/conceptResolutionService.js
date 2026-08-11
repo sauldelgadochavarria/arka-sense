@@ -16,7 +16,9 @@ function defaultTipoAplicacion(codigo) {
     String(codigo).startsWith('HORAS_EXTRA') ||
     codigo === 'PREMIO_PUNTUALIDAD' ||
     codigo === 'PREMIO_ASISTENCIA' ||
-    codigo === 'HE_PRENOMINA'
+    codigo === 'HE_PRENOMINA' ||
+    codigo === 'AGUINALDO' ||
+    codigo === 'PRIMA_VACACIONAL'
   ) {
     return 'EVENTUAL';
   }
@@ -158,9 +160,14 @@ async function syncTenantConceptosFromCatalog(tenantId, empresaId) {
       'metadata.catalogClave': c.clave,
       'metadata.aplicaEn': aplicaEn,
       'metadata.tiposIncidencia': c.tiposIncidencia || [],
-      'metadata.insumosContexto': c.insumosContexto || []
+      'metadata.insumosContexto': c.insumosContexto || [],
+      'metadata.esVariableSdi': c.fiscal?.imss?.naturalezaSdi === 'variable',
+      'metadata.naturalezaSdi': c.fiscal?.imss?.naturalezaSdi || ''
     };
     if (!setDoc.fiscal) delete setDoc.fiscal;
+    if (Array.isArray(c.aplicaTipoNomina) && c.aplicaTipoNomina.length) {
+      setDoc.aplicaTipoNomina = c.aplicaTipoNomina;
+    }
     if (c.formulaPrenomina && FORMULAS_OK.has(c.formulaPrenomina)) {
       setDoc.formulaPrenomina = c.formulaPrenomina;
     }
@@ -174,7 +181,9 @@ async function syncTenantConceptosFromCatalog(tenantId, empresaId) {
           empresaId,
           codigo: c.codigo,
           codigoExterno: '',
-          aplicaTipoNomina: ['ordinaria', 'extraordinaria', 'finiquito'],
+          ...(Array.isArray(c.aplicaTipoNomina) && c.aplicaTipoNomina.length
+            ? {}
+            : { aplicaTipoNomina: ['ordinaria', 'extraordinaria', 'finiquito'] }),
           dependientes: [],
           cuentaContable: ''
         }

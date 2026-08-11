@@ -29,6 +29,21 @@ const CONCEPTOS_CAPA_B = [
     naturaleza: 'exento',
     ordenCalculo: 30,
     sat: { tipo: 'percepcion', clave: '010', descripcion: 'Premios por puntualidad' },
+    fiscal: {
+      naturaleza: 'exento',
+      integraISR: false,
+      integraIMSS: true,
+      integraINFONAVIT: false,
+      desglose: { modo: 'todo_exento', codigoRegla: '' },
+      imss: {
+        naturalezaSdi: 'variable',
+        desglose: {
+          modo: 'regla_ley',
+          topeNoIntegraPctSbc: 10,
+          codigoRegla: 'premio_10_sbc'
+        }
+      }
+    },
     metadata: { legadoClaPerded: 17 }
   },
   {
@@ -38,6 +53,21 @@ const CONCEPTOS_CAPA_B = [
     naturaleza: 'exento',
     ordenCalculo: 31,
     sat: { tipo: 'percepcion', clave: '049', descripcion: 'Premios por asistencia' },
+    fiscal: {
+      naturaleza: 'exento',
+      integraISR: false,
+      integraIMSS: true,
+      integraINFONAVIT: false,
+      desglose: { modo: 'todo_exento', codigoRegla: '' },
+      imss: {
+        naturalezaSdi: 'variable',
+        desglose: {
+          modo: 'regla_ley',
+          topeNoIntegraPctSbc: 10,
+          codigoRegla: 'premio_10_sbc'
+        }
+      }
+    },
     metadata: { legadoClaPerded: 16 }
   },
   {
@@ -46,6 +76,14 @@ const CONCEPTOS_CAPA_B = [
     tipo: 'deduccion',
     naturaleza: 'informativo',
     ordenCalculo: 58,
+    fiscal: {
+      naturaleza: 'informativo',
+      integraISR: false,
+      integraIMSS: false,
+      integraINFONAVIT: false,
+      desglose: { modo: 'todo_exento' },
+      imss: { naturalezaSdi: 'excluido', desglose: { modo: 'todo_excluye' } }
+    },
     metadata: { informativo: true }
   },
   {
@@ -54,6 +92,14 @@ const CONCEPTOS_CAPA_B = [
     tipo: 'percepcion',
     naturaleza: 'informativo',
     ordenCalculo: 90,
+    fiscal: {
+      naturaleza: 'informativo',
+      integraISR: false,
+      integraIMSS: false,
+      integraINFONAVIT: false,
+      desglose: { modo: 'todo_exento' },
+      imss: { naturalezaSdi: 'excluido', desglose: { modo: 'todo_excluye' } }
+    },
     metadata: { informativo: true, esNeto: true }
   }
 ];
@@ -66,44 +112,61 @@ function buildCapaBFormulasForPeriodo(tipoPeriodo) {
       conceptoCodigo: 'PREMIO_PUNTUALIDAD',
       tipoPeriodo,
       tipoNomina: 'ordinaria',
-      formula: '500',
+      formula: 'si(INCIDENCIAS.sinRetardo == 1, 500, 0)',
       dependencias: [],
-      condicion: 'INCIDENCIAS.sinRetardo == 1'
+      condicion: ''
     },
     {
       conceptoCodigo: 'PREMIO_ASISTENCIA',
       tipoPeriodo,
       tipoNomina: 'ordinaria',
-      formula: '500',
+      formula: 'si(diasLaborados >= diasProgramados, 500, 0)',
       dependencias: [],
-      condicion: 'diasLaborados >= diasProgramados'
+      condicion: ''
     },
     {
       conceptoCodigo: 'PERCEPCIONES_GRAVADAS',
       tipoPeriodo,
       tipoNomina: 'ordinaria',
-      formula: 'SUELDO',
-      dependencias: ['SUELDO'],
+      // Fallback; el motor sobrescribe con suma de campos gravado (desglose fiscal).
+      // No usar importes crudos de HE: una parte puede ser exenta (p.ej. dobles).
+      formula: '0',
+      dependencias: [],
       condicion: ''
     },
     {
       conceptoCodigo: 'DEDUCCIONES_TOTALES',
       tipoPeriodo,
       tipoNomina: 'ordinaria',
-      formula: 'ISR + IMSS_OBRERO + DED_FONDO_AHORRO',
-      dependencias: ['ISR', 'IMSS_OBRERO', 'DED_FONDO_AHORRO'],
+      // Fallback; el motor sobrescribe con suma de deducciones no informativas (config.tipo).
+      formula:
+        'ISR + IMSS_OBRERO + DED_FONDO_AHORRO + DED_FONDO_AHORRO_EMPRESA + DED_SEGURO_VIDA + DED_SGMM',
+      dependencias: [
+        'ISR',
+        'IMSS_OBRERO',
+        'DED_FONDO_AHORRO',
+        'DED_FONDO_AHORRO_EMPRESA',
+        'DED_SEGURO_VIDA',
+        'DED_SGMM'
+      ],
       condicion: ''
     },
     {
       conceptoCodigo: 'NETO_PAGAR',
       tipoPeriodo,
       tipoNomina: 'ordinaria',
+      // Fallback; el motor sobrescribe con percepciones − deducciones según config.
       formula:
-        'SUELDO + PREMIO_PUNTUALIDAD + PREMIO_ASISTENCIA + FONDO_AHORRO_EMPRESA - DEDUCCIONES_TOTALES',
+        'SUELDO + HORAS_EXTRA_DOBLES + HORAS_EXTRA_TRIPLES + PREMIO_PUNTUALIDAD + PREMIO_ASISTENCIA + DESPENSA + SEGURO_VIDA + SGMM + FONDO_AHORRO_EMPRESA - DEDUCCIONES_TOTALES',
       dependencias: [
         'SUELDO',
+        'HORAS_EXTRA_DOBLES',
+        'HORAS_EXTRA_TRIPLES',
         'PREMIO_PUNTUALIDAD',
         'PREMIO_ASISTENCIA',
+        'DESPENSA',
+        'SEGURO_VIDA',
+        'SGMM',
         'FONDO_AHORRO_EMPRESA',
         'DEDUCCIONES_TOTALES'
       ],

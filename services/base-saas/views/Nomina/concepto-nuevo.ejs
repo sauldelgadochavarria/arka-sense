@@ -33,6 +33,24 @@
           <% }); %>
         </select>
       </label>
+      <label>Categoría
+        <select name="categoria">
+          <%
+            const _catsN = (typeof categoriasConcepto !== 'undefined' && categoriasConcepto && categoriasConcepto.length)
+              ? categoriasConcepto
+              : [
+                  { value: 'ordinario', label: 'Ordinario' },
+                  { value: 'prevision_social', label: 'Previsión social' },
+                  { value: 'fiscal', label: 'Fiscal' },
+                  { value: 'informativo', label: 'Informativo' },
+                  { value: 'otro', label: 'Otro' }
+                ];
+          %>
+          <% _catsN.forEach(function(c) { %>
+          <option value="<%= c.value %>" <%= c.value === 'ordinario' ? 'selected' : '' %>><%= c.label %></option>
+          <% }); %>
+        </select>
+      </label>
       <label>Orden
         <input name="ordenCalculo" type="number" min="1" placeholder="Orden" value="100" />
       </label>
@@ -120,7 +138,26 @@
       <label class="inline-check"><input type="checkbox" name="integraIMSS" checked /> Integra IMSS</label>
       <label class="inline-check"><input type="checkbox" name="integraINFONAVIT" /> Integra INFONAVIT</label>
     </div>
-    <label>Modo de desglose
+    <div class="form-row-2">
+      <label>Naturaleza SDI
+        <select name="naturalezaSdi">
+          <option value="variable" selected>Variable (bimestre)</option>
+          <option value="fijo">Fijo (SDI/factor)</option>
+          <option value="excluido">Excluido</option>
+        </select>
+      </label>
+      <label>Modo desglose IMSS
+        <select name="imssDesgloseModo">
+          <option value="todo_integra" selected>Todo integra SBC</option>
+          <option value="todo_excluye">Nada integra</option>
+          <option value="tope_uma">Tope no integra (UMAs)</option>
+          <option value="tope_monto">Tope no integra (monto)</option>
+          <option value="tope_pct_sbc">Tope no integra (% SBC)</option>
+          <option value="regla_ley">Regla de ley IMSS</option>
+        </select>
+      </label>
+    </div>
+    <label>Modo de desglose ISR
       <select name="desgloseModo">
         <option value="todo_gravado">Todo gravado</option>
         <option value="todo_exento">Todo exento</option>

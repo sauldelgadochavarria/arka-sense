@@ -7,19 +7,36 @@
 
 <div class="toolbar">
   <a class="btn btn-secondary" href="/config-sistema/enums">← Enums</a>
+  <% if (grupo.grupo === 'formula_functions') { %>
+  <a class="btn btn-primary" href="/nomina/catalogos/formula-functions">Gestionar funciones (crear / activar)</a>
+  <% } %>
+  <% if (grupo.grupo === 'formula_context_vars') { %>
+  <a class="btn btn-secondary" href="/nomina/conceptos">Conceptos</a>
+  <% } %>
 </div>
 
 <div class="panel">
   <% if (!grupo.editable) { %>
-  <p class="muted">Este enum es estructural (fase / tipo aplicación). Solo consulta.</p>
+  <p class="muted">Este enum es estructural o sincronizado. Solo consulta.</p>
   <table>
-    <thead><tr><th>Valor</th><th>Etiqueta</th><th>Descripción</th></tr></thead>
+    <thead>
+      <tr>
+        <th>Valor</th>
+        <th>Etiqueta</th>
+        <th>Descripción</th>
+        <% if (grupo.grupo === 'formula_functions') { %><th>Tipo</th><th>Ejemplo</th><% } %>
+      </tr>
+    </thead>
     <tbody>
       <% (grupo.items || []).forEach(function(it) { %>
       <tr>
         <td><code><%= it.value %></code></td>
         <td><%= it.label %></td>
         <td class="muted"><%= it.descripcion || '—' %></td>
+        <% if (grupo.grupo === 'formula_functions') { %>
+        <td><%= (it.meta && it.meta.tipo) || '—' %></td>
+        <td><code class="small"><%= (it.meta && it.meta.ejemplo) || '—' %></code></td>
+        <% } %>
       </tr>
       <% }); %>
     </tbody>

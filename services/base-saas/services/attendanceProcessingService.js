@@ -8,6 +8,7 @@ const { isTimestampInHolgura } = require('../libs/turnoHelpers');
 const { shouldQualifyAttendance } = require('../libs/empleadoHelpers');
 const { syncAutomaticIncidencias } = require('./incidenciasAutoSync');
 const { resolveTurnoVigente } = require('./turnoResolverService');
+const { clasificarMinutosDia } = require('../libs/horasExtraClasificacion');
 
 function isDiaLaborable(turno, fecha) {
   const day = new Date(fecha).getDay();
@@ -35,45 +36,30 @@ function computeRetardoMinutos(diffEntrada, toleranciaMin, modoTolerancia) {
   return diffEntrada;
 }
 
+/**
+ * Clasifica minutos de salida tarde / HE según LFT:
+ * - Offset del turno (inicioHEOrdinariaMin) no cuenta como HE.
+ * - Primeras 3 h del día → dobles (pago ×2).
+ * - Excedente del día → triples (pago ×3).
+ * El tope semanal de 9 h se aplica al agregar el período (prenómina / bridge).
+ */
 function splitHorasExtra(minutosExtraTotal, turno) {
   if (minutosExtraTotal <= 0) {
     return { minutosHEOrdinaria: 0, minutosHEDoble: 0, minutosHETriple: 0, minutosHorasExtra: 0 };
   }
 
-  const offset = turno.inicioHEOrdinariaMin ?? 0;
-  let extra = Math.max(0, minutosExtraTotal - offset);
+  const offset = turno?.inicioHEOrdinariaMin ?? 0;
+  const extra = Math.max(0, minutosExtraTotal - offset);
   if (extra <= 0) {
     return { minutosHEOrdinaria: 0, minutosHEDoble: 0, minutosHETriple: 0, minutosHorasExtra: 0 };
   }
 
-  const umbralDoble = turno.inicioHEDobleMin;
-  const umbralTriple = turno.inicioHETripleMin;
-
-  let ordinaria = 0;
-  let doble = 0;
-  let triple = 0;
-
-  if (umbralDoble == null) {
-    ordinaria = extra;
-  } else if (extra <= umbralDoble) {
-    ordinaria = extra;
-  } else {
-    ordinaria = umbralDoble;
-    const rest = extra - umbralDoble;
-    if (umbralTriple == null) {
-      doble = rest;
-    } else {
-      const rangoDoble = Math.max(0, umbralTriple - umbralDoble);
-      doble = Math.min(rest, rangoDoble);
-      triple = Math.max(0, rest - rangoDoble);
-    }
-  }
-
+  const { minutosDobles, minutosTriples } = clasificarMinutosDia(extra);
   return {
-    minutosHEOrdinaria: ordinaria,
-    minutosHEDoble: doble,
-    minutosHETriple: triple,
-    minutosHorasExtra: ordinaria + doble + triple
+    minutosHEOrdinaria: 0,
+    minutosHEDoble: minutosDobles,
+    minutosHETriple: minutosTriples,
+    minutosHorasExtra: extra
   };
 }
 

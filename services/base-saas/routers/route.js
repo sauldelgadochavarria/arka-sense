@@ -113,6 +113,16 @@ router.get('/personal-empleados/:id/edit', empleadosController.editEmpleado);
 router.post('/personal-empleados/:id', empleadosController.updateEmpleado);
 router.post('/personal-empleados/:id/baja', empleadosController.bajaEmpleado);
 router.post('/personal-empleados/:id/reactivar', empleadosController.reactivarEmpleado);
+router.post('/personal-empleados/:id/calcular-sdi', empleadosController.calcularSdiAction);
+
+const tablaPrestacionesController = require('../controllers/tablaPrestacionesController');
+router.get('/personal/prestaciones', tablaPrestacionesController.listTablas);
+router.get('/personal/prestaciones/nueva', tablaPrestacionesController.newTabla);
+router.post('/personal/prestaciones', tablaPrestacionesController.createTabla);
+router.post('/personal/prestaciones/seed-global', tablaPrestacionesController.seedGlobal);
+router.get('/personal/prestaciones/:id/edit', tablaPrestacionesController.editTabla);
+router.post('/personal/prestaciones/:id', tablaPrestacionesController.updateTabla);
+router.post('/personal/prestaciones/:id/toggle', tablaPrestacionesController.toggleTabla);
 router.get('/personal-empleados/:id/historial-laboral', historialLaboralController.showHistorialEmpleado);
 router.post('/personal-empleados/:id/historial-laboral', historialLaboralController.createMovimientoManual);
 
@@ -164,6 +174,7 @@ router.get('/nomina', nominaController.index);
 router.get('/nomina/periodos', nominaController.periodos);
 router.post('/nomina/periodos', nominaController.createPeriodo);
 router.get('/nomina/periodos/:id', nominaController.showPeriodo);
+router.post('/nomina/periodos/:id/prestaciones', nominaController.updatePeriodoPrestacionesAction);
 router.post('/nomina/periodos/:id/vincular-prenomina', nominaController.vincularPrenominaAction);
 router.post('/nomina/periodos/:id/calcular', nominaController.calcularPeriodoAction);
 router.get('/nomina/periodos/:id/estado-calculo', nominaController.estadoCalculoApi);
@@ -191,6 +202,32 @@ router.post('/nomina/catalogos/mapeo-legado', nominaCatalogosController.createMa
 router.post('/nomina/catalogos/mapeo-legado/:id/toggle', nominaCatalogosController.toggleMapeoLegadoAction);
 router.get('/nomina/catalogos/parametros', nominaCatalogosController.parametros);
 router.post('/nomina/catalogos/parametros', nominaCatalogosController.createParametro);
+router.get('/nomina/catalogos/formula-functions', nominaCatalogosController.formulaFunctions);
+router.post('/nomina/catalogos/formula-functions', nominaCatalogosController.createFormulaFunctionAction);
+router.post(
+  '/nomina/catalogos/formula-functions/validate',
+  nominaCatalogosController.validateFormulaFunctionApi
+);
+router.post(
+  '/nomina/catalogos/formula-functions/test',
+  nominaCatalogosController.testFormulaFunctionApi
+);
+router.get(
+  '/nomina/catalogos/formula-functions/:id',
+  nominaCatalogosController.showFormulaFunction
+);
+router.post(
+  '/nomina/catalogos/formula-functions/:id',
+  nominaCatalogosController.saveFormulaFunctionAction
+);
+router.post(
+  '/nomina/catalogos/formula-functions/:id/publish',
+  nominaCatalogosController.publishFormulaFunctionAction
+);
+router.post(
+  '/nomina/catalogos/formula-functions/:id/toggle',
+  nominaCatalogosController.toggleFormulaFunctionAction
+);
 router.get('/nomina/catalogos/tablas-fiscales', nominaCatalogosController.tablasFiscales);
 router.post('/nomina/catalogos/tablas-fiscales', nominaCatalogosController.createTablaFiscal);
 router.get('/nomina/catalogos/tablas-fiscales/:id', nominaCatalogosController.showTablaFiscal);

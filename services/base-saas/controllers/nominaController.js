@@ -14,9 +14,11 @@ const { requireEmpresaForTenant } = require('../libs/tenantScope');
 const { tenantHasFeature } = require('../libs/tenantFeatureFlags');
 const { resolveNominaConceptoModo, userCanEditNomina, userCanViewNomina } = require('../libs/roleAccess');
 const { resolvePeriodRange } = require('../libs/payrollPeriodDates');
-const { trimString, parseDate } = require('../libs/formHelpers');
+const { trimString, parseDate, parseCheckbox, parsePositiveNumber } = require('../libs/formHelpers');
 const { parseBodyStringList } = require('../libs/conceptoAplicabilidad');
+const { asignarNumeroPeriodo, ensureNumerosPeriodoTenant } = require('../libs/periodoNumero');
 const { startOfDay, endOfDay, diasCalendarioInclusive } = require('../libs/timeHelpers');
+const { sugerirPagaDespensa } = require('../libs/periodoPrestacionesFlags');
 const {
   MODULO_NOMINA,
   SECCIONES_NOMINA,
@@ -60,6 +62,7 @@ const { encolarCalculo, obtenerEstadoJob } = require('../services/nomina/nominaC
 const { validatePeriodoForCalculo } = require('../services/nomina/nominaPreflightService');
 const {
   createFormulaScope,
+  createFormulaScopeWithCatalog,
   evaluateExpression,
   evaluateCondicion,
   validateFormulaSyntax,
@@ -126,8 +129,12 @@ async function periodos(req, res) {
   const PeriodoNomina = await getPeriodoNominaModel();
   const PayrollPeriod = await getPayrollPeriodModel();
 
+  if (empresa) {
+    await ensureNumerosPeriodoTenant(PeriodoNomina, tenantId);
+  }
+
   const periodosList = empresa
-    ? await PeriodoNomina.find({ tenantId }).sort({ fechaInicio: -1 }).limit(24).lean()
+    ? await PeriodoNomina.find({ tenantId }).sort({ anio: -1, tipoPeriodo: 1, numeroPeriodo: -1, fechaInicio: -1 }).limit(40).lean()
     : [];
   const prenominaPeriodos = empresa
     ? await PayrollPeriod.find({ tenantId, compartirConNomina: true })
@@ -142,6 +149,7 @@ async function periodos(req, res) {
     tiposPeriodo: TIPOS_PERIODO,
     tiposNomina: TIPOS_NOMINA,
     estatusLabels: ESTATUS_PERIODO_NOMINA,
+    sugerirPagaDespensaDefault: sugerirPagaDespensa('quincenal', new Date()),
     empresa,
     error: error || null,
     session: req.session
@@ -178,6 +186,13 @@ async function createPeriodo(req, res) {
         req.flash('error', 'El período de pre-nómina no está marcado para compartirse con nómina');
         return res.redirect('/nomina/periodos');
       }
+      if (prePeriodo.tipo && String(prePeriodo.tipo).toLowerCase() !== String(tipoPeriodo).toLowerCase()) {
+        req.flash(
+          'error',
+          `La pre-nómina es «${prePeriodo.tipo}» y el período de nómina es «${tipoPeriodo}». Deben coincidir.`
+        );
+        return res.redirect('/nomina/periodos');
+      }
       // Alinear fechas con la pre-nómina vinculada (fuente de asistencia)
       fechaInicio = startOfDay(prePeriodo.fechaInicio);
       fechaFin = endOfDay(prePeriodo.fechaFin);
@@ -196,6 +211,22 @@ async function createPeriodo(req, res) {
       return res.redirect('/nomina/periodos');
     }
 
+    const { anio, numeroPeriodo } = await asignarNumeroPeriodo(PeriodoNomina, {
+      tenantId,
+      tipoPeriodo,
+      fechaInicio
+    });
+
+    const lastBody = (name) => {
+      const v = req.body[name];
+      if (Array.isArray(v)) return v[v.length - 1];
+      return v;
+    };
+    const pagaDespensa = lastBody('pagaDespensa') === '1' || lastBody('pagaDespensa') === true;
+    const despensaMontoOverride = parsePositiveNumber(req.body.despensaMontoOverride) ?? 0;
+    const despensaPagoMensual =
+      lastBody('despensaPagoMensual') === '1' || lastBody('despensaPagoMensual') === true;
+
     const periodo = await PeriodoNomina.create({
       tenantId,
       empresaId: empresa._id,
@@ -203,10 +234,17 @@ async function createPeriodo(req, res) {
       tipoNomina,
       fechaInicio: startOfDay(fechaInicio),
       fechaFin: endOfDay(fechaFin),
+      anio,
+      numeroPeriodo,
       diasPeriodo: diasCalendarioInclusive(fechaInicio, fechaFin),
       estatus: 'abierto',
       payrollPeriodId: payrollPeriodId || null,
-      notas: trimString(req.body.notas)
+      notas: trimString(req.body.notas),
+      prestaciones: {
+        pagaDespensa: !!pagaDespensa,
+        despensaMontoOverride,
+        despensaPagoMensual: !!despensaPagoMensual
+      }
     });
 
     await registrarAuditoriaNomina({
@@ -215,10 +253,12 @@ async function createPeriodo(req, res) {
       entidad: 'periodo',
       periodoId: periodo._id,
       ...sessionActor(req),
-      mensaje: `Período abierto ${tipoPeriodo}/${tipoNomina}`,
+      mensaje: `Período abierto ${tipoPeriodo}/${tipoNomina} #${numeroPeriodo}/${anio}`,
       detalle: {
         tipoPeriodo,
         tipoNomina,
+        anio,
+        numeroPeriodo,
         fechaInicio: periodo.fechaInicio,
         fechaFin: periodo.fechaFin,
         payrollPeriodId: payrollPeriodId || null
@@ -227,12 +267,79 @@ async function createPeriodo(req, res) {
       userAgent: req.get('user-agent') || ''
     });
 
-    req.flash('success', 'Período de nómina abierto');
+    req.flash('success', `Período de nómina abierto (#${numeroPeriodo} / ${anio})`);
     res.redirect(`/nomina/periodos/${periodo._id}`);
   } catch (err) {
     console.error('[nomina]', err);
     req.flash('error', err.message || 'Error al crear período');
     res.redirect('/nomina/periodos');
+  }
+}
+
+async function updatePeriodoPrestacionesAction(req, res) {
+  if (requireNominaFeature(req, res) === false) return;
+  try {
+    const tenantId = req.session.tenantId;
+    const PeriodoNomina = await getPeriodoNominaModel();
+    const periodo = await PeriodoNomina.findOne({ tenantId, _id: req.params.id });
+    if (!periodo) {
+      req.flash('error', 'Período no encontrado');
+      return res.redirect('/nomina/periodos');
+    }
+    const est = String(periodo.estatus || '').toLowerCase();
+    if (est === 'cerrado' || est === 'calculando') {
+      req.flash(
+        'error',
+        est === 'cerrado'
+          ? 'Período cerrado: solo consulta de prestaciones'
+          : 'No se pueden editar prestaciones mientras el período está calculando'
+      );
+      return res.redirect(`/nomina/periodos/${periodo._id}`);
+    }
+    if (est !== 'abierto' && est !== 'calculado') {
+      req.flash('error', `No se pueden editar prestaciones en estatus «${periodo.estatus}»`);
+      return res.redirect(`/nomina/periodos/${periodo._id}`);
+    }
+
+    const bodyVal = (name) => {
+      const v = req.body[name];
+      if (Array.isArray(v)) return v[v.length - 1];
+      return v;
+    };
+    const pagaDespensa = bodyVal('pagaDespensa') === '1' || bodyVal('pagaDespensa') === 'on';
+    const despensaPagoMensual =
+      bodyVal('despensaPagoMensual') === '1' || bodyVal('despensaPagoMensual') === 'on';
+    const despensaMontoOverride = parsePositiveNumber(req.body.despensaMontoOverride) ?? 0;
+
+    periodo.set('prestaciones.pagaDespensa', !!pagaDespensa);
+    periodo.set('prestaciones.despensaPagoMensual', !!despensaPagoMensual);
+    periodo.set('prestaciones.despensaMontoOverride', despensaMontoOverride);
+    await periodo.save();
+
+    await registrarAuditoriaNomina({
+      tenantId,
+      accion: 'PERIODO_PRESTACIONES',
+      entidad: 'periodo',
+      periodoId: periodo._id,
+      ...sessionActor(req),
+      mensaje: `Prestaciones: pagaDespensa=${pagaDespensa ? 'sí' : 'no'}`,
+      detalle: {
+        prestaciones: {
+          pagaDespensa: !!pagaDespensa,
+          despensaPagoMensual: !!despensaPagoMensual,
+          despensaMontoOverride
+        }
+      },
+      ip: req.ip,
+      userAgent: req.get('user-agent') || ''
+    });
+
+    req.flash('success', 'Prestaciones del período guardadas. Recalcula la nómina para aplicarlas.');
+    res.redirect(`/nomina/periodos/${periodo._id}`);
+  } catch (err) {
+    console.error('[nomina]', err);
+    req.flash('error', err.message || 'Error al guardar prestaciones');
+    res.redirect(`/nomina/periodos/${req.params.id}`);
   }
 }
 
@@ -278,14 +385,20 @@ async function showPeriodo(req, res) {
 
   const prenominaCandidatos =
     periodo.estatus !== 'cerrado' && !periodo.payrollPeriodId
-      ? await PayrollPeriod.find({
-          tenantId,
-          compartirConNomina: true,
-          estatus: { $in: ['abierto', 'borrador', 'cerrado'] }
-        })
-          .sort({ fechaInicio: -1 })
-          .limit(40)
-          .lean()
+      ? (
+          await PayrollPeriod.find({
+            tenantId,
+            compartirConNomina: true,
+            estatus: { $in: ['abierto', 'borrador', 'cerrado'] }
+          })
+            .sort({ fechaInicio: -1 })
+            .limit(80)
+            .lean()
+        ).filter(
+          (p) =>
+            !p.tipo ||
+            String(p.tipo).toLowerCase() === String(periodo.tipoPeriodo || '').toLowerCase()
+        )
       : [];
 
   const auditoria = await listAuditoriaPeriodo(tenantId, periodo._id, 30);
@@ -351,14 +464,61 @@ async function vincularPrenominaAction(req, res) {
       return res.redirect(`/nomina/periodos/${periodo._id}`);
     }
 
+    // No sobrescribir tipoPeriodo: un quincenal no debe volverse semanal al vincular.
+    if (pre.tipo && String(pre.tipo).toLowerCase() !== String(periodo.tipoPeriodo).toLowerCase()) {
+      req.flash(
+        'error',
+        `No se puede vincular: la pre-nómina es «${pre.tipo}» y este período de nómina es «${periodo.tipoPeriodo}». Elige una pre-nómina del mismo tipo.`
+      );
+      return res.redirect(`/nomina/periodos/${periodo._id}`);
+    }
+
+    const yaUsada = await PeriodoNomina.findOne({
+      tenantId,
+      payrollPeriodId: pre._id,
+      _id: { $ne: periodo._id }
+    }).lean();
+    if (yaUsada) {
+      req.flash(
+        'error',
+        `Esa pre-nómina ya está vinculada al período ${yaUsada.tipoPeriodo} #${yaUsada.numeroPeriodo || '—'} (${new Date(yaUsada.fechaInicio).toLocaleDateString('es-MX')}).`
+      );
+      return res.redirect(`/nomina/periodos/${periodo._id}`);
+    }
+
     const fechaInicio = startOfDay(pre.fechaInicio);
     const fechaFin = endOfDay(pre.fechaFin);
+
+    const choque = await PeriodoNomina.findOne({
+      tenantId,
+      tipoPeriodo: periodo.tipoPeriodo,
+      tipoNomina: periodo.tipoNomina,
+      fechaInicio,
+      fechaFin,
+      _id: { $ne: periodo._id }
+    }).lean();
+    if (choque) {
+      req.flash(
+        'error',
+        `Al alinear fechas coincidiría con otro período ${choque.tipoPeriodo} ya existente (#${choque.numeroPeriodo || '—'}).`
+      );
+      return res.redirect(`/nomina/periodos/${periodo._id}`);
+    }
+
     periodo.payrollPeriodId = pre._id;
     periodo.fechaInicio = fechaInicio;
     periodo.fechaFin = fechaFin;
     periodo.diasPeriodo = diasCalendarioInclusive(fechaInicio, fechaFin);
-    if (pre.tipo && periodo.tipoPeriodo !== pre.tipo) {
-      periodo.tipoPeriodo = pre.tipo;
+    if (!periodo.anio || !periodo.numeroPeriodo) {
+      const assigned = await asignarNumeroPeriodo(PeriodoNomina, {
+        tenantId,
+        tipoPeriodo: periodo.tipoPeriodo,
+        fechaInicio
+      });
+      periodo.anio = assigned.anio;
+      periodo.numeroPeriodo = assigned.numeroPeriodo;
+    } else {
+      periodo.anio = fechaInicio.getFullYear();
     }
     await periodo.save();
 
@@ -369,14 +529,21 @@ async function vincularPrenominaAction(req, res) {
       periodoId: periodo._id,
       ...sessionActor(req),
       mensaje: `Pre-nómina vinculada ${payrollPeriodId}`,
-      detalle: { payrollPeriodId, fechaInicio, fechaFin },
+      detalle: {
+        payrollPeriodId,
+        fechaInicio,
+        fechaFin,
+        tipoPeriodo: periodo.tipoPeriodo,
+        numeroPeriodo: periodo.numeroPeriodo,
+        anio: periodo.anio
+      },
       ip: req.ip,
       userAgent: req.get('user-agent') || ''
     });
 
     req.flash(
       'success',
-      `Pre-nómina vinculada. Fechas alineadas a ${fechaInicio.toLocaleDateString('es-MX')} – ${startOfDay(fechaFin).toLocaleDateString('es-MX')}. Recalcula para aplicar asistencia.`
+      `Pre-nómina vinculada (tipo «${periodo.tipoPeriodo}» conservado). Fechas: ${fechaInicio.toLocaleDateString('es-MX')} – ${startOfDay(fechaFin).toLocaleDateString('es-MX')}. Recalcula para aplicar asistencia.`
     );
     res.redirect(`/nomina/periodos/${periodo._id}`);
   } catch (err) {
@@ -509,6 +676,7 @@ async function showRecibo(req, res) {
   const ConceptoAplicado = await getConceptoAplicadoModel();
   const PeriodoNomina = await getPeriodoNominaModel();
   const Empleado = await getEmpleadoModel();
+  const { requireEmpresaForTenant: reqEmp } = require('../libs/tenantScope');
 
   const recibo = await ReciboNomina.findOne({ tenantId, _id: req.params.reciboId }).lean();
   if (!recibo) {
@@ -518,28 +686,69 @@ async function showRecibo(req, res) {
 
   const ConceptoNomina = await getConceptoNominaModel();
 
-  const [periodo, empleado, conceptos, catalogo] = await Promise.all([
+  const [periodo, empleado, conceptos, catalogo, empScope] = await Promise.all([
     PeriodoNomina.findOne({ _id: recibo.periodoId }).lean(),
     Empleado.findOne({ _id: recibo.empleadoId }).lean(),
     ConceptoAplicado.find({ tenantId, reciboId: recibo._id }).sort({ conceptoCodigo: 1 }).lean(),
-    ConceptoNomina.find({ tenantId }).select('codigo naturaleza tipo metadata').lean()
+    ConceptoNomina.find({ tenantId })
+      .select('codigo nombre naturaleza tipo claveSAT sat metadata ordenImpresion ordenCalculo')
+      .lean(),
+    reqEmp(tenantId).catch(() => ({ empresa: null }))
   ]);
 
   const conceptosMeta = {};
   for (const c of catalogo) {
     conceptosMeta[c.codigo] = {
+      nombre: c.nombre || c.codigo,
       naturaleza: c.naturaleza,
       tipo: c.tipo,
+      claveSAT: (c.sat && c.sat.clave) || c.claveSAT || '',
+      ordenImpresion: c.ordenImpresion != null ? Number(c.ordenImpresion) : 100,
+      ordenCalculo: c.ordenCalculo != null ? Number(c.ordenCalculo) : 100,
       informativo: !!(c.metadata && c.metadata.informativo) || c.naturaleza === 'informativo'
     };
   }
+
+  const byPrintOrder = (a, b) =>
+    (a.ordenImpresion - b.ordenImpresion) ||
+    (a.ordenCalculo - b.ordenCalculo) ||
+    String(a.conceptoCodigo).localeCompare(String(b.conceptoCodigo));
+
+  const lineas = (conceptos || []).map((c) => {
+    const meta = conceptosMeta[c.conceptoCodigo] || {};
+    const tipo = c.tipo || meta.tipo || 'percepcion';
+    const esInfo = meta.naturaleza === 'informativo' || meta.informativo;
+    return {
+      ...c,
+      nombre: meta.nombre || c.conceptoCodigo,
+      claveSAT: c.claveSAT || meta.claveSAT || '',
+      tipo,
+      esInfo,
+      ordenImpresion: meta.ordenImpresion != null ? meta.ordenImpresion : 100,
+      ordenCalculo: meta.ordenCalculo != null ? meta.ordenCalculo : 100
+    };
+  });
+
+  const percepciones = lineas
+    .filter((c) => !c.esInfo && c.tipo === 'percepcion' && Number(c.importe) !== 0)
+    .sort(byPrintOrder);
+  const deducciones = lineas
+    .filter((c) => !c.esInfo && c.tipo === 'deduccion' && Number(c.importe) !== 0)
+    .sort(byPrintOrder);
+  const otrosPagos = lineas
+    .filter((c) => !c.esInfo && c.tipo === 'otro_pago' && Number(c.importe) !== 0)
+    .sort(byPrintOrder);
 
   res.render('Nomina/recibo', {
     recibo,
     periodo,
     empleado,
+    empresa: empScope?.empresa || null,
     conceptos,
     conceptosMeta,
+    percepciones,
+    deducciones,
+    otrosPagos,
     session: req.session
   });
 }
@@ -600,9 +809,23 @@ async function newConcepto(req, res) {
   if (requireNominaEditOrRedirect(req, res) === false) return;
   const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
   const ambitoEnums = await loadConceptoAmbitoEnums();
+  const { getEnumItems } = require('../services/nomina/systemEnumService');
+  let categoriasConcepto = [];
+  try {
+    categoriasConcepto = await getEnumItems('categoria_concepto');
+  } catch (_) {
+    categoriasConcepto = [
+      { value: 'ordinario', label: 'Ordinario' },
+      { value: 'prevision_social', label: 'Previsión social' },
+      { value: 'fiscal', label: 'Fiscal' },
+      { value: 'informativo', label: 'Informativo' },
+      { value: 'otro', label: 'Otro' }
+    ];
+  }
   res.render('Nomina/concepto-nuevo', {
     tiposConcepto: TIPOS_CONCEPTO,
     naturalezas: NATURALEZAS_CONCEPTO,
+    categoriasConcepto,
     ...ambitoEnums,
     empresa,
     error: error || null,
@@ -625,6 +848,7 @@ async function createConcepto(req, res) {
       nombre: req.body.nombre,
       tipo: req.body.tipo,
       naturaleza: req.body.naturaleza,
+      categoria: req.body.categoria,
       ordenCalculo: req.body.ordenCalculo,
       codigoExterno: req.body.codigoExterno,
       cuentaContable: req.body.cuentaContable,
@@ -640,6 +864,8 @@ async function createConcepto(req, res) {
       integraIMSS: req.body.integraIMSS,
       integraINFONAVIT: req.body.integraINFONAVIT,
       desgloseModo: req.body.desgloseModo,
+      naturalezaSdi: req.body.naturalezaSdi,
+      imssDesgloseModo: req.body.imssDesgloseModo,
       aplicaTiposEmpleado: parseBodyStringList(req.body.aplicaTiposEmpleado),
       aplicaTiposPeriodo: parseBodyStringList(req.body.aplicaTiposPeriodo),
       aplicaTipoNomina: parseBodyStringList(req.body.aplicaTipoNomina)
@@ -732,9 +958,11 @@ async function showConcepto(req, res) {
   const { getEnumItems, getFormulaContextVariables } = require('../services/nomina/systemEnumService');
   let fases = [];
   let tiposAplicacion = [];
+  let categoriasConcepto = [];
   try {
     fases = await getEnumItems('fase_calculo');
     tiposAplicacion = await getEnumItems('tipo_aplicacion');
+    categoriasConcepto = await getEnumItems('categoria_concepto');
   } catch (_) {
     fases = [
       { value: '1', label: 'Fase 1 — Percepciones' },
@@ -745,6 +973,13 @@ async function showConcepto(req, res) {
     tiposAplicacion = [
       { value: 'FIJO', label: 'Fijo' },
       { value: 'EVENTUAL', label: 'Eventual' }
+    ];
+    categoriasConcepto = [
+      { value: 'ordinario', label: 'Ordinario' },
+      { value: 'prevision_social', label: 'Previsión social' },
+      { value: 'fiscal', label: 'Fiscal' },
+      { value: 'informativo', label: 'Informativo' },
+      { value: 'otro', label: 'Otro' }
     ];
   }
   const {
@@ -810,6 +1045,8 @@ async function showConcepto(req, res) {
 
   const { DEFAULT_TIPOS_INCIDENCIA } = require('../config/incidenciasCatalog');
   const tiposIncidenciaOpts = DEFAULT_TIPOS_INCIDENCIA;
+  const { listFormulaFunctionsForAutocomplete } = require('../services/nomina/formulaFunctionsService');
+  const formulaSystemFunctions = await listFormulaFunctionsForAutocomplete();
 
   const desgloseModos = [
     { value: 'todo_gravado', label: 'Todo gravado' },
@@ -819,6 +1056,9 @@ async function showConcepto(req, res) {
     { value: 'formula', label: 'Fórmula gravado/exento' },
     { value: 'regla_ley', label: 'Regla de ley (p.ej. HE)' }
   ];
+  const { IMSS_DESGLOSE_MODOS, NATURALEZA_SDI_OPTS } = require('../models/fiscalConceptoShared');
+  const imssDesgloseModos = IMSS_DESGLOSE_MODOS;
+  const naturalezaSdiOpts = NATURALEZA_SDI_OPTS;
   const formulasPrenomina = [
     { value: '', label: '— (sin fórmula pre-nómina)' },
     { value: 'salario_periodo', label: 'Salario del período' },
@@ -849,14 +1089,18 @@ async function showConcepto(req, res) {
     catalogEntry,
     fases,
     tiposAplicacion,
+    categoriasConcepto,
     opcionesSat,
     tiposIncidenciaOpts,
     desgloseModos,
+    imssDesgloseModos,
+    naturalezaSdiOpts,
     formulasPrenomina,
     ambitosAplicaEn,
     tiposEmpleadoOpts,
     tiposPeriodoOpts,
     tiposNominaOpts,
+    formulaSystemFunctions,
     canEdit,
     modoVista,
     modo,
@@ -884,7 +1128,9 @@ async function saveConceptoPropsAction(req, res) {
         nombre: req.body.nombre,
         tipo: req.body.tipo,
         naturaleza: req.body.naturaleza,
+        categoria: req.body.categoria,
         ordenCalculo: req.body.ordenCalculo,
+        ordenImpresion: req.body.ordenImpresion,
         fase: req.body.fase,
         aplicaEn: req.body.aplicaEn,
         codigoExterno: req.body.codigoExterno,
@@ -911,6 +1157,14 @@ async function saveConceptoPropsAction(req, res) {
         formulaExento: req.body.formulaExento,
         formulaGravado: req.body.formulaGravado,
         codigoRegla: req.body.codigoRegla,
+        naturalezaSdi: req.body.naturalezaSdi,
+        imssDesgloseModo: req.body.imssDesgloseModo,
+        imssTopeNoIntegraUMA: req.body.imssTopeNoIntegraUMA,
+        imssTopeNoIntegraMonto: req.body.imssTopeNoIntegraMonto,
+        imssTopeNoIntegraPctSbc: req.body.imssTopeNoIntegraPctSbc,
+        imssFormulaIntegra: req.body.imssFormulaIntegra,
+        imssFormulaNoIntegra: req.body.imssFormulaNoIntegra,
+        imssCodigoRegla: req.body.imssCodigoRegla,
         fiscalNaturaleza: req.body.naturaleza,
         tipoAplicacion: req.body.tipoAplicacion
       },
@@ -1015,7 +1269,7 @@ async function probarFormulaApi(req, res) {
     if (condicionNorm) validateFormulaSyntax(condicionNorm);
 
     const parametros = await obtenerParametrosVigentes(new Date());
-    const scope = createFormulaScope(parametros, {
+    const scope = await createFormulaScopeWithCatalog(parametros, {
       aplicarTabla: () => 0,
       topeUMA: (v, veces) => Math.min(Number(v) || 0, parametros.uma * (veces || 1)),
       isrPeriodo: (g) => g * 0.1,
@@ -1165,6 +1419,7 @@ module.exports = {
   index,
   periodos,
   createPeriodo,
+  updatePeriodoPrestacionesAction,
   showPeriodo,
   vincularPrenominaAction,
   calcularPeriodoAction,

@@ -383,6 +383,36 @@ textarea {
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 
+.form-grid input[type="checkbox"],
+.form-grid input[type="radio"],
+.checkbox-group input[type="checkbox"],
+.checkbox-inline input[type="checkbox"] {
+  width: auto;
+  min-width: 1rem;
+  padding: 0;
+  margin: 0 0.4rem 0 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  vertical-align: middle;
+}
+
+.checkbox-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.checkbox-group label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-weight: 500;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
 input:focus,
 select:focus,
 textarea:focus {
@@ -1561,7 +1591,280 @@ button.btn-danger {
   gap: 0.4rem;
 }
 
-/* -- Impresión de recibo de nómina --------------------- */
+/* ?? Pre-recibo (pantalla + impresión) ????????????????? */
+.pre-recibo {
+  --pr-ink: #1e293b;
+  --pr-muted: #64748b;
+  --pr-line: #e2e8f0;
+  --pr-surface: #ffffff;
+  --pr-soft: #f8fafc;
+  --pr-perc: #0f766e;
+  --pr-perc-bg: #f0fdfa;
+  --pr-perc-head: #ccfbf1;
+  --pr-ded: #9a3412;
+  --pr-ded-bg: #fff7ed;
+  --pr-ded-head: #ffedd5;
+  --pr-accent: #0f766e;
+  background: var(--pr-surface);
+  border: 1px solid var(--pr-line);
+  border-radius: 12px;
+  padding: 1.25rem 1.35rem 1.5rem;
+  color: var(--pr-ink);
+  margin-bottom: 1.5rem;
+}
+
+.pre-recibo-top {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 1rem 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--pr-line);
+}
+
+.pre-recibo-eyebrow {
+  margin: 0 0 0.2rem;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--pr-muted);
+}
+
+.pre-recibo-brand h1 {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  color: var(--pr-ink);
+}
+
+.pre-recibo-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: stretch;
+}
+
+.pre-recibo-chip {
+  min-width: 5.5rem;
+  padding: 0.45rem 0.65rem;
+  border-radius: 8px;
+  background: var(--pr-soft);
+  border: 1px solid var(--pr-line);
+}
+
+.pre-recibo-chip span {
+  display: block;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--pr-muted);
+}
+
+.pre-recibo-chip strong {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.92rem;
+}
+
+.pre-recibo-chip-neto {
+  background: linear-gradient(160deg, #ecfdf5 0%, #f0fdfa 100%);
+  border-color: #99f6e4;
+}
+
+.pre-recibo-chip-neto strong {
+  color: var(--pr-accent);
+  font-size: 1.05rem;
+}
+
+.pre-recibo-empleado {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.75rem 1rem;
+  margin: 1rem 0 1.15rem;
+  padding: 0.85rem 1rem;
+  border-radius: 10px;
+  background: var(--pr-soft);
+  border: 1px solid var(--pr-line);
+}
+
+.pre-recibo-empleado .label {
+  display: block;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--pr-muted);
+  margin-bottom: 0.15rem;
+}
+
+.pre-recibo-empleado strong {
+  display: block;
+  font-size: 0.95rem;
+}
+
+.pre-recibo-id {
+  font-size: 0.78rem;
+  word-break: break-all;
+}
+
+.pre-recibo-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.85rem;
+  align-items: start;
+}
+
+@media (max-width: 860px) {
+  .pre-recibo-split {
+    grid-template-columns: 1fr;
+  }
+}
+
+.pre-recibo-col {
+  border-radius: 10px;
+  border: 1px solid var(--pr-line);
+  overflow: hidden;
+  background: #fff;
+}
+
+.pre-recibo-col-perc {
+  background: var(--pr-perc-bg);
+  border-color: #99f6e4;
+}
+
+.pre-recibo-col-ded {
+  background: var(--pr-ded-bg);
+  border-color: #fdba74;
+}
+
+.pre-recibo-col-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.55rem 0.8rem;
+}
+
+.pre-recibo-col-perc .pre-recibo-col-head {
+  background: var(--pr-perc-head);
+  color: var(--pr-perc);
+}
+
+.pre-recibo-col-ded .pre-recibo-col-head {
+  background: var(--pr-ded-head);
+  color: var(--pr-ded);
+}
+
+.pre-recibo-col-head h2 {
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+
+.pre-recibo-col-head span {
+  font-size: 0.92rem;
+  font-weight: 650;
+}
+
+.pre-recibo-col table {
+  width: 100%;
+  border-collapse: collapse;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.pre-recibo-col th,
+.pre-recibo-col td {
+  padding: 0.4rem 0.65rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.25);
+  font-size: 0.82rem;
+  vertical-align: top;
+}
+
+.pre-recibo-col th {
+  text-align: left;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--pr-muted);
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.pre-recibo-col td.num,
+.pre-recibo-col th.num {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.pre-recibo-col tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.pre-recibo-otros {
+  margin-top: 0.35rem;
+  padding: 0.45rem 0.65rem 0.65rem;
+  border-top: 1px dashed rgba(15, 118, 110, 0.25);
+}
+
+.pre-recibo-otros h3 {
+  margin: 0 0 0.35rem;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--pr-perc);
+}
+
+.pre-recibo-totales {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.65rem;
+  margin-top: 1rem;
+}
+
+.pre-recibo-tot-item {
+  padding: 0.65rem 0.8rem;
+  border-radius: 10px;
+  background: var(--pr-soft);
+  border: 1px solid var(--pr-line);
+}
+
+.pre-recibo-tot-item span {
+  display: block;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--pr-muted);
+}
+
+.pre-recibo-tot-item strong {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 1.05rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.pre-recibo-tot-neto {
+  background: linear-gradient(160deg, #ecfdf5 0%, #f0fdfa 100%);
+  border-color: #99f6e4;
+}
+
+.pre-recibo-tot-neto strong {
+  color: var(--pr-accent);
+  font-size: 1.2rem;
+}
+
+.pre-recibo-letra {
+  margin: 0.85rem 0 0;
+}
+
+.pre-recibo-foot {
+  margin-top: 0.85rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid var(--pr-line);
+}
+
 @media print {
   .topbar,
   .sidebar,
@@ -1584,35 +1887,34 @@ button.btn-danger {
     box-shadow: none !important;
   }
 
-  .no-print-detail {
-    display: none !important;
-  }
-
-  .recibo-print {
+  .pre-recibo {
+    border: none;
+    border-radius: 0;
     padding: 0;
+    margin: 0;
   }
 
-  .recibo-print-header h1 {
-    margin-bottom: 0.35rem;
-    font-size: 1.35rem;
+  .pre-recibo-split {
+    grid-template-columns: 1fr 1fr;
+    gap: 0.6rem;
   }
 
-  .recibo-print-footer {
-    margin-top: 1.25rem;
-    padding-top: 0.5rem;
-    border-top: 1px solid #ccc;
-  }
-
-  .recibo-conceptos-table th.no-print-detail,
-  .recibo-conceptos-table td.no-print-detail {
-    display: none !important;
-  }
-
-  .summary-cards .card {
+  .pre-recibo-col,
+  .pre-recibo-empleado,
+  .pre-recibo-chip,
+  .pre-recibo-tot-item {
     break-inside: avoid;
+  }
+
+  .pre-recibo-col table {
+    background: #fff;
   }
 
   a[href]::after {
     content: none !important;
+  }
+
+  @page {
+    margin: 12mm;
   }
 }

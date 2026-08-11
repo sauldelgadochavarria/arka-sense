@@ -1,7 +1,7 @@
 <%- include('../Partials/layout-top', { title: 'Empleado', session }) %>
 <p><a href="/personal-empleados">← Volver al listado</a></p>
 
-<h1><%= empleado.firstName %> <%= empleado.lastName %></h1>
+<h1><%= empleado.firstName %> <%= empleado.apellidoPaterno || empleado.lastName %> <%= empleado.apellidoMaterno || '' %></h1>
 <p>
   <span class="badge badge-<%= empleado.estatus %>"><%= empleado.estatus %></span>
   · No. <code><%= empleado.numEmpleado %></code>
@@ -11,11 +11,65 @@
   <section>
     <h2>Identificación</h2>
     <dl>
+      <dt>Nombre(s)</dt><dd><%= empleado.firstName || '—' %></dd>
+      <dt>Apellido paterno</dt><dd><%= empleado.apellidoPaterno || '—' %></dd>
+      <dt>Apellido materno</dt><dd><%= empleado.apellidoMaterno || '—' %></dd>
+      <dt>Fecha alta</dt><dd><%= empleado.fechaIngreso ? new Date(empleado.fechaIngreso).toLocaleDateString('es-MX') : '—' %></dd>
+      <dt>Tipo contrato</dt><dd><%= typeof labelTipoContrato !== 'undefined' ? labelTipoContrato : (empleado.tipoContrato || '—') %></dd>
+      <dt>Tipo empleado</dt><dd><%= typeof labelTipoEmpleado !== 'undefined' ? labelTipoEmpleado : (empleado.tipoEmpleado || '—') %></dd>
+    </dl>
+  </section>
+
+  <section>
+    <h2>Salarial / SDI</h2>
+    <dl>
+      <dt>Salario diario</dt><dd><%= empleado.salarioDiario != null ? empleado.salarioDiario.toLocaleString('es-MX', { minimumFractionDigits: 2 }) : '—' %></dd>
+      <dt>Base de cotización</dt><dd><%= typeof labelTipoSalario !== 'undefined' ? labelTipoSalario : (empleado.tipoSalario || 'fijo') %></dd>
+      <dt>SDI</dt><dd><%= typeof baseImss !== 'undefined' ? baseImss.sdi.toLocaleString('es-MX', { minimumFractionDigits: 2 }) : (empleado.sdi || '—') %></dd>
+      <dt>SBC topado (25 UMA)</dt>
+      <dd>
+        <% if (typeof baseImss !== 'undefined') { %>
+        $<%= baseImss.sbc.toLocaleString('es-MX', { minimumFractionDigits: 2 }) %>
+        <span class="muted">(tope $<%= baseImss.topeSbc.toLocaleString('es-MX', { minimumFractionDigits: 2 }) %>)</span>
+        <% } else { %>—<% } %>
+      </dd>
+    </dl>
+  </section>
+
+  <section>
+    <h2>IMSS</h2>
+    <dl>
+      <dt>NSS</dt><dd><%= empleado.nss || '—' %></dd>
+      <dt>Registro patronal</dt><dd><%= empleado.registroPatronal || (empresa && empresa.registroPatronal) || '—' %></dd>
+      <dt>UMF</dt><dd><%= empleado.umf || '—' %></dd>
+      <dt>Estado civil</dt><dd><%= typeof labelEstadoCivil !== 'undefined' ? labelEstadoCivil : (empleado.estadoCivil || '—') %></dd>
+    </dl>
+  </section>
+
+  <section>
+    <h2>Fiscal (RFC / CURP)</h2>
+    <dl>
       <dt>CURP</dt><dd><%= empleado.curp || '—' %></dd>
       <dt>RFC</dt><dd><%= empleado.rfc || '—' %></dd>
-      <dt>NSS</dt><dd><%= empleado.nss || '—' %></dd>
-      <dt>Fecha nacimiento</dt><dd><%= empleado.fechaNacimiento ? new Date(empleado.fechaNacimiento).toLocaleDateString('es-MX') : '—' %></dd>
       <dt>Sexo</dt><dd><%= empleado.sexo || '—' %></dd>
+      <dt>Fecha nacimiento</dt><dd><%= empleado.fechaNacimiento ? new Date(empleado.fechaNacimiento).toLocaleDateString('es-MX') : '—' %></dd>
+      <dt>Entidad nacimiento</dt><dd><%= typeof labelEntidadNac !== 'undefined' ? labelEntidadNac : (empleado.entidadNacimiento || '—') %></dd>
+      <dt>Ciudad nacimiento</dt><dd><%= empleado.ciudadNacimiento || '—' %></dd>
+    </dl>
+  </section>
+
+  <section>
+    <h2>Domicilio</h2>
+    <% const dom = empleado.domicilio || {}; %>
+    <dl>
+      <dt>Dirección</dt>
+      <dd>
+        <%= [dom.calle, dom.numeroExt, dom.numeroInt].filter(Boolean).join(' ') || '—' %>
+        <% if (dom.colonia) { %><br /><span class="muted">Col. <%= dom.colonia %></span><% } %>
+      </dd>
+      <dt>Población</dt><dd><%= dom.poblacion || '—' %></dd>
+      <dt>Entidad</dt><dd><%= dom.entidad || '—' %></dd>
+      <dt>C.P.</dt><dd><%= dom.codigoPostal || '—' %></dd>
     </dl>
   </section>
 
@@ -35,6 +89,14 @@
       <dt>Sucursal</dt><dd><%= empleado.subsidiariaId ? (subMap.get(String(empleado.subsidiariaId)) || '—') : '—' %></dd>
       <dt>Departamento</dt><dd><%= empleado.departamentoId ? (deptMap.get(String(empleado.departamentoId)) || '—') : '—' %></dd>
       <dt>Puesto</dt><dd><%= empleado.puestoId ? (puestoMap.get(String(empleado.puestoId)) || '—') : '—' %></dd>
+      <dt>Tabla de prestaciones</dt>
+      <dd>
+        <% if (typeof tablaPrestacionesResuelta !== 'undefined' && tablaPrestacionesResuelta && tablaPrestacionesResuelta.tabla) { %>
+        <%= tablaPrestacionesResuelta.tabla.nombre %>
+        <span class="muted small">(<%= tablaPrestacionesResuelta.origen %> · prima <%= tablaPrestacionesResuelta.tabla.primaVacacionalPct %>% · aguinaldo <%= tablaPrestacionesResuelta.tabla.diasAguinaldo %> d)</span>
+        <% if (empleado.tablaPrestacionesId) { %> · <em>asignada al empleado</em><% } %>
+        <% } else { %>—<% } %>
+      </dd>
       <dt>Turno directo</dt><dd><%= empleado.turnoId ? (turnoMap.get(String(empleado.turnoId)) || '—') : '—' %></dd>
       <dt>Tipo de período</dt>
       <dd><%= empleado.tipoPeriodoId && typeof tipoPeriodoMap !== 'undefined' && tipoPeriodoMap.get(String(empleado.tipoPeriodoId))
@@ -74,26 +136,53 @@
     </dl>
   </section>
 
+  <% if (empleado.estatus === 'baja') { %>
   <section>
-    <h2>Laboral</h2>
+    <h2>Baja</h2>
     <dl>
-      <dt>Tipo contrato</dt><dd><%= typeof labelTipoContrato !== 'undefined' ? labelTipoContrato : (empleado.tipoContrato || '—') %></dd>
-      <dt>Tipo empleado</dt><dd><%= typeof labelTipoEmpleado !== 'undefined' ? labelTipoEmpleado : (empleado.tipoEmpleado || '—') %></dd>
-      <dt>Salario diario</dt><dd><%= empleado.salarioDiario != null ? empleado.salarioDiario : '—' %></dd>
-      <dt>Fecha ingreso</dt><dd><%= empleado.fechaIngreso ? new Date(empleado.fechaIngreso).toLocaleDateString('es-MX') : '—' %></dd>
-      <% if (empleado.estatus === 'baja') { %>
       <dt>Fecha baja</dt><dd><%= empleado.fechaBaja ? new Date(empleado.fechaBaja).toLocaleDateString('es-MX') : '—' %></dd>
       <dt>Motivo baja</dt><dd><%= empleado.motivoBaja || '—' %></dd>
-      <% } %>
     </dl>
   </section>
+  <% } %>
 
   <% if (typeof showNominaConfig !== 'undefined' && showNominaConfig) { %>
-  <% const nc = empleado.nominaConfig || {}; %>
+  <% const nc = empleado.nominaConfig || {};
+     const despensaMod = nc.despensaModalidad || ((nc.despensaMonto > 0 || nc.despensaMontoMensual > 0) ? 'fijo' : 'ninguna');
+     const despensaMonto = Number(nc.despensaMontoMensual) > 0 ? Number(nc.despensaMontoMensual) : (Number(nc.despensaMonto) || 0);
+     const topeLabels = {
+       imss_40_uma: 'IMSS (40% UMA mensual)',
+       uma_mensual: '1 UMA mensual',
+       monto: 'Monto fijo',
+       sin_tope: 'Sin tope'
+     };
+     const topeMod = nc.despensaTopeModo || 'imss_40_uma';
+  %>
   <section>
     <h2>Nómina formal</h2>
     <dl>
       <dt>Fondo de ahorro</dt><dd><%= nc.aplicaFondoAhorro ? 'Sí' : 'No' %><% if (nc.aplicaFondoAhorro && nc.porcentajeFondoAhorro > 0) { %> (<%= nc.porcentajeFondoAhorro %>% personalizado)<% } %></dd>
+      <dt>Despensa / vales</dt>
+      <dd>
+        <% if (despensaMod === 'ninguna') { %>
+        Sin despensa
+        <% } else if (despensaMod === 'fijo') { %>
+        Fijo mensual:
+        <% if (despensaMonto > 0) { %>
+        $<%= despensaMonto.toLocaleString('es-MX', { minimumFractionDigits: 2 }) %>
+        <% } else { %>—<% } %>
+        <% } else if (despensaMod === 'porcentaje') { %>
+        <%= nc.despensaPorcentaje > 0 ? nc.despensaPorcentaje + '% del sueldo mensual' : '% (sin capturar)' %>
+        <% } else { %>—<% } %>
+        <% if (despensaMod !== 'ninguna') { %>
+        · tope: <%= topeLabels[topeMod] || topeMod %>
+        <% if (topeMod === 'monto' && nc.despensaTopeMonto > 0) { %>
+        ($<%= Number(nc.despensaTopeMonto).toLocaleString('es-MX', { minimumFractionDigits: 2 }) %>)
+        <% } %>
+        <% } %>
+      </dd>
+      <dt>Seguro de vida</dt><dd><%= nc.seguroVidaMonto > 0 ? ('$' + Number(nc.seguroVidaMonto).toLocaleString('es-MX', { minimumFractionDigits: 2 })) : '—' %></dd>
+      <dt>SGMM</dt><dd><%= nc.sgmmMonto > 0 ? ('$' + Number(nc.sgmmMonto).toLocaleString('es-MX', { minimumFractionDigits: 2 })) : '—' %></dd>
       <dt>INFONAVIT</dt>
       <dd>
         <% if (nc.infonavitDescuento > 0) { %>
@@ -103,9 +192,17 @@
         <% if (nc.tasaInfonavit > 0) { %> · tasa <%= nc.tasaInfonavit %><% } %>
         <% } else { %>—<% } %>
       </dd>
-      <dt>Sueldo integrado</dt><dd><%= nc.sueldoIntegrado > 0 ? nc.sueldoIntegrado : '—' %></dd>
-      <dt>Días cotización</dt><dd><%= nc.diasCotizacionImss > 0 ? nc.diasCotizacionImss : '—' %></dd>
-      <dt>Prima vacacional (días)</dt><dd><%= nc.diasPrimaVacacional > 0 ? nc.diasPrimaVacacional : '—' %></dd>
+      <dt>Base INFONAVIT período</dt><dd><%= nc.sueldoIntegrado > 0 ? nc.sueldoIntegrado : '—' %></dd>
+      <dt>Días cotización override</dt><dd><%= nc.diasCotizacionImss > 0 ? nc.diasCotizacionImss : '—' %></dd>
+      <dt>Prima vacacional (días)</dt>
+      <dd>
+        <% if (nc.diasPrimaVacacional > 0) { %>
+        <%= nc.diasPrimaVacacional %> (override)
+        <% } else { %>
+        — <span class="muted small">(aniversario → días de la tabla × %)</span>
+        <% } %>
+        <% if (nc.primaVacacionalPct > 0) { %> · % override <%= nc.primaVacacionalPct %><% } %>
+      </dd>
       <dt>Aguinaldo finiquito</dt><dd><%= nc.proporcionAguinaldoFiniquito > 0 ? nc.proporcionAguinaldoFiniquito : '—' %></dd>
       <dt>Saldo fondo finiquito</dt><dd><%= nc.fondoAhorroSaldoFiniquito > 0 ? nc.fondoAhorroSaldoFiniquito : '—' %></dd>
     </dl>

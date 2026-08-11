@@ -149,8 +149,12 @@ async function crearParametroFiscal(data) {
     throw new Error('Clave y valor numérico positivo son requeridos');
   }
 
-  const vigenciaDesde = data.vigenciaDesde || new Date();
-  vigenciaDesde.setHours(0, 0, 0, 0);
+  // Vigencia en UTC medianoche para no depender del huso del servidor
+  const raw = data.vigenciaDesde ? new Date(data.vigenciaDesde) : new Date();
+  if (Number.isNaN(raw.getTime())) throw new Error('Fecha de vigencia inválida');
+  const vigenciaDesde = new Date(
+    Date.UTC(raw.getUTCFullYear(), raw.getUTCMonth(), raw.getUTCDate(), 0, 0, 0, 0)
+  );
 
   const ParametroGeneral = await getParametroGeneralModel();
 

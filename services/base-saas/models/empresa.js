@@ -10,6 +10,8 @@ const empresaSchema = new mongoose.Schema(
     ciudad: { type: String, trim: true, default: '' },
     estado: { type: String, trim: true, default: '' },
     codigoPostal: { type: String, trim: true, default: '' },
+    /** Registro patronal IMSS de la empresa (empleados pueden sobreescribir). */
+    registroPatronal: { type: String, trim: true, uppercase: true, default: '' },
     giro: { type: String, trim: true, default: '' },
     telefono: { type: String, trim: true, default: '' },
     tenantId: { type: String, trim: true },

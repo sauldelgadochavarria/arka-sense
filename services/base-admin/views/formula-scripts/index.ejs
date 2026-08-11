@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Scripts JS de fórmula</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; max-width: 1100px; }
+    table { border-collapse: collapse; width: 100%; margin-top: 1rem; }
+    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; vertical-align: top; }
+    a.btn, button.btn { display: inline-block; padding: 8px 12px; background: #2563eb; color: #fff; text-decoration: none; border-radius: 4px; border: 0; cursor: pointer; font-size: 0.9rem; }
+    a.btn-secondary { background: #64748b; }
+    .nav { margin-bottom: 1.5rem; }
+    .nav a { margin-right: 1rem; }
+    .muted { color: #64748b; font-size: 0.9rem; }
+    code { background: #f1f5f9; padding: 1px 4px; border-radius: 3px; }
+    .badge { background: #e2e8f0; padding: 2px 6px; border-radius: 4px; font-size: 0.75rem; }
+    .alert { background: #eff6ff; border: 1px solid #bfdbfe; padding: 0.75rem 1rem; border-radius: 6px; margin: 1rem 0; }
+    form.inline { display: inline; }
+  </style>
+</head>
+<body>
+  <div class="nav">
+    <a href="/admin/tenants">Tenants</a>
+    <a href="/admin/menus">Menús</a>
+    <a href="/admin/formula-scripts"><strong>Scripts JS fórmula</strong></a>
+  </div>
+
+  <h1>Scripts JavaScript de fórmula</h1>
+  <p class="muted">
+    Solo plataforma. Los tenants usan expresiones mathjs en SaaS;
+    aquí se publican funciones <code>tipo: javascript</code> al catálogo compartido
+    (<code>nomina_formula_functions</code>).
+  </p>
+  <div class="alert">
+    Auth: Basic + IP allowlist. Tras publicar, el cálculo SaaS carga la función en el próximo corrido.
+  </div>
+
+  <p><a class="btn" href="/admin/formula-scripts/new">+ Nuevo script JS</a></p>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Nombre</th>
+        <th>Estado</th>
+        <th>Args / cuerpo</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      <% (scripts || []).forEach(function(f) { %>
+      <tr>
+        <td>
+          <code><%= f.name %></code>
+          <span class="badge">v<%= f.version || 1 %></span>
+        </td>
+        <td>
+          <%= f.estado || '—' %> · <%= f.activo ? 'activa' : 'inactiva' %>
+        </td>
+        <td>
+          <div class="muted"><%= f.signature || '' %></div>
+          <code><%= (f.cuerpo || '').slice(0, 100) %><%= (f.cuerpo || '').length > 100 ? '…' : '' %></code>
+        </td>
+        <td>
+          <a class="btn btn-secondary" href="/admin/formula-scripts/<%= f._id %>">Editar</a>
+          <form class="inline" method="post" action="/admin/formula-scripts/<%= f._id %>/toggle">
+            <button class="btn btn-secondary" type="submit"><%= f.activo ? 'Desactivar' : 'Activar' %></button>
+          </form>
+        </td>
+      </tr>
+      <% }); %>
+      <% if (!(scripts || []).length) { %>
+      <tr><td colspan="4" class="muted">No hay scripts JS aún.</td></tr>
+      <% } %>
+    </tbody>
+  </table>
+</body>
+</html>

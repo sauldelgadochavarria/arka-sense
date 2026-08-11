@@ -1,5 +1,7 @@
 'use strict';
 
+const DEFAULT_TZ = process.env.BASE_TIMEZONE || 'America/Mexico_City';
+
 function parseTimeHHMM(value) {
   const match = /^(\d{1,2}):(\d{2})$/.exec(String(value || '').trim());
   if (!match) return null;
@@ -21,12 +23,29 @@ function endOfDay(date) {
   return d;
 }
 
-/** Días de calendario inclusivos (lun–dom = 7). Normaliza a inicio de día para ignorar endOfDay. */
-function diasCalendarioInclusive(inicio, fin) {
-  const a = startOfDay(inicio);
-  const b = startOfDay(fin);
+/** YYYY-MM-DD en zona laboral (evita off-by-one cuando el contenedor corre en UTC). */
+function ymdInTimeZone(date, timeZone = DEFAULT_TZ) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(new Date(date));
+  const get = (type) => parts.find((p) => p.type === type)?.value;
+  return `${get('year')}-${get('month')}-${get('day')}`;
+}
+
+/**
+ * Días de calendario inclusivos (1–15 jul = 15).
+ * Usa zona México: fechaFin guardada como fin-de-día local en UTC no debe contar el día UTC siguiente.
+ */
+function diasCalendarioInclusive(inicio, fin, timeZone = DEFAULT_TZ) {
+  const a = ymdInTimeZone(inicio, timeZone);
+  const b = ymdInTimeZone(fin, timeZone);
   const dayMs = 24 * 60 * 60 * 1000;
-  const diff = Math.round((b.getTime() - a.getTime()) / dayMs);
+  const diff = Math.round(
+    (Date.parse(`${b}T12:00:00.000Z`) - Date.parse(`${a}T12:00:00.000Z`)) / dayMs
+  );
   return Math.max(1, diff + 1);
 }
 
@@ -65,10 +84,12 @@ module.exports = {
   parseTimeHHMM,
   startOfDay,
   endOfDay,
+  ymdInTimeZone,
   diasCalendarioInclusive,
   applyTimeToDate,
   minutesDiff,
   parseDateTimeLocal,
   formatTimeHHMM,
-  formatDateMX
+  formatDateMX,
+  DEFAULT_TZ
 };

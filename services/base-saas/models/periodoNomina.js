@@ -18,6 +18,13 @@ const periodoNominaSchema = new mongoose.Schema(
     },
     fechaInicio: { type: Date, required: true, index: true },
     fechaFin: { type: Date, required: true, index: true },
+    /** Año calendario del período (fechaInicio) — base de la numeración. */
+    anio: { type: Number, index: true },
+    /**
+     * Número de período dentro del año y tipoPeriodo (reinicia cada año).
+     * Independiente del _id de Mongo.
+     */
+    numeroPeriodo: { type: Number, default: null, index: true },
     diasPeriodo: { type: Number, default: 0 },
     estatus: {
       type: String,
@@ -45,6 +52,17 @@ const periodoNominaSchema = new mongoose.Schema(
       conceptosAcumulados: { type: Number, default: 0 }
     },
     notas: { type: String, default: '' },
+    /**
+     * Prestaciones de pago puntual (p.ej. despensa 1 vez al mes).
+     * pagaDespensa: si true, el resolver calcula despensaMonto para los empleados.
+     */
+    prestaciones: {
+      pagaDespensa: { type: Boolean, default: false },
+      /** Override opcional del monto del período (ignora política del empleado si > 0). */
+      despensaMontoOverride: { type: Number, default: 0, min: 0 },
+      /** true = pago mensual completo → tope IMSS mensual (no prorrateo a días). */
+      despensaPagoMensual: { type: Boolean, default: true }
+    },
     totales: {
       empleados: { type: Number, default: 0 },
       empleadosConError: { type: Number, default: 0 },
@@ -57,6 +75,10 @@ const periodoNominaSchema = new mongoose.Schema(
 );
 
 periodoNominaSchema.index({ tenantId: 1, fechaInicio: 1, fechaFin: 1, tipoNomina: 1 });
+periodoNominaSchema.index(
+  { tenantId: 1, anio: 1, tipoPeriodo: 1, numeroPeriodo: 1 },
+  { unique: true, partialFilterExpression: { numeroPeriodo: { $type: 'number' } } }
+);
 
 async function getPeriodoNominaModel() {
   const conn = await getFixedMongooseConnection(FIXED_CONNECTIONS.CONFIG);

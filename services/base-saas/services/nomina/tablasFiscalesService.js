@@ -64,14 +64,20 @@ async function obtenerParametrosVigentes(fechaReferencia = new Date()) {
   const umaVal = uma ?? 113.14;
   const factorFondo = fondoTopeUma ?? 1.3;
   const diasAnioFondo = fondoDiasAnio ?? 365;
+  const diasMesUma = 30.4;
+  const umaMensual = Math.round(umaVal * diasMesUma * 100) / 100;
   return {
     uma: umaVal,
+    umaMensual,
+    diasMesUma,
     salarioMinimo: salarioMinimo ?? 278.8,
     porcentajeFondoAhorro: fondoAhorroPorc ?? 13,
     topeUmaImss: topeUma ?? 25,
     topeUmaFondoAhorro: factorFondo,
     diasAnioFondoAhorro: diasAnioFondo,
-    /** Tope anual exento fondo = factor × UMA × días año */
+    /** 1.3 × UMA mensual (ej. 3,566.22 × 1.3 = 4,636.09) */
+    topeUmaMensualFondoAhorro: Math.round(factorFondo * umaMensual * 100) / 100,
+    /** @deprecated preferir topeUmaMensualFondoAhorro prorrateado al período */
     topeAnualFondoAhorro: factorFondo * umaVal * diasAnioFondo
   };
 }

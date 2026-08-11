@@ -10,6 +10,7 @@ const { ordenarPorDependencias } = require('./dependencyResolver');
 const {
   redondear,
   createFormulaScope,
+  createFormulaScopeWithCatalog,
   evaluateExpression,
   evaluateCondicion,
   extractVariablesUsadas
@@ -18,6 +19,7 @@ const { aplicarTabla, obtenerParametrosVigentes, cargarRangosTabla, aplicarTabla
 const { obtenerInsumosPrenomina, tieneActividadPrenomina } = require('./prenominaBridge');
 const { resolverInsumosNominaEmpleado } = require('../../libs/nominaEmpleadoInsumos');
 const getPayrollDetailModel = require('../../models/payrollDetail');
+const { resolverBaseImss } = require('../../libs/sdiHelpers');
 const { buildNamespacedContext } = require('./payrollContextBuilder');
 const {
   resolveConceptosParaEmpresa,
@@ -38,7 +40,10 @@ const {
 const {
   resolveFiscalConfig,
   desglosarImporte,
-  acumularBasesFiscales
+  clasificarImss,
+  acumularBasesFiscales,
+  calcularTotalesDesdeConfig,
+  sincronizarAcumuladoresDesdeConfig
 } = require('./fiscalDesgloseService');
 const { diasCalendarioInclusive } = require('../../libs/timeHelpers');
 
@@ -150,8 +155,37 @@ async function calcularReciboEmpleado(
 
   const sueldoDiario = insumos.sueldoDiario ?? empleado.salarioDiario ?? 0;
   const horasJornada = empleado.turnoHorasJornada || empleado.nominaConfig?.horasJornada || 8;
+  const baseImss = resolverBaseImss(
+    { ...empleado, salarioDiario: sueldoDiario },
+    parametros.uma,
+    parametros.topeUmaSbc || parametros.imssTopeUma || 25
+  );
+  const sdiDiario = baseImss.sdi;
+  const sbcEmpleado = baseImss.sbc;
 
   const cfgNomina = empleado.nominaConfig || {};
+  const prest = periodo.prestaciones || {};
+  const {
+    esSegundaQuincena,
+    semanaDelMes
+  } = require('../../libs/periodoPrestacionesFlags');
+  const { resolverTablaPrestaciones } = require('../sdiCalculoService');
+  const flagsCal = {
+    esSegundaQuincena: esSegundaQuincena(periodo.fechaInicio),
+    semanaDelMes: semanaDelMes(periodo.fechaInicio)
+  };
+
+  let tablaPrestaciones = null;
+  try {
+    const empresaId = periodo.empresaId || empleado.empresaId;
+    if (empresaId) {
+      const resolved = await resolverTablaPrestaciones(periodo.tenantId, empresaId, empleado);
+      tablaPrestaciones = resolved.tabla || null;
+    }
+  } catch (err) {
+    console.warn('[calculoNomina] tabla prestaciones:', err.message);
+  }
+
   const extras = resolverInsumosNominaEmpleado(
     empleado,
     {
@@ -159,9 +193,19 @@ async function calcularReciboEmpleado(
       diasLaborados: diasPago.diasLaborados,
       diasPagados: diasPago.diasPagados,
       faltas: faltasInjustificadas,
-      sueldoDiario
+      sueldoDiario,
+      tipoPeriodo: periodo.tipoPeriodo,
+      diasVacaciones
     },
-    parametros
+    parametros,
+    {
+      pagaDespensa: prest.pagaDespensa,
+      despensaMontoOverride: prest.despensaMontoOverride,
+      despensaPagoMensual: prest.despensaPagoMensual !== false,
+      fechaInicio: periodo.fechaInicio,
+      fechaFin: periodo.fechaFin,
+      tablaPrestaciones
+    }
   );
 
   const porcentajeFondoAhorro =
@@ -175,7 +219,9 @@ async function calcularReciboEmpleado(
       salarioDiario: sueldoDiario,
       horasJornada,
       antiguedadAnios: calcularAntiguedadAnios(empleado.fechaIngreso, periodo.fechaInicio),
-      sbc: sbcDiario(sueldoDiario, parametros.uma),
+      sdi: sdiDiario,
+      sbc: sbcEmpleado,
+      tipoSalario: baseImss.tipoSalario,
       tipoEmpleado: empleado.tipoEmpleado || '',
       atributos: { horasJornada },
       nominaConfig: cfgNomina
@@ -189,7 +235,13 @@ async function calcularReciboEmpleado(
       diasProgramados: diasPago.diasProgramados,
       diasDescanso: diasPago.diasDescanso,
       diasDescansoPagados: diasPago.diasDescansoPagados,
-      faltas: faltasInjustificadas
+      faltas: faltasInjustificadas,
+      esSegundaQuincena: flagsCal.esSegundaQuincena,
+      semanaDelMes: flagsCal.semanaDelMes,
+      numeroPeriodo: periodo.numeroPeriodo || 0,
+      tipoPeriodo: periodo.tipoPeriodo || '',
+      despensaPagoMensual: prest.despensaPagoMensual !== false ? 1 : 0,
+      pagaDespensa: prest.pagaDespensa ? 1 : 0
     },
     incidencias: {
       faltas: faltasInjustificadas,
@@ -213,6 +265,8 @@ async function calcularReciboEmpleado(
     },
     parametros: {
       uma: parametros.uma,
+      umaMensual: parametros.umaMensual,
+      diasMesUma: parametros.diasMesUma,
       salarioMinimo: parametros.salarioMinimo,
       porcentajeFondoAhorro,
       topeUmaFondoAhorro: parametros.topeUmaFondoAhorro || 1.3,
@@ -230,11 +284,14 @@ async function calcularReciboEmpleado(
       diasCotizacion: diasPago.diasCotizacion,
       diasDescansoPagados: diasPago.diasDescansoPagados,
       diasProgramados: diasPago.diasProgramados,
+      esSegundaQuincena: flagsCal.esSegundaQuincena,
+      semanaDelMes: flagsCal.semanaDelMes,
+      umaMensual: parametros.umaMensual,
       ...extras
     }
   });
 
-  const scope = createFormulaScope(parametros, {
+  const scope = await createFormulaScopeWithCatalog(parametros, {
     aplicarTabla: (monto, codigoTabla) => {
       const key = String(codigoTabla).toUpperCase();
       const rangos = fiscalCtx.tablasCache[key];
@@ -243,10 +300,11 @@ async function calcularReciboEmpleado(
     topeUMA: (valor, veces) => Math.min(Number(valor) || 0, parametros.uma * (veces || 1)),
     isrPeriodo: (gravado) =>
       isrDelPeriodo(gravado, periodo.tipoPeriodo, diasPeriodo, fiscalCtx.rangosIsr),
-    imssObrero: (sdi, dias) =>
-      imssObreroDelPeriodo(sdi, dias, parametros.uma, fiscalCtx.imssCtx || {}),
-    imssPatronal: (sdi, dias) =>
-      imssPatronalDelPeriodo(sdi, dias, parametros.uma, fiscalCtx.imssCtx || {})
+    // IMSS cotiza sobre SDI/SBC (no el salario diario contractual si hay SDI capturado)
+    imssObrero: (_sueldo, dias) =>
+      imssObreroDelPeriodo(sdiDiario, dias, parametros.uma, fiscalCtx.imssCtx || {}),
+    imssPatronal: (_sueldo, dias) =>
+      imssPatronalDelPeriodo(sdiDiario, dias, parametros.uma, fiscalCtx.imssCtx || {})
   });
 
   const detalle = [];
@@ -283,6 +341,11 @@ async function calcularReciboEmpleado(
         contexto,
         scope
       });
+      const imss = clasificarImss(valor, fiscalCfg, {
+        uma: parametros.uma,
+        contexto,
+        scope
+      });
 
       detalle.push({
         conceptoCodigo: formula.conceptoCodigo,
@@ -292,6 +355,8 @@ async function calcularReciboEmpleado(
         importe: valor,
         gravado: parted.gravado,
         exento: parted.exento,
+        isr: { gravado: parted.gravado, exento: parted.exento },
+        imss,
         desgloseModo: parted.modo,
         claveSAT: conceptoMeta.claveSAT || conceptoMeta.sat?.clave || '',
         fiscal: fiscalCfg,
@@ -311,6 +376,8 @@ async function calcularReciboEmpleado(
         importe: null,
         gravado: 0,
         exento: 0,
+        isr: { gravado: 0, exento: 0 },
+        imss: { integraSBC: 0, noIntegra: 0 },
         desgloseModo: '',
         claveSAT: conceptoMeta.claveSAT || '',
         fiscal: fiscalCfg,
@@ -324,6 +391,61 @@ async function calcularReciboEmpleado(
 
   const bases = acumularBasesFiscales(detalle);
   Object.assign(contexto, bases);
+
+  // ISR del recibo desde BASE_ISR (desglose por concepto), aunque la fórmula haya fallado.
+  // La fórmula puede haber usado PERCEPCIONES_GRAVADAS "cruda" (sumando importes, no gravado);
+  // aquí se recalcula con la base fiscal real y se actualizan variablesUsadas para la trazabilidad.
+  let isrLineSync = detalle.find((d) => d.conceptoCodigo === 'ISR');
+  if (isrLineSync && fiscalCtx?.rangosIsr?.length) {
+    const isrDesdeBases = isrDelPeriodo(
+      bases.BASE_ISR,
+      periodo.tipoPeriodo,
+      diasPeriodo,
+      fiscalCtx.rangosIsr
+    );
+    isrLineSync.importe = isrDesdeBases;
+    isrLineSync.gravado = isrDesdeBases;
+    isrLineSync.exento = 0;
+    isrLineSync.isr = { gravado: isrDesdeBases, exento: 0 };
+    isrLineSync.formulaUsada = 'motor:isrDelPeriodo(BASE_ISR)';
+    isrLineSync.variablesUsadas = {
+      BASE_ISR: bases.BASE_ISR,
+      PERCEPCIONES_GRAVADAS: bases.PERCEPCIONES_GRAVADAS
+    };
+    isrLineSync.requiereRevision = false;
+    isrLineSync.errorCalculo = '';
+    contexto.ISR = isrDesdeBases;
+  } else if (!isrLineSync && fiscalCtx?.rangosIsr?.length && bases.BASE_ISR > 0) {
+    const isrDesdeBases = isrDelPeriodo(
+      bases.BASE_ISR,
+      periodo.tipoPeriodo,
+      diasPeriodo,
+      fiscalCtx.rangosIsr
+    );
+    isrLineSync = {
+      conceptoCodigo: 'ISR',
+      formulaUsada: 'motor:isrDelPeriodo(BASE_ISR)',
+      condicionUsada: '',
+      variablesUsadas: {
+        BASE_ISR: bases.BASE_ISR,
+        PERCEPCIONES_GRAVADAS: bases.PERCEPCIONES_GRAVADAS
+      },
+      importe: isrDesdeBases,
+      gravado: isrDesdeBases,
+      exento: 0,
+      isr: { gravado: isrDesdeBases, exento: 0 },
+      imss: { integraSBC: 0, noIntegra: isrDesdeBases },
+      desgloseModo: 'todo_gravado',
+      claveSAT: '',
+      fiscal: { naturaleza: 'fiscal', integraISR: false, integraIMSS: false },
+      tipo: 'deduccion',
+      requiereRevision: false,
+      errorCalculo: '',
+      versionFormula: 1
+    };
+    detalle.push(isrLineSync);
+    contexto.ISR = isrDesdeBases;
+  }
 
   let isrMotor = null;
   const isrLine = detalle.find((d) => d.conceptoCodigo === 'ISR' && !d.requiereRevision);
@@ -371,17 +493,13 @@ async function calcularReciboEmpleado(
     };
   }
 
-  const totalPercepciones = redondear(
-    detalle
-      .filter((d) => d.tipo === 'percepcion' && !informativos.has(d.conceptoCodigo) && !d.requiereRevision)
-      .reduce((s, d) => s + (d.importe || 0), 0)
-  );
-  const totalDeducciones = redondear(
-    detalle
-      .filter((d) => d.tipo === 'deduccion' && !informativos.has(d.conceptoCodigo) && !d.requiereRevision)
-      .reduce((s, d) => s + (d.importe || 0), 0)
-  );
-  const netoPagar = redondear(totalPercepciones - totalDeducciones);
+  // Totales y acumuladores desde config de conceptos (tipo + naturaleza), no fórmulas hardcodeadas
+  const totales = calcularTotalesDesdeConfig(detalle, informativos);
+  sincronizarAcumuladoresDesdeConfig(detalle, contexto, { bases, totales });
+  const { totalPercepciones, totalDeducciones, netoPagar } = totales;
+
+  // Re-evaluar tras rescates del motor (ISR/neto/deducciones)
+  tieneRevision = detalle.some((d) => d.requiereRevision);
 
   const ReciboNomina = await getReciboNominaModel();
   const ConceptoAplicado = await getConceptoAplicadoModel();
@@ -430,6 +548,8 @@ async function calcularReciboEmpleado(
       importe: d.importe == null ? 0 : d.importe,
       gravado: d.gravado || 0,
       exento: d.exento || 0,
+      isr: d.isr || { gravado: d.gravado || 0, exento: d.exento || 0 },
+      imss: d.imss || { integraSBC: 0, noIntegra: 0 },
       desgloseModo: d.desgloseModo || '',
       claveSAT: d.claveSAT || '',
       tipo: d.tipo || '',
@@ -539,9 +659,26 @@ async function calcularPeriodo(tenantId, periodoId, options = {}) {
   const tiposPorCodigo = new Map(conceptos.map((c) => [c.codigo, c.tipo]));
   const conceptosByCodigo = new Map(conceptos.map((c) => [c.codigo, c]));
   const informativos = new Set(
-    conceptos.filter((c) => c.naturaleza === 'informativo').map((c) => c.codigo)
+    conceptos
+      .filter((c) => {
+        const nat = c.naturaleza || c.fiscal?.naturaleza || '';
+        return (
+          nat === 'informativo' ||
+          Boolean(c.metadata?.informativo) ||
+          Boolean(c.metadata?.esNeto)
+        );
+      })
+      .map((c) => c.codigo)
   );
-  ['ISR_SAT', 'ISR_PROYECTADO', 'ISR_AJUSTADO', 'ISR_DIFERENCIA'].forEach((c) => informativos.add(c));
+  [
+    'ISR_SAT',
+    'ISR_PROYECTADO',
+    'ISR_AJUSTADO',
+    'ISR_DIFERENCIA',
+    'PERCEPCIONES_GRAVADAS',
+    'DEDUCCIONES_TOTALES',
+    'NETO_PAGAR'
+  ].forEach((c) => informativos.add(c));
 
   const isrMotorOpts = {
     activo: empresaDoc?.nominaIsr?.activo !== false,

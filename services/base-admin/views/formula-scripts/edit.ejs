@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title><%= fn ? fn.name : 'Nuevo script JS' %></title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 1.5rem; color: #0f172a; }
+    .nav a { margin-right: 1rem; }
+    .layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 1.25rem; align-items: start; max-width: 1200px; }
+    @media (max-width: 960px) { .layout { grid-template-columns: 1fr; } }
+    label { display: block; margin: 0.75rem 0 0.25rem; font-weight: 600; }
+    input, textarea { width: 100%; padding: 8px; box-sizing: border-box; font: inherit; }
+    textarea { font-family: ui-monospace, monospace; min-height: 200px; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    .actions { margin-top: 1.25rem; display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    a.btn, button.btn { padding: 8px 12px; background: #2563eb; color: #fff; text-decoration: none; border-radius: 4px; border: 0; cursor: pointer; font-size: 0.9rem; }
+    a.btn-secondary, button.btn-secondary { background: #64748b; }
+    .muted { color: #64748b; font-size: 0.9rem; }
+    #out { background: #f8fafc; border: 1px solid #e2e8f0; padding: 0.75rem; border-radius: 6px; min-height: 3rem; white-space: pre-wrap; }
+    .error { color: #b91c1c; }
+    .ok { color: #15803d; }
+    .msg { padding: 0.5rem 0.75rem; background: #fef3c7; border-radius: 4px; margin-bottom: 1rem; }
+    .helper {
+      border: 1px solid #e2e8f0; border-radius: 8px; background: #f8fafc;
+      position: sticky; top: 1rem; max-height: calc(100vh - 2rem); display: flex; flex-direction: column;
+    }
+    .helper-head { padding: 0.75rem 1rem; border-bottom: 1px solid #e2e8f0; }
+    .helper-head h2 { margin: 0; font-size: 1rem; }
+    .helper-filter { width: 100%; margin-top: 0.5rem; }
+    .helper-body { overflow: auto; padding: 0.5rem 0.75rem 1rem; flex: 1; }
+    .helper-section { margin-top: 0.75rem; }
+    .helper-section h3 { margin: 0 0 0.35rem; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.03em; color: #475569; }
+    .helper-item {
+      display: block; width: 100%; text-align: left; border: 0; background: #fff;
+      border: 1px solid #e2e8f0; border-radius: 6px; padding: 0.4rem 0.55rem; margin: 0.25rem 0;
+      cursor: pointer; font: inherit;
+    }
+    .helper-item:hover { border-color: #93c5fd; background: #eff6ff; }
+    .helper-item code { font-size: 0.85rem; }
+    .helper-item .desc { display: block; color: #64748b; font-size: 0.75rem; margin-top: 0.15rem; }
+    .helper-actions { display: flex; gap: 0.35rem; margin-top: 0.25rem; }
+    .helper-actions button { font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; border: 1px solid #cbd5e1; background: #fff; cursor: pointer; }
+    .note { font-size: 0.8rem; color: #475569; background: #eff6ff; border: 1px solid #bfdbfe; padding: 0.5rem 0.65rem; border-radius: 6px; margin-bottom: 0.5rem; }
+  </style>
+</head>
+<body>
+  <div class="nav">
+    <a href="/admin/formula-scripts">← Scripts JS</a>
+    <a href="/admin/tenants">Tenants</a>
+  </div>
+
+  <h1><%= fn ? ('Script: ' + fn.name) : 'Nuevo script JavaScript' %></h1>
+  <% if (typeof message === 'string' && message) { %>
+  <p class="msg"><%= message %></p>
+  <% } %>
+
+  <div class="layout">
+    <div>
+      <p class="muted">
+        Cuerpo: función con <code>return &lt;número&gt;</code>. Ejemplo:
+        <code>return sueldo * dias * porc / 200;</code>
+      </p>
+
+      <form method="post" action="<%= fn ? ('/admin/formula-scripts/' + fn._id) : '/admin/formula-scripts' %>" id="form">
+        <% if (!fn) { %>
+        <label>Nombre (camelCase)</label>
+        <input name="name" required pattern="[a-z][a-zA-Z0-9_]*" placeholder="fondoMitadJs" value="<%= values && values.name || '' %>" />
+        <% } else { %>
+        <p>Nombre: <code><%= fn.name %></code> · estado <strong><%= fn.estado %></strong> · v<%= fn.version %></p>
+        <% } %>
+
+        <div class="row">
+          <div>
+            <label>Argumentos (coma)</label>
+            <input name="args" id="args" value="<%= fn ? (fn.args || []).join(', ') : (values && values.args) || 'sueldo, dias, porc' %>" />
+          </div>
+          <div>
+            <label>Firma</label>
+            <input name="signature" value="<%= fn ? (fn.signature || '') : (values && values.signature) || '' %>" />
+          </div>
+        </div>
+
+        <label>Descripción</label>
+        <input name="descripcion" value="<%= fn ? (fn.descripcion || '') : (values && values.descripcion) || '' %>" />
+
+        <label>Ejemplo de uso en concepto</label>
+        <input name="ejemplo" value="<%= fn ? (fn.ejemplo || '') : (values && values.ejemplo) || '' %>" />
+
+        <label>Cuerpo JS</label>
+        <textarea name="cuerpo" id="cuerpo" required><%= fn ? (fn.cuerpo || '') : (values && values.cuerpo) || 'return sueldo * dias * porc / 200;' %></textarea>
+
+        <div class="actions">
+          <button type="submit" name="accion" value="guardar" class="btn btn-secondary">Guardar borrador</button>
+          <button type="button" class="btn btn-secondary" id="btn-validar">Validar</button>
+          <button type="button" class="btn btn-secondary" id="btn-probar">Probar</button>
+          <button type="submit" name="accion" value="publicar" class="btn">Publicar</button>
+        </div>
+      </form>
+
+      <h2>Probar</h2>
+      <div id="test-args" class="row"></div>
+      <pre id="out">—</pre>
+    </div>
+
+    <aside class="helper" id="helper-panel">
+      <div class="helper-head">
+        <h2>Ayuda — catálogo</h2>
+        <input class="helper-filter" id="helper-filter" type="search" placeholder="Filtrar…" autocomplete="off" />
+      </div>
+      <div class="helper-body">
+        <p class="note"><%= (helper && helper.notaJs) || 'Clic en un ítem para insertarlo en el cuerpo. “+ arg” lo agrega a Argumentos.' %></p>
+        <div id="helper-sections"></div>
+      </div>
+    </aside>
+  </div>
+
+  <script>
+  (function () {
+    const catalog = <%- JSON.stringify(helper || { argsComunes: [], helpersSandbox: [], contextVars: [], parametros: [], funciones: [] }) %>;
+    const argsEl = document.getElementById('args');
+    const cuerpoEl = document.getElementById('cuerpo');
+    const testArgsEl = document.getElementById('test-args');
+    const outEl = document.getElementById('out');
+    const sectionsEl = document.getElementById('helper-sections');
+    const filterEl = document.getElementById('helper-filter');
+    const id = <%- JSON.stringify(fn ? String(fn._id) : '') %>;
+
+    function parseArgs() {
+      return String(argsEl.value || '').split(/[,;\s]+/).map(s => s.trim()).filter(Boolean);
+    }
+    function renderTest() {
+      testArgsEl.innerHTML = parseArgs().map((a, i) =>
+        '<div><label>' + a + '</label><input type="number" step="any" class="arg-val" value="' +
+        (i === 0 ? '2587.93' : i === 1 ? '14' : '13') + '" /></div>'
+      ).join('');
+    }
+    argsEl.addEventListener('blur', renderTest);
+    argsEl.addEventListener('input', renderTest);
+    renderTest();
+
+    function insertAtCursor(textarea, text) {
+      const start = textarea.selectionStart || 0;
+      const end = textarea.selectionEnd || 0;
+      const val = textarea.value || '';
+      textarea.value = val.slice(0, start) + text + val.slice(end);
+      const pos = start + text.length;
+      textarea.focus();
+      textarea.setSelectionRange(pos, pos);
+    }
+
+    function addArg(name) {
+      const short = String(name || '').split('.').pop();
+      const cur = parseArgs();
+      if (cur.includes(short) || cur.includes(name)) return;
+      cur.push(short);
+      argsEl.value = cur.join(', ');
+      renderTest();
+    }
+
+    function renderHelper(filter) {
+      const q = String(filter || '').trim().toLowerCase();
+      const groups = [
+        { title: 'Args frecuentes', items: catalog.argsComunes || [], insertMode: 'ident' },
+        { title: 'Helpers sandbox JS', items: catalog.helpersSandbox || [], insertMode: 'call' },
+        { title: 'Variables de contexto (enums)', items: catalog.contextVars || [], insertMode: 'ident' },
+        { title: 'Parámetros fiscales', items: catalog.parametros || [], insertMode: 'ident' },
+        { title: 'Funciones del catálogo', items: catalog.funciones || [], insertMode: 'call' }
+      ];
+      sectionsEl.innerHTML = groups.map((g) => {
+        const items = (g.items || []).filter((it) => {
+          if (!q) return true;
+          const blob = [it.key, it.label, it.descripcion, it.ejemplo].join(' ').toLowerCase();
+          return blob.includes(q);
+        });
+        if (!items.length) return '';
+        return '<div class="helper-section" data-section="' + g.title + '"><h3>' + g.title +
+          ' <span class="muted">(' + items.length + ')</span></h3>' +
+          items.map((it) => {
+            const insertText = g.insertMode === 'call'
+              ? (it.key + '(' + ((it.args || []).join(', ') || '') + ')')
+              : it.key;
+            return '<div class="helper-item" data-insert="' + insertText.replace(/"/g, '&quot;') +
+              '" data-arg="' + String(it.key).replace(/"/g, '&quot;') + '">' +
+              '<code>' + (it.label || it.key) + '</code>' +
+              (it.descripcion ? '<span class="desc">' + it.descripcion + '</span>' : '') +
+              '<span class="helper-actions">' +
+              '<button type="button" class="btn-ins">Insertar</button>' +
+              '<button type="button" class="btn-arg">+ arg</button>' +
+              '</span></div>';
+          }).join('') + '</div>';
+      }).join('') || '<p class="muted">Sin coincidencias</p>';
+    }
+
+    sectionsEl.addEventListener('click', (ev) => {
+      const btnArg = ev.target.closest('.btn-arg');
+      const btnIns = ev.target.closest('.btn-ins');
+      const item = ev.target.closest('.helper-item');
+      if (!item) return;
+      if (btnArg) {
+        ev.preventDefault();
+        addArg(item.getAttribute('data-arg'));
+        return;
+      }
+      if (btnIns) {
+        ev.preventDefault();
+        insertAtCursor(cuerpoEl, item.getAttribute('data-insert') || '');
+        return;
+      }
+      if (ev.target.closest('code') || ev.target === item || ev.target.classList.contains('desc')) {
+        insertAtCursor(cuerpoEl, item.getAttribute('data-insert') || '');
+      }
+    });
+
+    filterEl.addEventListener('input', () => renderHelper(filterEl.value));
+    renderHelper('');
+
+    async function post(url, body) {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || res.statusText);
+      return data;
+    }
+    function payload() {
+      return {
+        id,
+        cuerpo: cuerpoEl.value,
+        args: argsEl.value,
+        valores: Array.from(document.querySelectorAll('.arg-val')).map(el => el.value)
+      };
+    }
+    document.getElementById('btn-validar').onclick = async () => {
+      outEl.textContent = 'Validando…';
+      try {
+        const d = await post('/admin/formula-scripts/validate', payload());
+        outEl.className = 'ok';
+        outEl.textContent = '✓ Válido · args: ' + (d.args || []).join(', ');
+      } catch (e) {
+        outEl.className = 'error';
+        outEl.textContent = '✗ ' + e.message;
+      }
+    };
+    document.getElementById('btn-probar').onclick = async () => {
+      outEl.textContent = 'Probando…';
+      try {
+        const d = await post('/admin/formula-scripts/test', payload());
+        outEl.className = 'ok';
+        outEl.textContent = '✓ Resultado: ' + d.resultado + '\nvalores: ' + JSON.stringify(d.valores);
+      } catch (e) {
+        outEl.className = 'error';
+        outEl.textContent = '✗ ' + e.message;
+      }
+    };
+  })();
+  </script>
+</body>
+</html>

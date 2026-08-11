@@ -15,6 +15,7 @@ const { validateCodigoExternoForPeriod } = require('./payrollPreflightService');
 const { startOfDay, endOfDay } = require('../libs/timeHelpers');
 const { filterEmpleadosByTipoMotor } = require('../libs/empleadoTipoPeriodo');
 const { listTiposPeriodo } = require('./tipoPeriodoNominaService');
+const { clasificarHorasExtraPeriodo } = require('../libs/horasExtraClasificacion');
 
 function roundMoney(n) {
   return Math.round((Number(n) || 0) * 100) / 100;
@@ -53,6 +54,7 @@ function calcularEmpleadoPeriodo(empleado, turno, dailies, incidencias) {
   let diasConRetardo = 0;
   const diasCubiertos = new Set();
   const diasFaltaSet = new Set();
+  const diasHE = [];
 
   for (const day of dailies) {
     if (day.estatus === 'presente' || day.estatus === 'retardo') {
@@ -68,15 +70,21 @@ function calcularEmpleadoPeriodo(empleado, turno, dailies, incidencias) {
       diasConRetardo += 1;
     }
     minutosSalidaAnticipada += day.minutosSalidaAnticipada || 0;
-    minutosHEOrdinaria += day.minutosHEOrdinaria || 0;
-    minutosHEDoble += day.minutosHEDoble || 0;
-    minutosHETriple += day.minutosHETriple || 0;
-    minutosHorasExtra += day.minutosHorasExtra || 0;
+    const minHeDia =
+      Number(day.minutosHorasExtra) ||
+      (Number(day.minutosHEOrdinaria) || 0) +
+        (Number(day.minutosHEDoble) || 0) +
+        (Number(day.minutosHETriple) || 0);
+    if (minHeDia > 0) {
+      diasHE.push({ fecha: day.fecha, minutosExtra: minHeDia });
+    }
   }
 
-  if (!minutosHEOrdinaria && minutosHorasExtra) {
-    minutosHEOrdinaria = minutosHorasExtra;
-  }
+  const clasif = clasificarHorasExtraPeriodo(diasHE);
+  minutosHEOrdinaria = 0;
+  minutosHEDoble = clasif.minutosDobles;
+  minutosHETriple = clasif.minutosTriples;
+  minutosHorasExtra = minutosHEDoble + minutosHETriple;
 
   for (const inc of incidencias) {
     if (inc.codigo === 'VAC' || inc.codigo === 'PCG') {
@@ -113,10 +121,9 @@ function calcularEmpleadoPeriodo(empleado, turno, dailies, incidencias) {
   const diasFalta = diasFaltaSet.size;
 
   const percepcionSalario = roundMoney(salarioDiario * diasTrabajados);
+  // Dobles (LFT) al ×2; triples (excedente día/semana) al ×3
   const percepcionHE = roundMoney(
-    (minutosHEOrdinaria / 60) * salarioHora * 2 +
-      (minutosHEDoble / 60) * salarioHora * 3 +
-      (minutosHETriple / 60) * salarioHora * 3
+    (minutosHEDoble / 60) * salarioHora * 2 + (minutosHETriple / 60) * salarioHora * 3
   );
   const deduccionRetardos = roundMoney((minutosRetardo / minutosJornada) * salarioDiario);
   // P001 ya es solo días trabajados: no volver a descontar faltas (sería doble castigo)

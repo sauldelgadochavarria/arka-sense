@@ -188,10 +188,38 @@
             <% }); %>
           </select>
         </label>
+        <label>Categoría
+          <%
+            const _catsConcepto = (typeof categoriasConcepto !== 'undefined' && categoriasConcepto && categoriasConcepto.length)
+              ? categoriasConcepto
+              : [
+                  { value: 'ordinario', label: 'Ordinario' },
+                  { value: 'prevision_social', label: 'Previsión social' },
+                  { value: 'fiscal', label: 'Fiscal' },
+                  { value: 'informativo', label: 'Informativo' },
+                  { value: 'otro', label: 'Otro' }
+                ];
+            const catActual = concepto.categoria || 'ordinario';
+          %>
+          <select name="categoria" id="prop-categoria">
+            <% _catsConcepto.forEach(function(c) { %>
+            <option value="<%= c.value %>" <%= catActual === c.value ? 'selected' : '' %>><%= c.label %></option>
+            <% }); %>
+          </select>
+        </label>
         <label>Orden de cálculo
           <input type="number" name="ordenCalculo" min="1" max="9999" value="<%= concepto.ordenCalculo != null ? concepto.ordenCalculo : 100 %>" />
         </label>
+        <label>Orden de impresión
+          <input type="number" name="ordenImpresion" min="1" max="9999"
+            value="<%= concepto.ordenImpresion != null ? concepto.ordenImpresion : (concepto.ordenCalculo != null ? concepto.ordenCalculo : 100) %>"
+            title="Orden en el pre-recibo impreso (menor = primero)" />
+        </label>
       </div>
+      <p class="muted small" style="grid-column:1/-1;margin-top:-0.35rem">
+        El <strong>orden de cálculo</strong> define dependencias en el motor.
+        El <strong>orden de impresión</strong> solo afecta cómo se listan en el recibo PDF.
+      </p>
       <div class="form-row-3">
         <label>Fase (catálogo)
           <select name="fase">
@@ -318,15 +346,11 @@
     </fieldset>
 
     <fieldset class="props-fieldset">
-      <legend>Fiscal (ISR / IMSS / desglose)</legend>
+      <legend>Fiscal ISR (gravado / exento)</legend>
       <div class="form-row-checks">
         <label class="inline-check">
           <input type="checkbox" name="integraISR" <%= fiscalActual.integraISR !== false ? 'checked' : '' %> />
           Integra ISR
-        </label>
-        <label class="inline-check">
-          <input type="checkbox" name="integraIMSS" <%= fiscalActual.integraIMSS !== false ? 'checked' : '' %> />
-          Integra IMSS
         </label>
         <label class="inline-check">
           <input type="checkbox" name="integraINFONAVIT" <%= fiscalActual.integraINFONAVIT === true ? 'checked' : '' %> />
@@ -334,7 +358,7 @@
         </label>
       </div>
       <div class="form-row-3">
-        <label>Modo de desglose
+        <label>Modo de desglose ISR
           <select name="desgloseModo" id="prop-desglose">
             <% _desgloseModos.forEach(function(m) { %>
             <option value="<%= m.value %>" <%= (desgloseActual.modo || 'todo_gravado') === m.value ? 'selected' : '' %>><%= m.label %></option>
@@ -356,9 +380,74 @@
           <input name="formulaGravado" value="<%= desgloseActual.formulaGravado || '' %>" placeholder="si modo = formula" />
         </label>
       </div>
-      <label>Código de regla de ley
-        <input name="codigoRegla" value="<%= desgloseActual.codigoRegla || '' %>" placeholder="ej. horas_extra" />
+      <label>Código de regla de ley (ISR)
+        <input name="codigoRegla" value="<%= desgloseActual.codigoRegla || '' %>" placeholder="ej. horas_extra_dobles, despensa" />
       </label>
+      <p class="muted" style="margin-top:0.35rem;font-size:0.85rem">
+        <code>horas_extra_dobles</code>: 50% exento con tope de N×UMA semanales (campo tope arriba, default 5).
+        <code>despensa</code>: exento hasta <strong>1 UMA mensual</strong> si el período paga despensa mensual;
+        si es semanal sin pago mensual, <strong>7 × UMA diaria</strong>. El excedente grava ISR.
+      </p>
+    </fieldset>
+
+    <fieldset class="props-fieldset">
+      <legend>IMSS / SDI (integra SBC / no integra)</legend>
+      <%
+        const imssActual = fiscalActual.imss || {};
+        const imssDesglose = imssActual.desglose || {};
+        const natSdiActual = imssActual.naturalezaSdi || (fiscalActual.integraIMSS === false ? 'excluido' : 'variable');
+        const _imssModos = typeof imssDesgloseModos !== 'undefined' ? imssDesgloseModos : [];
+        const _natSdi = typeof naturalezaSdiOpts !== 'undefined' ? naturalezaSdiOpts : [];
+      %>
+      <div class="form-row-checks">
+        <label class="inline-check">
+          <input type="checkbox" name="integraIMSS" id="prop-integra-imss" <%= fiscalActual.integraIMSS !== false ? 'checked' : '' %> />
+          Puede integrar IMSS / SBC
+        </label>
+      </div>
+      <div class="form-row-3">
+        <label>Naturaleza SDI
+          <select name="naturalezaSdi" id="prop-naturaleza-sdi">
+            <% _natSdi.forEach(function(m) { %>
+            <option value="<%= m.value %>" <%= natSdiActual === m.value ? 'selected' : '' %>><%= m.label %></option>
+            <% }); %>
+          </select>
+        </label>
+        <label>Modo desglose IMSS
+          <select name="imssDesgloseModo" id="prop-imss-desglose">
+            <% _imssModos.forEach(function(m) { %>
+            <option value="<%= m.value %>" <%= (imssDesglose.modo || (fiscalActual.integraIMSS === false ? 'todo_excluye' : 'todo_integra')) === m.value ? 'selected' : '' %>><%= m.label %></option>
+            <% }); %>
+          </select>
+        </label>
+        <label>Tope no integra (% SBC)
+          <input type="number" name="imssTopeNoIntegraPctSbc" step="0.01" min="0" value="<%= imssDesglose.topeNoIntegraPctSbc != null ? imssDesglose.topeNoIntegraPctSbc : 0 %>" />
+        </label>
+      </div>
+      <div class="form-row-3">
+        <label>Tope no integra (UMAs × días)
+          <input type="number" name="imssTopeNoIntegraUMA" step="0.01" min="0" value="<%= imssDesglose.topeNoIntegraUMA != null ? imssDesglose.topeNoIntegraUMA : 0 %>" />
+        </label>
+        <label>Tope no integra (monto)
+          <input type="number" name="imssTopeNoIntegraMonto" step="0.01" min="0" value="<%= imssDesglose.topeNoIntegraMonto != null ? imssDesglose.topeNoIntegraMonto : 0 %>" />
+        </label>
+        <label>Código regla IMSS
+          <input name="imssCodigoRegla" value="<%= imssDesglose.codigoRegla || '' %>" placeholder="despensa_40_uma, premio_10_sbc…" />
+        </label>
+      </div>
+      <div class="form-row-2">
+        <label>Fórmula no integra
+          <input name="imssFormulaNoIntegra" value="<%= imssDesglose.formulaNoIntegra || '' %>" placeholder="si modo = formula" />
+        </label>
+        <label>Fórmula integra SBC
+          <input name="imssFormulaIntegra" value="<%= imssDesglose.formulaIntegra || '' %>" placeholder="si modo = formula" />
+        </label>
+      </div>
+      <p class="muted" style="margin-top:0.35rem;font-size:0.85rem">
+        Independiente del ISR. <strong>Fijo</strong> alimenta SDI/factor; <strong>variable</strong> entra al promedio bimestre;
+        <strong>excluido</strong> no cotiza. Reglas: <code>despensa_40_uma</code>, <code>premio_10_sbc</code>,
+        <code>alimentacion_833</code>, <code>habitacion_25</code>, <code>horas_extra_dobles</code>.
+      </p>
     </fieldset>
 
     <fieldset class="props-fieldset">
@@ -505,13 +594,13 @@
         <p class="muted small" style="margin:0 0 0.35rem"><strong>Fondo de ahorro — fórmula editable (mathjs, no JS libre)</strong></p>
         <p class="muted small" style="margin:0">
           Condición sugerida: <code>aplicaFondoAhorro == 1</code><br />
-          Fórmula sugerida:
-          <code>aplicaFondoAhorro * (sueldoDiario * diasLaborados * porcentajeFondoAhorro / 200)</code><br />
-          (= % del salario ÷ 2; el concepto redondea a 2 decimales).<br />
-          Variables: <code>aplicaFondoAhorro</code>, <code>porcentajeFondoAhorro</code>, <code>sueldoDiario</code>,
-          <code>diasLaborados</code>, <code>uma</code>, <code>topeUmaFondoAhorro</code>, <code>diasPeriodo</code>.
-          Atajos legacy: <code>fondoAhorroEmpresa</code> / <code>fondoAhorroTrabajador</code>.
-          Evita <code>round(x, n)</code> aquí: en nómina <code>round</code> es Math.round de 1 argumento.
+          Importe (mitad completa): <code>fondoAhorroEmpresa</code><br />
+          Solo exento: <code>fondoAhorroEmpresaExento</code>
+          o <code>min(fondoAhorroEmpresa, fondoAhorroTopeExento)</code><br />
+          Con rama: <code>si(aplicaFondoAhorro == 1, fondoAhorroEmpresa, 0)</code><br />
+          Insumos: <code>fondoAhorroEmpresa</code>, <code>fondoAhorroEmpresaExento</code>,
+          <code>fondoAhorroEmpresaGravado</code>, <code>fondoAhorroTopeExento</code>.
+          Preferir <code>redondear(x, 2)</code> en lugar de <code>round(x)</code>.
         </p>
       </div>
       <% } %>
@@ -660,13 +749,16 @@
         tipo: 'namespace'
       });
     });
-    ['min', 'max', 'abs', 'round', 'floor', 'ceil', 'aplicarTabla', 'topeUMA', 'isrPeriodo', 'imssObrero', 'imssPatronal'].forEach(function(fn) {
-      if (_acSeen[fn]) return;
-      _acSeen[fn] = true;
+    const _fnSys = (typeof formulaSystemFunctions !== 'undefined' && formulaSystemFunctions)
+      ? formulaSystemFunctions
+      : [];
+    _fnSys.forEach(function(fn) {
+      if (!fn || !fn.name || _acSeen[fn.name]) return;
+      _acSeen[fn.name] = true;
       _acItems.push({
-        key: fn,
-        label: fn + '(…)',
-        descripcion: 'Función permitida del evaluador',
+        key: fn.name,
+        label: fn.signature || (fn.name + '(…)'),
+        descripcion: fn.descripcion || 'Función de sistema',
         grupo: 'Funciones',
         tipo: 'funcion'
       });

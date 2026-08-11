@@ -53,7 +53,9 @@ function buildNamespacedContext({ empleado, periodo, incidencias, parametros, ex
     sueldoDiario: toNum(emp.salarioDiario ?? emp.sueldoDiario),
     horasJornada: toNum(emp.horasJornada ?? atributos.horasJornada, 8),
     antiguedadAnios: toNum(emp.antiguedadAnios),
+    sdi: toNum(emp.sdi ?? emp.salarioDiario ?? emp.sueldoDiario),
     sbc: toNum(emp.sbc),
+    tipoSalario: String(emp.tipoSalario || 'fijo').trim() || 'fijo',
     tipoEmpleado: String(emp.tipoEmpleado || '').trim(),
     atributos
   };
@@ -116,9 +118,11 @@ function buildNamespacedContext({ empleado, periodo, incidencias, parametros, ex
     horasExtraDobles: INCIDENCIAS.horasExtraDobles,
     horasExtraTriples: INCIDENCIAS.horasExtraTriples,
     antiguedadAnios: EMPLEADO.antiguedadAnios,
+    sdi: EMPLEADO.sdi,
+    sbc: EMPLEADO.sbc || Math.min(EMPLEADO.sdi || EMPLEADO.salarioDiario, PARAMETROS.uma * 25 || Infinity),
+    tipoSalario: EMPLEADO.tipoSalario,
     uma: PARAMETROS.uma,
     salarioMinimo: PARAMETROS.salarioMinimo,
-    sbc: EMPLEADO.sbc || Math.min(EMPLEADO.salarioDiario, PARAMETROS.uma * 25 || Infinity),
     minutosRetardo: INCIDENCIAS.minutosRetardo,
     minutosSalidaAnticipada: INCIDENCIAS.minutosSalidaAnticipada,
     diasConRetardo: INCIDENCIAS.diasConRetardo,

@@ -9,18 +9,46 @@ const empleadoSchema = new mongoose.Schema(
     subsidiariaId: { type: mongoose.Schema.Types.ObjectId, ref: 'Subsidiaria' },
     numEmpleado: { type: String, required: true, trim: true },
     firstName: { type: String, required: true, trim: true },
+    /** Compat: apellido(s) concatenados. Preferir apellidoPaterno / apellidoMaterno. */
     lastName: { type: String, required: true, trim: true },
+    apellidoPaterno: { type: String, trim: true, default: '' },
+    apellidoMaterno: { type: String, trim: true, default: '' },
     curp: { type: String, trim: true, uppercase: true, default: '' },
     rfc: { type: String, trim: true, uppercase: true, default: '' },
     nss: { type: String, trim: true, default: '' },
     fechaNacimiento: { type: Date },
     sexo: { type: String, enum: ['', 'M', 'F', 'X'], default: '' },
+    estadoCivil: { type: String, trim: true, default: '' },
+    entidadNacimiento: { type: String, trim: true, uppercase: true, default: '' },
+    ciudadNacimiento: { type: String, trim: true, default: '' },
+    /** IMSS */
+    registroPatronal: { type: String, trim: true, uppercase: true, default: '' },
+    umf: { type: String, trim: true, default: '' },
     email: { type: String, trim: true, lowercase: true, default: '' },
     emailPersonal: { type: String, trim: true, lowercase: true, default: '' },
     telefono: { type: String, trim: true, default: '' },
     telefonoFijo: { type: String, trim: true, default: '' },
+    /** Domicilio (CP obligatorio para CFDI de nómina) */
+    domicilio: {
+      calle: { type: String, trim: true, default: '' },
+      numeroExt: { type: String, trim: true, default: '' },
+      numeroInt: { type: String, trim: true, default: '' },
+      colonia: { type: String, trim: true, default: '' },
+      poblacion: { type: String, trim: true, default: '' },
+      entidad: { type: String, trim: true, default: '' },
+      codigoPostal: { type: String, trim: true, default: '' }
+    },
     departamentoId: { type: mongoose.Schema.Types.ObjectId, ref: 'Departamento' },
     puestoId: { type: mongoose.Schema.Types.ObjectId, ref: 'Puesto' },
+    /**
+     * Override explícito de tabla de prestaciones.
+     * Si vacío → cascada puesto > depto > tipo_empleado > global.
+     */
+    tablaPrestacionesId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'TablaPrestaciones',
+      default: null
+    },
     turnoId: { type: mongoose.Schema.Types.ObjectId, ref: 'Turno' },
     /** Tipo de período de pago (catálogo tipos_periodo_nomina: semanal, quincenal, etc.) */
     tipoPeriodoId: { type: mongoose.Schema.Types.ObjectId, ref: 'TipoPeriodoNomina', default: null },
@@ -28,7 +56,19 @@ const empleadoSchema = new mongoose.Schema(
     tipoContrato: { type: String, trim: true, default: 'indefinido' },
     /** Clasificación laboral (enum sistema: tipo_empleado) */
     tipoEmpleado: { type: String, trim: true, default: '' },
+    /** Salario diario contratado (parte fija). */
     salarioDiario: { type: Number, min: 0 },
+    /**
+     * Base de cotización IMSS: fijo | variable | mixto.
+     * Variable/mixto: capturar SDI (promedio de variables + fijo según política).
+     */
+    tipoSalario: {
+      type: String,
+      enum: ['fijo', 'variable', 'mixto', ''],
+      default: 'fijo'
+    },
+    /** Salario Diario Integrado (SDI). Si vacío, el motor usa salarioDiario. */
+    sdi: { type: Number, min: 0, default: 0 },
     fechaIngreso: { type: Date },
     fechaBaja: { type: Date },
     motivoBaja: { type: String, trim: true, default: '' },
@@ -51,6 +91,28 @@ const empleadoSchema = new mongoose.Schema(
     nominaConfig: {
       aplicaFondoAhorro: { type: Boolean, default: false },
       porcentajeFondoAhorro: { type: Number, default: 0, min: 0, max: 100 },
+      /**
+       * Despensa / vales (política del empleado).
+       * fijo → despensaMontoMensual; porcentaje → % del sueldo mensual × tope.
+       * despensaMonto se mantiene como alias del monto fijo mensual (compat).
+       */
+      despensaModalidad: {
+        type: String,
+        enum: ['ninguna', 'fijo', 'porcentaje'],
+        default: 'ninguna'
+      },
+      despensaMonto: { type: Number, default: 0, min: 0 },
+      despensaMontoMensual: { type: Number, default: 0, min: 0 },
+      despensaPorcentaje: { type: Number, default: 0, min: 0, max: 100 },
+      /** imss_40_uma | uma_mensual | monto | sin_tope */
+      despensaTopeModo: {
+        type: String,
+        enum: ['imss_40_uma', 'uma_mensual', 'monto', 'sin_tope'],
+        default: 'imss_40_uma'
+      },
+      despensaTopeMonto: { type: Number, default: 0, min: 0 },
+      seguroVidaMonto: { type: Number, default: 0, min: 0 },
+      sgmmMonto: { type: Number, default: 0, min: 0 },
       tipoCreditoInfonavit: {
         type: String,
         enum: ['', 'porcentaje', 'vsm', 'cuota_fija'],
@@ -61,6 +123,8 @@ const empleadoSchema = new mongoose.Schema(
       diasCotizacionImss: { type: Number, default: 0, min: 0 },
       sueldoIntegrado: { type: Number, default: 0, min: 0 },
       diasPrimaVacacional: { type: Number, default: 0, min: 0 },
+      /** Override opcional del % de prima (vacío/0 = usar tabla de prestaciones). */
+      primaVacacionalPct: { type: Number, default: 0, min: 0, max: 100 },
       proporcionAguinaldoFiniquito: { type: Number, default: 0, min: 0 },
       fondoAhorroSaldoFiniquito: { type: Number, default: 0, min: 0 }
     }

@@ -6,6 +6,12 @@ const crypto = require('crypto');
 const mongoose = require('mongoose');
 
 const { Tenant, TenantDomain, Menu, Plan } = require('./models');
+const FormulaFunction = require('./models/formulaFunction');
+const {
+  validateJavascriptCuerpo,
+  evaluateJavascriptCuerpo
+} = require('./lib/formulaJsRunner');
+const { loadFormulaHelperCatalog } = require('./lib/formulaHelperCatalog');
 const { adminAccessControl } = require('./middleware/adminAccessControl');
 const { internalApiAuth } = require('./middleware/internalApiAuth');
 const { apiLimiter } = require('./middleware/apiLimiter');
@@ -161,6 +167,211 @@ app.post('/admin/menus', adminAccessControl, async (req, res) => {
       .filter(Boolean)
   });
   res.redirect('/admin/menus');
+});
+
+// --- Scripts JS de fórmula (plataforma) ---
+const NAME_RE = /^[a-z][a-zA-Z0-9_]*$/;
+
+function parseArgsList(raw) {
+  return String(raw || '')
+    .split(/[,;\s]+/)
+    .map((a) => a.trim())
+    .filter(Boolean);
+}
+
+function assertJsArgs(args) {
+  for (const a of args) {
+    if (!NAME_RE.test(a)) throw new Error(`Argumento inválido: ${a}`);
+  }
+}
+
+async function formulaHelperForViews() {
+  try {
+    return await loadFormulaHelperCatalog(mongoose.connection);
+  } catch (err) {
+    console.warn('[formula-helper]', err.message);
+    return {
+      argsComunes: [],
+      helpersSandbox: [],
+      contextVars: [],
+      parametros: [],
+      funciones: [],
+      notaJs: 'No se pudo cargar el catálogo de ayuda.'
+    };
+  }
+}
+
+app.get('/admin/formula-scripts', adminAccessControl, async (_req, res) => {
+  const scripts = await FormulaFunction.find({ tipo: 'javascript', esSistema: { $ne: true } })
+    .sort({ name: 1 })
+    .lean();
+  res.render('formula-scripts/index', { scripts });
+});
+
+app.get('/admin/formula-scripts/new', adminAccessControl, async (_req, res) => {
+  res.render('formula-scripts/edit', {
+    fn: null,
+    values: {},
+    message: '',
+    helper: await formulaHelperForViews()
+  });
+});
+
+app.post('/admin/formula-scripts', adminAccessControl, async (req, res) => {
+  try {
+    const name = String(req.body.name || '').trim();
+    if (!NAME_RE.test(name)) throw new Error('Nombre inválido (camelCase, empieza en minúscula)');
+    const nameKey = name.toLowerCase();
+    const args = parseArgsList(req.body.args);
+    assertJsArgs(args);
+    const cuerpo = String(req.body.cuerpo || '').trim();
+    validateJavascriptCuerpo(cuerpo, args);
+    const exists = await FormulaFunction.findOne({ nameKey, tenantId: null }).lean();
+    if (exists) throw new Error(`Ya existe la función "${exists.name}"`);
+    const publicar = req.body.accion === 'publicar';
+    const signature =
+      String(req.body.signature || '').trim() || `${name}(${args.join(', ')})`;
+    const doc = await FormulaFunction.create({
+      name,
+      nameKey,
+      signature,
+      descripcion: String(req.body.descripcion || '').trim(),
+      ejemplo: String(req.body.ejemplo || '').trim(),
+      tipo: 'javascript',
+      args,
+      cuerpo,
+      cuerpoPublicado: publicar ? cuerpo : '',
+      estado: publicar ? 'publicado' : 'borrador',
+      esSistema: false,
+      activo: true,
+      version: 1,
+      tenantId: null
+    });
+    res.redirect(`/admin/formula-scripts/${doc._id}?msg=${encodeURIComponent(publicar ? 'Publicado' : 'Borrador creado')}`);
+  } catch (err) {
+    res.status(400).render('formula-scripts/edit', {
+      fn: null,
+      values: req.body,
+      message: err.message || 'Error al crear',
+      helper: await formulaHelperForViews()
+    });
+  }
+});
+
+app.post('/admin/formula-scripts/validate', adminAccessControl, async (req, res) => {
+  try {
+    const args = parseArgsList(req.body.args);
+    assertJsArgs(args);
+    validateJavascriptCuerpo(String(req.body.cuerpo || ''), args);
+    res.json({ ok: true, args });
+  } catch (err) {
+    res.status(400).json({ error: err.message || 'Inválido' });
+  }
+});
+
+app.post('/admin/formula-scripts/test', adminAccessControl, async (req, res) => {
+  try {
+    const args = parseArgsList(req.body.args);
+    assertJsArgs(args);
+    const cuerpo = String(req.body.cuerpo || '');
+    validateJavascriptCuerpo(cuerpo, args);
+    const valsRaw = Array.isArray(req.body.valores) ? req.body.valores : parseArgsList(req.body.valores);
+    const argValues = args.map((_, i) => {
+      const n = Number(valsRaw[i]);
+      return Number.isFinite(n) ? n : 0;
+    });
+    const resultado = evaluateJavascriptCuerpo(cuerpo, args, argValues);
+    if (req.body.id) {
+      await FormulaFunction.updateOne(
+        { _id: req.body.id },
+        {
+          $set: {
+            ultimaPrueba: { ok: true, resultado, mensaje: 'OK', at: new Date() }
+          }
+        }
+      );
+    }
+    res.json({ ok: true, resultado, args, valores: argValues });
+  } catch (err) {
+    if (req.body?.id) {
+      await FormulaFunction.updateOne(
+        { _id: req.body.id },
+        {
+          $set: {
+            ultimaPrueba: {
+              ok: false,
+              resultado: null,
+              mensaje: err.message || 'Error',
+              at: new Date()
+            }
+          }
+        }
+      ).catch(() => {});
+    }
+    res.status(400).json({ error: err.message || 'Error al probar' });
+  }
+});
+
+app.get('/admin/formula-scripts/:id', adminAccessControl, async (req, res) => {
+  const fn = await FormulaFunction.findById(req.params.id).lean();
+  if (!fn || fn.tipo !== 'javascript') return res.status(404).send('Script no encontrado');
+  res.render('formula-scripts/edit', {
+    fn,
+    values: {},
+    message: req.query.msg ? String(req.query.msg) : '',
+    helper: await formulaHelperForViews()
+  });
+});
+
+app.post('/admin/formula-scripts/:id', adminAccessControl, async (req, res) => {
+  try {
+    const doc = await FormulaFunction.findById(req.params.id);
+    if (!doc || doc.tipo !== 'javascript') return res.status(404).send('Script no encontrado');
+    const args = parseArgsList(req.body.args);
+    assertJsArgs(args);
+    const cuerpo = String(req.body.cuerpo || '').trim();
+    validateJavascriptCuerpo(cuerpo, args);
+    const publicadoAnterior = doc.cuerpoPublicado || '';
+    doc.args = args;
+    doc.cuerpo = cuerpo;
+    doc.descripcion = String(req.body.descripcion || '').trim();
+    doc.ejemplo = String(req.body.ejemplo || '').trim();
+    doc.signature =
+      String(req.body.signature || '').trim() || `${doc.name}(${args.join(', ')})`;
+
+    if (req.body.accion === 'publicar') {
+      doc.cuerpoPublicado = cuerpo;
+      doc.estado = 'publicado';
+      doc.activo = true;
+      doc.version = (Number(doc.version) || 1) + 1;
+      await doc.save();
+      return res.redirect(
+        `/admin/formula-scripts/${doc._id}?msg=${encodeURIComponent('Publicado v' + doc.version)}`
+      );
+    }
+
+    if (doc.estado === 'publicado' && cuerpo !== publicadoAnterior) {
+      doc.estado = 'borrador';
+    }
+    await doc.save();
+    res.redirect(`/admin/formula-scripts/${doc._id}?msg=${encodeURIComponent('Borrador guardado')}`);
+  } catch (err) {
+    const fn = await FormulaFunction.findById(req.params.id).lean();
+    res.status(400).render('formula-scripts/edit', {
+      fn,
+      values: req.body,
+      message: err.message || 'Error al guardar',
+      helper: await formulaHelperForViews()
+    });
+  }
+});
+
+app.post('/admin/formula-scripts/:id/toggle', adminAccessControl, async (req, res) => {
+  const doc = await FormulaFunction.findById(req.params.id);
+  if (!doc || doc.tipo !== 'javascript') return res.status(404).send('No encontrado');
+  doc.activo = !doc.activo;
+  await doc.save();
+  res.redirect('/admin/formula-scripts');
 });
 
 // --- API interna ---

@@ -20,6 +20,16 @@ const conceptoNominaSchema = new mongoose.Schema(
       enum: ['fiscal', 'gravado', 'exento', 'mixto', 'informativo'],
       default: 'gravado'
     },
+    /**
+     * Clasificación de negocio (enum sistema categoria_concepto).
+     * p.ej. prevision_social → despensa, fondo, seguros de previsión.
+     */
+    categoria: {
+      type: String,
+      trim: true,
+      default: 'ordinario',
+      index: true
+    },
     aplicaEn: {
       type: String,
       enum: ['nomina', 'prenomina', 'ambos'],
@@ -48,6 +58,8 @@ const conceptoNominaSchema = new mongoose.Schema(
     /** Vacío = todos. Valores del enum sistema tipo_periodo (semanal, quincenal…). */
     aplicaTiposPeriodo: { type: [String], default: [] },
     ordenCalculo: { type: Number, default: 100 },
+    /** Orden en el pre-recibo impreso (percepciones/deducciones). Menor = primero. */
+    ordenImpresion: { type: Number, default: 100 },
     dependientes: { type: [String], default: [] },
     cuentaContable: { type: String, trim: true, default: '' },
     activo: { type: Boolean, default: true },
@@ -58,6 +70,7 @@ const conceptoNominaSchema = new mongoose.Schema(
 
 conceptoNominaSchema.index({ tenantId: 1, codigo: 1 }, { unique: true });
 conceptoNominaSchema.index({ tenantId: 1, activo: 1, ordenCalculo: 1 });
+conceptoNominaSchema.index({ tenantId: 1, activo: 1, ordenImpresion: 1 });
 conceptoNominaSchema.index({ tenantId: 1, aplicaEn: 1, activo: 1 });
 
 async function getConceptoNominaModel() {

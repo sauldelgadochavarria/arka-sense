@@ -14,7 +14,32 @@ const { toDateInputValue } = require('../libs/formHelpers');
 const { tenantHasFeature } = require('../libs/tenantFeatureFlags');
 const { TIPOS_CREDITO_INFONAVIT } = require('../config/nominaCatalogos');
 const { MOTIVOS_BAJA, TIPOS_CONTRATO, TIPOS_EMPLEADO, ESTATUS_EMPLEADO, TIPOS_REGISTRO } = require('../config/catalogos');
+const {
+  ENTIDADES_FEDERATIVAS,
+  ESTADOS_CIVILES,
+  TIPOS_BASE_COTIZACION
+} = require('../config/empleadoCatalogos');
+const { resolverBaseImss } = require('../libs/sdiHelpers');
 const { getEnumItems, ensureSystemEnums } = require('../services/nomina/systemEnumService');
+
+async function loadUmaVigente(tenantId) {
+  try {
+    const { obtenerParametrosVigentes } = require('../services/nomina/tablasFiscalesService');
+    const p = await obtenerParametrosVigentes(tenantId, new Date());
+    return Number(p?.uma) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+function empleadoFormExtras(umaVigente = 0) {
+  return {
+    entidadesFederativas: ENTIDADES_FEDERATIVAS,
+    estadosCiviles: ESTADOS_CIVILES,
+    tiposBaseCotizacion: TIPOS_BASE_COTIZACION,
+    umaVigente
+  };
+}
 
 function enumOptionsOrFallback(items, fallback) {
   if (items && items.length) {
@@ -77,7 +102,8 @@ async function loadEmpleadoCatalogs(tenantId, empresa) {
       turnos: [],
       gruposDispositivos: [],
       plantillas: [],
-      tiposPeriodo: []
+      tiposPeriodo: [],
+      tablasPrestaciones: []
     };
   }
 
@@ -89,7 +115,9 @@ async function loadEmpleadoCatalogs(tenantId, empresa) {
   const Subsidiaria = await getSubsidiariaModel();
   const Turno = await getTurnoModel();
   const GrupoDispositivos = await getGrupoDispositivosModel();
-  const [empleados, departamentos, puestos, subsidiarias, turnos, gruposDispositivos, plantillas, tiposPeriodo] =
+  const getTablaPrestacionesModel = require('../models/tablaPrestaciones');
+  const TablaPrestaciones = await getTablaPrestacionesModel();
+  const [empleados, departamentos, puestos, subsidiarias, turnos, gruposDispositivos, plantillas, tiposPeriodo, tablasPrestaciones] =
     await Promise.all([
     Empleado.find({ tenantId }).sort({ lastName: 1, firstName: 1 }).lean(),
     Departamento.find({ tenantId, activo: true }).sort({ nombre: 1 }).lean(),
@@ -98,7 +126,10 @@ async function loadEmpleadoCatalogs(tenantId, empresa) {
     Turno.find({ tenantId, activo: true }).sort({ nombre: 1 }).lean(),
     GrupoDispositivos.find({ tenantId, activo: true }).sort({ nombre: 1 }).lean(),
     loadPlantillasActivas(tenantId),
-    listTiposPeriodo(tenantId, true)
+    listTiposPeriodo(tenantId, true),
+    TablaPrestaciones.find({ tenantId, empresaId: empresa._id, activo: true })
+      .sort({ ambito: 1, nombre: 1 })
+      .lean()
   ]);
 
   const supervisores = empleados.filter((e) => e.estatus === 'activo');
@@ -112,7 +143,8 @@ async function loadEmpleadoCatalogs(tenantId, empresa) {
     turnos,
     gruposDispositivos,
     plantillas,
-    tiposPeriodo
+    tiposPeriodo,
+    tablasPrestaciones
   };
 }
 
@@ -172,12 +204,14 @@ async function listEmpleados(req, res) {
     : { ...buildLookupMaps([], [], [], []), turnoMap: new Map(), tipoPeriodoMap: new Map() };
 
   const enumsEmp = await loadEmpleadoEnums();
+  const umaVigente = await loadUmaVigente(req.session.tenantId);
 
   res.render('Personal/empleados', {
     empleados,
     ...catalogs,
     ...maps,
     ...enumsEmp,
+    ...empleadoFormExtras(umaVigente),
     empresa,
     estatus,
     estatusOptions: ESTATUS_EMPLEADO,
@@ -248,19 +282,50 @@ async function showEmpleado(req, res) {
       ? maps.turnoMap.get(String(turnoVigente.turno._id)) || turnoVigente.turno.nombre
       : '—';
 
-  const [historialReciente, tiposMov, enumsEmp] = await Promise.all([
+  const [historialReciente, tiposMov, enumsEmp, umaVigente] = await Promise.all([
     listHistorialEmpleado(req.session.tenantId, empleado._id, 5),
     getTipoMovimientoLaboralModel().then((M) => M.find({ tenantId: req.session.tenantId }).lean()),
-    loadEmpleadoEnums()
+    loadEmpleadoEnums(),
+    loadUmaVigente(req.session.tenantId)
   ]);
   const tipoMovMap = new Map(tiposMov.map((t) => [t.codigo, t.nombre]));
+  const baseImss = resolverBaseImss(empleado, umaVigente, 25);
+  const labelTipoSalario =
+    TIPOS_BASE_COTIZACION.find((t) => t.value === (empleado.tipoSalario || 'fijo'))?.label ||
+    empleado.tipoSalario ||
+    '—';
+  const labelEstadoCivil =
+    ESTADOS_CIVILES.find((e) => e.value === empleado.estadoCivil)?.label || empleado.estadoCivil || '—';
+  const labelEntidadNac =
+    ENTIDADES_FEDERATIVAS.find((e) => e.value === empleado.entidadNacimiento)?.label ||
+    empleado.entidadNacimiento ||
+    '—';
+
+  let tablaPrestacionesResuelta = null;
+  if (empresa) {
+    try {
+      const { resolverTablaPrestaciones } = require('../services/sdiCalculoService');
+      tablaPrestacionesResuelta = await resolverTablaPrestaciones(
+        req.session.tenantId,
+        empresa._id,
+        empleado
+      );
+    } catch (_) {
+      /* opcional */
+    }
+  }
 
   res.render('Personal/empleado-show', {
     empleado,
     ...maps,
     ...enumsEmp,
+    ...empleadoFormExtras(umaVigente),
     labelTipoContrato: labelFromOptions(enumsEmp.tiposContrato, empleado.tipoContrato),
     labelTipoEmpleado: labelFromOptions(enumsEmp.tiposEmpleado, empleado.tipoEmpleado),
+    labelTipoSalario,
+    labelEstadoCivil,
+    labelEntidadNac,
+    baseImss,
     grupoNombre,
     tipoRegistroLabel,
     asignacionCtx,
@@ -268,6 +333,7 @@ async function showEmpleado(req, res) {
     turnoVigenteOrigen: turnoVigente?.origen || 'ninguno',
     historialReciente,
     tipoMovMap,
+    tablaPrestacionesResuelta,
     empresa,
     showNominaConfig: showNominaConfig(req),
     labelTipoCreditoInfonavit,
@@ -287,11 +353,13 @@ async function editEmpleado(req, res) {
   catalogs.supervisores = catalogs.supervisores.filter((e) => String(e._id) !== String(empleado._id));
   const asignacionCtx = await loadAsignacionEmpleado(req.session.tenantId, empleado._id);
   const enumsEmp = await loadEmpleadoEnums();
+  const umaVigente = await loadUmaVigente(req.session.tenantId);
 
   res.render('Personal/empleado-edit', {
     empleado,
     ...catalogs,
     ...enumsEmp,
+    ...empleadoFormExtras(umaVigente),
     asignacionCtx,
     tiposRegistro: TIPOS_REGISTRO,
     empresa,
@@ -400,6 +468,51 @@ async function reactivarEmpleado(req, res) {
   }
 }
 
+async function calcularSdiAction(req, res) {
+  try {
+    const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+    if (error || !empresa) {
+      return res.status(400).json({ error: error || 'Sin empresa' });
+    }
+    const Empleado = await getEmpleadoModel();
+    const empleado = await findOneByTenant(Empleado, req.session.tenantId, req.params.id);
+    if (!empleado) return res.status(404).json({ error: 'Empleado no encontrado' });
+
+    const body = req.body || {};
+    const tipoSalario = String(body.tipoSalario || empleado.tipoSalario || 'fijo').toLowerCase();
+    const salarioDiario =
+      body.salarioDiario != null && body.salarioDiario !== ''
+        ? Number(body.salarioDiario)
+        : Number(empleado.salarioDiario) || 0;
+
+    const uma = await loadUmaVigente(req.session.tenantId);
+    const { calcularSdiEmpleado } = require('../services/sdiCalculoService');
+    const result = await calcularSdiEmpleado({
+      tenantId: req.session.tenantId,
+      empresaId: empresa._id,
+      empleado: { ...empleado, tipoSalario, salarioDiario },
+      uma,
+      topeUma: 25,
+      promedioVariableOverride:
+        body.promedioVariable != null && body.promedioVariable !== ''
+          ? Number(body.promedioVariable)
+          : null
+    });
+
+    if (body.aplicar === true || body.aplicar === '1') {
+      await Empleado.updateOne(
+        { _id: empleado._id },
+        { $set: { sdi: result.sdi, tipoSalario, updatedAt: new Date() } }
+      );
+    }
+
+    return res.json(result);
+  } catch (err) {
+    console.error('[calcular-sdi]', err);
+    return res.status(500).json({ error: err.message || 'Error al calcular SDI' });
+  }
+}
+
 module.exports = {
   listEmpleados,
   createEmpleado,
@@ -407,5 +520,6 @@ module.exports = {
   editEmpleado,
   updateEmpleado,
   bajaEmpleado,
-  reactivarEmpleado
+  reactivarEmpleado,
+  calcularSdiAction
 };

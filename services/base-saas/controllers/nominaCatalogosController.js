@@ -27,6 +27,19 @@ const {
   eliminarRangoFiscal,
   copiarTablaNuevaVigencia
 } = require('../services/nomina/catalogosNominaService');
+const {
+  listFormulaFunctions,
+  crearFormulaFunction,
+  toggleFormulaFunction,
+  ensureFormulaFunctionsSeeded,
+  getFormulaFunctionById,
+  actualizarFormulaFunction,
+  publicarFormulaFunction,
+  validarFormulaFunctionPayload,
+  probarFormulaFunctionPayload,
+  registrarUltimaPrueba
+} = require('../services/nomina/formulaFunctionsService');
+const { loadFormulaHelperCatalogForSaas } = require('../services/nomina/formulaHelperCatalog');
 
 function featureFlagsFromReq(req) {
   return req.tenant?.featureFlags || req.session?.featureFlags || {};
@@ -50,11 +63,12 @@ function tipoMapeoLabel(value) {
 async function index(req, res) {
   if (requireNominaFeature(req, res) === false) return;
 
-  const [sat, mapeos, parametros, tablas] = await Promise.all([
+  const [sat, mapeos, parametros, tablas, funciones] = await Promise.all([
     listCatalogoSatTodos(),
     listMapeosLegado('legado'),
     listParametrosFiscales(),
-    listTablasFiscales()
+    listTablasFiscales(),
+    listFormulaFunctions({ includeInactive: false })
   ]);
 
   res.render('Nomina/catalogos/index', {
@@ -62,6 +76,7 @@ async function index(req, res) {
     mapeosActivos: mapeos.filter((m) => m.activo).length,
     parametrosCount: parametros.length,
     tablasActivas: tablas.filter((t) => t.activo).length,
+    funcionesActivas: funciones.length,
     session: req.session
   });
 }
@@ -297,6 +312,152 @@ async function copiarTablaFiscal(req, res) {
   }
 }
 
+async function formulaFunctions(req, res) {
+  if (requireNominaFeature(req, res) === false) return;
+  await ensureFormulaFunctionsSeeded();
+  const funciones = await listFormulaFunctions({ includeInactive: true });
+  res.render('Nomina/catalogos/formula-functions', {
+    funciones,
+    session: req.session
+  });
+}
+
+async function showFormulaFunction(req, res) {
+  if (requireNominaFeature(req, res) === false) return;
+  const fn = await getFormulaFunctionById(req.params.id);
+  if (!fn) {
+    req.flash('error', 'Función no encontrada');
+    return res.redirect('/nomina/catalogos/formula-functions');
+  }
+  const helper = await loadFormulaHelperCatalogForSaas().catch(() => null);
+  res.render('Nomina/catalogos/formula-function-edit', {
+    fn,
+    helper,
+    session: req.session
+  });
+}
+
+async function createFormulaFunctionAction(req, res) {
+  if (requireNominaFeature(req, res) === false) return;
+  try {
+    const created = await crearFormulaFunction({
+      name: req.body.name,
+      tipo: 'expresion',
+      args: req.body.args,
+      cuerpo: req.body.cuerpo,
+      signature: req.body.signature,
+      descripcion: req.body.descripcion,
+      ejemplo: req.body.ejemplo,
+      publicar: req.body.publicar
+    });
+    req.flash(
+      'success',
+      created.estado === 'publicado'
+        ? 'Función creada y publicada.'
+        : 'Función creada en borrador. Ábrela para validar / probar / publicar.'
+    );
+    return res.redirect(`/nomina/catalogos/formula-functions/${created._id}`);
+  } catch (err) {
+    req.flash('error', err.message || 'No se pudo crear la función');
+    return res.redirect('/nomina/catalogos/formula-functions');
+  }
+}
+
+async function saveFormulaFunctionAction(req, res) {
+  if (requireNominaFeature(req, res) === false) return;
+  const id = req.params.id;
+  try {
+    const existing = await getFormulaFunctionById(id);
+    if (existing && existing.tipo === 'javascript') {
+      req.flash('error', 'Los scripts JavaScript solo se editan en la consola de plataforma.');
+      return res.redirect('/nomina/catalogos/formula-functions');
+    }
+    if (req.body.accion === 'publicar') {
+      await actualizarFormulaFunction(id, {
+        tipo: 'expresion',
+        args: req.body.args,
+        cuerpo: req.body.cuerpo,
+        signature: req.body.signature,
+        descripcion: req.body.descripcion,
+        ejemplo: req.body.ejemplo
+      });
+      await publicarFormulaFunction(id);
+      req.flash('success', 'Función publicada. Ya está en el scope de cálculo.');
+    } else {
+      await actualizarFormulaFunction(id, {
+        tipo: 'expresion',
+        args: req.body.args,
+        cuerpo: req.body.cuerpo,
+        signature: req.body.signature,
+        descripcion: req.body.descripcion,
+        ejemplo: req.body.ejemplo
+      });
+      req.flash('success', 'Borrador guardado');
+    }
+  } catch (err) {
+    req.flash('error', err.message || 'No se pudo guardar');
+  }
+  res.redirect(`/nomina/catalogos/formula-functions/${id}`);
+}
+
+async function publishFormulaFunctionAction(req, res) {
+  if (requireNominaFeature(req, res) === false) return;
+  try {
+    await publicarFormulaFunction(req.params.id);
+    req.flash('success', 'Función publicada');
+  } catch (err) {
+    req.flash('error', err.message || 'No se pudo publicar');
+  }
+  res.redirect(`/nomina/catalogos/formula-functions/${req.params.id}`);
+}
+
+async function validateFormulaFunctionApi(req, res) {
+  if (requireNominaFeature(req, res) === false) return;
+  try {
+    const body = { ...(req.body || {}), tipo: 'expresion' };
+    const result = validarFormulaFunctionPayload(body);
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message || 'Inválido' });
+  }
+}
+
+async function testFormulaFunctionApi(req, res) {
+  if (requireNominaFeature(req, res) === false) return;
+  try {
+    const body = { ...(req.body || {}), tipo: 'expresion' };
+    const result = probarFormulaFunctionPayload(body);
+    if (req.body?.id) {
+      await registrarUltimaPrueba(req.body.id, {
+        ok: true,
+        resultado: result.resultado,
+        mensaje: 'OK'
+      }).catch(() => {});
+    }
+    res.json(result);
+  } catch (err) {
+    if (req.body?.id) {
+      await registrarUltimaPrueba(req.body.id, {
+        ok: false,
+        resultado: null,
+        mensaje: err.message || 'Error'
+      }).catch(() => {});
+    }
+    res.status(400).json({ error: err.message || 'Error al probar' });
+  }
+}
+
+async function toggleFormulaFunctionAction(req, res) {
+  if (requireNominaFeature(req, res) === false) return;
+  try {
+    await toggleFormulaFunction(req.params.id);
+    req.flash('success', 'Estado de la función actualizado');
+  } catch (err) {
+    req.flash('error', err.message || 'No se pudo cambiar el estado');
+  }
+  res.redirect('/nomina/catalogos/formula-functions');
+}
+
 module.exports = {
   index,
   catalogoSat,
@@ -313,5 +474,13 @@ module.exports = {
   toggleTablaFiscalAction,
   createRangoFiscal,
   deleteRangoFiscal,
-  copiarTablaFiscal
+  copiarTablaFiscal,
+  formulaFunctions,
+  showFormulaFunction,
+  createFormulaFunctionAction,
+  saveFormulaFunctionAction,
+  publishFormulaFunctionAction,
+  validateFormulaFunctionApi,
+  testFormulaFunctionApi,
+  toggleFormulaFunctionAction
 };

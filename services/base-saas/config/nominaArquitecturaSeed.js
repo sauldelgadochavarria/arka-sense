@@ -1,5 +1,7 @@
 'use strict';
 
+const { FORMULA_SYSTEM_FUNCTIONS } = require('./formulaSystemFunctions');
+
 /** Semilla mínima de enums del sistema (valores en BD, no hardcode en UI). */
 const SYSTEM_ENUMS_SEED = [
   {
@@ -113,6 +115,24 @@ const SYSTEM_ENUMS_SEED = [
     ]
   },
   {
+    grupo: 'categoria_concepto',
+    nombre: 'Categoría del concepto',
+    descripcion: 'Clasificación de negocio (previsión social, ordinario, fiscal…)',
+    editable: true,
+    items: [
+      { value: 'ordinario', label: 'Ordinario', descripcion: 'Sueldo, HE, etc.', orden: 1 },
+      {
+        value: 'prevision_social',
+        label: 'Previsión social',
+        descripcion: 'Despensa, fondo de ahorro, seguros de previsión…',
+        orden: 2
+      },
+      { value: 'fiscal', label: 'Fiscal', descripcion: 'ISR, IMSS, etc.', orden: 3 },
+      { value: 'informativo', label: 'Informativo', descripcion: 'No afecta neto', orden: 4 },
+      { value: 'otro', label: 'Otro', orden: 5 }
+    ]
+  },
+  {
     grupo: 'formula_context_vars',
     nombre: 'Variables de contexto (fórmulas)',
     descripcion:
@@ -209,8 +229,50 @@ const SYSTEM_ENUMS_SEED = [
         descripcion: 'UMA vigente',
         orden: 60,
         meta: { namespace: 'PARAMETROS', categoria: 'fiscal', ejemplo: 113.14 }
+      },
+      {
+        value: 'pagaDespensa',
+        label: 'Paga despensa (0/1)',
+        descripcion: '1 si el período dispara el pago mensual de vales',
+        orden: 70,
+        meta: { namespace: 'PERIODO', categoria: 'prestaciones', ejemplo: 1 }
+      },
+      {
+        value: 'despensaMonto',
+        label: 'Monto despensa del período',
+        descripcion: 'Insumo resuelto (fijo o % topado)',
+        orden: 71,
+        meta: { namespace: 'PERIODO', categoria: 'prestaciones', ejemplo: 1400 }
+      },
+      {
+        value: 'esSegundaQuincena',
+        label: '2ª quincena (0/1)',
+        descripcion: '1 si fechaInicio del período es día ≥ 16',
+        orden: 72,
+        meta: { namespace: 'PERIODO', categoria: 'periodo', ejemplo: 1 }
+      },
+      {
+        value: 'semanaDelMes',
+        label: 'Semana del mes (1–5)',
+        descripcion: 'Según día de inicio del período',
+        orden: 73,
+        meta: { namespace: 'PERIODO', categoria: 'periodo', ejemplo: 3 }
       }
     ]
+  },
+  {
+    grupo: 'formula_functions',
+    nombre: 'Funciones de fórmula',
+    descripcion:
+      'Funciones del scope mathjs (si, redondear, isrPeriodo…). Se sincroniza desde Nómina → Catálogos → Funciones de fórmula; ahí se crean las de tipo expresión.',
+    editable: false,
+    items: FORMULA_SYSTEM_FUNCTIONS.map((f, i) => ({
+      value: f.name,
+      label: f.signature || f.name,
+      descripcion: f.descripcion || '',
+      orden: (i + 1) * 10,
+      meta: { tipo: 'nativa', ejemplo: f.ejemplo || '' }
+    }))
   }
 ];
 
@@ -234,8 +296,12 @@ const CONCEPT_CATALOG_SEED = [
       naturaleza: 'gravado',
       integraISR: true,
       integraIMSS: true,
-      integraINFONAVIT: false,
-      desglose: { modo: 'todo_gravado', codigoRegla: '' }
+      integraINFONAVIT: true,
+      desglose: { modo: 'todo_gravado', codigoRegla: '' },
+      imss: {
+        naturalezaSdi: 'fijo',
+        desglose: { modo: 'todo_integra' }
+      }
     },
     ordenDefault: 1,
     descripcion: 'Pre-nómina: salario diario × días trabajados.'
@@ -257,12 +323,17 @@ const CONCEPT_CATALOG_SEED = [
     fiscal: {
       naturaleza: 'mixto',
       integraISR: true,
-      integraIMSS: true,
+      integraIMSS: false,
       integraINFONAVIT: false,
-      desglose: { modo: 'regla_ley', codigoRegla: 'horas_extra' }
+      desglose: { modo: 'regla_ley', topeExentoUMA: 5, codigoRegla: 'horas_extra' },
+      imss: {
+        naturalezaSdi: 'excluido',
+        desglose: { modo: 'todo_excluye', codigoRegla: 'horas_extra_dobles' }
+      }
     },
     ordenDefault: 2,
-    descripcion: 'Pre-nómina: agrega HE del período de asistencia.'
+    descripcion:
+      'Pre-nómina: agrega HE del período. Fiscal formal se afina en HORAS_EXTRA_DOBLES/TRIPLES.'
   },
   {
     clave: 'D001',
@@ -353,11 +424,83 @@ const CONCEPT_CATALOG_SEED = [
       naturaleza: 'gravado',
       integraISR: true,
       integraIMSS: true,
-      integraINFONAVIT: false,
-      desglose: { modo: 'todo_gravado', codigoRegla: '' }
+      integraINFONAVIT: true,
+      desglose: { modo: 'todo_gravado', codigoRegla: '' },
+      imss: {
+        naturalezaSdi: 'fijo',
+        desglose: { modo: 'todo_integra' }
+      }
     },
     ordenDefault: 100,
     descripcion: 'Nómina formal: salario diario × días laborados netos de faltas.'
+  },
+  {
+    clave: 'L0019',
+    codigo: 'HORAS_EXTRA_DOBLES',
+    nombre: 'Horas extra dobles',
+    tipo: 'percepcion',
+    naturaleza: 'mixto',
+    fase: 1,
+    aplicaEn: 'nomina',
+    formulaPrenomina: '',
+    tiposIncidencia: ['HEO', 'HED', 'HE'],
+    insumosContexto: [
+      'EMPLEADO.salarioDiario',
+      'EMPLEADO.horasJornada',
+      'INCIDENCIAS.horasExtraDobles'
+    ],
+    claveSAT: '019',
+    sat: { tipo: 'percepcion', clave: '019', descripcion: 'Horas extra' },
+    fiscal: {
+      naturaleza: 'mixto',
+      integraISR: true,
+      integraIMSS: false,
+      integraINFONAVIT: false,
+      desglose: {
+        modo: 'regla_ley',
+        topeExentoUMA: 5,
+        codigoRegla: 'horas_extra_dobles'
+      },
+      imss: {
+        naturalezaSdi: 'excluido',
+        desglose: { modo: 'todo_excluye', codigoRegla: 'horas_extra_dobles' }
+      }
+    },
+    ordenDefault: 101,
+    descripcion:
+      'HE dobles (≤9 h/sem, ≤3 h/día, pago al doble). ISR: 50% exento con tope 5×UMA semanales; el resto (mitad + exceso del tope) grava. No integra SBC IMSS.'
+  },
+  {
+    clave: 'L0020',
+    codigo: 'HORAS_EXTRA_TRIPLES',
+    nombre: 'Horas extra triples',
+    tipo: 'percepcion',
+    naturaleza: 'gravado',
+    fase: 1,
+    aplicaEn: 'nomina',
+    formulaPrenomina: '',
+    tiposIncidencia: ['HEF', 'HE'],
+    insumosContexto: [
+      'EMPLEADO.salarioDiario',
+      'EMPLEADO.horasJornada',
+      'INCIDENCIAS.horasExtraTriples'
+    ],
+    claveSAT: '019',
+    sat: { tipo: 'percepcion', clave: '019', descripcion: 'Horas extra' },
+    fiscal: {
+      naturaleza: 'gravado',
+      integraISR: true,
+      integraIMSS: true,
+      integraINFONAVIT: false,
+      desglose: { modo: 'todo_gravado', codigoRegla: '' },
+      imss: {
+        naturalezaSdi: 'variable',
+        desglose: { modo: 'todo_integra' }
+      }
+    },
+    ordenDefault: 102,
+    descripcion:
+      'HE triples (exceso de 9 h/sem o >3 h/día, pago al triple / 200% adicional). ISR 100% gravado, sin exención. Integra SBC IMSS.'
   },
   {
     clave: 'L0016',
@@ -375,12 +518,21 @@ const CONCEPT_CATALOG_SEED = [
     fiscal: {
       naturaleza: 'exento',
       integraISR: false,
-      integraIMSS: false,
+      integraIMSS: true,
       integraINFONAVIT: false,
-      desglose: { modo: 'todo_exento', codigoRegla: '' }
+      desglose: { modo: 'todo_exento', codigoRegla: '' },
+      imss: {
+        naturalezaSdi: 'variable',
+        desglose: {
+          modo: 'regla_ley',
+          topeNoIntegraPctSbc: 10,
+          codigoRegla: 'premio_10_sbc'
+        }
+      }
     },
     ordenDefault: 119,
-    descripcion: 'Nómina formal: eventual si no hay faltas (incidencia FI).'
+    descripcion:
+      'Premio asistencia: ISR exento típico; IMSS — hasta 10% SBC no integra, excedente variable.'
   },
   {
     clave: 'L0017',
@@ -398,12 +550,54 @@ const CONCEPT_CATALOG_SEED = [
     fiscal: {
       naturaleza: 'exento',
       integraISR: false,
-      integraIMSS: false,
+      integraIMSS: true,
       integraINFONAVIT: false,
-      desglose: { modo: 'todo_exento', codigoRegla: '' }
+      desglose: { modo: 'todo_exento', codigoRegla: '' },
+      imss: {
+        naturalezaSdi: 'variable',
+        desglose: {
+          modo: 'regla_ley',
+          topeNoIntegraPctSbc: 10,
+          codigoRegla: 'premio_10_sbc'
+        }
+      }
     },
     ordenDefault: 120,
-    descripcion: 'Nómina formal: eventual si no hay retardos (incidencia RET).'
+    descripcion:
+      'Premio puntualidad: ISR exento típico; IMSS — hasta 10% SBC no integra, excedente variable.'
+  },
+  {
+    clave: 'L0002',
+    codigo: 'AGUINALDO',
+    nombre: 'Aguinaldo',
+    tipo: 'percepcion',
+    naturaleza: 'mixto',
+    fase: 1,
+    aplicaEn: 'nomina',
+    formulaPrenomina: '',
+    tiposIncidencia: [],
+    insumosContexto: ['EMPLEADO.salarioDiario'],
+    claveSAT: '002',
+    sat: { tipo: 'percepcion', clave: '002', descripcion: 'Aguinaldo' },
+    aplicaTipoNomina: ['aguinaldo', 'finiquito', 'extraordinaria'],
+    fiscal: {
+      naturaleza: 'mixto',
+      integraISR: true,
+      integraIMSS: false,
+      integraINFONAVIT: false,
+      desglose: {
+        modo: 'regla_ley',
+        topeExentoUMA: 30,
+        codigoRegla: 'aguinaldo'
+      },
+      imss: {
+        naturalezaSdi: 'excluido',
+        desglose: { modo: 'todo_excluye' }
+      }
+    },
+    ordenDefault: 110,
+    descripcion:
+      'Pago de aguinaldo. ISR: exento hasta 30×UMA (regla aguinaldo), resto grava. IMSS excluido: los días ya van en el factor de la tabla de prestaciones (no doblar).'
   }
 ];
 
@@ -419,13 +613,35 @@ const DEFAULT_FORMULA_TEMPLATES = [
     dependencias: []
   },
   {
+    conceptoCodigo: 'HORAS_EXTRA_DOBLES',
+    fase: 1,
+    tipoAplicacion: 'EVENTUAL',
+    tipoPeriodo: 'quincenal',
+    tipoNomina: 'ordinaria',
+    formula:
+      'si(INCIDENCIAS.horasExtraDobles > 0, (EMPLEADO.salarioDiario / EMPLEADO.horasJornada) * INCIDENCIAS.horasExtraDobles * 2, 0)',
+    condicion: '',
+    dependencias: []
+  },
+  {
+    conceptoCodigo: 'HORAS_EXTRA_TRIPLES',
+    fase: 1,
+    tipoAplicacion: 'EVENTUAL',
+    tipoPeriodo: 'quincenal',
+    tipoNomina: 'ordinaria',
+    formula:
+      'si(INCIDENCIAS.horasExtraTriples > 0, (EMPLEADO.salarioDiario / EMPLEADO.horasJornada) * INCIDENCIAS.horasExtraTriples * 3, 0)',
+    condicion: '',
+    dependencias: []
+  },
+  {
     conceptoCodigo: 'PREMIO_ASISTENCIA',
     fase: 1,
     tipoAplicacion: 'EVENTUAL',
     tipoPeriodo: 'quincenal',
     tipoNomina: 'ordinaria',
-    formula: '500',
-    condicion: 'diasLaborados >= diasProgramados',
+    formula: 'si(diasLaborados >= diasProgramados, 500, 0)',
+    condicion: '',
     dependencias: []
   },
   {
@@ -434,8 +650,18 @@ const DEFAULT_FORMULA_TEMPLATES = [
     tipoAplicacion: 'EVENTUAL',
     tipoPeriodo: 'quincenal',
     tipoNomina: 'ordinaria',
-    formula: '500',
-    condicion: 'INCIDENCIAS.sinRetardo == 1',
+    formula: 'si(INCIDENCIAS.sinRetardo == 1, 500, 0)',
+    condicion: '',
+    dependencias: []
+  },
+  {
+    conceptoCodigo: 'AGUINALDO',
+    fase: 1,
+    tipoAplicacion: 'EVENTUAL',
+    tipoPeriodo: 'quincenal',
+    tipoNomina: 'aguinaldo',
+    formula: 'EMPLEADO.salarioDiario * 15',
+    condicion: '',
     dependencias: []
   }
 ];

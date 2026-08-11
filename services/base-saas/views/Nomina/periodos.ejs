@@ -48,26 +48,90 @@
   <label>Notas
     <input name="notas" placeholder="Opcional" />
   </label>
+  <div class="checkbox-group" style="grid-column:1/-1">
+    <label>
+      <input type="hidden" name="pagaDespensa" value="0" />
+      <input type="checkbox" name="pagaDespensa" value="1" id="pagaDespensa"
+        <%= typeof sugerirPagaDespensaDefault !== 'undefined' && sugerirPagaDespensaDefault ? 'checked' : '' %> />
+      Paga despensa / vales en este período
+    </label>
+  </div>
+  <label>Override monto despensa (opcional)
+    <input type="number" name="despensaMontoOverride" min="0" step="0.01" placeholder="Vacío = política del empleado" />
+  </label>
+  <div class="checkbox-group" style="grid-column:1/-1">
+    <label>
+      <input type="hidden" name="despensaPagoMensual" value="0" />
+      <input type="checkbox" name="despensaPagoMensual" value="1" id="despensaPagoMensual" checked />
+      Pago mensual completo (tope IMSS = 40% UMA mensual)
+    </label>
+  </div>
+  <p class="muted small" style="grid-column:1/-1">
+    Habitual: 2ª quincena o 3ª semana. El checkbox se sugiere según tipo y fecha de referencia.
+    Pago mensual → tope IMSS = 40% UMA mensual (~$1,426).
+  </p>
   <button type="submit">Abrir período</button>
 </form>
+
+<script>
+(function () {
+  function sugerir(tipo, ymd) {
+    var d = Number(String(ymd || '').slice(8, 10)) || 0;
+    tipo = String(tipo || '').toLowerCase();
+    if (tipo === 'mensual') return true;
+    if (tipo === 'quincenal' || tipo === 'catorcenal') return d >= 16;
+    if (tipo === 'semanal') return Math.min(5, Math.ceil(d / 7)) === 3;
+    return false;
+  }
+  var form = document.querySelector('form[action="/nomina/periodos"]');
+  if (!form) return;
+  var tipoSel = form.querySelector('[name=tipoPeriodo]');
+  var fechaInp = form.querySelector('[name=fechaReferencia]');
+  var chk = form.querySelector('#pagaDespensa');
+  function refresh() {
+    if (!chk || !tipoSel || !fechaInp) return;
+    chk.checked = sugerir(tipoSel.value, fechaInp.value);
+  }
+  if (tipoSel) tipoSel.addEventListener('change', refresh);
+  if (fechaInp) fechaInp.addEventListener('change', refresh);
+})();
+</script>
 
 <h2>Períodos</h2>
 <table>
   <thead>
-    <tr><th>Tipo período</th><th>Tipo nómina</th><th>Inicio</th><th>Fin</th><th>Pre-nómina</th><th>Estatus</th><th>Calculó</th><th>Cerró</th><th>Empleados</th><th>Neto</th><th></th></tr>
+    <tr>
+      <th>#</th>
+      <th>Año</th>
+      <th>Tipo período</th>
+      <th>Tipo nómina</th>
+      <th>Inicio</th>
+      <th>Fin</th>
+      <th>Pre-nómina</th>
+      <th>Estatus</th>
+      <th>Despensa</th>
+      <th>Calculó</th>
+      <th>Cerró</th>
+      <th>Empleados</th>
+      <th>Neto</th>
+      <th></th>
+    </tr>
   </thead>
   <tbody>
     <% if (!periodos.length) { %>
-    <tr><td colspan="11" class="muted">Sin períodos. Al abrir el primero se sembrarán conceptos y fórmulas base.</td></tr>
+    <tr><td colspan="14" class="muted">Sin períodos. Al abrir el primero se sembrarán conceptos y fórmulas base.</td></tr>
     <% } %>
     <% periodos.forEach(function(p) { %>
     <tr>
+      <td><strong><%= p.numeroPeriodo != null ? p.numeroPeriodo : '—' %></strong></td>
+      <td><%= p.anio || (p.fechaInicio ? new Date(p.fechaInicio).getFullYear() : '—') %></td>
       <td><%= p.tipoPeriodo %></td>
       <td><%= p.tipoNomina %></td>
       <td><%= new Date(p.fechaInicio).toLocaleDateString('es-MX') %></td>
       <td><%= new Date(p.fechaFin).toLocaleDateString('es-MX') %></td>
       <td class="muted small"><%= p.payrollPeriodId ? 'Vinculada' : 'Sin vincular' %></td>
       <td><span class="badge badge-<%= p.estatus === 'cerrado' ? 'baja' : p.estatus === 'calculado' ? 'activo' : 'suspendido' %>"><%= estatusLabels[p.estatus] || p.estatus %></span></td>
+      <td class="muted small"><%= p.prestaciones && p.prestaciones.pagaDespensa ? 'Sí' : 'No' %></td>
       <td class="muted small"><%= p.calculadoPorLabel || '—' %></td>
       <td class="muted small"><%= p.cerradoPorLabel || '—' %></td>
       <td><%= p.totales?.empleados || 0 %></td>

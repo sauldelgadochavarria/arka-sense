@@ -93,24 +93,29 @@ async function ensureNominaConceptsForTenant(tenantId, empresaId) {
 /** Conceptos y fórmulas Capa B (catálogo legado priorizado → mathjs) */
 async function ensureCapaBConceptosForTenant(tenantId, empresaId) {
   const ConceptoNomina = await getConceptoNominaModel();
-  const FormulaConcepto = await getFormulaConceptoModel();
 
   for (const c of CONCEPTOS_CAPA_B) {
+    const fiscal = c.fiscal || null;
     await ConceptoNomina.updateOne(
       { tenantId, codigo: c.codigo },
       {
-        $setOnInsert: {
-          tenantId,
-          empresaId,
-          codigo: c.codigo,
+        $set: {
           nombre: c.nombre,
           tipo: c.tipo,
           naturaleza: c.naturaleza,
           ordenCalculo: c.ordenCalculo,
           sat: c.sat || {},
+          ...(fiscal ? { fiscal } : {}),
           metadata: c.metadata || {},
+          aplicaTipoNomina: c.aplicaTipoNomina || [],
+          updatedAt: new Date()
+        },
+        $setOnInsert: {
+          tenantId,
+          empresaId,
+          codigo: c.codigo,
           activo: true,
-          aplicaTipoNomina: c.aplicaTipoNomina || []
+          createdAt: new Date()
         }
       },
       { upsert: true }
@@ -216,21 +221,28 @@ async function ensureCapaCConceptosForTenant(tenantId, empresaId) {
   const ConceptoNomina = await getConceptoNominaModel();
 
   for (const c of CONCEPTOS_CAPA_C) {
+    const fiscal = c.fiscal || null;
+    const deprecado = Boolean(c.metadata?.deprecado);
     await ConceptoNomina.updateOne(
       { tenantId, codigo: c.codigo },
       {
-        $setOnInsert: {
-          tenantId,
-          empresaId,
-          codigo: c.codigo,
+        $set: {
           nombre: c.nombre,
           tipo: c.tipo,
           naturaleza: c.naturaleza,
           ordenCalculo: c.ordenCalculo,
           sat: c.sat || {},
+          ...(fiscal ? { fiscal } : {}),
           metadata: c.metadata || {},
-          activo: true,
-          aplicaTipoNomina: c.aplicaTipoNomina || []
+          aplicaTipoNomina: c.aplicaTipoNomina || [],
+          activo: !deprecado,
+          updatedAt: new Date()
+        },
+        $setOnInsert: {
+          tenantId,
+          empresaId,
+          codigo: c.codigo,
+          createdAt: new Date()
         }
       },
       { upsert: true }
@@ -636,6 +648,18 @@ const DESGLOSE_MODOS = new Set([
   'regla_ley'
 ]);
 
+const IMSS_DESGLOSE_MODOS_SET = new Set([
+  'todo_integra',
+  'todo_excluye',
+  'tope_uma',
+  'tope_monto',
+  'tope_pct_sbc',
+  'regla_ley',
+  'formula'
+]);
+
+const NATURALEZA_SDI_SET = new Set(['fijo', 'variable', 'excluido']);
+
 function parseBoolFlag(v, fallback = false) {
   if (v === true || v === false) return v;
   if (v == null || v === '') return fallback;
@@ -663,7 +687,7 @@ function buildSatFiscalPatch(data, tipoFallback = 'percepcion', naturalezaFallba
   const desgloseModo = String(data.desgloseModo || data['fiscal.desglose.modo'] || '').toLowerCase();
   const modo = DESGLOSE_MODOS.has(desgloseModo) ? desgloseModo : null;
 
-  const { defaultFiscalFromNaturaleza } = require('../../models/fiscalConceptoShared');
+  const { defaultFiscalFromNaturaleza, defaultImssConfig, emptyImssDesglose } = require('../../models/fiscalConceptoShared');
   const fiscalBase = defaultFiscalFromNaturaleza(fiscalNaturaleza || naturaleza);
 
   if (data.integraISR !== undefined || data['fiscal.integraISR'] !== undefined) {
@@ -697,6 +721,54 @@ function buildSatFiscalPatch(data, tipoFallback = 'percepcion', naturalezaFallba
     fiscalBase.desglose.codigoRegla = String(codigoRegla || '').trim().toLowerCase();
   }
 
+  // --- IMSS / SDI ---
+  const natSdiRaw = String(
+    data.naturalezaSdi || data['fiscal.imss.naturalezaSdi'] || ''
+  ).toLowerCase();
+  const imssModoRaw = String(
+    data.imssDesgloseModo || data['fiscal.imss.desglose.modo'] || ''
+  ).toLowerCase();
+  const imssBase = defaultImssConfig({
+    integraIMSS: fiscalBase.integraIMSS !== false,
+    naturalezaSdi: NATURALEZA_SDI_SET.has(natSdiRaw) ? natSdiRaw : undefined
+  });
+  if (NATURALEZA_SDI_SET.has(natSdiRaw)) imssBase.naturalezaSdi = natSdiRaw;
+  if (IMSS_DESGLOSE_MODOS_SET.has(imssModoRaw)) imssBase.desglose.modo = imssModoRaw;
+
+  const imssTopeUma = data.imssTopeNoIntegraUMA ?? data['fiscal.imss.desglose.topeNoIntegraUMA'];
+  const imssTopeMonto = data.imssTopeNoIntegraMonto ?? data['fiscal.imss.desglose.topeNoIntegraMonto'];
+  const imssTopePct = data.imssTopeNoIntegraPctSbc ?? data['fiscal.imss.desglose.topeNoIntegraPctSbc'];
+  if (imssTopeUma !== undefined && imssTopeUma !== '') {
+    imssBase.desglose.topeNoIntegraUMA = Number(imssTopeUma) || 0;
+  }
+  if (imssTopeMonto !== undefined && imssTopeMonto !== '') {
+    imssBase.desglose.topeNoIntegraMonto = Number(imssTopeMonto) || 0;
+  }
+  if (imssTopePct !== undefined && imssTopePct !== '') {
+    imssBase.desglose.topeNoIntegraPctSbc = Number(imssTopePct) || 0;
+  }
+  const imssFormulaIntegra = data.imssFormulaIntegra ?? data['fiscal.imss.desglose.formulaIntegra'];
+  const imssFormulaNoIntegra = data.imssFormulaNoIntegra ?? data['fiscal.imss.desglose.formulaNoIntegra'];
+  const imssCodigoRegla = data.imssCodigoRegla ?? data['fiscal.imss.desglose.codigoRegla'];
+  if (imssFormulaIntegra !== undefined) {
+    imssBase.desglose.formulaIntegra = String(imssFormulaIntegra || '').trim();
+  }
+  if (imssFormulaNoIntegra !== undefined) {
+    imssBase.desglose.formulaNoIntegra = String(imssFormulaNoIntegra || '').trim();
+  }
+  if (imssCodigoRegla !== undefined) {
+    imssBase.desglose.codigoRegla = String(imssCodigoRegla || '').trim().toLowerCase();
+  }
+
+  if (imssBase.naturalezaSdi === 'excluido') {
+    fiscalBase.integraIMSS = false;
+    if (!IMSS_DESGLOSE_MODOS_SET.has(imssModoRaw)) imssBase.desglose.modo = 'todo_excluye';
+  }
+  fiscalBase.imss = {
+    naturalezaSdi: imssBase.naturalezaSdi,
+    desglose: emptyImssDesglose(imssBase.desglose)
+  };
+
   return {
     claveSAT: satClave,
     sat: {
@@ -705,7 +777,11 @@ function buildSatFiscalPatch(data, tipoFallback = 'percepcion', naturalezaFallba
       descripcion: satDesc
     },
     fiscal: fiscalBase,
-    gravado: fiscalBase.naturaleza !== 'exento' && fiscalBase.naturaleza !== 'informativo'
+    gravado: fiscalBase.naturaleza !== 'exento' && fiscalBase.naturaleza !== 'informativo',
+    metadata: {
+      esVariableSdi: fiscalBase.imss?.naturalezaSdi === 'variable',
+      naturalezaSdi: fiscalBase.imss?.naturalezaSdi || 'variable'
+    }
   };
 }
 
@@ -730,6 +806,7 @@ async function crearConcepto(tenantId, empresaId, data) {
     validated.tipo,
     validated.naturaleza
   );
+  const { metadata: metaPatch, ...satRest } = satFiscal;
 
   return ConceptoNomina.create({
     tenantId,
@@ -739,14 +816,20 @@ async function crearConcepto(tenantId, empresaId, data) {
     nombre: validated.nombre,
     tipo: validated.tipo,
     naturaleza: validated.naturaleza,
+    categoria: String(data.categoria || 'ordinario').trim() || 'ordinario',
     ordenCalculo: validated.ordenCalculo,
+    ordenImpresion:
+      data.ordenImpresion != null && data.ordenImpresion !== ''
+        ? Math.min(9999, Math.max(1, Math.round(Number(data.ordenImpresion)) || validated.ordenCalculo))
+        : validated.ordenCalculo,
     fase,
     aplicaEn,
     clavePrenomina: String(data.clavePrenomina || '').trim().toUpperCase(),
     ...(formulaPrenomina ? { formulaPrenomina } : {}),
     tiposIncidencia: parseStringList(data.tiposIncidencia).map((s) => s.toUpperCase()),
     insumosContexto: parseStringList(data.insumosContexto),
-    ...satFiscal,
+    ...satRest,
+    metadata: metaPatch || {},
     cuentaContable: String(data.cuentaContable || '').trim(),
     activo: true,
     aplicaTipoNomina: parseStringList(data.aplicaTipoNomina),
@@ -774,9 +857,17 @@ async function actualizarConcepto(tenantId, codigo, data, { empresaId = null, sy
     const n = String(data.naturaleza).toLowerCase();
     if (['fiscal', 'gravado', 'exento', 'mixto', 'informativo'].includes(n)) patch.naturaleza = n;
   }
+  if (data.categoria !== undefined) {
+    const cat = String(data.categoria || 'ordinario').trim();
+    patch.categoria = cat || 'ordinario';
+  }
   if (data.ordenCalculo != null && data.ordenCalculo !== '') {
     const o = Number(data.ordenCalculo);
     if (Number.isFinite(o)) patch.ordenCalculo = Math.min(9999, Math.max(1, Math.round(o)));
+  }
+  if (data.ordenImpresion != null && data.ordenImpresion !== '') {
+    const oi = Number(data.ordenImpresion);
+    if (Number.isFinite(oi)) patch.ordenImpresion = Math.min(9999, Math.max(1, Math.round(oi)));
   }
   if (data.fase != null && data.fase !== '') {
     const f = Number(data.fase);
@@ -814,7 +905,12 @@ async function actualizarConcepto(tenantId, codigo, data, { empresaId = null, sy
 
   const tipoEff = patch.tipo || concepto.tipo;
   const natEff = patch.naturaleza || concepto.naturaleza;
-  Object.assign(patch, buildSatFiscalPatch({ ...data, tipo: tipoEff, naturaleza: natEff }, tipoEff, natEff));
+  const satFiscal = buildSatFiscalPatch({ ...data, tipo: tipoEff, naturaleza: natEff }, tipoEff, natEff);
+  const { metadata: metaPatch, ...satRest } = satFiscal;
+  Object.assign(patch, satRest);
+  if (metaPatch) {
+    patch.metadata = { ...(concepto.metadata || {}), ...metaPatch };
+  }
 
   const updateOps = { $set: patch };
   if (unsetPrenomina) updateOps.$unset = { formulaPrenomina: 1 };

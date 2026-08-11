@@ -30,6 +30,8 @@ const { ensureConceptCatalog, ensureCompanyConceptConfigs } = require('../servic
 
 const KEEP = new Set([
   'SUELDO',
+  'HORAS_EXTRA_DOBLES',
+  'HORAS_EXTRA_TRIPLES',
   'PREMIO_PUNTUALIDAD',
   'PREMIO_ASISTENCIA',
   'FONDO_AHORRO_EMPRESA',
@@ -124,6 +126,8 @@ async function main() {
     'FALTAS',
     'SALIDA_ANTICIPADA',
     'SUELDO',
+    'HORAS_EXTRA_DOBLES',
+    'HORAS_EXTRA_TRIPLES',
     'PREMIO_ASISTENCIA',
     'PREMIO_PUNTUALIDAD'
   ]);
