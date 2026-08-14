@@ -19,7 +19,11 @@ function sessionRoles(session) {
   return session?.roles || [];
 }
 
-/** Sin roles en sesión → permisivo (mismo criterio que reportes). */
+/**
+ * Operar nómina formal: abrir período, calcular, cerrar, editar conceptos/config.
+ * Rol «Nómina» (consulta/prenómina) NO incluye esto; sí el rol «Nómina operativa».
+ * Sin roles en sesión → permisivo (bootstrap / mismo criterio que reportes).
+ */
 function userCanEditNomina(session) {
   const roles = sessionRoles(session);
   if (!roles.length) return true;

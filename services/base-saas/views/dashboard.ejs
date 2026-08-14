@@ -61,6 +61,19 @@
   </a>
   <% } %>
 
+  <% if (typeof featureFlags !== 'undefined' && featureFlags && featureFlags.gestion_documental) { %>
+  <a class="module-card" href="/nomina/gestion-documental">
+    <h3>Gestión documental</h3>
+    <p>Expediente CFDI, SUA, impuestos y trabajadores.</p>
+    <ul>
+      <li><a href="/nomina/gestion-documental">Cumplimiento</a></li>
+      <li><a href="/nomina/gestion-documental/expediente">Expediente</a></li>
+      <li><a href="/nomina/gestion-documental/reporte">Cobertura</a></li>
+      <li><a href="/nomina/gestion-documental/config">Storage</a></li>
+    </ul>
+  </a>
+  <% } %>
+
   <a class="module-card" href="/integraciones/perfiles">
     <h3>Integraciones</h3>
     <p>Exportación, ABC y dispositivos.</p>
@@ -90,6 +103,48 @@
     </ul>
   </a>
 </div>
+
+<% if (typeof cumplimiento !== 'undefined' && cumplimiento && cumplimiento.filas) { %>
+<%
+  function cumpDot(c) {
+    if (c === 'ok') return '🟢';
+    if (c === 'atrasado') return '🔴';
+    return '🟡';
+  }
+  function cumpClass(c) {
+    if (c === 'ok') return 'cump-ok';
+    if (c === 'atrasado') return 'cump-bad';
+    return 'cump-warn';
+  }
+  const Ex = cumplimiento.expedientes || {};
+%>
+<section class="dashboard-kpis">
+  <div class="section-header">
+    <h2>Cumplimiento</h2>
+    <a href="/nomina/gestion-documental">Ver tablero completo →</a>
+  </div>
+  <table class="data-table cump-table">
+    <thead>
+      <tr><th>Proceso</th><th>Periodo</th><th>Fecha límite</th><th>Estado</th></tr>
+    </thead>
+    <tbody>
+      <% cumplimiento.filas.forEach(function(f) { %>
+      <tr>
+        <td><%= f.proceso %></td>
+        <td><%= f.periodo %></td>
+        <td><%= f.fechaLimite %></td>
+        <td><span class="cump-pill <%= cumpClass(f.estado) %>"><%= cumpDot(f.estado) %> <%= f.estadoLabel %></span></td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table>
+  <p class="muted" style="margin-top:0.75rem">
+    Expedientes completos: <strong><%= Ex.completos || 0 %>/<%= Ex.total || 0 %></strong>
+    <% if (Ex.incompletos) { %> · <%= Ex.incompletos %> incompletos<% } %>
+    <% if (Ex.vencidos) { %> · <%= Ex.vencidos %> con vigencia vencida<% } %>
+  </p>
+</section>
+<% } %>
 
 <% if (typeof kpis !== 'undefined' && kpis) { %>
 <section class="dashboard-kpis">

@@ -1,0 +1,206 @@
+<%- include('../../Partials/layout-top', { title: isNew ? 'Nuevo layout bancario' : 'Editar layout', session }) %>
+<%
+  const L = layout || {};
+  const action = isNew ? '/nomina/layouts-bancarios' : ('/nomina/layouts-bancarios/' + L._id);
+%>
+<h1><%= isNew ? 'Nuevo layout bancario' : ('Editar: ' + (L.codigo || '')) %></h1>
+<p class="muted">
+  Variables: <code>lote.*</code> (header/footer), <code>empleado.*</code> / <code>recibo.*</code> / <code>periodo.*</code> (detalle).
+  Fechas: <code>fecha.hoy</code>, <code>fecha.hoyMas</code> (+ columna días), <code>lote.fechaPago</code> (captura en generación).
+</p>
+<p class="muted small">
+  En <strong>ancho fijo</strong> los campos van pegados (sin separador): eso es normal.
+  Textos/cuentas: usa formato <code>000</code> o <code>0000000.00</code> (no <code>align.izq</code>).
+  Texto fijo: path vacío + formato <code>literal</code>.
+</p>
+
+<form method="post" action="<%= action %>" id="form-layout">
+  <fieldset class="form-grid">
+    <legend>General</legend>
+    <label>Código
+      <input name="codigo" required value="<%= L.codigo || '' %>" <%= isNew ? '' : 'readonly' %> />
+    </label>
+    <label>Nombre
+      <input name="nombre" required value="<%= L.nombre || '' %>" />
+    </label>
+    <label>Banco (etiqueta)
+      <input name="bancoNombre" value="<%= L.bancoNombre || '' %>" />
+    </label>
+    <label>Modo
+      <select name="modo" id="layout-modo">
+        <% (modos || []).forEach(function(m) { %>
+        <option value="<%= m.value %>" <%= L.modo === m.value ? 'selected' : '' %>><%= m.label %></option>
+        <% }); %>
+      </select>
+    </label>
+    <label>Delimitador
+      <input name="delimitador" value="<%= L.delimitador != null ? L.delimitador : ',' %>" maxlength="5" />
+    </label>
+    <label>Subsidiaria
+      <select name="subsidiariaId">
+        <option value="">— Todas / empresa —</option>
+        <% (subsidiarias || []).forEach(function(s) { %>
+        <option value="<%= s._id %>" <%= String(L.subsidiariaId||'') === String(s._id) ? 'selected' : '' %>><%= s.nombre %></option>
+        <% }); %>
+      </select>
+    </label>
+    <label class="full">Descripción
+      <textarea name="descripcion" rows="2"><%= L.descripcion || '' %></textarea>
+    </label>
+    <label class="check">
+      <input type="checkbox" name="activo" value="1" <%= L.activo !== false ? 'checked' : '' %> /> Activo
+    </label>
+  </fieldset>
+
+  <fieldset class="xml-only" style="<%= L.modo === 'xml' ? '' : 'display:none' %>">
+    <legend>Plantillas XML</legend>
+    <label class="full">Plantilla detalle (por pago)
+      <textarea name="xmlPlantillaDetalle" rows="4" placeholder="<pago curp=&quot;{{empleado.curp}}&quot; neto=&quot;{{recibo.neto}}&quot;/>"><%= L.xmlPlantillaDetalle || '' %></textarea>
+    </label>
+    <label class="full">Plantilla documento ({{header}} {{detalle}} {{footer}})
+      <textarea name="xmlPlantillaDocumento" rows="4" placeholder="<dispersion>{{header}}{{detalle}}{{footer}}</dispersion>"><%= L.xmlPlantillaDocumento || '' %></textarea>
+    </label>
+  </fieldset>
+
+  <%
+    function renderSeccion(nombre, campos) {
+      const rows = campos || [];
+  %>
+  <fieldset>
+    <legend><%= nombre.charAt(0).toUpperCase() + nombre.slice(1) %>
+      <button type="button" class="btn btn-sm" data-add-row="<%= nombre %>">+ campo</button>
+    </legend>
+    <table class="recibo-conceptos-table" data-section="<%= nombre %>">
+      <thead>
+        <tr>
+          <th>Path / variable</th>
+          <th>Longitud</th>
+          <th>Formato</th>
+          <th>Días +</th>
+          <th>Literal</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        <% if (!rows.length) { %>
+        <tr class="empty-hint"><td colspan="6" class="muted">Sin campos. Agrega al menos en detalle.</td></tr>
+        <% } %>
+        <% rows.forEach(function(c) { %>
+        <tr>
+          <td><input name="<%= nombre %>_path" list="vars-datalist" value="<%= c.path || '' %>" placeholder="fecha.hoyMas" /></td>
+          <td><input name="<%= nombre %>_longitud" type="number" min="0" value="<%= c.longitud || 0 %>" style="width:5rem" /></td>
+          <td>
+            <select name="<%= nombre %>_formato">
+              <% (formatos || []).forEach(function(f) { %>
+              <option value="<%= f.value %>" <%= c.formato === f.value ? 'selected' : '' %>><%= f.label %></option>
+              <% }); %>
+            </select>
+          </td>
+          <td><input name="<%= nombre %>_diasOffset" type="number" step="1" value="<%= c.diasOffset != null ? c.diasOffset : 0 %>" style="width:4.5rem" title="Solo para fecha.hoyMas" /></td>
+          <td><input name="<%= nombre %>_literal" value="<%= c.literal || '' %>" /></td>
+          <td><button type="button" class="btn btn-sm" data-remove-row>&times;</button></td>
+        </tr>
+        <% }); %>
+      </tbody>
+    </table>
+  </fieldset>
+  <% } %>
+
+  <% renderSeccion('header', L.header); %>
+  <% renderSeccion('detalle', L.detalle); %>
+  <% renderSeccion('footer', L.footer); %>
+
+  <datalist id="vars-datalist">
+    <% Object.keys(variables || {}).forEach(function(group) {
+         (variables[group] || []).forEach(function(v) { %>
+    <option value="<%= v.path %>"><%= v.label %></option>
+    <% }); }); %>
+  </datalist>
+
+  <div class="toolbar">
+    <button type="submit" class="btn btn-primary">Guardar</button>
+    <% if (!isNew) { %>
+    <button type="button" class="btn" id="btn-preview">Vista previa</button>
+    <% } %>
+    <a class="btn" href="/nomina/layouts-bancarios">Cancelar</a>
+  </div>
+</form>
+
+<details class="panel">
+  <summary>Catálogo de variables</summary>
+  <% Object.keys(variables || {}).forEach(function(group) { %>
+  <h3><%= group %></h3>
+  <ul class="vars-list">
+    <% (variables[group] || []).forEach(function(v) { %>
+    <li><code><%= v.path %></code> — <%= v.label %></li>
+    <% }); %>
+  </ul>
+  <% }); %>
+</details>
+
+<template id="tpl-campo-row">
+  <tr>
+    <td><input name="__SEC___path" list="vars-datalist" placeholder="fecha.hoyMas" /></td>
+    <td><input name="__SEC___longitud" type="number" min="0" value="10" style="width:5rem" /></td>
+    <td>
+      <select name="__SEC___formato">
+        <% (formatos || []).forEach(function(f) { %>
+        <option value="<%= f.value %>"><%= f.label %></option>
+        <% }); %>
+      </select>
+    </td>
+    <td><input name="__SEC___diasOffset" type="number" step="1" value="0" style="width:4.5rem" title="Solo para fecha.hoyMas" /></td>
+    <td><input name="__SEC___literal" value="" /></td>
+    <td><button type="button" class="btn btn-sm" data-remove-row>&times;</button></td>
+  </tr>
+</template>
+
+<script>
+(function () {
+  var modo = document.getElementById('layout-modo');
+  function syncXml() {
+    document.querySelectorAll('.xml-only').forEach(function (el) {
+      el.style.display = modo && modo.value === 'xml' ? '' : 'none';
+    });
+  }
+  if (modo) modo.addEventListener('change', syncXml);
+
+  document.querySelectorAll('[data-add-row]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var sec = btn.getAttribute('data-add-row');
+      var table = document.querySelector('table[data-section="' + sec + '"] tbody');
+      var tpl = document.getElementById('tpl-campo-row');
+      if (!table || !tpl) return;
+      var hint = table.querySelector('.empty-hint');
+      if (hint) hint.remove();
+      var html = tpl.innerHTML.replace(/__SEC__/g, sec);
+      table.insertAdjacentHTML('beforeend', html);
+    });
+  });
+
+  document.addEventListener('click', function (ev) {
+    if (ev.target && ev.target.matches('[data-remove-row]')) {
+      var tr = ev.target.closest('tr');
+      if (tr) tr.remove();
+    }
+  });
+
+  var prev = document.getElementById('btn-preview');
+  if (prev) {
+    prev.addEventListener('click', function () {
+      fetch('<%= !isNew ? ("/nomina/layouts-bancarios/" + L._id + "/preview") : "#" %>', {
+        headers: { Accept: 'application/json' }
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          if (!j.ok) return alert(j.error || 'Error');
+          var w = window.open('', '_blank');
+          w.document.write('<pre style="white-space:pre;font:12px/1.4 monospace"></pre>');
+          w.document.querySelector('pre').textContent = j.contenido || '';
+        })
+        .catch(function (e) { alert(e.message); });
+    });
+  }
+})();
+</script>
+<%- include('../../Partials/layout-bottom') %>

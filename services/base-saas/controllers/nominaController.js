@@ -3,6 +3,7 @@
 const getPeriodoNominaModel = require('../models/periodoNomina');
 const getReciboNominaModel = require('../models/reciboNomina');
 const getConceptoAplicadoModel = require('../models/conceptoAplicado');
+const getNominaHistoricoReciboModel = require('../models/nominaHistoricoRecibo');
 const getPayrollPeriodModel = require('../models/payrollPeriod');
 const getEmpleadoModel = require('../models/empleado');
 const getConceptoNominaModel = require('../models/conceptoNomina');
@@ -85,20 +86,32 @@ function requireNominaFeature(req, res) {
 function requireNominaViewOrRedirect(req, res) {
   if (requireNominaFeature(req, res) === false) return false;
   if (userCanViewNomina(req.session)) return null;
-  req.flash('error', 'Tu rol no tiene permiso para consultar conceptos de nómina.');
+  req.flash('error', 'Tu rol no tiene permiso para consultar nómina.');
   res.redirect('/dashboard');
   return false;
+}
+
+function nominaEditFallback(req, codigo) {
+  if (codigo) {
+    return `/nomina/conceptos/${encodeURIComponent(String(codigo).toUpperCase())}?modo=vista`;
+  }
+  const path = String(req.originalUrl || req.path || '');
+  if (path.includes('/nomina/periodos/') && req.params?.id) {
+    return `/nomina/periodos/${req.params.id}`;
+  }
+  if (path.includes('/nomina/configuracion')) return '/nomina/configuracion';
+  if (path.includes('/nomina/periodos')) return '/nomina/periodos';
+  return '/nomina';
 }
 
 function requireNominaEditOrRedirect(req, res, codigo = null) {
   if (requireNominaFeature(req, res) === false) return false;
   if (userCanEditNomina(req.session)) return null;
-  req.flash('error', 'Tu rol no tiene permiso para editar conceptos de nómina (solo consulta).');
-  if (codigo) {
-    res.redirect(`/nomina/conceptos/${encodeURIComponent(String(codigo).toUpperCase())}?modo=vista`);
-  } else {
-    res.redirect('/nomina/conceptos');
-  }
+  req.flash(
+    'error',
+    'Tu rol solo puede consultar nómina. Calcular, cerrar o editar requiere el rol «Nómina operativa».'
+  );
+  res.redirect(nominaEditFallback(req, codigo));
   return false;
 }
 
@@ -107,7 +120,7 @@ function diasEntre(inicio, fin) {
 }
 
 async function index(req, res) {
-  if (requireNominaFeature(req, res) === false) return;
+  if (requireNominaViewOrRedirect(req, res) === false) return;
   const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
 
   res.render('Nomina/index', {
@@ -123,7 +136,7 @@ async function index(req, res) {
 // ── Períodos ─────────────────────────────────────────────
 
 async function periodos(req, res) {
-  if (requireNominaFeature(req, res) === false) return;
+  if (requireNominaViewOrRedirect(req, res) === false) return;
   const tenantId = req.session.tenantId;
   const { empresa, error } = await requireEmpresaForTenant(tenantId);
   const PeriodoNomina = await getPeriodoNominaModel();
@@ -152,12 +165,13 @@ async function periodos(req, res) {
     sugerirPagaDespensaDefault: sugerirPagaDespensa('quincenal', new Date()),
     empresa,
     error: error || null,
+    canEdit: userCanEditNomina(req.session),
     session: req.session
   });
 }
 
 async function createPeriodo(req, res) {
-  if (requireNominaFeature(req, res) === false) return;
+  if (requireNominaEditOrRedirect(req, res) === false) return;
   try {
     const tenantId = req.session.tenantId;
     const { empresa, error } = await requireEmpresaForTenant(tenantId);
@@ -277,7 +291,7 @@ async function createPeriodo(req, res) {
 }
 
 async function updatePeriodoPrestacionesAction(req, res) {
-  if (requireNominaFeature(req, res) === false) return;
+  if (requireNominaEditOrRedirect(req, res) === false) return;
   try {
     const tenantId = req.session.tenantId;
     const PeriodoNomina = await getPeriodoNominaModel();
@@ -344,10 +358,11 @@ async function updatePeriodoPrestacionesAction(req, res) {
 }
 
 async function showPeriodo(req, res) {
-  if (requireNominaFeature(req, res) === false) return;
+  if (requireNominaViewOrRedirect(req, res) === false) return;
   const tenantId = req.session.tenantId;
   const PeriodoNomina = await getPeriodoNominaModel();
   const ReciboNomina = await getReciboNominaModel();
+  const Historico = await getNominaHistoricoReciboModel();
   const Empleado = await getEmpleadoModel();
 
   const periodo = await PeriodoNomina.findOne({ tenantId, _id: req.params.id }).lean();
@@ -356,19 +371,53 @@ async function showPeriodo(req, res) {
     return res.redirect('/nomina/periodos');
   }
 
-  const recibos = await ReciboNomina.find({ tenantId, periodoId: periodo._id }).lean();
-  const empleadoIds = recibos.map((r) => r.empleadoId);
-  const empleados = await Empleado.find({ _id: { $in: empleadoIds } }).lean();
-  const empleadoMap = new Map(empleados.map((e) => [String(e._id), e]));
+  let recibos = [];
+  let recibosDesdeHistorico = false;
 
-  const filas = recibos.map((r) => {
-    const emp = empleadoMap.get(String(r.empleadoId));
-    return {
-      ...r,
-      empleadoNombre: emp ? `${emp.firstName} ${emp.lastName}` : '—',
-      numEmpleado: emp?.numEmpleado || ''
-    };
-  });
+  if (periodo.estatus === 'cerrado') {
+    const hist = await Historico.find({
+      tenantId,
+      empresaId: periodo.empresaId,
+      periodoId: periodo._id,
+      origen: 'cierre'
+    }).lean();
+    recibosDesdeHistorico = true;
+    recibos = hist.map((h) => ({
+      _id: h._id,
+      empleadoId: h.empleadoId,
+      diasLaborados: h.diasLaborados,
+      faltas: h.faltas,
+      totalPercepciones: h.totalPercepciones,
+      totalDeducciones: h.totalDeducciones,
+      netoPagar: h.netoPagar,
+      insumosFuente: h.insumosFuente,
+      calculoId: h.calculoId,
+      calculoLoteId: h.calculoLoteId,
+      fechaCalculo: h.fechaCalculo,
+      fechaCierre: h.fechaCierre,
+      cerrado: true,
+      desdeHistorico: true,
+      layoutBancario: h.layoutBancario || null,
+      timbrado: h.timbrado || null,
+      correo: h.correo || null,
+      numEmpleado: h.empleado?.numEmpleado || '',
+      empleadoNombre: h.empleado?.nombre || '—'
+    }));
+  } else {
+    recibos = await ReciboNomina.find({ tenantId, periodoId: periodo._id }).lean();
+    const empleadoIds = recibos.map((r) => r.empleadoId);
+    const empleados = await Empleado.find({ _id: { $in: empleadoIds } }).lean();
+    const empleadoMap = new Map(empleados.map((e) => [String(e._id), e]));
+    recibos = recibos.map((r) => {
+      const emp = empleadoMap.get(String(r.empleadoId));
+      return {
+        ...r,
+        empleadoNombre: emp ? `${emp.firstName} ${emp.lastName}` : '—',
+        numEmpleado: emp?.numEmpleado || '',
+        desdeHistorico: false
+      };
+    });
+  }
 
   const preflight =
     periodo.estatus !== 'cerrado' && periodo.estatus !== 'calculando'
@@ -414,7 +463,8 @@ async function showPeriodo(req, res) {
 
   res.render('Nomina/periodo-show', {
     periodo,
-    recibos: filas,
+    recibos,
+    recibosDesdeHistorico,
     preflight,
     calculoJob,
     prenominaPeriodo,
@@ -423,12 +473,13 @@ async function showPeriodo(req, res) {
     calculadoPor,
     cerradoPor,
     estatusLabels: ESTATUS_PERIODO_NOMINA,
+    canEdit: userCanEditNomina(req.session),
     session: req.session
   });
 }
 
 async function vincularPrenominaAction(req, res) {
-  if (requireNominaFeature(req, res) === false) return;
+  if (requireNominaEditOrRedirect(req, res) === false) return;
   try {
     const tenantId = req.session.tenantId;
     const PeriodoNomina = await getPeriodoNominaModel();
@@ -554,7 +605,7 @@ async function vincularPrenominaAction(req, res) {
 }
 
 async function calcularPeriodoAction(req, res) {
-  if (requireNominaFeature(req, res) === false) return;
+  if (requireNominaEditOrRedirect(req, res) === false) return;
   try {
     const PeriodoNomina = await getPeriodoNominaModel();
     const periodo = await PeriodoNomina.findOne({
@@ -615,7 +666,7 @@ async function calcularPeriodoAction(req, res) {
 }
 
 async function estadoCalculoApi(req, res) {
-  if (requireNominaFeature(req, res) === false) return;
+  if (requireNominaViewOrRedirect(req, res) === false) return;
   const job = await obtenerEstadoJob(req.session.tenantId, req.params.id);
   if (!job) {
     return res.json({ ok: true, job: null });
@@ -641,7 +692,7 @@ async function estadoCalculoApi(req, res) {
 }
 
 async function cerrarPeriodoAction(req, res) {
-  if (requireNominaFeature(req, res) === false) return;
+  if (requireNominaEditOrRedirect(req, res) === false) return;
   const actor = sessionActor(req);
   try {
     const cierre = await cerrarPeriodo(
@@ -652,7 +703,7 @@ async function cerrarPeriodoAction(req, res) {
     );
     req.flash(
       'success',
-      `Período cerrado. Archivados ${cierre?.archivados || 0} recibos; acumulados actualizados.`
+      `Período cerrado. Movidos ${cierre?.archivados || 0} recibos a histórico; eliminados ${cierre?.operativosEliminados || 0} del temporal.`
     );
   } catch (err) {
     await registrarAuditoriaNomina({
@@ -670,31 +721,60 @@ async function cerrarPeriodoAction(req, res) {
 }
 
 async function showRecibo(req, res) {
-  if (requireNominaFeature(req, res) === false) return;
+  if (requireNominaViewOrRedirect(req, res) === false) return;
   const tenantId = req.session.tenantId;
   const ReciboNomina = await getReciboNominaModel();
   const ConceptoAplicado = await getConceptoAplicadoModel();
+  const Historico = await getNominaHistoricoReciboModel();
   const PeriodoNomina = await getPeriodoNominaModel();
   const Empleado = await getEmpleadoModel();
   const { requireEmpresaForTenant: reqEmp } = require('../libs/tenantScope');
 
-  const recibo = await ReciboNomina.findOne({ tenantId, _id: req.params.reciboId }).lean();
+  let recibo = await ReciboNomina.findOne({ tenantId, _id: req.params.reciboId }).lean();
+  let conceptos = null;
+  let desdeHistorico = false;
+
   if (!recibo) {
-    req.flash('error', 'Recibo no encontrado');
-    return res.redirect(`/nomina/periodos/${req.params.id}`);
+    const hist = await Historico.findOne({
+      tenantId,
+      _id: req.params.reciboId
+    }).lean();
+    if (!hist) {
+      // Compat: enlace viejo con id del recibo operativo ya borrado
+      const histPorOrigen = await Historico.findOne({
+        tenantId,
+        reciboOrigenId: req.params.reciboId
+      }).lean();
+      if (!histPorOrigen) {
+        req.flash('error', 'Recibo no encontrado');
+        return res.redirect(`/nomina/periodos/${req.params.id}`);
+      }
+      recibo = mapHistoricoToReciboView(histPorOrigen);
+      conceptos = histPorOrigen.conceptos || [];
+      desdeHistorico = true;
+    } else {
+      recibo = mapHistoricoToReciboView(hist);
+      conceptos = hist.conceptos || [];
+      desdeHistorico = true;
+    }
   }
 
   const ConceptoNomina = await getConceptoNominaModel();
 
-  const [periodo, empleado, conceptos, catalogo, empScope] = await Promise.all([
+  const [periodo, empleado, catalogo, empScope] = await Promise.all([
     PeriodoNomina.findOne({ _id: recibo.periodoId }).lean(),
     Empleado.findOne({ _id: recibo.empleadoId }).lean(),
-    ConceptoAplicado.find({ tenantId, reciboId: recibo._id }).sort({ conceptoCodigo: 1 }).lean(),
     ConceptoNomina.find({ tenantId })
       .select('codigo nombre naturaleza tipo claveSAT sat metadata ordenImpresion ordenCalculo')
       .lean(),
     reqEmp(tenantId).catch(() => ({ empresa: null }))
   ]);
+
+  if (!desdeHistorico) {
+    conceptos = await ConceptoAplicado.find({ tenantId, reciboId: recibo._id })
+      .sort({ conceptoCodigo: 1 })
+      .lean();
+  }
 
   const conceptosMeta = {};
   for (const c of catalogo) {
@@ -749,8 +829,38 @@ async function showRecibo(req, res) {
     percepciones,
     deducciones,
     otrosPagos,
+    desdeHistorico,
     session: req.session
   });
+}
+
+function mapHistoricoToReciboView(hist) {
+  return {
+    _id: hist._id,
+    tenantId: hist.tenantId,
+    empresaId: hist.empresaId,
+    subsidiariaId: hist.subsidiariaId,
+    empleadoId: hist.empleadoId,
+    periodoId: hist.periodoId,
+    diasLaborados: hist.diasLaborados,
+    faltas: hist.faltas,
+    diasPago: hist.diasPagados != null ? { diasPagados: hist.diasPagados } : null,
+    totalPercepciones: hist.totalPercepciones,
+    totalDeducciones: hist.totalDeducciones,
+    netoPagar: hist.netoPagar,
+    basesFiscales: hist.basesFiscales || {},
+    insumosFuente: hist.insumosFuente,
+    insumosResumen: hist.insumosResumen || {},
+    fechaCalculo: hist.fechaCalculo,
+    calculoId: hist.calculoId,
+    calculoLoteId: hist.calculoLoteId,
+    fechaCierre: hist.fechaCierre,
+    cerrado: true,
+    isrMotor: hist.isrMotor,
+    errorCalculo: '',
+    layoutBancario: hist.layoutBancario || null,
+    desdeHistorico: true
+  };
 }
 
 // ── Conceptos ────────────────────────────────────────────
@@ -1242,7 +1352,7 @@ async function toggleConceptoAction(req, res) {
 }
 
 async function validarFormulaApi(req, res) {
-  if (requireNominaFeature(req, res) === false) return;
+  if (requireNominaEditOrRedirect(req, res) === false) return;
   try {
     const deps = (req.body.dependencias || []).map((d) => String(d).toUpperCase());
     await validarDependenciasGrupo(
@@ -1260,7 +1370,7 @@ async function validarFormulaApi(req, res) {
 }
 
 async function probarFormulaApi(req, res) {
-  if (requireNominaFeature(req, res) === false) return;
+  if (requireNominaEditOrRedirect(req, res) === false) return;
   try {
     const { formula, condicion, variables, tipoAplicacion } = req.body;
     validateFormulaSyntax(formula);
@@ -1320,7 +1430,7 @@ async function probarFormulaApi(req, res) {
 // ── Configuración fiscal ─────────────────────────────────
 
 async function configuracion(req, res) {
-  if (requireNominaFeature(req, res) === false) return;
+  if (requireNominaViewOrRedirect(req, res) === false) return;
   const TablaFiscal = await getTablaFiscalModel();
   const RangoFiscal = await getRangoFiscalModel();
   const ParametroGeneral = await getParametroGeneralModel();
@@ -1349,12 +1459,34 @@ async function configuracion(req, res) {
     isrModo: empresa?.nominaIsr?.modo || 'inteligente_alerta',
     isrActivo: empresa?.nominaIsr?.activo !== false,
     politicaDias: require('../libs/diasPagadosMotor').mergePolitica(empresa?.nominaDias || {}),
+    politicaDescuentos: require('../libs/politicaDescuentosDefaults').mergePoliticaDescuentos(
+      empresa?.nominaDescuentos || {}
+    ),
+    conceptosDeduccion: await loadConceptosDeduccion(req.session.tenantId),
+    canEdit: userCanEditNomina(req.session),
     session: req.session
   });
 }
 
+async function loadConceptosDeduccion(tenantId) {
+  try {
+    const getConceptoNominaModel = require('../models/conceptoNomina');
+    const Concepto = await getConceptoNominaModel();
+    return Concepto.find({
+      tenantId,
+      activo: true,
+      tipo: { $in: ['deduccion', 'deducción'] }
+    })
+      .select('codigo nombre ordenCalculo')
+      .sort({ ordenCalculo: 1, codigo: 1 })
+      .lean();
+  } catch {
+    return [];
+  }
+}
+
 async function saveIsrMotorConfig(req, res) {
-  if (requireNominaFeature(req, res) === false) return;
+  if (requireNominaEditOrRedirect(req, res) === false) return;
   try {
     const getEmpresaModel = require('../models/empresa');
     const Empresa = await getEmpresaModel();
@@ -1377,7 +1509,7 @@ async function saveIsrMotorConfig(req, res) {
 }
 
 async function saveDiasPagadosConfig(req, res) {
-  if (requireNominaFeature(req, res) === false) return;
+  if (requireNominaEditOrRedirect(req, res) === false) return;
   try {
     const getEmpresaModel = require('../models/empresa');
     const { mergePolitica } = require('../libs/diasPagadosMotor');
@@ -1415,6 +1547,21 @@ async function saveDiasPagadosConfig(req, res) {
   res.redirect('/nomina/configuracion');
 }
 
+async function saveDescuentosConfig(req, res) {
+  if (requireNominaEditOrRedirect(req, res) === false) return;
+  try {
+    const getEmpresaModel = require('../models/empresa');
+    const { parsePoliticaDescuentosFromBody } = require('../libs/politicaDescuentosDefaults');
+    const Empresa = await getEmpresaModel();
+    const nominaDescuentos = parsePoliticaDescuentosFromBody(req.body);
+    await Empresa.updateOne({ tenantId: req.session.tenantId }, { $set: { nominaDescuentos } });
+    req.flash('success', 'Política de descuentos por concepto guardada');
+  } catch (err) {
+    req.flash('error', err.message || 'No se pudo guardar');
+  }
+  res.redirect('/nomina/configuracion');
+}
+
 module.exports = {
   index,
   periodos,
@@ -1437,5 +1584,6 @@ module.exports = {
   probarFormulaApi,
   configuracion,
   saveIsrMotorConfig,
-  saveDiasPagadosConfig
+  saveDiasPagadosConfig,
+  saveDescuentosConfig
 };

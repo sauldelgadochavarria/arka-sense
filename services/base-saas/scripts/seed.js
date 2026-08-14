@@ -69,16 +69,19 @@ const ROLES = [
   },
   {
     nombre: 'Nómina',
-    descripcion: 'Gestión de períodos, cálculo y cierre de pre-nómina (asistencia)',
+    descripcion:
+      'Consulta de nómina formal (períodos, recibos, conceptos) y gestión de pre-nómina. No calcula ni cierra nómina formal.',
     puedeGestionarPrenomina: true,
     puedeVerReportes: true,
     puedeVerNomina: true,
+    puedeGestionarNomina: false,
     activo: true,
     tenantFeatureKey: 'prenomina'
   },
   {
     nombre: 'Nómina operativa',
-    descripcion: 'Administración y cálculo formal de nómina',
+    descripcion:
+      'Operación de nómina formal: abrir período, calcular, cerrar, editar conceptos y configuración fiscal.',
     puedeGestionarNomina: true,
     puedeVerNomina: true,
     puedeVerReportes: true,
@@ -234,7 +237,8 @@ async function seedAsistenciaMenus(Menu, adminRoleId) {
     { menuPrincipal: 'Cambios de turno', rutaApp: '/asistencia-rotaciones/cambios', orden: 44 },
     { menuPrincipal: 'Vista calendario', rutaApp: '/asistencia-rotaciones/matriz', orden: 45 },
     { menuPrincipal: 'Marcaciones', rutaApp: '/asistencia-marcaciones', orden: 46 },
-    { menuPrincipal: 'Asistencia del día', rutaApp: '/asistencia-diaria', orden: 47 }
+    { menuPrincipal: 'Asistencia del día', rutaApp: '/asistencia-diaria', orden: 47 },
+    { menuPrincipal: 'Registro de jornada', rutaApp: '/asistencia-registro-jornada', orden: 48 }
   ];
 
   for (const item of items) {
@@ -719,6 +723,13 @@ async function seedNominaMenus(Menu, adminRoleId) {
     parentId: catId,
     orden: 35
   });
+  await upsertMenuNode(Menu, {
+    ...common,
+    menuPrincipal: 'Configuración fiscal',
+    rutaApp: '/nomina/configuracion',
+    parentId: configuracionesId,
+    orden: 350
+  });
   await upsertMenuNode(Menu, { ...common, menuPrincipal: 'Tablas', rutaApp: '/nomina/catalogos/tablas-fiscales', parentId: configuracionesId, orden: 351 });
   await upsertMenuNode(Menu, { ...common, menuPrincipal: 'Variables', rutaApp: '/nomina/catalogos/parametros', parentId: configuracionesId, orden: 352 });
   await upsertMenuNode(Menu, { ...common, menuPrincipal: 'Conceptos', rutaApp: '/nomina/conceptos', parentId: configuracionesId, orden: 353 });
@@ -731,13 +742,23 @@ async function seedNominaMenus(Menu, adminRoleId) {
   });
   await upsertMenuNode(Menu, {
     ...common,
+    menuPrincipal: 'Layouts bancarios',
+    rutaApp: '/nomina/layouts-bancarios',
+    parentId: configuracionesId,
+    orden: 356
+  });
+  await upsertMenuNode(Menu, {
+    ...common,
     menuPrincipal: 'Enums sistema',
     rutaApp: '/config-sistema/enums',
     parentId: configuracionesId,
     orden: 355,
     requiredFeatureKeys: ['nomina']
   });
-  await upsertMenuNode(Menu, { ...common, menuPrincipal: 'Plantilla', rutaApp: '/nomina/placeholder/plantilla', parentId: configuracionesId, orden: 356 });
+  await Menu.updateMany(
+    { rutaApp: '/nomina/placeholder/plantilla' },
+    { $set: { activo: false } }
+  );
   await upsertMenuNode(Menu, {
     ...common,
     menuPrincipal: 'Funciones de fórmula',
@@ -749,9 +770,23 @@ async function seedNominaMenus(Menu, adminRoleId) {
   await upsertMenuNode(Menu, {
     ...common,
     menuPrincipal: 'Reportes',
-    rutaApp: '/reportes',
+    rutaApp: '/nomina/reportes',
     parentId: catId,
     orden: 36
+  });
+  await upsertMenuNode(Menu, {
+    ...common,
+    menuPrincipal: 'Exportación SUA',
+    rutaApp: '/nomina/sua',
+    parentId: catId,
+    orden: 365
+  });
+  await upsertMenuNode(Menu, {
+    ...common,
+    menuPrincipal: 'Confronta Nómina–SUA–IDSE',
+    rutaApp: '/nomina/confronta',
+    parentId: catId,
+    orden: 366
   });
 
   const calculoId = await upsertMenuNode(Menu, {
@@ -763,7 +798,13 @@ async function seedNominaMenus(Menu, adminRoleId) {
   });
   await upsertMenuNode(Menu, { ...common, menuPrincipal: 'Períodos y cálculo', rutaApp: '/nomina/periodos', parentId: calculoId, orden: 371 });
   await upsertMenuNode(Menu, { ...common, menuPrincipal: 'Cierre', rutaApp: '/nomina/periodos', parentId: calculoId, orden: 372 });
-  await upsertMenuNode(Menu, { ...common, menuPrincipal: 'Pago-dispersión', rutaApp: '/nomina/placeholder/pago-dispersion', parentId: calculoId, orden: 373 });
+  await upsertMenuNode(Menu, {
+    ...common,
+    menuPrincipal: 'Pago-dispersión',
+    rutaApp: '/nomina/dispersion-bancaria',
+    parentId: calculoId,
+    orden: 373
+  });
 
   const timbradoId = await upsertMenuNode(Menu, {
     ...common,
@@ -772,8 +813,95 @@ async function seedNominaMenus(Menu, adminRoleId) {
     parentId: catId,
     orden: 38
   });
-  await upsertMenuNode(Menu, { ...common, menuPrincipal: 'Timbrador', rutaApp: '/nomina/placeholder/timbrador', parentId: timbradoId, orden: 381 });
-  await upsertMenuNode(Menu, { ...common, menuPrincipal: 'Envío de correo', rutaApp: '/nomina/placeholder/envio-correo', parentId: timbradoId, orden: 382 });
+  await upsertMenuNode(Menu, {
+    ...common,
+    menuPrincipal: 'Configuración PAC',
+    rutaApp: '/nomina/pac',
+    parentId: timbradoId,
+    orden: 380
+  });
+  await upsertMenuNode(Menu, {
+    ...common,
+    menuPrincipal: 'Recibos PDF',
+    rutaApp: '/nomina/recibos-pdf',
+    parentId: timbradoId,
+    orden: 381
+  });
+  await upsertMenuNode(Menu, {
+    ...common,
+    menuPrincipal: 'Timbrador',
+    rutaApp: '/nomina/timbrado',
+    parentId: timbradoId,
+    orden: 382
+  });
+  await upsertMenuNode(Menu, {
+    ...common,
+    menuPrincipal: 'Configuración de correo',
+    rutaApp: '/nomina/correo',
+    parentId: timbradoId,
+    orden: 383
+  });
+  await upsertMenuNode(Menu, {
+    ...common,
+    menuPrincipal: 'Envío de correo',
+    rutaApp: '/nomina/envio-correo',
+    parentId: timbradoId,
+    orden: 384
+  });
+
+  const gestDocId = await upsertMenuNode(Menu, {
+    ...common,
+    menuPrincipal: 'Gestión documental',
+    esCategoria: true,
+    parentId: catId,
+    orden: 385,
+    requiredFeatureKeys: ['gestion_documental']
+  });
+  await upsertMenuNode(Menu, {
+    ...common,
+    menuPrincipal: 'Cumplimiento',
+    rutaApp: '/nomina/gestion-documental',
+    parentId: gestDocId,
+    orden: 386,
+    requiredFeatureKeys: ['gestion_documental']
+  });
+  await upsertMenuNode(Menu, {
+    ...common,
+    menuPrincipal: 'Expediente',
+    rutaApp: '/nomina/gestion-documental/expediente',
+    parentId: gestDocId,
+    orden: 387,
+    requiredFeatureKeys: ['gestion_documental']
+  });
+  await upsertMenuNode(Menu, {
+    ...common,
+    menuPrincipal: 'Subir documento',
+    rutaApp: '/nomina/gestion-documental/subir',
+    parentId: gestDocId,
+    orden: 388,
+    requiredFeatureKeys: ['gestion_documental']
+  });
+  await upsertMenuNode(Menu, {
+    ...common,
+    menuPrincipal: 'Cobertura / reportes',
+    rutaApp: '/nomina/gestion-documental/reporte',
+    parentId: gestDocId,
+    orden: 389,
+    requiredFeatureKeys: ['gestion_documental']
+  });
+  await upsertMenuNode(Menu, {
+    ...common,
+    menuPrincipal: 'Config. storage',
+    rutaApp: '/nomina/gestion-documental/config',
+    parentId: gestDocId,
+    orden: 390,
+    requiredFeatureKeys: ['gestion_documental']
+  });
+
+  await Menu.updateMany(
+    { rutaApp: { $in: ['/nomina/placeholder/timbrador'] }, parentId: timbradoId },
+    { $set: { activo: false } }
+  );
 
   const nominaCatalogosId = await upsertMenuNode(Menu, {
     ...common,
@@ -809,6 +937,7 @@ async function seedNominaMenus(Menu, adminRoleId) {
     'Reportes',
     'Cálculo',
     'Timbrado',
+    'Gestión documental',
     'Catálogos',
     'APIs'
   ]);

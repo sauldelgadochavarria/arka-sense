@@ -1,0 +1,58 @@
+<%- include('../../Partials/layout-top', { title: isNew ? 'Nueva plantilla PDF' : 'Editar plantilla PDF', session }) %>
+<% const P = plantilla || {}; %>
+<h1><%= isNew ? 'Nueva plantilla de recibo' : ('Editar: ' + (P.codigo || '')) %></h1>
+<p><a href="/nomina/recibos-pdf">← Volver</a></p>
+<p class="muted small">
+  Placeholders: <code>{{empresa.rfc}}</code>, <code>{{empleado.nombre}}</code>, <code>{{recibo.netoPagar}}</code>.
+  Bloques: <code>{{#percepciones}}</code>, <code>{{#deducciones}}</code>, <code>{{#otrosPagos}}</code>, <code>{{#conceptos}}</code>.
+  Resolución: tipo+RFC → tipo → RFC → default.
+</p>
+<% if (!isNew && P._id) { %>
+<form method="post" action="/nomina/recibos-pdf/<%= P._id %>/aplicar-cfdi" style="margin:8px 0 16px">
+  <button type="submit">Aplicar layout CFDI 4.0 / Nómina 1.2</button>
+  <a class="btn" href="/nomina/recibos-pdf/<%= P._id %>/preview" target="_blank">Preview</a>
+</form>
+<% } %>
+<form method="post" action="<%= isNew ? '/nomina/recibos-pdf' : ('/nomina/recibos-pdf/' + P._id) %>" class="form-grid form-wide">
+  <label>Código
+    <input name="codigo" required value="<%= P.codigo || '' %>" <%= isNew ? '' : 'readonly' %> />
+  </label>
+  <label>Nombre
+    <input name="nombre" required value="<%= P.nombre || '' %>" />
+  </label>
+  <label>Tipo de período
+    <select name="tipoPeriodoId">
+      <option value="">— Todos —</option>
+      <% (tipos || []).forEach(function(t) { %>
+      <option value="<%= t._id %>" <%= P.tipoPeriodoId && String(P.tipoPeriodoId) === String(t._id) ? 'selected' : '' %>><%= t.nombre %> (<%= t.tipoMotor %>)</option>
+      <% }); %>
+    </select>
+  </label>
+  <label>RFC emisor
+    <input name="rfcEmisor" value="<%= P.rfcEmisor || '' %>" placeholder="Vacío = cualquiera" />
+  </label>
+  <label>Razón social emisor
+    <input name="razonSocialEmisor" value="<%= P.razonSocialEmisor || '' %>" />
+  </label>
+  <label>Orden
+    <input type="number" name="orden" value="<%= P.orden != null ? P.orden : 100 %>" />
+  </label>
+  <label class="checkbox"><input type="checkbox" name="activo" value="1" <%= P.activo !== false ? 'checked' : '' %> /> Activa</label>
+  <label class="checkbox"><input type="checkbox" name="esDefault" value="1" <%= P.esDefault ? 'checked' : '' %> /> Default</label>
+  <label style="grid-column:1/-1">Descripción
+    <input name="descripcion" value="<%= P.descripcion || '' %>" />
+  </label>
+  <label style="grid-column:1/-1">Plantilla HTML
+    <textarea name="plantillaHtml" rows="22" style="font-family:ui-monospace,monospace;width:100%"><%= P.plantillaHtml || '' %></textarea>
+  </label>
+  <details style="grid-column:1/-1">
+    <summary>Variables disponibles</summary>
+    <ul class="muted">
+      <% (variables || []).forEach(function(v) { %>
+      <li><code>{{<%= v.path %>}}</code> <span class="muted">(<%= v.seccion %>)</span></li>
+      <% }); %>
+    </ul>
+  </details>
+  <button type="submit"><%= isNew ? 'Crear' : 'Guardar' %></button>
+</form>
+<%- include('../../Partials/layout-bottom') %>

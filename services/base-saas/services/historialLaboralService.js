@@ -171,7 +171,8 @@ async function registrarCambioAutomatico(tenantId, empresaId, empleadoAntes, emp
     anterior: antes,
     observaciones: options.observaciones || '',
     origen: options.origen || 'sistema',
-    registradoPor: options.registradoPor || ''
+    registradoPor: options.registradoPor || '',
+    metadata: options.metadata || {}
   });
 }
 

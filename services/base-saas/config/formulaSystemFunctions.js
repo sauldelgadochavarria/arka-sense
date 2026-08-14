@@ -79,8 +79,20 @@ const FORMULA_SYSTEM_FUNCTIONS = [
   {
     name: 'imssObrero',
     signature: 'imssObrero(sueldoDiario, dias)',
-    descripcion: 'Cuota obrero IMSS del período (usa SDI interno).',
+    descripcion: 'Cuota obrero IMSS total (SS + RCV). Preferir imssObreroSs / imssObreroRcv para CFDI.',
     ejemplo: 'imssObrero(sueldoDiario, diasCotizacion)'
+  },
+  {
+    name: 'imssObreroSs',
+    signature: 'imssObreroSs(sueldoDiario, dias)',
+    descripcion: 'IMSS obrero seguridad social (SAT 001): EM + IV, sin cesantía/vejez.',
+    ejemplo: 'imssObreroSs(sueldoDiario, diasCotizacion)'
+  },
+  {
+    name: 'imssObreroRcv',
+    signature: 'imssObreroRcv(sueldoDiario, dias)',
+    descripcion: 'IMSS obrero RCV / cesantía y vejez (SAT 003).',
+    ejemplo: 'imssObreroRcv(sueldoDiario, diasCotizacion)'
   },
   {
     name: 'imssPatronal',
@@ -115,6 +127,8 @@ function buildSystemFunctionImplementations(parametros = {}, tablaFns = {}) {
       ((valor, veces) => Math.min(Number(valor) || 0, (parametros.uma || 0) * (veces || 1))),
     isrPeriodo: tablaFns.isrPeriodo || (() => 0),
     imssObrero: tablaFns.imssObrero || (() => 0),
+    imssObreroSs: tablaFns.imssObreroSs || (() => 0),
+    imssObreroRcv: tablaFns.imssObreroRcv || (() => 0),
     imssPatronal: tablaFns.imssPatronal || (() => 0),
     min: Math.min,
     max: Math.max,

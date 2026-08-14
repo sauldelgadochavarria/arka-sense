@@ -1,0 +1,118 @@
+<%- include('../../Partials/layout-top', { title: isNew ? 'Nuevo PAC' : 'Editar PAC', session }) %>
+<% const P = pac || {}; %>
+<h1><%= isNew ? 'Nuevo PAC' : ('Editar PAC: ' + (P.codigo || '')) %></h1>
+<p><a href="/nomina/pac">← Volver</a></p>
+<form method="post" action="<%= isNew ? '/nomina/pac' : ('/nomina/pac/' + P._id) %>" class="form-grid form-wide">
+  <fieldset class="form-section">
+    <legend>General</legend>
+    <label>Código
+      <input name="codigo" required value="<%= P.codigo || '' %>" <%= isNew ? '' : 'readonly' %> />
+    </label>
+    <label>Nombre
+      <input name="nombre" required value="<%= P.nombre || '' %>" />
+    </label>
+    <label>Proveedor
+      <select name="proveedor">
+        <% (proveedores || []).forEach(function(pr) { %>
+        <option value="<%= pr %>" <%= P.proveedor === pr ? 'selected' : '' %>><%= pr %></option>
+        <% }); %>
+      </select>
+    </label>
+    <label>Ambiente (legado pac_ambiente)
+      <select name="ambiente">
+        <option value="1" <%= String(P.ambiente) === '1' ? 'selected' : '' %>>1 — Producción</option>
+        <option value="0" <%= String(P.ambiente) === '0' ? 'selected' : '' %>>0 — Prueba</option>
+      </select>
+    </label>
+    <label>Formato
+      <select name="formato">
+        <option value="JSON" <%= P.formato !== 'XML' ? 'selected' : '' %>>JSON</option>
+        <option value="XML" <%= P.formato === 'XML' ? 'selected' : '' %>>XML</option>
+      </select>
+    </label>
+    <label>Subsidiaria
+      <select name="subsidiariaId">
+        <option value="">— Todas / empresa —</option>
+        <% (subsidiarias || []).forEach(function(s) { %>
+        <option value="<%= s._id %>" <%= P.subsidiariaId && String(P.subsidiariaId) === String(s._id) ? 'selected' : '' %>><%= s.nombre %></option>
+        <% }); %>
+      </select>
+    </label>
+    <label class="checkbox"><input type="checkbox" name="activo" value="1" <%= P.activo !== false ? 'checked' : '' %> /> Activo (pac_activo)</label>
+    <label class="checkbox"><input type="checkbox" name="generarLayout" value="1" <%= P.generarLayout !== false ? 'checked' : '' %> /> Generar layout (pac_layout)</label>
+    <label class="checkbox"><input type="checkbox" name="modoReal" value="1" <%= P.modoReal ? 'checked' : '' %> /> Modo real (llamar PAC; si no, simula UUID)</label>
+  </fieldset>
+
+  <fieldset class="form-section">
+    <legend>Credenciales y URLs</legend>
+    <label>Usuario
+      <input name="usuario" value="<%= P.usuario || '' %>" autocomplete="off" />
+    </label>
+    <label>Password
+      <input type="password" name="password" value="<%= P.password || '' %>" autocomplete="new-password" placeholder="<%= isNew ? '' : '******** para no cambiar' %>" />
+    </label>
+    <label>URL Auth
+      <input name="urlAuth" value="<%= P.urlAuth || '' %>" style="min-width:28rem" />
+    </label>
+    <label>URL Timbrado
+      <input name="urlTimbrado" value="<%= P.urlTimbrado || '' %>" style="min-width:28rem" />
+    </label>
+    <label>URL Cancelación
+      <input name="urlCancelacion" value="<%= P.urlCancelacion || '' %>" style="min-width:28rem" />
+    </label>
+    <label>URL Consulta
+      <input name="urlConsulta" value="<%= P.urlConsulta || '' %>" style="min-width:28rem" />
+    </label>
+    <label>Timeout (s)
+      <input type="number" name="timeout" min="5" max="300" value="<%= P.timeout != null ? P.timeout : 30 %>" />
+    </label>
+    <label>Reintentos
+      <input type="number" name="reintentos" min="0" max="10" value="<%= P.reintentos != null ? P.reintentos : 3 %>" />
+    </label>
+  </fieldset>
+
+  <fieldset class="form-section">
+    <legend>Serie, carpeta y templates</legend>
+    <label>Serie default
+      <input name="serieDefault" value="<%= P.serieDefault || '' %>" maxlength="10" />
+    </label>
+    <label>Carpeta XML
+      <input name="carpetaXml" value="<%= P.carpetaXml || '' %>" />
+    </label>
+    <label>Email errores
+      <input name="emailErrores" type="email" value="<%= P.emailErrores || '' %>" />
+    </label>
+    <label>Template ingreso
+      <input name="templateIngreso" value="<%= P.templateIngreso || '' %>" />
+    </label>
+    <label>Template egreso
+      <input name="templateEgreso" value="<%= P.templateEgreso || '' %>" />
+    </label>
+    <label>Template pago
+      <input name="templatePago" value="<%= P.templatePago || '' %>" />
+    </label>
+    <label>Template traslado
+      <input name="templateTraslado" value="<%= P.templateTraslado || '' %>" />
+    </label>
+  </fieldset>
+
+  <fieldset class="form-section">
+    <legend>Datos prueba SAT</legend>
+    <label>RFC test
+      <input name="rfcSatTest" value="<%= P.rfcSatTest || '' %>" />
+    </label>
+    <label>Nombre SAT test
+      <input name="nombreSatTest" value="<%= P.nombreSatTest || '' %>" style="min-width:24rem" />
+    </label>
+    <label>Notas
+      <textarea name="notas" rows="2"><%= P.notas || '' %></textarea>
+    </label>
+  </fieldset>
+
+  <% if (!isNew) { %>
+  <p class="muted">Total timbrados: <%= P.totalTimbrados || 0 %> · Último uso: <%= P.ultimaFechaUso ? new Date(P.ultimaFechaUso).toLocaleString('es-MX') : '—' %></p>
+  <% } %>
+
+  <button type="submit"><%= isNew ? 'Crear' : 'Guardar' %></button>
+</form>
+<%- include('../../Partials/layout-bottom') %>

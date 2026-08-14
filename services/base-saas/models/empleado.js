@@ -39,6 +39,7 @@ const empleadoSchema = new mongoose.Schema(
       codigoPostal: { type: String, trim: true, default: '' }
     },
     departamentoId: { type: mongoose.Schema.Types.ObjectId, ref: 'Departamento' },
+    centroCostoId: { type: mongoose.Schema.Types.ObjectId, ref: 'CentroCosto', default: null },
     puestoId: { type: mongoose.Schema.Types.ObjectId, ref: 'Puesto' },
     /**
      * Override explícito de tabla de prestaciones.
@@ -120,6 +121,47 @@ const empleadoSchema = new mongoose.Schema(
       },
       tasaInfonavit: { type: Number, default: 0, min: 0 },
       infonavitDescuento: { type: Number, default: 0, min: 0 },
+      /** Número de crédito INFONAVIT (10 chars; requerido para CRED.TXT / ASEG). */
+      infonavitNumeroCredito: { type: String, trim: true, default: '' },
+      /** Fecha inicio descuento (aviso retención). */
+      infonavitFechaInicio: { type: Date, default: null },
+      /**
+       * FONACOT (cédula de descuentos):
+       * monto_fijo → fonacotMonto por período
+       * porcentaje → fonacotPorcentaje (10/15/20; SM máx 10) sobre bruto
+       * fonacotDescuento → override fijo del período (anula cálculo)
+       */
+      tipoCreditoFonacot: {
+        type: String,
+        enum: ['', 'monto_fijo', 'porcentaje'],
+        default: ''
+      },
+      fonacotMonto: { type: Number, default: 0, min: 0 },
+      fonacotPorcentaje: { type: Number, default: 0, min: 0, max: 20 },
+      fonacotDescuento: { type: Number, default: 0, min: 0 },
+      /**
+       * Cuota sindical (CCT / contrato):
+       * monto_fijo | porcentaje; base bruto|neto_fiscal;
+       * enTope30: ''=empresa | si | no
+       */
+      tipoCuotaSindical: {
+        type: String,
+        enum: ['', 'monto_fijo', 'porcentaje'],
+        default: ''
+      },
+      cuotaSindicalMonto: { type: Number, default: 0, min: 0 },
+      cuotaSindicalPorcentaje: { type: Number, default: 0, min: 0, max: 100 },
+      cuotaSindicalDescuento: { type: Number, default: 0, min: 0 },
+      cuotaSindicalBase: {
+        type: String,
+        enum: ['', 'bruto', 'neto_fiscal'],
+        default: ''
+      },
+      cuotaSindicalEnTope30: {
+        type: String,
+        enum: ['', 'empresa', 'si', 'no'],
+        default: ''
+      },
       diasCotizacionImss: { type: Number, default: 0, min: 0 },
       sueldoIntegrado: { type: Number, default: 0, min: 0 },
       diasPrimaVacacional: { type: Number, default: 0, min: 0 },
@@ -127,6 +169,13 @@ const empleadoSchema = new mongoose.Schema(
       primaVacacionalPct: { type: Number, default: 0, min: 0, max: 100 },
       proporcionAguinaldoFiniquito: { type: Number, default: 0, min: 0 },
       fondoAhorroSaldoFiniquito: { type: Number, default: 0, min: 0 }
+    },
+    /** Datos para dispersión / layouts bancarios */
+    datosBancarios: {
+      bancoCodigo: { type: String, trim: true, default: '' },
+      bancoNombre: { type: String, trim: true, default: '' },
+      cuenta: { type: String, trim: true, default: '' },
+      clabe: { type: String, trim: true, default: '' }
     }
   },
   { timestamps: true, collection: COLLECTION_EMPLEADOS }

@@ -1,27 +1,38 @@
 <%- include('../Partials/layout-top', { title: 'Roles', session }) %>
 <h1>Roles</h1>
+<p class="muted">
+  <strong>Nómina</strong> (consulta): ver períodos, recibos y conceptos — no calcula ni cierra.
+  <strong>Nómina operativa</strong>: abrir período, calcular, cerrar y editar conceptos/config.
+  Cerrar sesión y volver a entrar después de cambiar roles.
+</p>
 <table>
   <thead>
     <tr>
       <th>Nombre</th>
+      <th>Descripción</th>
       <th>Admin</th>
       <th>Config</th>
-      <th>Subsidiarias</th>
-      <th>Reportes</th>
+      <th>Prenómina</th>
       <th>Ver nómina</th>
-      <th>Editar nómina</th>
+      <th>Gestionar nómina</th>
+      <th>Reportes</th>
     </tr>
   </thead>
   <tbody>
     <% roles.forEach(function(r) { %>
+    <%
+      const verNom = !!(r.puedeVerNomina || r.puedeGestionarNomina || r.esAdmin || r.esAdminSistema);
+      const gestNom = !!(r.puedeGestionarNomina || r.esAdmin || r.esAdminSistema);
+    %>
     <tr>
       <td><%= r.nombre %></td>
+      <td class="muted small"><%= r.descripcion || '—' %></td>
       <td><%= r.esAdmin ? 'Sí' : 'No' %></td>
       <td><%= r.adminAccesoConfig ? 'Sí' : 'No' %></td>
-      <td><%= r.puedeGestionarSubsidiarias ? 'Sí' : 'No' %></td>
+      <td><%= r.puedeGestionarPrenomina ? 'Sí' : 'No' %></td>
+      <td><%= verNom ? 'Sí' : 'No' %></td>
+      <td><%= gestNom ? 'Sí (calcular/cerrar)' : 'No (solo consulta)' %></td>
       <td><%= r.puedeVerReportes ? 'Sí' : 'No' %></td>
-      <td><%= (r.puedeVerNomina || r.puedeGestionarNomina || r.esAdmin || r.esAdminSistema) ? 'Sí' : 'No' %></td>
-      <td><%= (r.puedeGestionarNomina || r.esAdmin || r.esAdminSistema) ? 'Sí' : 'No' %></td>
     </tr>
     <% }); %>
   </tbody>
@@ -36,8 +47,9 @@
   <label><input type="checkbox" name="puedeGestionarSubsidiarias" /> Gestionar subsidiarias</label>
   <label><input type="checkbox" name="esAdminSistema" /> Admin sistema</label>
   <label><input type="checkbox" name="puedeVerReportes" /> Ver reportes</label>
-  <label><input type="checkbox" name="puedeVerNomina" /> Ver conceptos de nómina (consulta)</label>
-  <label><input type="checkbox" name="puedeGestionarNomina" /> Editar conceptos / gestionar nómina</label>
+  <label><input type="checkbox" name="puedeGestionarPrenomina" /> Gestionar pre-nómina (asistencia → export)</label>
+  <label><input type="checkbox" name="puedeVerNomina" /> Ver nómina (consulta: períodos, recibos, conceptos)</label>
+  <label><input type="checkbox" name="puedeGestionarNomina" /> Gestionar nómina (abrir/calcular/cerrar + editar conceptos)</label>
   <button type="submit">Crear rol</button>
 </form>
 <%- include('../Partials/layout-bottom') %>

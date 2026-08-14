@@ -4,15 +4,23 @@ const getPuestoModel = require('../models/puesto');
 const getSubsidiariaModel = require('../models/subsidiaria');
 const getTurnoModel = require('../models/turno');
 const getGrupoDispositivosModel = require('../models/grupoDispositivos');
+const getCentroCostoModel = require('../models/centroCosto');
 const {
   requireEmpresaForTenant,
   findOneByTenant,
   findOneDocByTenant
 } = require('../libs/tenantScope');
 const { buildEmpleadoPayload } = require('../libs/empleadoPayload');
+const { validateEmpleadoImssIsn, labelEntidadFederativa } = require('../libs/empleadoImssIsnValidation');
 const { toDateInputValue } = require('../libs/formHelpers');
 const { tenantHasFeature } = require('../libs/tenantFeatureFlags');
-const { TIPOS_CREDITO_INFONAVIT } = require('../config/nominaCatalogos');
+const {
+  TIPOS_CREDITO_INFONAVIT,
+  TIPOS_CREDITO_FONACOT,
+  TIPOS_CUOTA_SINDICAL,
+  CUOTA_SINDICAL_TOPE30_OPTS,
+  CUOTA_SINDICAL_BASE_OPTS
+} = require('../config/nominaCatalogos');
 const { MOTIVOS_BAJA, TIPOS_CONTRATO, TIPOS_EMPLEADO, ESTATUS_EMPLEADO, TIPOS_REGISTRO } = require('../config/catalogos');
 const {
   ENTIDADES_FEDERATIVAS,
@@ -103,7 +111,8 @@ async function loadEmpleadoCatalogs(tenantId, empresa) {
       gruposDispositivos: [],
       plantillas: [],
       tiposPeriodo: [],
-      tablasPrestaciones: []
+      tablasPrestaciones: [],
+      centrosCosto: []
     };
   }
 
@@ -117,7 +126,8 @@ async function loadEmpleadoCatalogs(tenantId, empresa) {
   const GrupoDispositivos = await getGrupoDispositivosModel();
   const getTablaPrestacionesModel = require('../models/tablaPrestaciones');
   const TablaPrestaciones = await getTablaPrestacionesModel();
-  const [empleados, departamentos, puestos, subsidiarias, turnos, gruposDispositivos, plantillas, tiposPeriodo, tablasPrestaciones] =
+  const CentroCosto = await getCentroCostoModel();
+  const [empleados, departamentos, puestos, subsidiarias, turnos, gruposDispositivos, plantillas, tiposPeriodo, tablasPrestaciones, centrosCosto] =
     await Promise.all([
     Empleado.find({ tenantId }).sort({ lastName: 1, firstName: 1 }).lean(),
     Departamento.find({ tenantId, activo: true }).sort({ nombre: 1 }).lean(),
@@ -129,7 +139,8 @@ async function loadEmpleadoCatalogs(tenantId, empresa) {
     listTiposPeriodo(tenantId, true),
     TablaPrestaciones.find({ tenantId, empresaId: empresa._id, activo: true })
       .sort({ ambito: 1, nombre: 1 })
-      .lean()
+      .lean(),
+    CentroCosto.find({ tenantId, empresaId: empresa._id, activo: true }).sort({ codigo: 1 }).lean()
   ]);
 
   const supervisores = empleados.filter((e) => e.estatus === 'activo');
@@ -144,7 +155,8 @@ async function loadEmpleadoCatalogs(tenantId, empresa) {
     gruposDispositivos,
     plantillas,
     tiposPeriodo,
-    tablasPrestaciones
+    tablasPrestaciones,
+    centrosCosto
   };
 }
 
@@ -219,6 +231,10 @@ async function listEmpleados(req, res) {
     toDateInputValue,
     showNominaConfig: showNominaConfig(req),
     tiposCreditoInfonavit: TIPOS_CREDITO_INFONAVIT,
+    tiposCreditoFonacot: TIPOS_CREDITO_FONACOT,
+    tiposCuotaSindical: TIPOS_CUOTA_SINDICAL,
+    cuotaSindicalTope30Opts: CUOTA_SINDICAL_TOPE30_OPTS,
+    cuotaSindicalBaseOpts: CUOTA_SINDICAL_BASE_OPTS,
     error: error || null,
     session: req.session
   });
@@ -234,6 +250,11 @@ async function createEmpleado(req, res) {
 
     const Empleado = await getEmpleadoModel();
     const payload = buildEmpleadoPayload(req.body, req.session.tenantId, empresa._id);
+    const issues = validateEmpleadoImssIsn(payload, empresa);
+    if (issues.length) {
+      req.flash('error', issues.join('. '));
+      return res.redirect('/personal-empleados');
+    }
     const empleado = await Empleado.create(payload);
     await syncAsignacionFromBody(req.session.tenantId, empresa._id, empleado._id, req.body);
     await registrarAlta(req.session.tenantId, empresa._id, empleado.toObject(), {
@@ -300,6 +321,7 @@ async function showEmpleado(req, res) {
     ENTIDADES_FEDERATIVAS.find((e) => e.value === empleado.entidadNacimiento)?.label ||
     empleado.entidadNacimiento ||
     '—';
+  const labelEntidadDom = labelEntidadFederativa(empleado.domicilio?.entidad);
 
   let tablaPrestacionesResuelta = null;
   if (empresa) {
@@ -325,6 +347,7 @@ async function showEmpleado(req, res) {
     labelTipoSalario,
     labelEstadoCivil,
     labelEntidadNac,
+    labelEntidadDom,
     baseImss,
     grupoNombre,
     tipoRegistroLabel,
@@ -368,6 +391,10 @@ async function editEmpleado(req, res) {
     estatusOptions: ESTATUS_EMPLEADO,
     showNominaConfig: showNominaConfig(req),
     tiposCreditoInfonavit: TIPOS_CREDITO_INFONAVIT,
+    tiposCreditoFonacot: TIPOS_CREDITO_FONACOT,
+    tiposCuotaSindical: TIPOS_CUOTA_SINDICAL,
+    cuotaSindicalTope30Opts: CUOTA_SINDICAL_TOPE30_OPTS,
+    cuotaSindicalBaseOpts: CUOTA_SINDICAL_BASE_OPTS,
     error: error || null,
     session: req.session,
     toDateInputValue
@@ -394,6 +421,11 @@ async function updateEmpleado(req, res) {
 
     const antes = empleado.toObject();
     const payload = buildEmpleadoPayload(req.body, req.session.tenantId, empresa._id);
+    const issues = validateEmpleadoImssIsn(payload, empresa);
+    if (issues.length) {
+      req.flash('error', issues.join('. '));
+      return res.redirect(`/personal-empleados/${empleado._id}/edit`);
+    }
     Object.assign(empleado, payload);
     await empleado.save();
     await syncAsignacionFromBody(req.session.tenantId, empresa._id, empleado._id, req.body);

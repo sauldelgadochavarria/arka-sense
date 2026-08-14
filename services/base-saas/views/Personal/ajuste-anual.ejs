@@ -1,0 +1,467 @@
+<%- include('../Partials/layout-top', { title: 'Ajuste anual de sueldos', session }) %>
+<%
+  const I = input || {};
+  const F = I.filtros || {};
+  const R = I.regla || {};
+  const C = catalogs || {};
+  const T = preview && preview.totales ? preview.totales : null;
+  const P = preview && preview.parametrosFiscales ? preview.parametrosFiscales : null;
+  function money(n) {
+    if (n == null || n === '') return '—';
+    return Number(n).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  function sel(a, b) { return String(a || '') === String(b || '') ? 'selected' : ''; }
+%>
+<div class="page-header">
+  <h1>Ajuste anual de sueldos y salarios</h1>
+  <p class="page-subtitle">
+    Define población (departamento, tipo de período, puesto…), calcula por % / presupuesto / evaluaciones,
+    valida salario mínimo y tope 25 UMA, y autoriza: <strong>Líder de equipo → RRHH → Finanzas</strong>.
+  </p>
+</div>
+
+<% if (error) { %><p class="alert"><%= error %></p><% } %>
+<% if (!empresa) { %>
+<p>No hay empresa vinculada a este tenant.</p>
+<% } else { %>
+
+<form method="post" action="/personal/ajuste-anual" class="filter-form" id="form-ajuste">
+  <input type="hidden" name="accion" id="accion" value="preview" />
+
+  <section class="panel">
+    <h2 class="panel-title">1. Propósito y vigencia del tabulador</h2>
+    <div class="form-grid">
+      <label>Nombre del lote
+        <input name="nombre" value="<%= I.nombre || '' %>" placeholder="Ajuste 2026" />
+      </label>
+      <label>Propósito
+        <select name="proposito">
+          <% (propositos || []).forEach(function(p) { %>
+          <option value="<%= p.value %>" <%= sel(I.proposito, p.value) %>><%= p.label %></option>
+          <% }); %>
+        </select>
+      </label>
+      <label>Vigencia desde
+        <input type="date" name="vigenciaDesde" value="<%= I.vigenciaDesde ? new Date(I.vigenciaDesde).toISOString().slice(0,10) : '' %>" />
+      </label>
+      <label>Vigencia hasta (opcional)
+        <input type="date" name="vigenciaHasta" value="<%= I.vigenciaHasta ? new Date(I.vigenciaHasta).toISOString().slice(0,10) : '' %>" />
+      </label>
+      <label>Fecha de aplicación (IMSS / historial)
+        <input type="date" name="fechaAplicacion" value="<%= I.fechaAplicacion ? new Date(I.fechaAplicacion).toISOString().slice(0,10) : '' %>" />
+      </label>
+      <label class="checkbox">
+        <input type="checkbox" name="retroactivo" value="1" <%= I.retroactivo ? 'checked' : '' %> />
+        Ajuste retroactivo (recalcular ISR de períodos abiertos afectados)
+      </label>
+      <label>Desde (si retroactivo)
+        <input type="date" name="fechaRetroactiva" value="<%= I.fechaRetroactiva ? new Date(I.fechaRetroactiva).toISOString().slice(0,10) : '' %>" />
+      </label>
+    </div>
+    <p class="hint">Períodos ya cerrados no se reabren. Si es retroactivo, recalcula la nómina abierta del tramo afectado para no desviar la anual del colaborador.</p>
+  </section>
+
+  <section class="panel">
+    <h2 class="panel-title">2. Población</h2>
+    <div class="form-grid">
+      <label>Departamento
+        <select name="departamentoId">
+          <option value="">— Todos —</option>
+          <% (C.departamentos || []).forEach(function(d) { %>
+          <option value="<%= d._id %>" <%= sel(F.departamentoId, d._id) %>><%= d.nombre %></option>
+          <% }); %>
+        </select>
+      </label>
+      <label>Tipo de período (nómina)
+        <select name="tipoPeriodoId">
+          <option value="">— Todos —</option>
+          <% (C.tiposPeriodo || []).forEach(function(t) { %>
+          <option value="<%= t._id %>" <%= sel(F.tipoPeriodoId, t._id) %>><%= t.nombre || t.tipoMotor %></option>
+          <% }); %>
+        </select>
+      </label>
+      <label>Tipo de empleado
+        <select name="tipoEmpleado">
+          <option value="">— Todos —</option>
+          <% (C.tiposEmpleado || []).forEach(function(t) { %>
+          <option value="<%= t.value %>" <%= sel(F.tipoEmpleado, t.value) %>><%= t.label %></option>
+          <% }); %>
+        </select>
+      </label>
+      <label>Puesto
+        <select name="puestoId">
+          <option value="">— Todos —</option>
+          <% (C.puestos || []).forEach(function(p) { %>
+          <option value="<%= p._id %>" <%= sel(F.puestoId, p._id) %>><%= p.nombre %></option>
+          <% }); %>
+        </select>
+      </label>
+      <label>Centro de costo
+        <select name="centroCostoId">
+          <option value="">— Todos —</option>
+          <% (C.centrosCosto || []).forEach(function(c) { %>
+          <option value="<%= c._id %>" <%= sel(F.centroCostoId, c._id) %>><%= c.codigo %> — <%= c.nombre %></option>
+          <% }); %>
+        </select>
+      </label>
+      <label>Subsidiaria
+        <select name="subsidiariaId">
+          <option value="">— Todas —</option>
+          <% (C.subsidiarias || []).forEach(function(s) { %>
+          <option value="<%= s._id %>" <%= sel(F.subsidiariaId, s._id) %>><%= s.nombre %></option>
+          <% }); %>
+        </select>
+      </label>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2 class="panel-title">3. Cálculo</h2>
+    <p class="hint">
+      Elige <strong>cómo</strong> se reparte el incremento entre la población del punto 2.
+      Luego pulsa <strong>Vista previa</strong> (no se guarda nada). Si el resultado cuadra: guardar lote → autorizar (Líder → RRHH → Finanzas) → aplicar en nómina.
+    </p>
+
+    <div class="form-grid">
+      <label>Modo
+        <select name="modo" id="modo">
+          <% (modos || []).forEach(function(m) { %>
+          <option value="<%= m.value %>" <%= sel(I.modo, m.value) %>><%= m.label %></option>
+          <% }); %>
+        </select>
+      </label>
+      <label class="modo-porcentaje">Porcentaje uniforme
+        <input type="number" step="0.01" min="0" name="porcentaje" value="<%= R.porcentaje != null ? R.porcentaje : '' %>" />
+      </label>
+      <label class="modo-presupuesto">Presupuesto mensual a distribuir ($)
+        <input type="number" step="0.01" min="0" name="presupuestoMensual" value="<%= R.presupuestoMensual != null ? R.presupuestoMensual : '' %>" />
+      </label>
+      <label>% máximo de la masa salarial
+        <input type="number" step="0.01" min="0" name="topePctMasa" value="<%= R.topePctMasa != null ? R.topePctMasa : '' %>" placeholder="ej. 6" />
+      </label>
+      <label class="checkbox">
+        <input type="checkbox" name="respetarTopeMasa" value="1" <%= R.respetarTopeMasa ? 'checked' : '' %> />
+        Recortar incrementos si se excede el % máximo
+      </label>
+      <label>Tasa ISN estatal estimada (%)
+        <input type="number" step="0.01" min="0" name="tasaIsnPct" value="<%= R.tasaIsn != null ? (R.tasaIsn * 100) : tasaIsnDefaultPct %>" />
+      </label>
+    </div>
+    <p class="hint">
+      <strong>% máximo de masa:</strong> tope que la empresa puede absorber (ej. 6% de la nómina mensual), ya considerando que IMSS/INFONAVIT/ISN suben con el sueldo.
+      Si marcas “Recortar”, nadie se pasa de ese tope: se bajan todos los incrementos a prorrata.
+      <strong>ISN:</strong> solo para estimar el costo en el preview (impuesto estatal sobre nómina); no se calcula aún en el recibo.
+    </p>
+
+    <div class="ayuda-modo modo-ayuda-porcentaje" style="background:#f4f7fb;border:1px solid #d5deea;border-radius:8px;padding:12px 14px;margin:12px 0">
+      <p><strong>Porcentaje uniforme</strong> — el mismo % a todos los de la población.</p>
+      <ul class="hint" style="margin:6px 0 0 18px">
+        <li><strong>Cuándo:</strong> inflación / costo de vida en enero, o política de “todos +X%”.</li>
+        <li><strong>Ejemplo:</strong> semanales del depto. Operaciones, +5%. Un SD de $400 pasa a $420.</li>
+        <li><strong>No uses este modo</strong> si el % debe variar por evaluación o hay un monto fijo de presupuesto (usa matriz o presupuesto).</li>
+      </ul>
+    </div>
+
+    <div class="ayuda-modo modo-ayuda-presupuesto" style="display:none;background:#f4f7fb;border:1px solid #d5deea;border-radius:8px;padding:12px 14px;margin:12px 0">
+      <p><strong>Presupuesto a distribuir</strong> — capturas cuánto dinero <em>mensual</em> extra hay para sueldos; el sistema lo reparte.</p>
+      <ul class="hint" style="margin:6px 0 0 18px">
+        <li><strong>Sin CSV:</strong> se reparte en proporción al salario actual (quien gana más recibe más pesos, mismo esfuerzo relativo).</li>
+        <li><strong>Con CSV de evaluaciones:</strong> se pondera: alto desempeño y compa-ratio bajo (por debajo de mercado) reciben más del presupuesto.</li>
+        <li><strong>Ejemplo:</strong> “hay $80,000 al mes”. 10 personas con masa de $800,000 → ~10% extra en conjunto, no 10% cada una.</li>
+        <li>La matriz 1–5 (abajo) solo sirve como peso si hay evaluación; no es el % final de cada persona.</li>
+      </ul>
+    </div>
+
+    <div class="ayuda-modo modo-ayuda-matriz" style="display:none;background:#f4f7fb;border:1px solid #d5deea;border-radius:8px;padding:12px 14px;margin:12px 0">
+      <p><strong>Matriz desempeño × incremento</strong> — defines el % según la calificación (1 bajo … 5 excepcional).</p>
+      <ul class="hint" style="margin:6px 0 0 18px">
+        <li><strong>Cuándo:</strong> mérito anual después de evaluaciones. Pegar el CSV con <code>numEmpleado</code> y <code>desempeno</code>.</li>
+        <li><strong>Si falta evaluación</strong> en un empleado, se usa nivel 3 (intermedio).</li>
+        <li><strong>Ejemplo:</strong> nivel 2 = 4%, nivel 5 = 10%. El 100 con desempeño 5 y SD $400 pasa a $440.</li>
+        <li>Si en el CSV pones <code>porcentaje</code> o <code>salarioDiarioNuevo</code>, eso manda sobre la matriz.</li>
+      </ul>
+    </div>
+
+    <div class="ayuda-modo modo-ayuda-carga" style="display:none;background:#f4f7fb;border:1px solid #d5deea;border-radius:8px;padding:12px 14px;margin:12px 0">
+      <p><strong>Carga por empleado</strong> — cada renglón del CSV dice el incremento de esa persona. Quien no esté en el CSV se omite.</p>
+      <ul class="hint" style="margin:6px 0 0 18px">
+        <li><strong>Cuándo:</strong> acuerdos individuales, talento clave, o un Excel de RRHH ya con el % o el nuevo diario.</li>
+        <li>Usa <code>porcentaje</code> (ej. 8) <strong>o</strong> <code>salarioDiarioNuevo</code> (ej. 420.50). Si vienen los dos, gana el salario nuevo.</li>
+        <li><code>desempeno</code> y <code>compaRatio</code> son informativos en este modo (no calculan solos).</li>
+      </ul>
+    </div>
+
+    <div class="modo-matriz">
+      <p class="hint ayuda-campo modo-ayuda-matriz"><strong>Matriz:</strong> escribe el % que corresponde a cada nivel de la evaluación.</p>
+      <p class="hint ayuda-campo modo-ayuda-presupuesto" style="display:none"><strong>Opcional en presupuesto:</strong> estos % se usan solo como peso si hay CSV de desempeño (no son el incremento final).</p>
+      <div class="form-grid">
+        <% [1,2,3,4,5].forEach(function(n) { %>
+        <label>Desempeño <%= n %> (%)
+          <input type="number" step="0.01" min="0" name="matriz_<%= n %>"
+            value="<%= (R.matriz && R.matriz[n] != null) ? R.matriz[n] : matrizDefault[n] %>" />
+        </label>
+        <% }); %>
+      </div>
+    </div>
+
+    <div class="modo-csv">
+      <label>Evaluaciones / carga por empleado (CSV)
+        <textarea name="csvEvaluaciones" rows="6" placeholder="<%= csvPlantilla %>"><%= I.csvEvaluaciones || '' %></textarea>
+      </label>
+      <p class="hint">
+        Primera fila = encabezados.
+        Columnas: <code>numEmpleado</code> (obligatorio),
+        <code>desempeno</code> (1–5),
+        <code>compaRatio</code> (1.00 = a mercado; 0.90 = 10% abajo),
+        <code>porcentaje</code>,
+        <code>salarioDiarioNuevo</code>.
+      </p>
+    </div>
+
+    <div class="form-grid">
+      <label class="checkbox">
+        <input type="checkbox" name="forzarPisoSm" value="1" <%= R.forzarPisoSm !== false ? 'checked' : '' %> />
+        Ningún puesto bajo el salario mínimo CONASAMI vigente
+      </label>
+    </div>
+    <p class="hint">
+      <strong>Salario mínimo:</strong> si el nuevo diario quedaría bajo el CONASAMI vigente (suele cambiar en enero), se sube al piso y se marca en el preview.
+    </p>
+
+    <label class="checkbox" style="display:block;margin-top:12px">
+      <input type="checkbox" name="escalaPrestaciones" value="1" <%= R.escalaPrestaciones ? 'checked' : '' %> />
+      Subir también vales en pesos fijos y el sueldo integrado, en el mismo % que el salario
+    </label>
+    <div class="hint" style="margin:6px 0 0 22px">
+      <p style="margin:0 0 6px">
+        <strong>Desmarcado (recomendado si no estás seguro):</strong> solo cambia el salario diario y el SDI/SBC.
+        Los vales, fondo de ahorro y créditos quedan como están en la ficha.
+      </p>
+      <p style="margin:0 0 6px">
+        <strong>Marcado:</strong> si el sueldo sube 5%, también suben 5%
+        (1) los <em>vales de despensa en cantidad fija</em> (ej. $1,000 → $1,050) y
+        (2) el <em>sueldo integrado</em> de la ficha (base INFONAVIT/FONACOT), si lo tienen capturado.
+      </p>
+      <p style="margin:0">
+        <strong>No hace falta marcarlo</strong> cuando la despensa o el fondo van en % del sueldo: esos ya suben solos.
+        No toca INFONAVIT/FONACOT en cuota fija ni vales en modalidad “ninguna”.
+      </p>
+    </div>
+    <p class="hint">
+      <strong>Salario variable:</strong> esas personas salen omitidas (el % no aplica al diario; hay que revisar su SDI).
+      <strong>Tope IMSS:</strong> si el SDI nuevo supera 25 UMA, el SBC se queda en el tope (se avisa en el preview).
+    </p>
+
+    <details style="margin-top:10px">
+      <summary style="cursor:pointer"><strong>Casos frecuentes (¿cuál modo elijo?)</strong></summary>
+      <table class="data-table" style="margin-top:8px">
+        <thead>
+          <tr><th>Situación</th><th>Modo</th><th>Qué capturar</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Ajuste general por inflación a un área o a toda la empresa</td>
+            <td>Porcentaje uniforme</td>
+            <td>El % (ej. 5) y filtros de población</td>
+          </tr>
+          <tr>
+            <td>Finanzas autorizó un monto extra al mes, no un %</td>
+            <td>Presupuesto a distribuir</td>
+            <td>El $ mensual. CSV de evaluaciones solo si quieres premiar mérito</td>
+          </tr>
+          <tr>
+            <td>Ya calificaron desempeño y el % depende de la nota</td>
+            <td>Matriz desempeño</td>
+            <td>CSV con <code>numEmpleado,desempeno</code> + % por nivel 1–5</td>
+          </tr>
+          <tr>
+            <td>Lista cerrada: gerentes, talento clave o cifras ya negociadas</td>
+            <td>Carga por empleado</td>
+            <td>CSV con % o nuevo salario diario de cada número de empleado</td>
+          </tr>
+          <tr>
+            <td>Hay tope de masa (la empresa no puede más de X%)</td>
+            <td>Cualquiera + % máximo</td>
+            <td>Activa “Recortar incrementos…” para no pasarte</td>
+          </tr>
+        </tbody>
+      </table>
+    </details>
+  </section>
+
+  <div class="toolbar">
+    <button type="submit" class="btn btn-primary" onclick="document.getElementById('accion').value='preview'">Vista previa</button>
+  </div>
+</form>
+
+<% if (T) { %>
+<section class="panel">
+  <h2 class="panel-title">Vista previa — masa e impacto</h2>
+  <p>
+    Empleados: <%= T.empleados %> · Aplicables: <%= T.aplicables %> · Omitidos: <%= T.omitidos %>
+    · Bajo SM: <%= T.bajoSm %> · Tope SBC: <%= T.topeSbc %>
+  </p>
+  <% if (P) { %>
+  <p class="muted">
+    SM CONASAMI $<%= money(P.salarioMinimo) %> · UMA $<%= money(P.uma) %> · Tope SBC (<%= P.topeUmaImss %> UMA) $<%= money(P.topeSbc) %>
+  </p>
+  <% } %>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th></th><th>Antes (mensual)</th><th>Después</th><th>Δ</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Masa salarial</td>
+        <td class="num">$<%= money(T.masaAntes) %></td>
+        <td class="num">$<%= money(T.masaDespues) %></td>
+        <td class="num">$<%= money(T.deltaMasa) %> (<%= money(T.pctMasa) %>%)</td>
+      </tr>
+      <tr>
+        <td>SBC (base IMSS)</td>
+        <td class="num">$<%= money(T.sbcAntes) %></td>
+        <td class="num">$<%= money(T.sbcDespues) %></td>
+        <td class="num">$<%= money(T.deltaSbc) %></td>
+      </tr>
+    </tbody>
+  </table>
+  <p>
+    Cargas estimadas mensuales:
+    IMSS $<%= money(T.imssPatronalMensual) %>
+    · INFONAVIT $<%= money(T.infonavitPatronalMensual) %>
+    · ISN $<%= money(T.isnMensual) %>
+    · <strong>Costo total Δ $<%= money(T.costoTotalMensual) %></strong>
+    (anual ~ $<%= money(T.costoTotalAnual) %>)
+  </p>
+  <% if (T.desviacionPresupuesto != null) { %>
+  <p class="<%= T.desviacionPresupuesto > 0.5 ? 'alert' : 'muted' %>">
+    Desviación vs presupuesto: $<%= money(T.desviacionPresupuesto) %>
+    (positivo = se pasa del presupuesto).
+  </p>
+  <% } %>
+  <p class="muted small">Las cargas son proyección (IMSS ~15% + prima RT, INFONAVIT 5%, ISN de la tasa capturada). No sustituyen el cálculo de cuotas del período.</p>
+</section>
+
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>Empleado</th><th>Nombre</th><th>Depto</th><th>Eval</th><th>%</th>
+      <th>SD actual</th><th>SD nuevo</th><th>SDI</th><th>SBC</th><th>Alertas</th>
+    </tr>
+  </thead>
+  <tbody>
+    <% (preview.items || []).forEach(function(it) { %>
+    <tr class="<%= it.omitido ? 'row-muted' : (it.pisoSm || it.topeSbc ? 'row-warn' : '') %>">
+      <td><code><%= it.numEmpleado %></code></td>
+      <td><%= it.nombre %></td>
+      <td><%= it.departamentoNombre %></td>
+      <td><%= it.desempeno != null ? it.desempeno : '—' %></td>
+      <td class="num"><%= money(it.porcentaje) %></td>
+      <td class="num">$<%= money(it.salarioDiarioAntes) %></td>
+      <td class="num">$<%= money(it.salarioDiarioDespues) %></td>
+      <td class="num">$<%= money(it.sdiDespues) %></td>
+      <td class="num">$<%= money(it.sbcDespues) %></td>
+      <td class="muted small"><%= it.omitido ? it.omitidoMotivo : (it.alertas || []).join(' · ') %></td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+
+<% if (canManage) { %>
+<form method="post" action="/personal/ajuste-anual/guardar" class="toolbar">
+  <input type="hidden" name="nombre" value="<%= I.nombre || '' %>" />
+  <input type="hidden" name="proposito" value="<%= I.proposito || '' %>" />
+  <input type="hidden" name="modo" value="<%= I.modo || '' %>" />
+  <input type="hidden" name="vigenciaDesde" value="<%= I.vigenciaDesde ? new Date(I.vigenciaDesde).toISOString().slice(0,10) : '' %>" />
+  <input type="hidden" name="vigenciaHasta" value="<%= I.vigenciaHasta ? new Date(I.vigenciaHasta).toISOString().slice(0,10) : '' %>" />
+  <input type="hidden" name="fechaAplicacion" value="<%= I.fechaAplicacion ? new Date(I.fechaAplicacion).toISOString().slice(0,10) : '' %>" />
+  <% if (I.retroactivo) { %><input type="hidden" name="retroactivo" value="1" /><% } %>
+  <input type="hidden" name="fechaRetroactiva" value="<%= I.fechaRetroactiva ? new Date(I.fechaRetroactiva).toISOString().slice(0,10) : '' %>" />
+  <input type="hidden" name="notas" value="<%= I.notas || '' %>" />
+  <input type="hidden" name="departamentoId" value="<%= F.departamentoId || '' %>" />
+  <input type="hidden" name="puestoId" value="<%= F.puestoId || '' %>" />
+  <input type="hidden" name="tipoPeriodoId" value="<%= F.tipoPeriodoId || '' %>" />
+  <input type="hidden" name="centroCostoId" value="<%= F.centroCostoId || '' %>" />
+  <input type="hidden" name="subsidiariaId" value="<%= F.subsidiariaId || '' %>" />
+  <input type="hidden" name="tipoEmpleado" value="<%= F.tipoEmpleado || '' %>" />
+  <input type="hidden" name="porcentaje" value="<%= R.porcentaje || '' %>" />
+  <input type="hidden" name="presupuestoMensual" value="<%= R.presupuestoMensual || '' %>" />
+  <input type="hidden" name="topePctMasa" value="<%= R.topePctMasa || '' %>" />
+  <input type="hidden" name="tasaIsnPct" value="<%= R.tasaIsn != null ? (R.tasaIsn * 100) : '' %>" />
+  <% if (R.respetarTopeMasa) { %><input type="hidden" name="respetarTopeMasa" value="1" /><% } %>
+  <% if (R.forzarPisoSm !== false) { %><input type="hidden" name="forzarPisoSm" value="1" /><% } %>
+  <% if (R.escalaPrestaciones) { %><input type="hidden" name="escalaPrestaciones" value="1" /><% } %>
+  <% [1,2,3,4,5].forEach(function(n) { %>
+  <input type="hidden" name="matriz_<%= n %>" value="<%= R.matriz && R.matriz[n] != null ? R.matriz[n] : '' %>" />
+  <% }); %>
+  <textarea name="csvEvaluaciones" hidden><%= I.csvEvaluaciones || '' %></textarea>
+  <button type="submit" class="btn btn-primary">Guardar lote y enviar a autorización</button>
+</form>
+<% } %>
+<% } %>
+
+<h2>Lotes recientes</h2>
+<% if (!(lotes || []).length) { %>
+<p class="muted">Aún no hay lotes.</p>
+<% } else { %>
+<table class="data-table">
+  <thead>
+    <tr><th>Fecha</th><th>Nombre</th><th>Modo</th><th>Estatus</th><th>Empleados</th><th>Δ masa</th><th></th></tr>
+  </thead>
+  <tbody>
+    <% lotes.forEach(function(l) { %>
+    <tr>
+      <td><%= l.createdAt ? new Date(l.createdAt).toLocaleString('es-MX') : '—' %></td>
+      <td><%= l.nombre %></td>
+      <td><%= l.modo %></td>
+      <td><%= l.estatus %></td>
+      <td><%= l.totales && l.totales.aplicables %></td>
+      <td class="num">$<%= money(l.totales && l.totales.deltaMasa) %></td>
+      <td><a href="/personal/ajuste-anual/lotes/<%= l._id %>">Ver</a></td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<% } %>
+
+<script>
+(function () {
+  function sync() {
+    var m = document.getElementById('modo');
+    if (!m) return;
+    var v = m.value;
+    document.querySelectorAll('.modo-porcentaje').forEach(function (el) {
+      el.style.display = v === 'porcentaje' ? '' : 'none';
+    });
+    document.querySelectorAll('.modo-presupuesto').forEach(function (el) {
+      el.style.display = v === 'presupuesto' ? '' : 'none';
+    });
+    document.querySelectorAll('.modo-matriz').forEach(function (el) {
+      el.style.display = (v === 'matriz' || v === 'presupuesto') ? '' : 'none';
+    });
+    document.querySelectorAll('.modo-csv').forEach(function (el) {
+      el.style.display = (v === 'carga_empleado' || v === 'matriz' || v === 'presupuesto') ? '' : 'none';
+    });
+    document.querySelectorAll('.ayuda-modo, .ayuda-campo').forEach(function (el) {
+      el.style.display = 'none';
+    });
+    var ayuda = {
+      porcentaje: '.modo-ayuda-porcentaje',
+      presupuesto: '.modo-ayuda-presupuesto',
+      matriz: '.modo-ayuda-matriz',
+      carga_empleado: '.modo-ayuda-carga'
+    }[v];
+    if (ayuda) {
+      document.querySelectorAll(ayuda).forEach(function (el) {
+        el.style.display = '';
+      });
+    }
+  }
+  var modo = document.getElementById('modo');
+  if (modo) { modo.addEventListener('change', sync); sync(); }
+})();
+</script>
+<% } %>
+<%- include('../Partials/layout-bottom') %>

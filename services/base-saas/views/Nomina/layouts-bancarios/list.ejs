@@ -1,0 +1,73 @@
+<%- include('../../Partials/layout-top', { title: 'Layouts bancarios', session }) %>
+<h1>Layouts bancarios</h1>
+<p class="muted">
+  Definiciones declarativas (ancho fijo, delimitado o XML) con <strong>header</strong>, <strong>detalle</strong> y <strong>footer</strong>.
+  El asistente de generación usará estas estructuras; no hace falta tocar el core por banco.
+</p>
+<div class="toolbar">
+  <a class="btn btn-primary" href="/nomina/layouts-bancarios/nuevo">+ Nuevo layout</a>
+  <form method="post" action="/nomina/layouts-bancarios/seed-ejemplo" class="inline-form">
+    <button type="submit" class="btn">Crear ejemplo ancho fijo</button>
+  </form>
+</div>
+<% if (!empresa) { %>
+<p class="warn-text">No hay empresa vinculada.</p>
+<% } else if (!layouts.length) { %>
+<p class="muted">Aún no hay layouts. Crea uno o carga el ejemplo.</p>
+<% } else { %>
+<table>
+  <thead>
+    <tr>
+      <th>Código</th>
+      <th>Nombre</th>
+      <th>Modo</th>
+      <th>Banco</th>
+      <th>Secciones</th>
+      <th>Activo</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <% layouts.forEach(function(l) { %>
+    <tr class="<%= !l.activo ? 'row-muted' : '' %>">
+      <td><code><%= l.codigo %></code></td>
+      <td><%= l.nombre %></td>
+      <td><%= l.modo %></td>
+      <td><%= l.bancoNombre || '—' %></td>
+      <td class="muted small">
+        H:<%= (l.header||[]).length %>
+        · D:<%= (l.detalle||[]).length %>
+        · F:<%= (l.footer||[]).length %>
+      </td>
+      <td><%= l.activo ? 'Sí' : 'No' %></td>
+      <td class="actions">
+        <a href="/nomina/layouts-bancarios/<%= l._id %>/edit">Editar</a>
+        <a href="/nomina/layouts-bancarios/<%= l._id %>/preview" data-preview>Preview</a>
+        <form method="post" action="/nomina/layouts-bancarios/<%= l._id %>/toggle" class="inline-form">
+          <button type="submit"><%= l.activo ? 'Desactivar' : 'Activar' %></button>
+        </form>
+      </td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<% } %>
+<script>
+(function () {
+  document.querySelectorAll('[data-preview]').forEach(function (a) {
+    a.addEventListener('click', function (ev) {
+      ev.preventDefault();
+      fetch(a.getAttribute('href'), { headers: { Accept: 'application/json' } })
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          if (!j.ok) return alert(j.error || 'Error');
+          var w = window.open('', '_blank');
+          w.document.write('<pre style="white-space:pre;font:12px/1.4 monospace"></pre>');
+          w.document.querySelector('pre').textContent = j.contenido || '';
+        })
+        .catch(function (e) { alert(e.message); });
+    });
+  });
+})();
+</script>
+<%- include('../../Partials/layout-bottom') %>

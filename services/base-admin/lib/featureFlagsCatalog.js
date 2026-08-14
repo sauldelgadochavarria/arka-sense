@@ -42,6 +42,12 @@ const FEATURE_FLAG_KEYS = [
     description: 'Administración y cálculo formal de nómina (períodos, conceptos, fiscal).'
   },
   {
+    key: 'gestion_documental',
+    label: 'Gestión documental',
+    description:
+      'Expediente digital por empresa/año/mes/período y por trabajador (CFDI, SUA, impuestos, contratos). Storage local o bucket S3/Linode.'
+  },
+  {
     key: 'integraciones',
     label: 'Integraciones',
     description: 'Exportación a nómina externa, sync ABC y dispositivos biométricos.'

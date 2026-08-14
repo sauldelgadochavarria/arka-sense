@@ -1,13 +1,22 @@
 const getEmpresaModel = require('../models/empresa');
 const { requireEmpresaForTenant } = require('../libs/tenantScope');
 const { trimString, trimUpper } = require('../libs/formHelpers');
+const { ENTIDADES_FEDERATIVAS } = require('../config/empleadoCatalogos');
 
 async function showEmpresa(req, res) {
   const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
   if (error) {
-    return res.render('Configurations/empresa', { empresa: null, session: req.session });
+    return res.render('Configurations/empresa', {
+      empresa: null,
+      entidadesFederativas: ENTIDADES_FEDERATIVAS,
+      session: req.session
+    });
   }
-  res.render('Configurations/empresa', { empresa, session: req.session });
+  res.render('Configurations/empresa', {
+    empresa,
+    entidadesFederativas: ENTIDADES_FEDERATIVAS,
+    session: req.session
+  });
 }
 
 async function updateEmpresa(req, res) {
@@ -24,10 +33,17 @@ async function updateEmpresa(req, res) {
     empresa.rfc = trimUpper(req.body.rfc);
     empresa.domicilioFiscal = trimString(req.body.domicilioFiscal);
     empresa.ciudad = trimString(req.body.ciudad);
-    empresa.estado = trimString(req.body.estado);
+    empresa.estado = trimUpper(req.body.estado);
     empresa.codigoPostal = trimString(req.body.codigoPostal);
     empresa.giro = trimString(req.body.giro);
     empresa.telefono = trimString(req.body.telefono);
+    empresa.registroPatronal = trimUpper(req.body.registroPatronal).replace(/\s+/g, '').slice(0, 11);
+
+    if (!empresa.registroPatronal) {
+      req.flash('error', 'El registro patronal IMSS es obligatorio');
+      return res.redirect('/config-empresa');
+    }
+
     if (req.body.primaRiesgoTrabajo !== undefined && req.body.primaRiesgoTrabajo !== '') {
       const prima = Number(req.body.primaRiesgoTrabajo);
       if (Number.isFinite(prima) && prima >= 0) {

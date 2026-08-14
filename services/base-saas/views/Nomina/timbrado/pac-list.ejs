@@ -1,0 +1,49 @@
+<%- include('../../Partials/layout-top', { title: 'Configuración PAC', session }) %>
+<div class="page-header">
+  <h1>Configuración PAC</h1>
+  <p class="page-subtitle">Proveedor de timbrado CFDI (SW Sapien u otro). Compatible con campos legado <code>pac_*</code>.</p>
+</div>
+<div class="toolbar">
+  <a class="btn" href="/nomina/timbrado">← Timbrado</a>
+  <a class="btn btn-primary" href="/nomina/pac/nuevo">+ Nuevo PAC</a>
+  <form method="post" action="/nomina/pac/seed-ejemplo" class="inline-form">
+    <button type="submit">Crear demo SW</button>
+  </form>
+</div>
+<% if (error) { %><p class="alert"><%= error %></p><% } %>
+<% if (!empresa) { %>
+<p>Sin empresa.</p>
+<% } else if (!rows.length) { %>
+<p class="muted">Aún no hay configuraciones PAC.</p>
+<% } else { %>
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>Código</th><th>Nombre</th><th>Proveedor</th><th>Ambiente</th><th>Formato</th>
+      <th>Layout</th><th>Modo</th><th>Timbrados</th><th>Activo</th><th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <% rows.forEach(function(p) { %>
+    <tr class="<%= !p.activo ? 'row-muted' : '' %>">
+      <td><code><%= p.codigo %></code></td>
+      <td><%= p.nombre %></td>
+      <td><%= p.proveedor %></td>
+      <td><%= p.ambiente === '1' ? 'Producción' : ('Prueba (' + p.ambiente + ')') %></td>
+      <td><%= p.formato %></td>
+      <td><%= p.generarLayout ? 'Sí' : 'No' %></td>
+      <td><%= p.modoReal ? 'Real' : 'Simulación' %></td>
+      <td><%= p.totalTimbrados || 0 %></td>
+      <td><%= p.activo ? 'Sí' : 'No' %></td>
+      <td class="actions">
+        <a href="/nomina/pac/<%= p._id %>/edit">Editar</a>
+        <form method="post" action="/nomina/pac/<%= p._id %>/toggle" class="inline-form">
+          <button type="submit"><%= p.activo ? 'Desactivar' : 'Activar' %></button>
+        </form>
+      </td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<% } %>
+<%- include('../../Partials/layout-bottom') %>

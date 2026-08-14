@@ -21,6 +21,21 @@ const {
   VIGENCIA_CAPA_C,
   MAPEO_CANONICO_CAPA_C
 } = require('../../config/nominaConceptosCapaC');
+const {
+  CONCEPTOS_CAPA_D,
+  FORMULAS_CAPA_D,
+  VIGENCIA_CAPA_D
+} = require('../../config/nominaConceptosCapaD');
+const {
+  CONCEPTOS_CAPA_E,
+  FORMULAS_CAPA_E,
+  VIGENCIA_CAPA_E
+} = require('../../config/nominaConceptosCapaE');
+const {
+  CONCEPTOS_CAPA_F,
+  FORMULAS_CAPA_F,
+  VIGENCIA_CAPA_F
+} = require('../../config/nominaConceptosCapaF');
 
 const MAPEO_CANONICO_COMPLETO = { ...MAPEO_CANONICO_LEGADO, ...MAPEO_CANONICO_CAPA_C };
 const {
@@ -87,6 +102,9 @@ async function ensureNominaConceptsForTenant(tenantId, empresaId) {
   await syncFormulasFiscalesV2(tenantId);
   await ensureCapaBConceptosForTenant(tenantId, empresaId);
   await ensureCapaCConceptosForTenant(tenantId, empresaId);
+  await ensureCapaDConceptosForTenant(tenantId, empresaId);
+  await ensureCapaEConceptosForTenant(tenantId, empresaId);
+  await ensureCapaFConceptosForTenant(tenantId, empresaId);
   await recalcularDependientes(tenantId);
 }
 
@@ -334,6 +352,357 @@ async function syncFormulasCapaC(tenantId) {
       tipoPeriodo: f.tipoPeriodo,
       tipoNomina: f.tipoNomina,
       vigenciaDesde: VIGENCIA_CAPA_C,
+      vigenciaHasta: null,
+      condicion: f.condicion || '',
+      formula: f.formula,
+      dependencias: f.dependencias || [],
+      activo: true
+    });
+  }
+}
+
+/** Conceptos y fórmulas Capa D (INFONAVIT + FONACOT) */
+async function ensureCapaDConceptosForTenant(tenantId, empresaId) {
+  const ConceptoNomina = await getConceptoNominaModel();
+
+  for (const c of CONCEPTOS_CAPA_D) {
+    const fiscal = c.fiscal || null;
+    await ConceptoNomina.updateOne(
+      { tenantId, codigo: c.codigo },
+      {
+        $set: {
+          nombre: c.nombre,
+          tipo: c.tipo,
+          naturaleza: c.naturaleza,
+          ordenCalculo: c.ordenCalculo,
+          sat: c.sat || {},
+          ...(fiscal ? { fiscal } : {}),
+          metadata: c.metadata || {},
+          aplicaTipoNomina: c.aplicaTipoNomina || [],
+          activo: true,
+          updatedAt: new Date()
+        },
+        $setOnInsert: {
+          tenantId,
+          empresaId,
+          codigo: c.codigo,
+          createdAt: new Date()
+        }
+      },
+      { upsert: true }
+    );
+  }
+
+  await syncFormulasCapaD(tenantId);
+}
+
+async function syncFormulasCapaD(tenantId) {
+  const FormulaConcepto = await getFormulaConceptoModel();
+
+  for (const f of FORMULAS_CAPA_D) {
+    const vigente = await FormulaConcepto.findOne({
+      tenantId,
+      conceptoCodigo: f.conceptoCodigo,
+      tipoPeriodo: f.tipoPeriodo,
+      tipoNomina: f.tipoNomina,
+      vigenciaHasta: null,
+      activo: true
+    }).lean();
+
+    if (vigente && vigente.formula === f.formula && vigente.condicion === (f.condicion || '')) {
+      continue;
+    }
+
+    const mismaEra =
+      vigente && new Date(vigente.vigenciaDesde).getTime() === VIGENCIA_CAPA_D.getTime();
+
+    if (vigente && mismaEra) {
+      await FormulaConcepto.updateOne(
+        { _id: vigente._id },
+        {
+          $set: {
+            formula: f.formula,
+            condicion: f.condicion || '',
+            dependencias: f.dependencias || [],
+            vigenciaHasta: null,
+            activo: true
+          }
+        }
+      );
+      continue;
+    }
+
+    if (vigente) {
+      await FormulaConcepto.updateOne(
+        { _id: vigente._id },
+        { $set: { vigenciaHasta: new Date(VIGENCIA_CAPA_D.getTime() - 1) } }
+      );
+    }
+
+    const yaCapaD = await FormulaConcepto.findOne({
+      tenantId,
+      conceptoCodigo: f.conceptoCodigo,
+      tipoPeriodo: f.tipoPeriodo,
+      tipoNomina: f.tipoNomina,
+      vigenciaDesde: VIGENCIA_CAPA_D
+    }).lean();
+
+    if (yaCapaD) {
+      await FormulaConcepto.updateOne(
+        { _id: yaCapaD._id },
+        {
+          $set: {
+            formula: f.formula,
+            condicion: f.condicion || '',
+            dependencias: f.dependencias || [],
+            vigenciaHasta: null,
+            activo: true
+          }
+        }
+      );
+      continue;
+    }
+
+    await FormulaConcepto.create({
+      tenantId,
+      conceptoCodigo: f.conceptoCodigo,
+      tipoPeriodo: f.tipoPeriodo,
+      tipoNomina: f.tipoNomina,
+      vigenciaDesde: VIGENCIA_CAPA_D,
+      vigenciaHasta: null,
+      condicion: f.condicion || '',
+      formula: f.formula,
+      dependencias: f.dependencias || [],
+      activo: true
+    });
+  }
+}
+
+/** Conceptos y fórmulas Capa E (cuota sindical / voluntarias) */
+async function ensureCapaEConceptosForTenant(tenantId, empresaId) {
+  const ConceptoNomina = await getConceptoNominaModel();
+
+  for (const c of CONCEPTOS_CAPA_E) {
+    const fiscal = c.fiscal || null;
+    await ConceptoNomina.updateOne(
+      { tenantId, codigo: c.codigo },
+      {
+        $set: {
+          nombre: c.nombre,
+          tipo: c.tipo,
+          naturaleza: c.naturaleza,
+          ordenCalculo: c.ordenCalculo,
+          sat: c.sat || {},
+          ...(fiscal ? { fiscal } : {}),
+          metadata: c.metadata || {},
+          aplicaTipoNomina: c.aplicaTipoNomina || [],
+          activo: true,
+          updatedAt: new Date()
+        },
+        $setOnInsert: {
+          tenantId,
+          empresaId,
+          codigo: c.codigo,
+          createdAt: new Date()
+        }
+      },
+      { upsert: true }
+    );
+  }
+
+  await syncFormulasCapaE(tenantId);
+}
+
+async function syncFormulasCapaE(tenantId) {
+  const FormulaConcepto = await getFormulaConceptoModel();
+
+  for (const f of FORMULAS_CAPA_E) {
+    const vigente = await FormulaConcepto.findOne({
+      tenantId,
+      conceptoCodigo: f.conceptoCodigo,
+      tipoPeriodo: f.tipoPeriodo,
+      tipoNomina: f.tipoNomina,
+      vigenciaHasta: null,
+      activo: true
+    }).lean();
+
+    if (vigente && vigente.formula === f.formula && vigente.condicion === (f.condicion || '')) {
+      continue;
+    }
+
+    const mismaEra =
+      vigente && new Date(vigente.vigenciaDesde).getTime() === VIGENCIA_CAPA_E.getTime();
+
+    if (vigente && mismaEra) {
+      await FormulaConcepto.updateOne(
+        { _id: vigente._id },
+        {
+          $set: {
+            formula: f.formula,
+            condicion: f.condicion || '',
+            dependencias: f.dependencias || [],
+            vigenciaHasta: null,
+            activo: true
+          }
+        }
+      );
+      continue;
+    }
+
+    if (vigente) {
+      await FormulaConcepto.updateOne(
+        { _id: vigente._id },
+        { $set: { vigenciaHasta: new Date(VIGENCIA_CAPA_E.getTime() - 1) } }
+      );
+    }
+
+    const yaCapaE = await FormulaConcepto.findOne({
+      tenantId,
+      conceptoCodigo: f.conceptoCodigo,
+      tipoPeriodo: f.tipoPeriodo,
+      tipoNomina: f.tipoNomina,
+      vigenciaDesde: VIGENCIA_CAPA_E
+    }).lean();
+
+    if (yaCapaE) {
+      await FormulaConcepto.updateOne(
+        { _id: yaCapaE._id },
+        {
+          $set: {
+            formula: f.formula,
+            condicion: f.condicion || '',
+            dependencias: f.dependencias || [],
+            vigenciaHasta: null,
+            activo: true
+          }
+        }
+      );
+      continue;
+    }
+
+    await FormulaConcepto.create({
+      tenantId,
+      conceptoCodigo: f.conceptoCodigo,
+      tipoPeriodo: f.tipoPeriodo,
+      tipoNomina: f.tipoNomina,
+      vigenciaDesde: VIGENCIA_CAPA_E,
+      vigenciaHasta: null,
+      condicion: f.condicion || '',
+      formula: f.formula,
+      dependencias: f.dependencias || [],
+      activo: true
+    });
+  }
+}
+
+/** Conceptos y fórmulas Capa F (desglose IMSS CFDI: 001 SS + 003 RCV) */
+async function ensureCapaFConceptosForTenant(tenantId, empresaId) {
+  const ConceptoNomina = await getConceptoNominaModel();
+
+  for (const c of CONCEPTOS_CAPA_F) {
+    const fiscal = c.fiscal || null;
+    await ConceptoNomina.updateOne(
+      { tenantId, codigo: c.codigo },
+      {
+        $set: {
+          nombre: c.nombre,
+          tipo: c.tipo,
+          naturaleza: c.naturaleza,
+          ordenCalculo: c.ordenCalculo,
+          sat: c.sat || {},
+          ...(fiscal ? { fiscal } : {}),
+          metadata: c.metadata || {},
+          aplicaTipoNomina: c.aplicaTipoNomina || [],
+          activo: true,
+          updatedAt: new Date()
+        },
+        $setOnInsert: {
+          tenantId,
+          empresaId,
+          codigo: c.codigo,
+          createdAt: new Date()
+        }
+      },
+      { upsert: true }
+    );
+  }
+
+  await syncFormulasCapaF(tenantId);
+}
+
+async function syncFormulasCapaF(tenantId) {
+  const FormulaConcepto = await getFormulaConceptoModel();
+
+  for (const f of FORMULAS_CAPA_F) {
+    const vigente = await FormulaConcepto.findOne({
+      tenantId,
+      conceptoCodigo: f.conceptoCodigo,
+      tipoPeriodo: f.tipoPeriodo,
+      tipoNomina: f.tipoNomina,
+      vigenciaHasta: null,
+      activo: true
+    }).lean();
+
+    if (vigente && vigente.formula === f.formula && vigente.condicion === (f.condicion || '')) {
+      continue;
+    }
+
+    const mismaEra =
+      vigente && new Date(vigente.vigenciaDesde).getTime() === VIGENCIA_CAPA_F.getTime();
+
+    if (vigente && mismaEra) {
+      await FormulaConcepto.updateOne(
+        { _id: vigente._id },
+        {
+          $set: {
+            formula: f.formula,
+            condicion: f.condicion || '',
+            dependencias: f.dependencias || [],
+            vigenciaHasta: null,
+            activo: true
+          }
+        }
+      );
+      continue;
+    }
+
+    if (vigente) {
+      await FormulaConcepto.updateOne(
+        { _id: vigente._id },
+        { $set: { vigenciaHasta: new Date(VIGENCIA_CAPA_F.getTime() - 1) } }
+      );
+    }
+
+    const yaCapaF = await FormulaConcepto.findOne({
+      tenantId,
+      conceptoCodigo: f.conceptoCodigo,
+      tipoPeriodo: f.tipoPeriodo,
+      tipoNomina: f.tipoNomina,
+      vigenciaDesde: VIGENCIA_CAPA_F
+    }).lean();
+
+    if (yaCapaF) {
+      await FormulaConcepto.updateOne(
+        { _id: yaCapaF._id },
+        {
+          $set: {
+            formula: f.formula,
+            condicion: f.condicion || '',
+            dependencias: f.dependencias || [],
+            vigenciaHasta: null,
+            activo: true
+          }
+        }
+      );
+      continue;
+    }
+
+    await FormulaConcepto.create({
+      tenantId,
+      conceptoCodigo: f.conceptoCodigo,
+      tipoPeriodo: f.tipoPeriodo,
+      tipoNomina: f.tipoNomina,
+      vigenciaDesde: VIGENCIA_CAPA_F,
       vigenciaHasta: null,
       condicion: f.condicion || '',
       formula: f.formula,
@@ -981,9 +1350,15 @@ module.exports = {
   ensureNominaConceptsForTenant,
   ensureCapaBConceptosForTenant,
   ensureCapaCConceptosForTenant,
+  ensureCapaDConceptosForTenant,
+  ensureCapaEConceptosForTenant,
+  ensureCapaFConceptosForTenant,
   syncFormulasFiscalesV2,
   syncFormulasCapaB,
   syncFormulasCapaC,
+  syncFormulasCapaD,
+  syncFormulasCapaE,
+  syncFormulasCapaF,
   importarConceptosLegadoCapaA,
   vincularCanonicoEnLegado,
   recalcularDependientes,

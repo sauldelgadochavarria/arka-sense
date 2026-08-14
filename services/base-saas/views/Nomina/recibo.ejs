@@ -33,6 +33,12 @@
 <div class="toolbar no-print">
   <a class="btn" href="/nomina/periodos/<%= periodo._id %>">← Volver al período</a>
   <button type="button" class="btn" id="btn-imprimir-recibo">Imprimir recibo</button>
+  <% if (typeof desdeHistorico !== 'undefined' && desdeHistorico) { %>
+  <span class="badge badge-baja">Histórico</span>
+  <% } %>
+  <% if (recibo.layoutBancario && recibo.layoutBancario.estatus === 'generado') { %>
+  <span class="badge badge-activo" title="<%= recibo.layoutBancario.layoutCodigo || '' %>">Layout generado</span>
+  <% } %>
 </div>
 
 <article class="pre-recibo" id="recibo-print-root">

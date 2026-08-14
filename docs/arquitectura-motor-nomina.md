@@ -145,7 +145,197 @@ Alias planos: `sueldoDiario`, `diasLaborados`, `faltas`, …
 
 ---
 
-## 6. Enums en BD (`system_enums`)
+## 6. Cierre de período (mover)
+
+Al cerrar un período `calculado`:
+
+1. **Copiar** cada recibo + conceptos a `nomina_historico_recibos` (1 doc/empleado, conceptos embebidos).
+2. **Actualizar** `nomina_acumulados` (anual / `porMes`).
+3. **Borrar** recibos y conceptos aplicados del temporal.
+
+El temporal solo guarda períodos vivos (`abierto` / `calculado`). Consultas de cerrados leen histórico.
+
+**Llaves de alcance:** `tenantId` + `empresaId` + `subsidiariaId` (denormalizada del empleado).  
+Unique de cierre: `(tenantId, empresaId, periodoId, empleadoId)`.
+
+---
+
+## 7. Reportes de nómina
+
+UI: **Nómina → Reportes** (`/nomina/reportes`).
+
+| Vista | Contenido |
+|-------|-----------|
+| Totales | Por empleado: percepciones, deducciones, gravado, exento, IMSS, otros descuentos, neto |
+| Detalle | Conceptos en columnas (sueldo, fondo, HE, ISR, IMSS…) + neto |
+| Resumen | Agrupa por departamento, centro de costo o ambos |
+
+Filtros: período (obligatorio), departamento, centro de costo.  
+Fuente automática: temporal si el período no está cerrado; histórico si `estatus = cerrado`.  
+Export CSV. Empleado lleva `centroCostoId`; al cerrar se guarda depto/CC en el snapshot del histórico.
+
+Servicio: `nominaReportesService`.
+
+---
+
+## 8. Timbrado CFDI / PAC / recibo PDF
+
+Menú **Nómina → Timbrado**:
+
+| Pieza | Ruta | Colección |
+|-------|------|-----------|
+| Config PAC | `/nomina/pac` | `pac_configs` |
+| Recibos PDF | `/nomina/recibos-pdf` | `recibo_pdf_plantillas` |
+| Proceso timbrado | `/nomina/timbrado` | `timbrado_lotes` |
+| Archivos CFDI (XML/PDF) | `/nomina/timbrado/archivos/:id/descargar` | `nomina_cfdi_archivos` |
+| Envío de correo | `/nomina/envio-correo` | `correo` en período + histórico |
+| Config. correo | `/nomina/correo` | `correo_configs` (varios perfiles; uno default) |
+
+**PAC:** campos legado (`pac_activo`, URLs SW, formato JSON/XML, `pac_layout`, templates, RFC test, etc.). `modoReal=false` simula UUID sin llamar al proveedor.
+
+**PDF:** plantillas HTML con `{{variables}}` y bloque `{{#conceptos}}`. Resolución: tipo período + RFC → tipo → RFC → default. Preview imprimible (Guardar como PDF del navegador).
+
+**Almacenamiento CFDI:** el XML y el PDF/HTML **no** van embebidos en `nomina_historico_recibos`. Viven en `nomina_cfdi_archivos` (BinData + sha256/tamaño). El recibo/histórico solo guarda metadatos (`uuid`, `archivoXmlId`, `archivoPdfId`, nombres). Así los listados del histórico no cargan blobs; la descarga es puntual. Al cerrar el período se enlaza `historicoId` en esos archivos.
+
+**Proceso:** período calculado/cerrado → lote → marca `timbrado` en recibo/histórico + upsert de archivos. Payload CFDI completo hacia SW = siguiente fase (`pacClientService` ya autentica/timbra en modo real).
+
+**Envío de correo:** solo período **cerrado** + recibo **timbrado**. Adjunta XML/PDF desde `nomina_cfdi_archivos` al `email` o `emailPersonal` del empleado. Marca `correo.estatus=enviado` en cada histórico y el resumen en el período. Reenvío de un período ya enviado pregunta **solo pendientes** vs **todos** (confirmación).
+
+**Perfiles de correo** (`/nomina/correo`): varios por empresa (simulación, SMTP genérico, Gmail, Microsoft 365, SendGrid, Mailgun, Amazon SES). Uno es **predeterminado** (From, SMTP, seguridad). El envío puede elegir otro perfil. Fallback: `SMTP_HOST` en el entorno; si no hay nada, simulación.
+
+---
+
+## 9. Créditos FONACOT / INFONAVIT
+
+Configuración en el empleado (`nominaConfig`):
+
+| Campo | Uso |
+|-------|-----|
+| `tipoCreditoFonacot` | `monto_fijo` \| `porcentaje` |
+| `fonacotMonto` | Importe del período (cédula) |
+| `fonacotPorcentaje` | 10 / 15 / 20 sobre bruto |
+| `fonacotDescuento` | Override fijo (anula cálculo) |
+
+Motor (`nominaEmpleadoInsumos`):
+- Base = `sueldoIntegrado` o `sueldoDiario × días`
+- Tope legal FONACOT: **10%** si SM; hasta **20%** si superior
+- Prelación: INFONAVIT primero; FONACOT con remanente del **30%** del salario nominal
+- Conceptos capa D: `INFONAVIT` (SAT 010), `FONACOT` (SAT 011); fórmulas `infonavitDescuento` / `fonacotDescuento`
+
+### Desglose IMSS CFDI (capa F)
+
+El catálogo SAT `c_TipoDeduccion` separa la cuota obrera:
+
+| Concepto | SAT | Contenido |
+|----------|-----|-----------|
+| `IMSS_OBRERO` | **001** Seguridad social | EM, IV y demás ramos **sin** CEAV |
+| `IMSS_RCV` | **003** Retiro / cesantía / vejez | Solo CEAV (RCV) obrero |
+
+Funciones de fórmula: `imssObreroSs(...)` y `imssObreroRcv(...)` (la antigua `imssObrero` sigue siendo el total SS+RCV).  
+`DEDUCCIONES_TOTALES` suma ambos; la cuota sindical sobre neto fiscal resta ambos.
+
+### Cuota sindical (capa E) y políticas por concepto
+
+Concepto `CUOTA_SINDICAL` (SAT **019** Cuotas sindicales), `ordenCalculo: 70`.
+
+**Lista CCT** en empresa (`nominaDescuentos.items[]`):
+
+| Campo | Significado |
+|-------|-------------|
+| `conceptoCodigo` | Deducción (ej. `CUOTA_SINDICAL`, otra voluntaria) |
+| `enTope30` | Si consume el 30% con INF/FON |
+| `base` | `bruto` \| `neto_fiscal` |
+| `ordenPrelacion` | Prioridad dentro del tope (menor = primero) |
+| `activo` | Incluir en política |
+
+UI: **Nómina → Configuraciones → Configuración fiscal** (tabla editable).  
+Override empleado (sindical): `si` / `no` / según empresa.
+
+### Registro electrónico de jornada (corto plazo / Art. 132 XXXIV)
+
+Preparación operativa (no sustituye aún las reglas STPS 2027):
+
+| Pieza | Qué hace |
+|-------|----------|
+| `asistencia_auditoria` | Bitácora append-only (crear / ajustar / anular / consultar) |
+| Marcaciones | `timestampOriginal`, `estado` activa\|anulada; **sin borrado físico** |
+| Ajuste / anular | Requiere motivo; recalcula `daily_attendance` |
+| `/asistencia-registro-jornada` | Inicio/fin, comida, efectivo, HE y acumulado semanal |
+
+Menú: **Asistencia → Registro de jornada**.
+
+### Exportación SUA (IMSS / INFONAVIT)
+
+Pantalla **Nómina → Exportación SUA** (`/nomina/sua`). Layouts **oficiales de ancho fijo** (no CSV ni pipes):
+
+| Archivo | Longitud | Uso |
+|---------|----------|-----|
+| `ASEG.TXT` | 164 | Alta / directorio de trabajadores |
+| `MOVT.TXT` | 49 | 02 Baja · 07 Mod. salario · 08 Reingreso · 11 Ausentismo · 12 Incapacidad |
+| `CRED.TXT` | 52 | Créditos INFONAVIT (15–20) |
+
+El **alta** va solo en `ASEG.TXT` (opción directorio o altas del período desde historial `ALTA`).  
+`MOVT` mapea historial: `BAJA`→02, `REAJUSTE`→07, `REINGRESO`→08.  
+`CRED` requiere `nominaConfig.infonavitNumeroCredito` en el empleado.
+
+**Validaciones:** registro patronal obligatorio (empleado o empresa en `/config-empresa`); entidad federativa del domicilio obligatoria (ISN estatal).
+
+Descarga ANSI (`latin1`) + CRLF. Reglas: MAYÚSCULAS, Ñ→/, SDI sin punto, nombre `AP$AM$NOMBRES`.
+
+### Confronta Nómina–SUA–IDSE
+
+Pantalla **Nómina → Confronta Nómina–SUA–IDSE** (`/nomina/confronta`):
+
+1. Toma SBC teórico de nómina (SDI topado del empleado, o `BASE_IMSS ÷ días`).
+2. Importa CSV de IDSE (EMA/EBA) y de SUA (`nss,sbc`).
+3. Calcula diferencias vs tolerancia (default $5), semáforo, prioridad y “movimiento pendiente”.
+4. Incluye checklist operativo y calendario de obligaciones LSS.
+5. Exporta CSV tipo plantilla de confronta.
+
+Es **control interno** (sin plazo legal); se recomienda por periodo, antes de pagar SUA y anual (Dictamen).
+
+### Ajuste anual de sueldos
+
+Pantalla **Personal → Ajuste anual de sueldos** (`/personal/ajuste-anual`). Colección `ajuste_anual_lotes`.
+
+1. **Población:** departamento, tipo de período de pago, tipo de empleado, puesto, centro de costo, subsidiaria.
+2. **Modos:** % uniforme · presupuesto mensual a distribuir · matriz desempeño (1–5) · CSV por empleado (`desempeno`, `compaRatio`, % o SD nuevo).
+3. **Reglas MX:** piso CONASAMI (`SALARIO_MINIMO`); SBC = min(SDI, 25×UMA); proyección de cargas IMSS + INFONAVIT 5% + ISN (tasa capturada).
+4. **Prestaciones:** fondo/despensa en % siguen el sueldo; opción de escalar vales fijos y `sueldoIntegrado`.
+5. **Retroactivo:** no reabre períodos cerrados; hay que recalcular ISR de períodos **abiertos** afectados.
+6. **Autorización:** Líder de equipo → RRHH → Finanzas (**sin Director TI**). Admin puede autorizar todas.
+7. **Aplicar:** actualiza `salarioDiario` + `sdi`, movimiento `REAJUSTE` en historial laboral.
+
+---
+
+## 10. Layouts bancarios (configuración)
+
+Colección `layouts_bancarios`. Definición declarativa sin tocar el core:
+
+| Sección | Contexto | Uso |
+|---------|----------|-----|
+| `header` | `lote.*`, `periodo.*`, `empresa.*`, `fecha.*` | Totales / conteo (1 vez) |
+| `detalle` | `empleado.*`, `recibo.*`, `periodo.*`, `fecha.*` | 1 línea por recibo |
+| `footer` | `lote.*`, `fecha.*`… | Control / totales (1 vez) |
+
+**Fechas dinámicas**
+
+| Path | Significado |
+|------|-------------|
+| `fecha.hoy` | Día del sistema al generar |
+| `fecha.hoyMas` | Hoy + N (`diasOffset` en el campo; también `fecha.hoy_mas_3`) |
+| `lote.fechaPago` | Fecha capturada en el asistente de generación |
+| `lote.fechaGeneracion` | Momento de generación del archivo |
+
+Modos: `ancho_fijo` | `delimitado` | `xml`.  
+UI: **Nómina → Configuraciones → Layouts bancarios**.  
+Generación: **Nómina → Cálculo → Pago-dispersión** (`/nomina/dispersion-bancaria`).  
+Al generar: descarga el archivo y marca `layoutBancario.estatus = generado` en el **período** y en cada **recibo/histórico**.  
+Motor: `layoutBancarioService` + `dispersionBancariaService`.
+
+---
+
+## 11. Enums en BD (`system_enums`)
 
 Mínimo de enums en código; los valores viven en Mongo y se editan en  
 **Configuración → Enums del sistema** (`/config-sistema/enums`).
@@ -154,7 +344,24 @@ Grupos iniciales: `tipo_concepto`, `naturaleza_concepto`, `fase_calculo`, `tipo_
 
 ---
 
-## 7. Checklist
+## 12. Gestión documental
+
+Feature flag admin: `gestion_documental`.
+
+Árbol lógico: `{empresa}/{año}/{mes}/{período|SUA|Impuestos|INFONAVIT}/…` y `{empresa}/Trabajadores/{num nombre}/…`.
+
+Storage (config por empresa):
+
+- **local** — carpeta (`/data/documentos` en Docker, volumen `base_saas_documentos`)
+- **s3** — bucket S3-compatible (Linode Object Storage recomendado por costo)
+
+Índice en Mongo (`documentos_archivo`); binarios fuera de la BD.  
+UI: **tablero de cumplimiento** (semaforo nómina/SUA/ISR/ISN/INFONAVIT + expedientes), expediente, subir, reporte de cobertura, reindexar.  
+Versiones al reemplazar; vigencia en docs de trabajador (INE, contrato, domicilio).
+
+---
+
+## 13. Checklist
 
 - [x] Documento de arquitectura  
 - [x] `concept_catalog` + `company_concept_config`  
@@ -163,6 +370,20 @@ Grupos iniciales: `tipo_concepto`, `naturaleza_concepto`, `fase_calculo`, `tipo_
 - [x] Enums en BD + UI config  
 - [x] Contexto namespaced + alias  
 - [x] Editor UI: fase + FIJO/EVENTUAL  
-- [ ] Plantillas por industria  
-- [ ] Acumuladores 100% en código (fase 2)  
-- [ ] Timbrado CFDI  
+- [x] Cierre = mover (histórico + borrar temporal)  
+- [x] Layouts bancarios (definición header/detalle/footer)  
+- [x] Asistente generación archivo bancario + estatus en período/recibos  
+- [x] Reportes de nómina (totales / detalle / resumen)  
+- [x] Config PAC + plantillas recibo PDF + proceso timbrado (simulación; payload CFDI real pendiente)  
+- [x] FONACOT + INFONAVIT (capa D, tope 30%, prelación)  
+- [x] Cuota sindical (capa E, tope 30% parametrizable por CCT)  
+- [x] Desglose IMSS CFDI (capa F: SAT 001 + 003; sindical 019)  
+- [x] Registro electrónico de jornada (corto plazo: auditoría, anular/ajustar, reporte)  
+- [x] Exportación SUA (`ASEG.TXT` / `MOVT.TXT` / `CRED.TXT`, guía oficial)  
+- [x] Confronta Nómina–SUA–IDSE (SBC, semáforo, checklist, calendario)  
+- [x] Ajuste anual de sueldos (preview, SM/25 UMA, autorización Líder→RRHH→Finanzas)  
+- [x] Envío de recibos por correo (período/recibo marcados, reenvío con confirmación)
+- [x] Gestión documental (feature `gestion_documental`: expediente año/mes/período + trabajadores; storage local o Linode/S3; reporte cobertura; reindex)
+- [ ] Plantillas por industria
+- [ ] Timbrado CFDI payload completo + cancelación  
+- [ ] REJL fase 2 (móvil/GPS, biometría, export STPS, calendario 40 h)  

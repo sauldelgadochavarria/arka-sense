@@ -1,0 +1,239 @@
+<%- include('../Partials/layout-top', { title: 'Confronta Nómina–SUA–IDSE', session }) %>
+<%
+  function labelPeriodoOpt(p) {
+    const tipo = p.tipoPeriodo || '';
+    const num = p.numeroPeriodo != null ? '#' + p.numeroPeriodo : '';
+    const anio = p.anio || '';
+    const est = p.estatus || '';
+    return (tipo + ' ' + num + ' ' + anio + ' (' + est + ')').trim();
+  }
+%>
+<div class="page-header">
+  <h1>Confronta Nómina – SUA – IDSE</h1>
+  <p class="page-subtitle">
+    Cruce interno de SBC: lo pagado en nómina vs padrón IDSE vs base local SUA.
+    Sin plazo legal — control para evitar capital constitutivo y observaciones en Dictamen.
+  </p>
+</div>
+
+<% if (error) { %><p class="alert"><%= error %></p><% } %>
+<% if (!empresa) { %>
+<p>No hay empresa vinculada a este tenant.</p>
+<% } else { %>
+
+<div class="toolbar">
+  <a class="btn" href="/nomina">← Nómina</a>
+  <a class="btn <%= tab === 'confronta' ? 'btn-primary' : '' %>" href="/nomina/confronta?tab=confronta">Confronta</a>
+  <a class="btn <%= tab === 'checklist' ? 'btn-primary' : '' %>" href="/nomina/confronta?tab=checklist">Checklist</a>
+  <a class="btn <%= tab === 'calendario' ? 'btn-primary' : '' %>" href="/nomina/confronta?tab=calendario">Calendario</a>
+  <a class="btn" href="/nomina/sua">Exportación SUA</a>
+</div>
+
+<% if (tab === 'checklist') { %>
+<section class="panel">
+  <h2 class="panel-title">Checklist operativo</h2>
+  <% checklist.forEach(function(block) { %>
+  <h3><%= block.frecuencia %></h3>
+  <ul>
+    <% block.items.forEach(function(it) { %>
+    <li><%= it %></li>
+    <% }); %>
+  </ul>
+  <% }); %>
+</section>
+
+<% } else if (tab === 'calendario') { %>
+<section class="panel">
+  <h2 class="panel-title">Calendario de obligaciones (referencia)</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Obligación</th>
+        <th>Frecuencia</th>
+        <th>Vencimiento</th>
+        <th>Notas</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% calendario.forEach(function(c) { %>
+      <tr>
+        <td><strong><%= c.obligacion %></strong></td>
+        <td><%= c.frecuencia %></td>
+        <td><%= c.vencimiento %></td>
+        <td class="muted"><%= c.notas %></td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table>
+</section>
+
+<% } else { %>
+
+<form method="post" action="/nomina/confronta" class="filter-form" id="form-confronta">
+  <input type="hidden" name="accion" value="correr" />
+
+  <div class="form-grid">
+    <label>Período de nómina
+      <select name="periodoId" required>
+        <option value="">— Selecciona —</option>
+        <% periodos.forEach(function(p) { %>
+        <option value="<%= p._id %>" <%= filters.periodoId && String(filters.periodoId) === String(p._id) ? 'selected' : '' %>>
+          <%= labelPeriodoOpt(p) %>
+        </option>
+        <% }); %>
+      </select>
+    </label>
+
+    <label>Tolerancia ($ pesos)
+      <input type="number" name="tolerancia" min="0" step="0.01" value="<%= filters.tolerancia %>" />
+    </label>
+
+    <label>SBC nómina (fuente)
+      <select name="fuenteNomina">
+        <option value="diario" <%= filters.fuenteNomina !== 'base' ? 'selected' : '' %>>SDI topado del empleado (diario)</option>
+        <option value="base" <%= filters.fuenteNomina === 'base' ? 'selected' : '' %>>BASE_IMSS ÷ días cotización</option>
+      </select>
+    </label>
+  </div>
+
+  <div class="form-grid" style="margin-top:1rem">
+    <label>CSV IDSE (EMA/EBA) — columnas <code>nss,sbc</code>
+      <input type="file" id="file-idse" accept=".csv,.txt,text/csv,text/plain" />
+      <textarea name="csvIdse" id="csv-idse" rows="6" placeholder="nss,sbc&#10;12345678901,622.10"><%= filters.csvIdse || '' %></textarea>
+    </label>
+    <label>CSV SUA (SBC usado en cálculo) — columnas <code>nss,sbc</code>
+      <input type="file" id="file-sua" accept=".csv,.txt,text/csv,text/plain" />
+      <textarea name="csvSua" id="csv-sua" rows="6" placeholder="nss,sbc&#10;12345678901,622.10"><%= filters.csvSua || '' %></textarea>
+    </label>
+  </div>
+
+  <p class="muted small">
+    Pega o carga el padrón/EMA/EBA exportado (IDSE) y el SBC de la cédula SUA.
+    Separador <code>,</code> o <code>|</code>. Opcional: <code>rfc</code>, <code>nombre</code>, <code>registro_patronal</code>.
+  </p>
+
+  <button type="submit" class="btn btn-primary">Ejecutar confronta</button>
+</form>
+
+<script>
+(function () {
+  function bind(fileId, taId) {
+    var f = document.getElementById(fileId);
+    var ta = document.getElementById(taId);
+    if (!f || !ta) return;
+    f.addEventListener('change', function () {
+      var file = f.files && f.files[0];
+      if (!file) return;
+      var reader = new FileReader();
+      reader.onload = function () { ta.value = reader.result || ''; };
+      reader.readAsText(file);
+    });
+  }
+  bind('file-idse', 'csv-idse');
+  bind('file-sua', 'csv-sua');
+})();
+</script>
+
+<% if (result) { %>
+<section class="panel" style="margin-top:1.5rem">
+  <h2 class="panel-title">Resultado — <%= result.periodoLabel %></h2>
+  <p>
+    Tolerancia: <strong>$<%= money(result.tolerancia) %></strong> ·
+    Tope 25 UMA: <strong>$<%= money(result.topeSbc) %></strong>/día ·
+    Fuente nómina: <code><%= result.fuenteNomina %></code>
+    <% if (result.desdeHistorico) { %> · <span class="muted">desde histórico</span><% } %>
+  </p>
+  <div class="toolbar">
+    <div class="stat-card ok"><strong><%= result.resumen.ok %></strong><span>OK</span></div>
+    <div class="stat-card warn"><strong><%= result.resumen.revisar %></strong><span>Revisar</span></div>
+    <div class="stat-card bad"><strong><%= result.resumen.alta %></strong><span>Prioridad alta</span></div>
+    <div class="stat-card"><strong><%= result.resumen.movimientoPendiente %></strong><span>Mov. pendiente</span></div>
+    <a class="btn btn-primary" href="/nomina/confronta/export">Exportar CSV</a>
+  </div>
+
+  <% if ((result.parseErrors.idse && result.parseErrors.idse.length) || (result.parseErrors.sua && result.parseErrors.sua.length)) { %>
+  <p class="alert">
+    Import IDSE: <%= result.importCounts.idse %> filas
+    <% if (result.parseErrors.idse.length) { %> (<%= result.parseErrors.idse.slice(0,3).join(' · ') %>)<% } %>
+    · SUA: <%= result.importCounts.sua %> filas
+    <% if (result.parseErrors.sua.length) { %> (<%= result.parseErrors.sua.slice(0,3).join(' · ') %>)<% } %>
+  </p>
+  <% } else { %>
+  <p class="muted small">Importados IDSE: <%= result.importCounts.idse %> · SUA: <%= result.importCounts.sua %></p>
+  <% } %>
+
+  <table>
+    <thead>
+      <tr>
+        <th>No.</th>
+        <th>RP</th>
+        <th>NSS</th>
+        <th>Trabajador</th>
+        <th>Tipo</th>
+        <th class="num">SBC Nómina</th>
+        <th class="num">SBC IDSE</th>
+        <th class="num">SBC SUA</th>
+        <th class="num">Dif N–I</th>
+        <th class="num">Dif I–S</th>
+        <th class="num">Dif N–S</th>
+        <th class="num">% vs IDSE</th>
+        <th>Semáforo</th>
+        <th>Prioridad</th>
+        <th>¿Mov. pend.?</th>
+        <th>Observaciones</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% if (!result.filas.length) { %>
+      <tr><td colspan="16" class="muted">Sin recibos en el período.</td></tr>
+      <% } %>
+      <% result.filas.forEach(function(f) {
+           const rowClass = f.semaforo === 'Revisar' ? 'row-warn' : '';
+      %>
+      <tr class="<%= rowClass %>">
+        <td><%= f.no %></td>
+        <td><code><%= f.registroPatronal || '—' %></code></td>
+        <td><code><%= f.nss %></code></td>
+        <td><%= f.trabajador %><br/><span class="muted small"><%= f.rfc %></span></td>
+        <td><%= f.tipoSalario %></td>
+        <td class="num"><%= money(f.sbcNomina) %></td>
+        <td class="num"><%= money(f.sbcIdse) %></td>
+        <td class="num"><%= money(f.sbcSua) %></td>
+        <td class="num"><%= money(f.difNominaIdse) %></td>
+        <td class="num"><%= money(f.difIdseSua) %></td>
+        <td class="num"><%= money(f.difNominaSua) %></td>
+        <td class="num"><%= f.pctVsIdse != null ? f.pctVsIdse + '%' : '—' %></td>
+        <td>
+          <span class="badge badge-<%= f.semaforo === 'OK' ? 'activo' : 'suspendido' %>"><%= f.semaforo %></span>
+        </td>
+        <td><%= f.prioridad %></td>
+        <td><%= f.movimientoPendiente %></td>
+        <td class="muted small"><%= f.observaciones || '—' %></td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table>
+
+  <% if (result.extras && result.extras.length) { %>
+  <h3>En IDSE/SUA sin recibo del período (<%= result.extras.length %>)</h3>
+  <table>
+    <thead><tr><th>Fuente</th><th>NSS</th><th>Nombre</th><th>SBC</th><th>Nota</th></tr></thead>
+    <tbody>
+      <% result.extras.forEach(function(e) { %>
+      <tr>
+        <td><%= e.fuente %></td>
+        <td><code><%= e.nss %></code></td>
+        <td><%= e.nombre || '—' %></td>
+        <td class="num"><%= money(e.sbc) %></td>
+        <td class="muted"><%= e.observacion %></td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table>
+  <% } %>
+</section>
+<% } %>
+
+<% } %>
+<% } %>
+<%- include('../Partials/layout-bottom') %>

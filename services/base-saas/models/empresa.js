@@ -36,7 +36,13 @@ const empresaSchema = new mongoose.Schema(
      * Política de días pagados / descanso semanal (configurable por empresa).
      * Ver config/politicaDescansoDefaults.js
      */
-    nominaDias: { type: mongoose.Schema.Types.Mixed, default: () => ({}) }
+    nominaDias: { type: mongoose.Schema.Types.Mixed, default: () => ({}) },
+    /**
+     * Política de descuentos voluntarios / CCT **por concepto**.
+     * { items: [{ conceptoCodigo, enTope30, base, ordenPrelacion, activo }] }
+     * Ver libs/politicaDescuentosDefaults.js
+     */
+    nominaDescuentos: { type: mongoose.Schema.Types.Mixed, default: () => ({}) }
   },
   { timestamps: true, collection: 'empresas' }
 );

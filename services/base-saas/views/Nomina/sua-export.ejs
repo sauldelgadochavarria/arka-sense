@@ -1,0 +1,167 @@
+<%- include('../Partials/layout-top', { title: 'Exportación SUA', session }) %>
+<div class="page-header">
+  <h1>Exportación SUA (IMSS / INFONAVIT)</h1>
+  <p class="page-subtitle">
+    Tres archivos oficiales de importación (ancho fijo, ANSI, CRLF) — Guía Rápida SUA.
+  </p>
+</div>
+
+<% if (error) { %><p class="alert"><%= error %></p><% } %>
+<% if (!empresa) { %>
+<p>No hay empresa vinculada a este tenant.</p>
+<% } else { %>
+
+<div class="toolbar">
+  <a class="btn" href="/nomina">← Nómina</a>
+</div>
+
+<form method="get" action="/nomina/sua" class="filter-form form-grid">
+  <input type="hidden" name="generar" value="1" />
+
+  <label>Archivo
+    <select name="modo" id="modo-select">
+      <option value="directorio" <%= filters.modo === 'directorio' ? 'selected' : '' %>>ASEG.TXT — Directorio / altas masivas</option>
+      <option value="altas" <%= filters.modo === 'altas' ? 'selected' : '' %>>ASEG.TXT — Altas del período (historial ALTA)</option>
+      <option value="movimientos" <%= filters.modo === 'movimientos' ? 'selected' : '' %>>MOVT.TXT — Bajas / mod. salario / reingresos</option>
+      <option value="creditos" <%= filters.modo === 'creditos' ? 'selected' : '' %>>CRED.TXT — Créditos INFONAVIT</option>
+    </select>
+  </label>
+
+  <label>Registro patronal
+    <input name="registroPatronal" maxlength="11"
+      value="<%= filters.registroPatronal || empresa.registroPatronal || '' %>"
+      placeholder="Ej. Y1234567890" />
+  </label>
+
+  <label id="estatus-wrap">Estatus empleados
+    <select name="estatus">
+      <option value="activo" <%= filters.estatus === 'activo' ? 'selected' : '' %>>Activos</option>
+      <option value="baja" <%= filters.estatus === 'baja' ? 'selected' : '' %>>Baja</option>
+      <option value="todos" <%= filters.estatus === 'todos' ? 'selected' : '' %>>Todos</option>
+    </select>
+  </label>
+
+  <label id="desde-wrap">Desde
+    <input type="date" name="desde" value="<%= filters.desde %>" />
+  </label>
+  <label id="hasta-wrap">Hasta
+    <input type="date" name="hasta" value="<%= filters.hasta %>" />
+  </label>
+
+  <label id="cred-wrap">Tipo mov. crédito
+    <select name="tipoMovCred">
+      <% Object.keys(tiposCredLabel || {}).forEach(function(k) { %>
+      <option value="<%= k %>" <%= filters.tipoMovCred === k ? 'selected' : '' %>><%= k %> — <%= tiposCredLabel[k] %></option>
+      <% }); %>
+    </select>
+  </label>
+
+  <button type="submit">Generar preview</button>
+</form>
+
+<script>
+(function () {
+  var modo = document.getElementById('modo-select');
+  function sync() {
+    var m = modo.value;
+    var needRange = m === 'movimientos' || m === 'altas';
+    var needEstatus = m === 'directorio' || m === 'creditos';
+    var needCred = m === 'creditos';
+    document.getElementById('desde-wrap').style.display = needRange ? '' : 'none';
+    document.getElementById('hasta-wrap').style.display = needRange ? '' : 'none';
+    document.getElementById('estatus-wrap').style.display = needEstatus ? '' : 'none';
+    document.getElementById('cred-wrap').style.display = needCred ? '' : 'none';
+  }
+  if (modo) { modo.addEventListener('change', sync); sync(); }
+})();
+</script>
+
+<div class="panel" style="margin-bottom:1rem">
+  <p class="muted" style="margin:0">
+    <strong>Reglas oficiales:</strong> MAYÚSCULAS · Ñ→/ · numéricos con ceros a la izquierda ·
+    nombre <code>AP$AM$NOMBRES</code> · SDI sin punto (<code>150.45</code>→<code>0015045</code>).
+    <br/>
+    <strong>ASEG</strong> = altas (164 chars). <strong>MOVT</strong> = 02 baja · 07 mod. salario · 08 reingreso · 11 ausentismo · 12 incapacidad (49 chars) —
+    el alta <em>no</em> va en MOVT. <strong>CRED</strong> = 15–20 créditos INFONAVIT (52 chars).
+  </p>
+</div>
+
+<% if (result) { %>
+<section class="panel">
+  <h2 class="panel-title">Resultado</h2>
+  <p>
+    RP: <code><%= result.empresaRp || '—' %></code> ·
+    Registros: <strong><%= result.total %></strong>
+    <% if (result.omitidos && result.omitidos.length) { %>
+    · Omitidos: <strong><%= result.omitidos.length %></strong>
+    <% } %>
+  </p>
+
+  <div class="toolbar">
+    <% Object.keys(result.archivos || {}).forEach(function(name) { %>
+    <a class="btn btn-primary"
+       href="/nomina/sua/descargar?modo=<%= filters.modo %>&amp;estatus=<%= filters.estatus %>&amp;desde=<%= filters.desde %>&amp;hasta=<%= filters.hasta %>&amp;tipoMovCred=<%= filters.tipoMovCred %>&amp;registroPatronal=<%= encodeURIComponent(filters.registroPatronal || empresa.registroPatronal || '') %>&amp;archivo=<%= encodeURIComponent(name) %>">
+      Descargar <%= name %>
+    </a>
+    <% }); %>
+  </div>
+
+  <% if (result.omitidos && result.omitidos.length) { %>
+  <h3>Omitidos</h3>
+  <table>
+    <thead><tr><th>Empleado</th><th>Problemas</th></tr></thead>
+    <tbody>
+      <% result.omitidos.forEach(function(o) { %>
+      <tr>
+        <td><%= o.numEmpleado || o.folio || '—' %> <%= o.nombre || o.tipo || '' %></td>
+        <td class="muted"><%= (o.issues || []).join('; ') %></td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table>
+  <% } %>
+
+  <h3>Preview (primeros 100)</h3>
+  <table>
+    <thead>
+      <% if (result.tipo === 'movimientos') { %>
+      <tr><th>Empleado</th><th>NSS</th><th>Interno</th><th>SUA</th><th>Fecha</th><th>SDI</th><th>Avisos</th></tr>
+      <% } else if (result.tipo === 'creditos') { %>
+      <tr><th>Empleado</th><th>NSS</th><th>Crédito</th><th>Mov</th><th>TD</th><th>Valor</th><th>Avisos</th></tr>
+      <% } else { %>
+      <tr><th>Empleado</th><th>NSS</th><th>Nombre SUA</th><th>SDI</th><th>Alta</th><th>Avisos</th></tr>
+      <% } %>
+    </thead>
+    <tbody>
+      <% (result.preview || []).slice(0, 100).forEach(function(r) { %>
+      <tr>
+        <td><%= r.numEmpleado %></td>
+        <td><code><%= r.nss %></code></td>
+        <% if (result.tipo === 'movimientos') { %>
+        <td><%= r.tipoInterno %></td>
+        <td><code><%= r.tipoSua %></code> <%= r.tipoLabel || '' %></td>
+        <td><%= r.fecha ? new Date(r.fecha).toLocaleDateString('es-MX') : '—' %></td>
+        <td><%= Number(r.sdi || 0).toFixed(2) %></td>
+        <% } else if (result.tipo === 'creditos') { %>
+        <td><code><%= r.credito %></code></td>
+        <td><code><%= r.tipoSua %></code> <%= r.tipoLabel || '' %></td>
+        <td><%= r.tipoDesc %></td>
+        <td><%= Number(r.valor || 0) %></td>
+        <% } else { %>
+        <td><code><%= r.nombre %></code></td>
+        <td><%= Number(r.sdi || 0).toFixed(2) %></td>
+        <td><%= r.fechaIngreso ? new Date(r.fechaIngreso).toLocaleDateString('es-MX') : '—' %></td>
+        <% } %>
+        <td class="muted small"><%= (r.issues && r.issues.length) ? r.issues.join('; ') : '—' %></td>
+      </tr>
+      <% }); %>
+      <% if (!(result.preview || []).length) { %>
+      <tr><td colspan="7" class="muted">Sin registros exportables. Revisa NSS, RP<% if (result.tipo === 'creditos') { %> y número de crédito INFONAVIT<% } %>.</td></tr>
+      <% } %>
+    </tbody>
+  </table>
+</section>
+<% } %>
+
+<% } %>
+<%- include('../Partials/layout-bottom') %>

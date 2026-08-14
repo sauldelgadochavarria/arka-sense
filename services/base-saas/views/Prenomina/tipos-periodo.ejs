@@ -29,6 +29,7 @@
       <td><%= t.activo ? 'Sí' : 'No' %></td>
       <td class="actions">
         <a href="/prenomina/tipos-periodo/<%= t._id %>/edit">Editar</a>
+        <a href="/nomina/recibos-pdf/nuevo?tipoPeriodoId=<%= t._id %>">Plantilla PDF</a>
         <form method="post" action="/prenomina/tipos-periodo/<%= t._id %>/toggle" class="inline-form">
           <button type="submit"><%= t.activo ? 'Desactivar' : 'Activar' %></button>
         </form>

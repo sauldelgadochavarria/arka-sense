@@ -11,10 +11,6 @@ const PLACEHOLDERS = {
     titulo: 'Movimientos',
     descripcion: 'Bandeja de movimientos operativos para pre-nómina.'
   },
-  plantilla: {
-    titulo: 'Plantilla',
-    descripcion: 'Plantillas de cálculo/layout de nómina.'
-  },
   'pago-dispersion': {
     titulo: 'Pago y dispersión',
     descripcion: 'Integración de dispersión bancaria y conciliación de pago.'
@@ -34,8 +30,11 @@ const PLACEHOLDERS = {
 };
 
 async function show(req, res) {
-  const { empresa } = await requireEmpresaForTenant(req.session.tenantId);
   const key = String(req.params.slug || '');
+  if (key === 'plantilla') {
+    return res.redirect('/nomina/recibos-pdf');
+  }
+  const { empresa } = await requireEmpresaForTenant(req.session.tenantId);
   const seccion = PLACEHOLDERS[key] || {
     titulo: 'Sección en construcción',
     descripcion: 'Esta sección está definida en el menú y se implementará en la siguiente fase.'

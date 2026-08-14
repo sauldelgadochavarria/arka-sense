@@ -1,13 +1,18 @@
 <%- include('../Partials/layout-top', { title: 'Configuración fiscal', session }) %>
+<% const _canEdit = typeof canEdit !== 'undefined' ? canEdit : true; %>
 <h1>Configuración fiscal</h1>
 <div class="toolbar">
   <a class="btn" href="/nomina">← Nómina</a>
   <a class="btn" href="/nomina/conceptos">Conceptos</a>
   <a class="btn" href="/nomina/catalogos">Catálogos</a>
   <a class="btn" href="/config-empresa/cargas">Cargas iniciales</a>
+  <a class="btn" href="/nomina/correo">Correo que envía</a>
 </div>
 
 <p>Tablas y parámetros globales usados por las fórmulas (<code>aplicarTabla</code>, <code>uma</code>, etc.).</p>
+<% if (!_canEdit) { %>
+<p class="alert">Consulta: no puedes guardar cambios de configuración fiscal con este rol.</p>
+<% } %>
 
 <section class="panel">
   <h2 class="panel-title">Motor ISR (SAT + Inteligente)</h2>
@@ -18,6 +23,7 @@
     En v1 el neto/CFDI <em>siempre</em> usa ISR SAT.
   </p>
   <form method="post" action="/nomina/configuracion/isr-motor" class="form-grid">
+    <fieldset <%= _canEdit ? '' : 'disabled' %>>
     <label class="inline-check">
       <input type="checkbox" name="activo" <%= typeof isrActivo === 'undefined' || isrActivo ? 'checked' : '' %> />
       Activar motor inteligente / proyección
@@ -29,7 +35,8 @@
         <option value="inteligente_retencion" <%= typeof isrModo !== 'undefined' && isrModo === 'inteligente_retencion' ? 'selected' : '' %>>Retención uniforme (experimental; CFDI sigue en SAT)</option>
       </select>
     </label>
-    <button type="submit">Guardar motor ISR</button>
+    <% if (_canEdit) { %><button type="submit">Guardar motor ISR</button><% } %>
+    </fieldset>
   </form>
 </section>
 
@@ -44,6 +51,7 @@
     const modoD = pd.modoDescanso || 'todo_o_nada';
   %>
   <form method="post" action="/nomina/configuracion/dias-pagados" class="form-grid">
+    <fieldset <%= _canEdit ? '' : 'disabled' %>>
     <label class="inline-check">
       <input type="checkbox" name="activo" <%= pd.activo !== false ? 'checked' : '' %> />
       Activar motor de días pagados
@@ -92,8 +100,170 @@
           placeholder="Vacío = calendario − programados (ej. 2)" />
       </label>
     </div>
-    <button type="submit">Guardar política de días</button>
+    <% if (_canEdit) { %><button type="submit">Guardar política de días</button><% } %>
+    </fieldset>
   </form>
+</section>
+
+<section class="panel">
+  <h2 class="panel-title">Descuentos voluntarios / CCT (por concepto)</h2>
+  <p class="muted small">
+    Lista de deducciones y cómo aplican respecto al <strong>tope 30%</strong>
+    (junto con INFONAVIT/FONACOT) o <strong>después</strong> de impuestos/créditos de gobierno.
+    Orden de prelación: menor número = mayor prioridad dentro del tope.
+    El empleado puede sobrescribir tope/base en cuota sindical.
+  </p>
+  <%
+    const pdesc = (typeof politicaDescuentos !== 'undefined' && politicaDescuentos) ? politicaDescuentos : { items: [] };
+    const itemsPol = Array.isArray(pdesc.items) ? pdesc.items : [];
+    const conceptosDed = (typeof conceptosDeduccion !== 'undefined' && conceptosDeduccion) ? conceptosDeduccion : [];
+  %>
+  <form method="post" action="/nomina/configuracion/descuentos" id="form-politica-descuentos">
+    <fieldset <%= _canEdit ? '' : 'disabled' %>>
+    <table class="data-table" id="tabla-politica-descuentos">
+      <thead>
+        <tr>
+          <th>Concepto</th>
+          <th>En tope 30%</th>
+          <th>Base del %</th>
+          <th>Orden prelación</th>
+          <th>Activo</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="politica-descuentos-body">
+        <% if (!itemsPol.length) { %>
+        <tr class="politica-row">
+          <td>
+            <select name="conceptoCodigo">
+              <option value="CUOTA_SINDICAL">CUOTA_SINDICAL</option>
+              <% conceptosDed.forEach(function(c) { %>
+              <option value="<%= c.codigo %>"><%= c.codigo %> — <%= c.nombre %></option>
+              <% }); %>
+            </select>
+          </td>
+          <td>
+            <select name="enTope30">
+              <option value="0" selected>No (después)</option>
+              <option value="1">Sí (dentro del 30%)</option>
+            </select>
+          </td>
+          <td>
+            <select name="base">
+              <option value="bruto" selected>Bruto / nominal</option>
+              <option value="neto_fiscal">Remanente tras ISR/IMSS/créditos</option>
+            </select>
+          </td>
+          <td><input type="number" name="ordenPrelacion" min="1" value="100" style="width:5rem" /></td>
+          <td>
+            <select name="activoItem">
+              <option value="1" selected>Sí</option>
+              <option value="0">No</option>
+            </select>
+          </td>
+          <td><button type="button" class="btn-link btn-remove-pol">Quitar</button></td>
+        </tr>
+        <% } %>
+        <% itemsPol.forEach(function(it) { %>
+        <tr class="politica-row">
+          <td>
+            <select name="conceptoCodigo">
+              <%
+                const codes = new Set(conceptosDed.map(function(c){ return c.codigo; }));
+                if (!codes.has(it.conceptoCodigo)) {
+              %>
+              <option value="<%= it.conceptoCodigo %>" selected><%= it.conceptoCodigo %></option>
+              <% } %>
+              <% conceptosDed.forEach(function(c) { %>
+              <option value="<%= c.codigo %>" <%= c.codigo === it.conceptoCodigo ? 'selected' : '' %>><%= c.codigo %> — <%= c.nombre %></option>
+              <% }); %>
+            </select>
+          </td>
+          <td>
+            <select name="enTope30">
+              <option value="0" <%= !it.enTope30 ? 'selected' : '' %>>No (después)</option>
+              <option value="1" <%= it.enTope30 ? 'selected' : '' %>>Sí (dentro del 30%)</option>
+            </select>
+          </td>
+          <td>
+            <select name="base">
+              <option value="bruto" <%= it.base !== 'neto_fiscal' ? 'selected' : '' %>>Bruto / nominal</option>
+              <option value="neto_fiscal" <%= it.base === 'neto_fiscal' ? 'selected' : '' %>>Remanente tras ISR/IMSS/créditos</option>
+            </select>
+          </td>
+          <td><input type="number" name="ordenPrelacion" min="1" value="<%= it.ordenPrelacion || 100 %>" style="width:5rem" /></td>
+          <td>
+            <select name="activoItem">
+              <option value="1" <%= it.activo !== false ? 'selected' : '' %>>Sí</option>
+              <option value="0" <%= it.activo === false ? 'selected' : '' %>>No</option>
+            </select>
+          </td>
+          <td><button type="button" class="btn-link btn-remove-pol">Quitar</button></td>
+        </tr>
+        <% }); %>
+      </tbody>
+    </table>
+    <p class="toolbar" style="margin-top:0.75rem">
+      <% if (_canEdit) { %>
+      <button type="button" class="btn" id="btn-add-politica">+ Agregar concepto</button>
+      <button type="submit" class="btn btn-primary">Guardar políticas CCT</button>
+      <% } %>
+    </p>
+    </fieldset>
+  </form>
+
+  <template id="tpl-politica-row">
+    <tr class="politica-row">
+      <td>
+        <select name="conceptoCodigo">
+          <% conceptosDed.forEach(function(c) { %>
+          <option value="<%= c.codigo %>"><%= c.codigo %> — <%= c.nombre %></option>
+          <% }); %>
+          <% if (!conceptosDed.length) { %>
+          <option value="CUOTA_SINDICAL">CUOTA_SINDICAL</option>
+          <% } %>
+        </select>
+      </td>
+      <td>
+        <select name="enTope30">
+          <option value="0" selected>No (después)</option>
+          <option value="1">Sí (dentro del 30%)</option>
+        </select>
+      </td>
+      <td>
+        <select name="base">
+          <option value="bruto" selected>Bruto / nominal</option>
+          <option value="neto_fiscal">Remanente tras ISR/IMSS/créditos</option>
+        </select>
+      </td>
+      <td><input type="number" name="ordenPrelacion" min="1" value="100" style="width:5rem" /></td>
+      <td>
+        <select name="activoItem">
+          <option value="1" selected>Sí</option>
+          <option value="0">No</option>
+        </select>
+      </td>
+      <td><button type="button" class="btn-link btn-remove-pol">Quitar</button></td>
+    </tr>
+  </template>
+  <script>
+  (function () {
+    var body = document.getElementById('politica-descuentos-body');
+    var tpl = document.getElementById('tpl-politica-row');
+    var addBtn = document.getElementById('btn-add-politica');
+    if (!body || !tpl || !addBtn) return;
+    addBtn.addEventListener('click', function () {
+      body.appendChild(tpl.content.cloneNode(true));
+    });
+    body.addEventListener('click', function (ev) {
+      var t = ev.target;
+      if (t && t.classList && t.classList.contains('btn-remove-pol')) {
+        var row = t.closest('tr');
+        if (row && body.querySelectorAll('tr').length > 1) row.remove();
+      }
+    });
+  })();
+  </script>
 </section>
 
 <div class="summary-cards">

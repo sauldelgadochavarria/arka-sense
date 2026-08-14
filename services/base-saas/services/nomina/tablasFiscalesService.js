@@ -307,36 +307,29 @@ function calcularImssPeriodo({
 
 /** Fallback si no hay IMSS_CUOTAS: tasas planas históricas obrero. */
 const IMSS_OBRERO_TASA_FALLBACK = 0.0025 + 0.00375 + 0.00625 + 0.01125;
+/** Sin CEAV/RCV (001 Seguridad social): EM dinero + EM médicos + IV */
+const IMSS_OBRERO_SS_TASA_FALLBACK = 0.0025 + 0.00375 + 0.00625;
+/** Solo CEAV obrero (003) */
+const IMSS_OBRERO_RCV_TASA_FALLBACK = 0.01125;
 
-function imssObreroDelPeriodo(sueldoDiario, diasLaborados, uma, ctx = {}) {
-  const cuotas = ctx.cuotasImss;
-  const tramosCeav = ctx.tramosCeav;
-  if (cuotas?.length) {
-    return calcularImssPeriodo({
-      sueldoDiario,
-      diasLaborados,
-      uma: ctx.uma ?? uma,
-      salarioMinimo: ctx.salarioMinimo,
-      topeUma: ctx.topeUma,
-      cuotas,
-      tramosCeav: tramosCeav || [],
-      primaRt: ctx.primaRt
-    }).obrero;
-  }
-  // Legado: filas solo obrero con porcentajeExcedente
-  if (ctx.cuotasLegadoObrero?.length) {
-    const tasa = ctx.cuotasLegadoObrero.reduce(
-      (s, c) => s + (Number(c.porcentajeExcedente) || Number(c.tasaObrero) || 0),
-      0
-    );
-    const sbc = sbcDiario(sueldoDiario, uma, ctx.topeUma);
-    return sbc * (Number(diasLaborados) || 0) * tasa;
-  }
-  const sbc = sbcDiario(sueldoDiario, uma, ctx.topeUma);
-  return sbc * (Number(diasLaborados) || 0) * IMSS_OBRERO_TASA_FALLBACK;
+function round2(n) {
+  return Math.round((Number(n) || 0) * 100) / 100;
 }
 
-function imssPatronalDelPeriodo(sueldoDiario, diasLaborados, uma, ctx = {}) {
+function isRamoRcvObrero(row = {}) {
+  const k = String(row.clave || '').toUpperCase();
+  return k === 'CEAV' || k === 'RCV' || k.includes('CESANTIA') || k.includes('CESANTÍA');
+}
+
+function sumObreroDesglose(desglose = [], predicate) {
+  const total = (desglose || [])
+    .filter((r) => (Number(r.obrero) || 0) !== 0)
+    .filter(predicate)
+    .reduce((s, r) => s + (Number(r.obrero) || 0), 0);
+  return round2(total);
+}
+
+function resolverImssCtxCalculo(sueldoDiario, diasLaborados, uma, ctx = {}) {
   const cuotas = ctx.cuotasImss;
   if (cuotas?.length) {
     return calcularImssPeriodo({
@@ -348,15 +341,53 @@ function imssPatronalDelPeriodo(sueldoDiario, diasLaborados, uma, ctx = {}) {
       cuotas,
       tramosCeav: ctx.tramosCeav || [],
       primaRt: ctx.primaRt
-    }).patronal;
+    });
   }
+  return null;
+}
+
+function imssObreroDelPeriodo(sueldoDiario, diasLaborados, uma, ctx = {}) {
+  const calc = resolverImssCtxCalculo(sueldoDiario, diasLaborados, uma, ctx);
+  if (calc) return calc.obrero;
+  // Legado: filas solo obrero con porcentajeExcedente
+  if (ctx.cuotasLegadoObrero?.length) {
+    const tasa = ctx.cuotasLegadoObrero.reduce(
+      (s, c) => s + (Number(c.porcentajeExcedente) || Number(c.tasaObrero) || 0),
+      0
+    );
+    const sbc = sbcDiario(sueldoDiario, uma, ctx.topeUma);
+    return round2(sbc * (Number(diasLaborados) || 0) * tasa);
+  }
+  const sbc = sbcDiario(sueldoDiario, uma, ctx.topeUma);
+  return round2(sbc * (Number(diasLaborados) || 0) * IMSS_OBRERO_TASA_FALLBACK);
+}
+
+/** Seguridad social obrero (SAT 001): EM + IV + demás, sin CEAV/RCV. */
+function imssObreroSsDelPeriodo(sueldoDiario, diasLaborados, uma, ctx = {}) {
+  const calc = resolverImssCtxCalculo(sueldoDiario, diasLaborados, uma, ctx);
+  if (calc) return sumObreroDesglose(calc.desglose, (r) => !isRamoRcvObrero(r));
+  const sbc = sbcDiario(sueldoDiario, uma, ctx.topeUma);
+  return round2(sbc * (Number(diasLaborados) || 0) * IMSS_OBRERO_SS_TASA_FALLBACK);
+}
+
+/** Cesantía y vejez obrero (SAT 003 / RCV). */
+function imssObreroRcvDelPeriodo(sueldoDiario, diasLaborados, uma, ctx = {}) {
+  const calc = resolverImssCtxCalculo(sueldoDiario, diasLaborados, uma, ctx);
+  if (calc) return sumObreroDesglose(calc.desglose, isRamoRcvObrero);
+  const sbc = sbcDiario(sueldoDiario, uma, ctx.topeUma);
+  return round2(sbc * (Number(diasLaborados) || 0) * IMSS_OBRERO_RCV_TASA_FALLBACK);
+}
+
+function imssPatronalDelPeriodo(sueldoDiario, diasLaborados, uma, ctx = {}) {
+  const calc = resolverImssCtxCalculo(sueldoDiario, diasLaborados, uma, ctx);
+  if (calc) return calc.patronal;
   if (ctx.cuotasLegadoPatronal?.length) {
     const tasa = ctx.cuotasLegadoPatronal.reduce(
       (s, c) => s + (Number(c.porcentajeExcedente) || Number(c.tasaPatronal) || 0),
       0
     );
     const sbc = sbcDiario(sueldoDiario, uma, ctx.topeUma);
-    return sbc * (Number(diasLaborados) || 0) * tasa;
+    return round2(sbc * (Number(diasLaborados) || 0) * tasa);
   }
   return 0;
 }
@@ -373,10 +404,15 @@ module.exports = {
   isrDelPeriodo,
   calcularImssPeriodo,
   imssObreroDelPeriodo,
+  imssObreroSsDelPeriodo,
+  imssObreroRcvDelPeriodo,
   imssPatronalDelPeriodo,
   tasaCeavPatronal,
   sbcDiario,
   factorMensual,
+  isRamoRcvObrero,
   DIAS_MES_REF,
-  IMSS_OBRERO_TASA_FALLBACK
+  IMSS_OBRERO_TASA_FALLBACK,
+  IMSS_OBRERO_SS_TASA_FALLBACK,
+  IMSS_OBRERO_RCV_TASA_FALLBACK
 };

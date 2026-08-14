@@ -77,7 +77,19 @@ app.post('/admin/tenants', adminAccessControl, async (req, res) => {
     slug,
     displayName: displayName || slug,
     status: 'pending',
-    featureFlags: { core: true, config_admin: true, personal: true, asistencia: true, incidencias: true, prenomina: true, nomina: false, integraciones: true, reportes: true, ...featureFlags }
+    featureFlags: {
+      core: true,
+      config_admin: true,
+      personal: true,
+      asistencia: true,
+      incidencias: true,
+      prenomina: true,
+      nomina: false,
+      gestion_documental: false,
+      integraciones: true,
+      reportes: true,
+      ...featureFlags
+    }
   });
 
   res.redirect('/admin/tenants');

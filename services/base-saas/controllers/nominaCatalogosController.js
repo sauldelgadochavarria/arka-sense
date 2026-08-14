@@ -1,6 +1,7 @@
 'use strict';
 
 const { tenantHasFeature } = require('../libs/tenantFeatureFlags');
+const { userCanEditNomina, userCanViewNomina } = require('../libs/roleAccess');
 const { trimString, parseDate } = require('../libs/formHelpers');
 const {
   CATALOGOS_SAT,
@@ -52,6 +53,25 @@ function requireNominaFeature(req, res) {
   return false;
 }
 
+function requireNominaView(req, res) {
+  if (requireNominaFeature(req, res) === false) return false;
+  if (userCanViewNomina(req.session)) return null;
+  req.flash('error', 'Tu rol no tiene permiso para consultar nómina.');
+  res.redirect('/dashboard');
+  return false;
+}
+
+function requireNominaWrite(req, res) {
+  if (requireNominaFeature(req, res) === false) return false;
+  if (userCanEditNomina(req.session)) return null;
+  req.flash(
+    'error',
+    'Tu rol solo puede consultar nómina. Editar catálogos fiscales requiere el rol «Nómina operativa».'
+  );
+  res.redirect('/nomina/catalogos');
+  return false;
+}
+
 function catalogoLabel(value) {
   return CATALOGOS_SAT.find((c) => c.value === value)?.label || value;
 }
@@ -61,7 +81,7 @@ function tipoMapeoLabel(value) {
 }
 
 async function index(req, res) {
-  if (requireNominaFeature(req, res) === false) return;
+  if (requireNominaView(req, res) === false) return;
 
   const [sat, mapeos, parametros, tablas, funciones] = await Promise.all([
     listCatalogoSatTodos(),
@@ -82,7 +102,7 @@ async function index(req, res) {
 }
 
 async function catalogoSat(req, res) {
-  if (requireNominaFeature(req, res) === false) return;
+  if (requireNominaView(req, res) === false) return;
 
   const filtro = trimString(req.query.catalogo) || '';
   const entradas = await listCatalogoSatTodos();
@@ -98,7 +118,7 @@ async function catalogoSat(req, res) {
 }
 
 async function createCatalogoSat(req, res) {
-  if (requireNominaFeature(req, res) === false) return;
+  if (requireNominaWrite(req, res) === false) return;
   try {
     await crearCatalogoSat({
       catalogo: trimString(req.body.catalogo),
@@ -114,7 +134,7 @@ async function createCatalogoSat(req, res) {
 }
 
 async function toggleCatalogoSatAction(req, res) {
-  if (requireNominaFeature(req, res) === false) return;
+  if (requireNominaWrite(req, res) === false) return;
   try {
     await toggleCatalogoSat(req.params.id);
     req.flash('success', 'Estado actualizado');
@@ -125,7 +145,7 @@ async function toggleCatalogoSatAction(req, res) {
 }
 
 async function mapeoLegado(req, res) {
-  if (requireNominaFeature(req, res) === false) return;
+  if (requireNominaView(req, res) === false) return;
 
   const mapeos = await listMapeosLegado('legado');
 
@@ -141,7 +161,7 @@ async function mapeoLegado(req, res) {
 }
 
 async function createMapeoLegado(req, res) {
-  if (requireNominaFeature(req, res) === false) return;
+  if (requireNominaWrite(req, res) === false) return;
   try {
     await crearMapeoLegado({
       fuente: 'legado',
@@ -161,7 +181,7 @@ async function createMapeoLegado(req, res) {
 }
 
 async function toggleMapeoLegadoAction(req, res) {
-  if (requireNominaFeature(req, res) === false) return;
+  if (requireNominaWrite(req, res) === false) return;
   try {
     await toggleMapeoLegado(req.params.id);
     req.flash('success', 'Estado actualizado');
@@ -172,7 +192,7 @@ async function toggleMapeoLegadoAction(req, res) {
 }
 
 async function parametros(req, res) {
-  if (requireNominaFeature(req, res) === false) return;
+  if (requireNominaView(req, res) === false) return;
 
   const parametrosList = await listParametrosFiscales();
 
@@ -184,7 +204,7 @@ async function parametros(req, res) {
 }
 
 async function createParametro(req, res) {
-  if (requireNominaFeature(req, res) === false) return;
+  if (requireNominaWrite(req, res) === false) return;
   try {
     const clave = trimString(req.body.clave).toUpperCase();
     const permitido = PARAMETROS_FISCALES_PERMITIDOS.find((p) => p.clave === clave);
@@ -204,7 +224,7 @@ async function createParametro(req, res) {
 }
 
 async function tablasFiscales(req, res) {
-  if (requireNominaFeature(req, res) === false) return;
+  if (requireNominaView(req, res) === false) return;
 
   const tablas = await listTablasFiscales();
 
@@ -217,7 +237,7 @@ async function tablasFiscales(req, res) {
 }
 
 async function showTablaFiscal(req, res) {
-  if (requireNominaFeature(req, res) === false) return;
+  if (requireNominaView(req, res) === false) return;
 
   const data = await getTablaFiscalConRangos(req.params.id);
   if (!data) return res.status(404).send('Tabla no encontrada');
@@ -235,7 +255,7 @@ async function showTablaFiscal(req, res) {
 }
 
 async function createTablaFiscal(req, res) {
-  if (requireNominaFeature(req, res) === false) return;
+  if (requireNominaWrite(req, res) === false) return;
   try {
     const tabla = await crearTablaFiscal({
       codigo: trimString(req.body.codigo),
@@ -252,7 +272,7 @@ async function createTablaFiscal(req, res) {
 }
 
 async function toggleTablaFiscalAction(req, res) {
-  if (requireNominaFeature(req, res) === false) return;
+  if (requireNominaWrite(req, res) === false) return;
   try {
     await toggleTablaFiscal(req.params.id);
     req.flash('success', 'Estado de tabla actualizado');
@@ -263,7 +283,7 @@ async function toggleTablaFiscalAction(req, res) {
 }
 
 async function createRangoFiscal(req, res) {
-  if (requireNominaFeature(req, res) === false) return;
+  if (requireNominaWrite(req, res) === false) return;
   try {
     await crearRangoFiscal(req.params.id, {
       clave: req.body.clave,
@@ -286,7 +306,7 @@ async function createRangoFiscal(req, res) {
 }
 
 async function deleteRangoFiscal(req, res) {
-  if (requireNominaFeature(req, res) === false) return;
+  if (requireNominaWrite(req, res) === false) return;
   const tablaId = req.params.id;
   try {
     await eliminarRangoFiscal(req.params.rangoId);
@@ -298,7 +318,7 @@ async function deleteRangoFiscal(req, res) {
 }
 
 async function copiarTablaFiscal(req, res) {
-  if (requireNominaFeature(req, res) === false) return;
+  if (requireNominaWrite(req, res) === false) return;
   try {
     const nueva = await copiarTablaNuevaVigencia(
       req.params.id,
@@ -313,7 +333,7 @@ async function copiarTablaFiscal(req, res) {
 }
 
 async function formulaFunctions(req, res) {
-  if (requireNominaFeature(req, res) === false) return;
+  if (requireNominaView(req, res) === false) return;
   await ensureFormulaFunctionsSeeded();
   const funciones = await listFormulaFunctions({ includeInactive: true });
   res.render('Nomina/catalogos/formula-functions', {
@@ -323,7 +343,7 @@ async function formulaFunctions(req, res) {
 }
 
 async function showFormulaFunction(req, res) {
-  if (requireNominaFeature(req, res) === false) return;
+  if (requireNominaView(req, res) === false) return;
   const fn = await getFormulaFunctionById(req.params.id);
   if (!fn) {
     req.flash('error', 'Función no encontrada');
@@ -338,7 +358,7 @@ async function showFormulaFunction(req, res) {
 }
 
 async function createFormulaFunctionAction(req, res) {
-  if (requireNominaFeature(req, res) === false) return;
+  if (requireNominaWrite(req, res) === false) return;
   try {
     const created = await crearFormulaFunction({
       name: req.body.name,
@@ -364,7 +384,7 @@ async function createFormulaFunctionAction(req, res) {
 }
 
 async function saveFormulaFunctionAction(req, res) {
-  if (requireNominaFeature(req, res) === false) return;
+  if (requireNominaWrite(req, res) === false) return;
   const id = req.params.id;
   try {
     const existing = await getFormulaFunctionById(id);
@@ -401,7 +421,7 @@ async function saveFormulaFunctionAction(req, res) {
 }
 
 async function publishFormulaFunctionAction(req, res) {
-  if (requireNominaFeature(req, res) === false) return;
+  if (requireNominaWrite(req, res) === false) return;
   try {
     await publicarFormulaFunction(req.params.id);
     req.flash('success', 'Función publicada');
@@ -412,7 +432,7 @@ async function publishFormulaFunctionAction(req, res) {
 }
 
 async function validateFormulaFunctionApi(req, res) {
-  if (requireNominaFeature(req, res) === false) return;
+  if (requireNominaWrite(req, res) === false) return;
   try {
     const body = { ...(req.body || {}), tipo: 'expresion' };
     const result = validarFormulaFunctionPayload(body);
@@ -423,7 +443,7 @@ async function validateFormulaFunctionApi(req, res) {
 }
 
 async function testFormulaFunctionApi(req, res) {
-  if (requireNominaFeature(req, res) === false) return;
+  if (requireNominaWrite(req, res) === false) return;
   try {
     const body = { ...(req.body || {}), tipo: 'expresion' };
     const result = probarFormulaFunctionPayload(body);
@@ -448,7 +468,7 @@ async function testFormulaFunctionApi(req, res) {
 }
 
 async function toggleFormulaFunctionAction(req, res) {
-  if (requireNominaFeature(req, res) === false) return;
+  if (requireNominaWrite(req, res) === false) return;
   try {
     await toggleFormulaFunction(req.params.id);
     req.flash('success', 'Estado de la función actualizado');

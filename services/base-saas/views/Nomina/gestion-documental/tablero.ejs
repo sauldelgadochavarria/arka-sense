@@ -1,0 +1,102 @@
+<%- include('../../Partials/layout-top', { title: 'Cumplimiento documental', session }) %>
+<%
+  const T = tablero || { filas: [], resumen: {}, expedientes: {} };
+  const E = T.expedientes || {};
+  function badgeClass(c) {
+    if (c === 'ok') return 'cump-ok';
+    if (c === 'atrasado') return 'cump-bad';
+    return 'cump-warn';
+  }
+  function dot(c) {
+    if (c === 'ok') return '🟢';
+    if (c === 'atrasado') return '🔴';
+    return '🟡';
+  }
+%>
+<div class="page-header">
+  <h1>Cumplimiento</h1>
+  <p class="page-subtitle">
+    Semáforo de obligaciones (nómina, SUA, ISR, ISN, INFONAVIT) y expedientes de trabajadores.
+    Fechas límite típicas MX: día 17 del mes siguiente (IMSS / SAT / INFONAVIT bimestral).
+  </p>
+</div>
+<div class="toolbar">
+  <a class="btn btn-primary" href="/nomina/gestion-documental/subir">+ Subir evidencia</a>
+  <a class="btn" href="/nomina/gestion-documental/expediente">Expediente / archivos</a>
+  <a class="btn" href="/nomina/gestion-documental/reporte">Cobertura detallada</a>
+  <a class="btn" href="/nomina/gestion-documental/config">Storage</a>
+</div>
+<% if (error) { %><p class="alert"><%= error %></p><% } %>
+<% if (!empresa) { %>
+<p>Sin empresa.</p>
+<% } else { %>
+
+<div class="cump-stats">
+  <div class="stat-card ok"><strong><%= T.resumen && T.resumen.ok || 0 %></strong><span>En verde</span></div>
+  <div class="stat-card warn"><strong><%= T.resumen && T.resumen.pendiente || 0 %></strong><span>Pendientes</span></div>
+  <div class="stat-card bad"><strong><%= T.resumen && T.resumen.atrasado || 0 %></strong><span>Atrasados</span></div>
+  <div class="stat-card"><strong><%= E.completos || 0 %>/<%= E.total || 0 %></strong><span>Expedientes completos</span></div>
+</div>
+
+<section class="panel">
+  <h2 class="panel-title">Procesos</h2>
+  <table class="data-table cump-table">
+    <thead>
+      <tr>
+        <th>Proceso</th>
+        <th>Periodo</th>
+        <th>Fecha límite</th>
+        <th>Estado</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% (T.filas || []).forEach(function(f) { %>
+      <tr>
+        <td><a href="<%= f.href %>"><%= f.proceso %></a><% if (f.detalle) { %> <span class="muted small"><%= f.detalle %></span><% } %></td>
+        <td><%= f.periodo %></td>
+        <td><%= f.fechaLimite %></td>
+        <td><span class="cump-pill <%= badgeClass(f.estado) %>"><%= dot(f.estado) %> <%= f.estadoLabel %></span></td>
+      </tr>
+      <% }); %>
+      <% if (!(T.filas || []).length) { %>
+      <tr><td colspan="4" class="muted">Sin períodos de nómina ni evidencias aún.</td></tr>
+      <% } %>
+    </tbody>
+  </table>
+</section>
+
+<section class="panel">
+  <h2 class="panel-title">Expedientes de trabajadores</h2>
+  <p class="muted">
+    Obligatorios: <code><%= (E.tiposObligatorios || []).join(', ') %></code>
+    · Completos <strong><%= E.completos || 0 %></strong>
+    · Incompletos <strong><%= E.incompletos || 0 %></strong>
+    · Con vigencia vencida <strong><%= E.vencidos || 0 %></strong>
+  </p>
+  <% if ((E.listaIncompletos || []).length) { %>
+  <h3>Incompletos</h3>
+  <table class="data-table">
+    <thead><tr><th>Empleado</th><th>Faltan</th></tr></thead>
+    <tbody>
+      <% E.listaIncompletos.forEach(function(e) { %>
+      <tr>
+        <td><%= e.numEmpleado %> <%= e.nombre %></td>
+        <td><code><%= (e.faltantes || []).join(', ') %></code></td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table>
+  <% } else { %>
+  <p class="muted">Todos los activos tienen contrato, INE, RFC y NSS indexados.</p>
+  <% } %>
+  <% if ((E.listaVencidos || []).length) { %>
+  <h3>Vigencia vencida</h3>
+  <ul>
+    <% E.listaVencidos.forEach(function(e) { %>
+    <li><%= e.numEmpleado %> <%= e.nombre %> · <%= (e.tipos || []).join(', ') %></li>
+    <% }); %>
+  </ul>
+  <% } %>
+</section>
+<% } %>
+<%- include('../../Partials/layout-bottom') %>

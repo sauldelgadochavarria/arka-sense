@@ -1,0 +1,125 @@
+<%- include('../../Partials/layout-top', { title: isNew ? 'Nuevo perfil de correo' : 'Editar correo', session }) %>
+<% const C = cfg || {}; %>
+<h1><%= isNew ? 'Nuevo perfil de correo' : ('Editar: ' + (C.codigo || '')) %></h1>
+<p><a href="/nomina/correo">← Perfiles de correo</a></p>
+
+<form method="post" action="<%= isNew ? '/nomina/correo' : ('/nomina/correo/' + C._id) %>" class="form-grid form-wide" id="form-correo">
+  <fieldset class="form-section">
+    <legend>Quién envía</legend>
+    <label>Código
+      <input name="codigo" required value="<%= C.codigo || '' %>" <%= isNew ? '' : 'readonly' %> placeholder="GMAIL-NOM, M365, SMTP-PROD" />
+    </label>
+    <label>Nombre
+      <input name="nombre" value="<%= C.nombre || '' %>" placeholder="Nómina producción" />
+    </label>
+    <label>Proveedor
+      <select name="proveedor" id="proveedor">
+        <% (proveedores || []).forEach(function(p) { %>
+        <option value="<%= p.value %>" <%= C.proveedor === p.value ? 'selected' : '' %>><%= p.label %></option>
+        <% }); %>
+      </select>
+    </label>
+    <p class="hint" id="proveedor-help" style="grid-column:1/-1"></p>
+    <label>Nombre remitente
+      <input name="fromNombre" value="<%= C.fromNombre || '' %>" placeholder="Nómina Acme" />
+    </label>
+    <label>Correo remitente (From)
+      <input name="fromEmail" type="email" value="<%= C.fromEmail || '' %>" placeholder="nomina@tuempresa.com" />
+    </label>
+    <label>Reply-To (opcional)
+      <input name="replyTo" type="email" value="<%= C.replyTo || '' %>" placeholder="rh@tuempresa.com" />
+    </label>
+    <label class="checkbox">
+      <input type="checkbox" name="activo" value="1" <%= C.activo !== false ? 'checked' : '' %> />
+      Activo
+    </label>
+    <label class="checkbox">
+      <input type="checkbox" name="esDefault" value="1" <%= C.esDefault ? 'checked' : '' %> />
+      Usar este perfil para enviar (predeterminado)
+    </label>
+  </fieldset>
+
+  <fieldset class="form-section" id="smtp-fields">
+    <legend>Servidor SMTP</legend>
+    <label>Host
+      <input name="host" id="host" value="<%= C.host || '' %>" placeholder="smtp.tudominio.com" />
+    </label>
+    <label>Puerto
+      <input type="number" name="port" id="port" min="1" max="65535" value="<%= C.port != null ? C.port : 587 %>" />
+    </label>
+    <label>Seguridad
+      <select name="seguridad" id="seguridad">
+        <% (seguridades || []).forEach(function(s) { %>
+        <option value="<%= s.value %>" <%= C.seguridad === s.value ? 'selected' : '' %>><%= s.label %></option>
+        <% }); %>
+      </select>
+    </label>
+    <label>Usuario
+      <input name="usuario" id="usuario" value="<%= C.usuario || '' %>" autocomplete="off" />
+    </label>
+    <label>Contraseña / API key
+      <input type="password" name="password" value="" autocomplete="new-password"
+        placeholder="<%= isNew ? '' : 'Dejar vacío para no cambiar' %>" />
+    </label>
+    <p class="hint" style="grid-column:1/-1">
+      Gmail: contraseña de aplicación. SendGrid: usuario <code>apikey</code> y la API Key como contraseña.
+      Microsoft 365: habilita SMTP AUTH en el buzón.
+    </p>
+  </fieldset>
+
+  <label>Notas
+    <textarea name="notas" rows="2"><%= C.notas || '' %></textarea>
+  </label>
+
+  <button type="submit"><%= isNew ? 'Crear perfil' : 'Guardar' %></button>
+</form>
+
+<% if (!isNew) { %>
+<section class="panel" style="margin-top:1.5rem">
+  <h2 class="panel-title">Probar envío</h2>
+  <p class="muted small">Manda un correo de prueba con este perfil (no marca recibos de nómina).</p>
+  <% if (C.ultimaPruebaAt) { %>
+  <p class="hint">
+    Última prueba: <%= new Date(C.ultimaPruebaAt).toLocaleString('es-MX') %>
+    — <%= C.ultimaPruebaOk ? 'OK' : ('Error: ' + (C.ultimaPruebaError || '')) %>
+  </p>
+  <% } %>
+  <form method="post" action="/nomina/correo/<%= C._id %>/probar" class="form-grid">
+    <label>Enviar prueba a
+      <input type="email" name="destinatarioPrueba" required placeholder="tu@correo.com" />
+    </label>
+    <button type="submit" class="btn">Enviar prueba</button>
+  </form>
+</section>
+<% } %>
+
+<script>
+(function () {
+  var presets = <%- presetsJson || '[]' %>;
+  var byVal = {};
+  presets.forEach(function (p) { byVal[p.value] = p; });
+  var sel = document.getElementById('proveedor');
+  var help = document.getElementById('proveedor-help');
+  var host = document.getElementById('host');
+  var port = document.getElementById('port');
+  var seguridad = document.getElementById('seguridad');
+  var usuario = document.getElementById('usuario');
+  var smtp = document.getElementById('smtp-fields');
+  function sync(fill) {
+    var p = byVal[sel.value] || {};
+    if (help) help.textContent = p.help || '';
+    if (smtp) smtp.style.display = sel.value === 'simulacion' ? 'none' : '';
+    if (!fill) return;
+    if (p.host && host) host.value = p.host;
+    if (p.port && port) port.value = p.port;
+    if (p.seguridad && seguridad) seguridad.value = p.seguridad;
+    if (p.usuarioFijo && usuario) usuario.value = p.usuarioFijo;
+    else if (p.usuarioHint && usuario && !usuario.value) usuario.placeholder = p.usuarioHint;
+  }
+  if (sel) {
+    sel.addEventListener('change', function () { sync(true); });
+    sync(false);
+  }
+})();
+</script>
+<%- include('../../Partials/layout-bottom') %>

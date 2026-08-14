@@ -3,6 +3,7 @@
 <div class="toolbar">
   <a class="btn" href="/config-empresa/cargas">Cargas iniciales</a>
   <a class="btn" href="/nomina/configuracion">Políticas de nómina</a>
+  <a class="btn" href="/nomina/correo">Correo que envía recibos</a>
 </div>
 <% if (!empresa) { %>
 <p>No hay empresa vinculada a este tenant. Activa el tenant desde Arka-Presence Admin.</p>
@@ -20,19 +21,38 @@
     <legend>Domicilio fiscal</legend>
     <input name="domicilioFiscal" value="<%= empresa.domicilioFiscal || '' %>" placeholder="Domicilio fiscal" />
     <input name="ciudad" value="<%= empresa.ciudad || '' %>" placeholder="Ciudad" />
-    <input name="estado" value="<%= empresa.estado || '' %>" placeholder="Estado" />
+    <select name="estado">
+      <option value="">— Entidad federativa —</option>
+      <% (typeof entidadesFederativas !== 'undefined' ? entidadesFederativas : []).forEach(function(e) { %>
+      <option value="<%= e.value %>" <%= empresa.estado === e.value ? 'selected' : '' %>><%= e.label %> (<%= e.value %>)</option>
+      <% }); %>
+    </select>
     <input name="codigoPostal" value="<%= empresa.codigoPostal || '' %>" placeholder="Código postal" />
   </fieldset>
   <fieldset class="form-section">
-    <legend>IMSS — prima de riesgos de trabajo</legend>
+    <legend>IMSS</legend>
+    <input name="registroPatronal" maxlength="11" value="<%= empresa.registroPatronal || '' %>"
+      placeholder="Registro patronal IMSS (11 caracteres) *" required />
     <label>Prima RT (decimal, ej. 0.00543 = 0.543%)
       <input name="primaRiesgoTrabajo" type="number" step="0.00001" min="0.005" max="0.15"
         value="<%= empresa.primaRiesgoTrabajo != null ? empresa.primaRiesgoTrabajo : 0.00543 %>" />
     </label>
-    <p class="muted small">Se usa en <code>imssPatronal()</code> para el ramo Riesgos de trabajo (0.5%–15%).</p>
+    <p class="muted small" style="grid-column:1/-1">
+      El <strong>registro patronal</strong> es obligatorio para exportación SUA / confronta IDSE.
+      La prima RT se usa en <code>imssPatronal()</code> (0.5%–15%).
+    </p>
   </fieldset>
   <button type="submit">Guardar datos</button>
 </form>
+
+<section class="panel" style="margin-top:1.5rem">
+  <h2 class="panel-title">Correo de nómina</h2>
+  <p class="muted small">
+    El remitente de los recibos (Gmail, Microsoft 365, SMTP, SendGrid, simulación, etc.) se configura por perfil.
+    Marca uno como predeterminado: ese es el que envía.
+  </p>
+  <a class="btn" href="/nomina/correo">Configurar correo que envía →</a>
+</section>
 
 <section class="panel" style="margin-top:1.5rem">
   <h2 class="panel-title">Onboarding / datos iniciales</h2>

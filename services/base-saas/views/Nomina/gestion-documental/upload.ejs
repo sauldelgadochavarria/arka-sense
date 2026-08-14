@@ -1,0 +1,66 @@
+<%- include('../../Partials/layout-top', { title: 'Subir documento', session }) %>
+<div class="page-header">
+  <h1>Subir documento</h1>
+  <p class="page-subtitle">Clasifica el archivo según el expediente (período, mes o trabajador).</p>
+</div>
+<p><a href="/nomina/gestion-documental">← Cumplimiento</a></p>
+<% if (error) { %><p class="alert"><%= error %></p><% } %>
+<% if (!empresa) { %>
+<p>Sin empresa.</p>
+<% } else { %>
+<form method="post" action="/nomina/gestion-documental/subir" enctype="multipart/form-data" class="form-grid form-wide">
+  <label>Tipo documental
+    <select name="tipoCodigo" id="tipoCodigo" required>
+      <% (tipos || []).forEach(function(t) { %>
+      <option value="<%= t.codigo %>" data-ambito="<%= t.ambito %>"><%= t.grupo %> · <%= t.nombre %></option>
+      <% }); %>
+    </select>
+  </label>
+  <label>Archivo <input type="file" name="archivo" required /></label>
+  <label>Año <input type="number" name="anio" value="<%= anio %>" /></label>
+  <label>Mes
+    <select name="mes">
+      <option value="">—</option>
+      <% (meses || []).forEach(function(m) { %>
+      <option value="<%= m.num %>"><%= m.nombre %></option>
+      <% }); %>
+    </select>
+  </label>
+  <label id="blk-periodo">Período de nómina
+    <select name="periodoId">
+      <option value="">—</option>
+      <% (periodos || []).forEach(function(p) { %>
+      <option value="<%= p._id %>"><%= p.anio %> #<%= p.numeroPeriodo %> <%= p.tipoPeriodo %> (<%= p.tipoNomina %>)</option>
+      <% }); %>
+    </select>
+  </label>
+  <label id="blk-empleado">Trabajador
+    <select name="empleadoId">
+      <option value="">—</option>
+      <% (empleados || []).forEach(function(e) { %>
+      <option value="<%= e._id %>"><%= e.numEmpleado %> — <%= e.firstName %> <%= e.lastName %></option>
+      <% }); %>
+    </select>
+  </label>
+  <label>Vigente desde <input type="date" name="vigenteDesde" /></label>
+  <label>Vigente hasta <input type="date" name="vigenteHasta" /></label>
+  <label style="grid-column:1/-1">Notas <input name="notas" /></label>
+  <button type="submit">Subir</button>
+</form>
+<script>
+(function () {
+  var tipo = document.getElementById('tipoCodigo');
+  var bp = document.getElementById('blk-periodo');
+  var be = document.getElementById('blk-empleado');
+  function sync() {
+    var opt = tipo.options[tipo.selectedIndex];
+    var a = opt.getAttribute('data-ambito');
+    bp.style.display = a === 'periodo' ? '' : 'none';
+    be.style.display = a === 'empleado' ? '' : 'none';
+  }
+  tipo.addEventListener('change', sync);
+  sync();
+})();
+</script>
+<% } %>
+<%- include('../../Partials/layout-bottom') %>

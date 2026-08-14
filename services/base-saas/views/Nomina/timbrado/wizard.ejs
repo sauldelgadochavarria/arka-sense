@@ -1,0 +1,92 @@
+<%- include('../../Partials/layout-top', { title: 'Timbrado CFDI', session }) %>
+<div class="page-header">
+  <h1>Proceso de timbrado</h1>
+  <p class="page-subtitle">Genera un lote de timbrado sobre un período calculado o cerrado. Por defecto simula UUID (sin llamar al PAC) hasta completar el payload CFDI.</p>
+</div>
+
+<div class="toolbar">
+  <a class="btn" href="/nomina/pac">Config PAC</a>
+  <a class="btn" href="/nomina/recibos-pdf">Recibos PDF</a>
+  <a class="btn" href="/nomina/correo">Correo que envía</a>
+  <a class="btn" href="/nomina/envio-correo">Envío de correo</a>
+</div>
+
+<% if (typeof messages !== 'undefined' && messages.error && messages.error.length) { %>
+<p class="alert"><%= messages.error[0] %></p>
+<% } %>
+<% if (error) { %><p class="alert"><%= error %></p><% } %>
+
+<% if (!empresa) { %>
+<p>Sin empresa.</p>
+<% } else { %>
+
+<form method="post" action="/nomina/timbrado/generar" class="filter-form form-grid">
+  <label>Período
+    <select name="periodoId" required>
+      <option value="">— Selecciona —</option>
+      <% (periodos || []).forEach(function(p) { %>
+      <option value="<%= p._id %>">
+        <%= p.tipoPeriodo || '' %> #<%= p.numeroPeriodo != null ? p.numeroPeriodo : '' %>
+        (<%= p.estatus %>)
+        <%= p.fechaInicio ? new Date(p.fechaInicio).toLocaleDateString('es-MX') : '' %>
+        –
+        <%= p.fechaFin ? new Date(p.fechaFin).toLocaleDateString('es-MX') : '' %>
+      </option>
+      <% }); %>
+    </select>
+  </label>
+  <label>PAC
+    <select name="pacConfigId" required>
+      <option value="">— Selecciona —</option>
+      <% (pacs || []).forEach(function(p) { %>
+      <option value="<%= p._id %>"><%= p.codigo %> — <%= p.nombre %> (<%= p.modoReal ? 'real' : 'sim' %>)</option>
+      <% }); %>
+    </select>
+  </label>
+  <label>Plantilla PDF (opcional)
+    <select name="plantillaPdfId">
+      <option value="">— Auto (resolución) —</option>
+      <% (plantillas || []).forEach(function(p) { %>
+      <option value="<%= p._id %>"><%= p.codigo %> — <%= p.nombre %></option>
+      <% }); %>
+    </select>
+  </label>
+  <label class="checkbox">
+    <input type="checkbox" name="forzarReal" value="1" />
+    Forzar modo real (requiere credenciales y payload CFDI listo)
+  </label>
+  <button type="submit" class="btn btn-primary">Generar lote / timbrar</button>
+</form>
+
+<% if (!(pacs || []).length) { %>
+<p class="muted">Primero crea un PAC (botón “Crear demo SW” en Config PAC).</p>
+<% } %>
+
+<h2>Últimos lotes</h2>
+<% if (!(lotes || []).length) { %>
+<p class="muted">Sin lotes aún.</p>
+<% } else { %>
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>Fecha</th><th>Estatus</th><th>Modo</th><th>Recibos</th><th>OK</th><th>Error</th><th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <% lotes.forEach(function(l) { %>
+    <tr>
+      <td><%= l.createdAt ? new Date(l.createdAt).toLocaleString('es-MX') : '—' %></td>
+      <td><%= l.estatus %></td>
+      <td><%= l.modo %></td>
+      <td><%= l.totales && l.totales.recibos %></td>
+      <td><%= l.totales && l.totales.timbrados %></td>
+      <td><%= l.totales && l.totales.errores %></td>
+      <td><a href="/nomina/timbrado/lotes/<%= l._id %>">Ver</a></td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<% } %>
+
+<% } %>
+<%- include('../../Partials/layout-bottom') %>

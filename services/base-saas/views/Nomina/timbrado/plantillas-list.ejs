@@ -1,0 +1,46 @@
+<%- include('../../Partials/layout-top', { title: 'Plantillas recibo PDF', session }) %>
+<div class="page-header">
+  <h1>Recibos PDF</h1>
+  <p class="page-subtitle">Plantillas HTML dinámicas por tipo de período y RFC emisor (varios formatos).</p>
+</div>
+<div class="toolbar">
+  <a class="btn" href="/nomina/timbrado">← Timbrado</a>
+  <a class="btn btn-primary" href="/nomina/recibos-pdf/nuevo">+ Nueva plantilla</a>
+  <form method="post" action="/nomina/recibos-pdf/seed-ejemplo" class="inline-form">
+    <button type="submit">Aplicar layout CFDI 4.0</button>
+  </form>
+</div>
+<% if (error) { %><p class="alert"><%= error %></p><% } %>
+<% if (!empresa) { %>
+<p>Sin empresa.</p>
+<% } else if (!rows.length) { %>
+<p class="muted">Sin plantillas. Crea una o usa el ejemplo.</p>
+<% } else { %>
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>Código</th><th>Nombre</th><th>Tipo período</th><th>RFC emisor</th><th>Default</th><th>Activo</th><th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <% rows.forEach(function(p) { %>
+    <tr class="<%= !p.activo ? 'row-muted' : '' %>">
+      <td><code><%= p.codigo %></code></td>
+      <td><%= p.nombre %></td>
+      <td><%= p.tipoPeriodoId ? (tipoMap.get(String(p.tipoPeriodoId)) || p.tipoPeriodoId) : 'Todos' %></td>
+      <td><%= p.rfcEmisor || '—' %></td>
+      <td><%= p.esDefault ? 'Sí' : '' %></td>
+      <td><%= p.activo ? 'Sí' : 'No' %></td>
+      <td class="actions">
+        <a href="/nomina/recibos-pdf/<%= p._id %>/edit">Editar</a>
+        <a href="/nomina/recibos-pdf/<%= p._id %>/preview" target="_blank">Preview</a>
+        <form method="post" action="/nomina/recibos-pdf/<%= p._id %>/toggle" class="inline-form">
+          <button type="submit"><%= p.activo ? 'Desactivar' : 'Activar' %></button>
+        </form>
+      </td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<% } %>
+<%- include('../../Partials/layout-bottom') %>

@@ -1,0 +1,82 @@
+<%- include('../../Partials/layout-top', { title: 'Cobertura documental', session }) %>
+<div class="page-header">
+  <h1>Reporte de cobertura</h1>
+  <p class="page-subtitle">Faltantes obligatorios, vencimientos y totales por grupo.</p>
+</div>
+<div class="toolbar">
+  <a class="btn" href="/nomina/gestion-documental">← Cumplimiento</a>
+  <a class="btn" href="?anio=<%= anio %>&mes=<%= mes %>&format=csv">Exportar CSV</a>
+</div>
+<form method="get" class="form-grid" style="margin-bottom:1rem">
+  <label>Año <input type="number" name="anio" value="<%= anio %>" /></label>
+  <label>Mes
+    <select name="mes">
+      <% (meses || []).forEach(function(m) { %>
+      <option value="<%= m.num %>" <%= Number(mes) === m.num ? 'selected' : '' %>><%= m.nombre %></option>
+      <% }); %>
+    </select>
+  </label>
+  <button type="submit">Actualizar</button>
+</form>
+<% if (!empresa) { %>
+<p>Sin empresa.</p>
+<% } else if (!reporte) { %>
+<p class="muted">Sin datos.</p>
+<% } else { %>
+<p>
+  Documentos activos en el filtro: <strong><%= reporte.totalDocumentos %></strong>
+</p>
+<h3>Faltantes del mes (obligatorios)</h3>
+<% if (!(reporte.faltantesMes || []).length) { %>
+<p class="muted">Ninguno.</p>
+<% } else { %>
+<ul>
+  <% reporte.faltantesMes.forEach(function(f) { %>
+  <li><code><%= f.codigo %></code> — <%= f.nombre %></li>
+  <% }); %>
+</ul>
+<% } %>
+
+<h3>Expediente trabajador incompleto</h3>
+<% if (!(reporte.faltantesEmpleado || []).length) { %>
+<p class="muted">Ninguno.</p>
+<% } else { %>
+<table class="data-table">
+  <thead><tr><th>Empleado</th><th>Faltan</th></tr></thead>
+  <tbody>
+    <% reporte.faltantesEmpleado.forEach(function(e) { %>
+    <tr>
+      <td><%= e.numEmpleado %> <%= e.nombre %></td>
+      <td><%= (e.faltantes || []).join(', ') %></td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<% } %>
+
+<h3>Por vencer</h3>
+<% if (!(reporte.porVencer || []).length) { %>
+<p class="muted">Ninguno.</p>
+<% } else { %>
+<ul>
+  <% reporte.porVencer.forEach(function(d) { %>
+  <li><%= d.numEmpleado %> · <%= d.tipoCodigo %> · hasta <%= d.vigenteHasta %></li>
+  <% }); %>
+</ul>
+<% } %>
+
+<h3>Vencidos</h3>
+<% if (!(reporte.vencidos || []).length) { %>
+<p class="muted">Ninguno.</p>
+<% } else { %>
+<ul>
+  <% reporte.vencidos.forEach(function(d) { %>
+  <li><%= d.numEmpleado %> · <%= d.tipoCodigo %> · <%= d.vigenteHasta %></li>
+  <% }); %>
+</ul>
+<% } %>
+
+<h3>Totales por grupo</h3>
+<pre class="muted"><%= JSON.stringify(reporte.porGrupo || {}, null, 2) %></pre>
+<% } %>
+<%- include('../../Partials/layout-bottom') %>

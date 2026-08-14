@@ -93,7 +93,11 @@
 <fieldset class="form-section">
   <legend>Datos para el IMSS</legend>
   <input name="nss" placeholder="NSS (Número de Seguridad Social)" value="<%= empleado ? empleado.nss : '' %>" />
-  <input name="registroPatronal" placeholder="Registro patronal IMSS" maxlength="20" value="<%= empleado ? (empleado.registroPatronal || '') : '' %>" />
+  <input name="registroPatronal" placeholder="Registro patronal IMSS (si vacío usa el de la empresa)" maxlength="11" value="<%= empleado ? (empleado.registroPatronal || '') : '' %>" />
+  <p class="muted small" style="grid-column:1/-1">
+    El registro patronal es obligatorio para SUA/IDSE. Puede definirse aquí o en
+    <a href="/config-empresa">Datos de empresa</a> (aplica a todos los empleados sin override).
+  </p>
   <input name="umf" placeholder="UMF (Unidad de Medicina Familiar)" value="<%= empleado ? (empleado.umf || '') : '' %>" />
   <select name="estadoCivil">
     <option value="">— Estado civil —</option>
@@ -130,8 +134,16 @@
   <input name="domicilio_numeroInt" placeholder="No. interior" value="<%= dom.numeroInt || '' %>" />
   <input name="domicilio_colonia" placeholder="Colonia" value="<%= dom.colonia || '' %>" />
   <input name="domicilio_poblacion" placeholder="Población / ciudad" value="<%= dom.poblacion || '' %>" />
-  <input name="domicilio_entidad" placeholder="Entidad federativa (domicilio)" value="<%= dom.entidad || '' %>" />
+  <select name="domicilio_entidad" required>
+    <option value="">— Entidad federativa (ISN) * —</option>
+    <% _entidades.forEach(function(e) { %>
+    <option value="<%= e.value %>" <%= dom.entidad === e.value ? 'selected' : '' %>><%= e.label %> (<%= e.value %>)</option>
+    <% }); %>
+  </select>
   <input name="domicilio_codigoPostal" placeholder="C.P. * (CFDI)" maxlength="5" pattern="[0-9]{5}" value="<%= dom.codigoPostal || '' %>" />
+  <p class="muted small" style="grid-column:1/-1">
+    La <strong>entidad federativa</strong> del domicilio determina el impuesto sobre nómina estatal (ISN).
+  </p>
   <p class="hint" style="grid-column:1/-1">El <strong>código postal</strong> del trabajador es obligatorio para el timbrado del CFDI de nómina.</p>
 </fieldset>
 
@@ -155,6 +167,12 @@
     <option value="">— Departamento —</option>
     <% departamentos.forEach(function(d) { %>
     <option value="<%= d._id %>" <%= empleado && empleado.departamentoId && String(empleado.departamentoId) === String(d._id) ? 'selected' : '' %>><%= d.nombre %></option>
+    <% }); %>
+  </select>
+  <select name="centroCostoId">
+    <option value="">— Centro de costo —</option>
+    <% (centrosCosto || []).forEach(function(c) { %>
+    <option value="<%= c._id %>" <%= empleado && empleado.centroCostoId && String(empleado.centroCostoId) === String(c._id) ? 'selected' : '' %>><%= c.codigo %> — <%= c.nombre %></option>
     <% }); %>
   </select>
   <select name="puestoId">
@@ -306,11 +324,21 @@
   </div>
 </fieldset>
 
+<% const dbanco = empleado && empleado.datosBancarios ? empleado.datosBancarios : {}; %>
+<fieldset class="form-section">
+  <legend>Datos bancarios (dispersión)</legend>
+  <p class="hint">Usados por layouts bancarios (<code>empleado.banco</code>, <code>empleado.cuenta</code>, <code>empleado.clabe</code>).</p>
+  <input name="banco_bancoCodigo" maxlength="5" placeholder="Código banco (ej. 012)" value="<%= dbanco.bancoCodigo || '' %>" />
+  <input name="banco_bancoNombre" placeholder="Nombre banco" value="<%= dbanco.bancoNombre || '' %>" />
+  <input name="banco_cuenta" placeholder="Cuenta" value="<%= dbanco.cuenta || '' %>" />
+  <input name="banco_clabe" maxlength="18" placeholder="CLABE (18 dígitos)" value="<%= dbanco.clabe || '' %>" />
+</fieldset>
+
 <% if (typeof showNominaConfig !== 'undefined' && showNominaConfig) { %>
 <% const nc = empleado && empleado.nominaConfig ? empleado.nominaConfig : {}; %>
 <fieldset class="form-section">
-  <legend>Nómina formal (INFONAVIT / fondo / finiquito)</legend>
-  <p class="hint">Parámetros del motor (INFONAVIT, fondo de ahorro, finiquito). El SDI/SBC para IMSS está en «Información salarial».</p>
+  <legend>Nómina formal (INFONAVIT / FONACOT / fondo / finiquito)</legend>
+  <p class="hint">Parámetros del motor (créditos, fondo de ahorro, finiquito). El SDI/SBC para IMSS está en «Información salarial».</p>
 
   <div class="checkbox-group">
     <label><input type="checkbox" name="nomina_aplicaFondoAhorro" value="1" <%= nc.aplicaFondoAhorro ? 'checked' : '' %> /> Aplica fondo de ahorro</label>
@@ -356,8 +384,52 @@
   </select>
   <input name="nomina_tasaInfonavit" type="number" min="0" step="0.0001" placeholder="Tasa / valor INFONAVIT (% o monto según tipo)" value="<%= nc.tasaInfonavit > 0 ? nc.tasaInfonavit : '' %>" />
   <input name="nomina_infonavitDescuento" type="number" min="0" step="0.01" placeholder="Descuento fijo por período (opcional, anula cálculo)" value="<%= nc.infonavitDescuento > 0 ? nc.infonavitDescuento : '' %>" />
-  <input name="nomina_sueldoIntegrado" type="number" min="0" step="0.01" placeholder="Base INFONAVIT % del período (opcional)" value="<%= nc.sueldoIntegrado > 0 ? nc.sueldoIntegrado : '' %>" />
-  <input name="nomina_diasCotizacionImss" type="number" min="0" step="1" placeholder="Override días cotización IMSS/INFONAVIT" value="<%= nc.diasCotizacionImss > 0 ? nc.diasCotizacionImss : '' %>" />
+  <input name="nomina_infonavitNumeroCredito" maxlength="10" placeholder="Núm. crédito INFONAVIT (SUA CRED.TXT)" value="<%= nc.infonavitNumeroCredito || '' %>" />
+  <input name="nomina_infonavitFechaInicio" type="date" title="Fecha inicio descuento INFONAVIT" value="<%= nc.infonavitFechaInicio ? new Date(nc.infonavitFechaInicio).toISOString().slice(0,10) : '' %>" />
+  <input name="nomina_sueldoIntegrado" type="number" min="0" step="0.01" placeholder="Base créditos del período (opcional)" value="<%= nc.sueldoIntegrado > 0 ? nc.sueldoIntegrado : '' %>" />
+  <input name="nomina_diasCotizacionImss" type="number" min="0" step="1" placeholder="Override días cotización IMSS/créditos" value="<%= nc.diasCotizacionImss > 0 ? nc.diasCotizacionImss : '' %>" />
+
+  <h3 class="form-subtitle">FONACOT (cédula de descuentos)</h3>
+  <p class="muted small" style="grid-column:1/-1">
+    Registra el monto o % de la cédula/portal FONACOT.
+    Tope del crédito: <strong>10%</strong> si gana salario mínimo; hasta <strong>20%</strong> (10/15/20) si superior.
+    La suma INFONAVIT + FONACOT no supera el <strong>30%</strong> del salario nominal del período (prioridad INFONAVIT).
+    CFDI: clave deducción <code>011</code>.
+  </p>
+  <select name="nomina_tipoCreditoFonacot" id="nomina_tipoCreditoFonacot">
+    <% (tiposCreditoFonacot || []).forEach(function(t) { %>
+    <option value="<%= t.value %>" <%= (nc.tipoCreditoFonacot || '') === t.value ? 'selected' : '' %>><%= t.label %></option>
+    <% }); %>
+  </select>
+  <input name="nomina_fonacotMonto" type="number" min="0" step="0.01" placeholder="Monto fijo del período ($)" value="<%= nc.fonacotMonto > 0 ? nc.fonacotMonto : '' %>" />
+  <input name="nomina_fonacotPorcentaje" type="number" min="0" max="20" step="0.01" placeholder="% sobre bruto (10 / 15 / 20)" value="<%= nc.fonacotPorcentaje > 0 ? nc.fonacotPorcentaje : '' %>" />
+  <input name="nomina_fonacotDescuento" type="number" min="0" step="0.01" placeholder="Override fijo período (opcional, anula cálculo)" value="<%= nc.fonacotDescuento > 0 ? nc.fonacotDescuento : '' %>" />
+
+  <h3 class="form-subtitle">Cuota sindical (CCT / contrato)</h3>
+  <p class="muted small" style="grid-column:1/-1">
+    Deducción voluntaria <strong>después</strong> de ISR/IMSS/INFONAVIT/FONACOT (orden 70).
+    Puedes incluirla en el <strong>tope 30%</strong> (prelación: INF → FON → sindicato) o dejarla fuera, según el contrato.
+    La política default se define en <a href="/nomina/configuracion">Configuración fiscal</a>.
+    CFDI: clave deducción <code>004</code> (Otros).
+  </p>
+  <select name="nomina_tipoCuotaSindical">
+    <% (tiposCuotaSindical || []).forEach(function(t) { %>
+    <option value="<%= t.value %>" <%= (nc.tipoCuotaSindical || '') === t.value ? 'selected' : '' %>><%= t.label %></option>
+    <% }); %>
+  </select>
+  <input name="nomina_cuotaSindicalMonto" type="number" min="0" step="0.01" placeholder="Monto fijo del período ($)" value="<%= nc.cuotaSindicalMonto > 0 ? nc.cuotaSindicalMonto : '' %>" />
+  <input name="nomina_cuotaSindicalPorcentaje" type="number" min="0" max="100" step="0.01" placeholder="% cuota sindical" value="<%= nc.cuotaSindicalPorcentaje > 0 ? nc.cuotaSindicalPorcentaje : '' %>" />
+  <input name="nomina_cuotaSindicalDescuento" type="number" min="0" step="0.01" placeholder="Override fijo período (opcional)" value="<%= nc.cuotaSindicalDescuento > 0 ? nc.cuotaSindicalDescuento : '' %>" />
+  <select name="nomina_cuotaSindicalBase">
+    <% (cuotaSindicalBaseOpts || []).forEach(function(t) { %>
+    <option value="<%= t.value %>" <%= (nc.cuotaSindicalBase || '') === t.value ? 'selected' : '' %>><%= t.label %></option>
+    <% }); %>
+  </select>
+  <select name="nomina_cuotaSindicalEnTope30">
+    <% (cuotaSindicalTope30Opts || []).forEach(function(t) { %>
+    <option value="<%= t.value %>" <%= (nc.cuotaSindicalEnTope30 || '') === t.value ? 'selected' : '' %>><%= t.label %></option>
+    <% }); %>
+  </select>
 
   <h3 class="form-subtitle">Extraordinaria / finiquito</h3>
   <p class="muted small" style="grid-column:1/-1">

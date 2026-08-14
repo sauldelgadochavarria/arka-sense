@@ -1,0 +1,90 @@
+<%- include('../../Partials/layout-top', { title: 'Config. gestión documental', session }) %>
+<% const C = config || {}; const L = C.local || {}; const S = C.s3 || {}; %>
+<div class="page-header">
+  <h1>Configuración de storage</h1>
+  <p class="page-subtitle">
+    Guarda en carpeta local por empresa (volumen Docker) o en un bucket S3-compatible
+    (Linode Object Storage suele ser más económico que AWS).
+  </p>
+</div>
+<p><a href="/nomina/gestion-documental">← Cumplimiento</a></p>
+<% if (error) { %><p class="alert"><%= error %></p><% } %>
+<% if (typeof success !== 'undefined' && success) { %><p class="alert alert-success"><%= success %></p><% } %>
+<% if (!empresa) { %>
+<p>Sin empresa.</p>
+<% } else { %>
+<form method="post" action="/nomina/gestion-documental/config" class="form-grid form-wide">
+  <label class="checkbox"><input type="checkbox" name="activo" value="1" <%= C.activo !== false ? 'checked' : '' %> /> Activo</label>
+  <label>Slug empresa (carpeta raíz)
+    <input name="empresaSlug" value="<%= C.empresaSlug || '' %>" placeholder="Ingenios_XYZ" />
+  </label>
+  <label>Proveedor
+    <select name="proveedor" id="proveedor">
+      <% (proveedores || []).forEach(function(p) { %>
+      <option value="<%= p.value %>" <%= C.proveedor === p.value ? 'selected' : '' %>><%= p.label %></option>
+      <% }); %>
+    </select>
+  </label>
+  <label class="checkbox"><input type="checkbox" name="versionado" value="1" <%= C.versionado !== false ? 'checked' : '' %> /> Conservar versiones al reemplazar</label>
+  <label>Días aviso vencimiento
+    <input type="number" name="diasAvisoVencimiento" min="0" value="<%= C.diasAvisoVencimiento != null ? C.diasAvisoVencimiento : 30 %>" />
+  </label>
+
+  <fieldset style="grid-column:1/-1" id="blk-local">
+    <legend>Carpeta local</legend>
+    <label>Ruta raíz
+      <input name="rootPath" value="<%= L.rootPath || '/data/documentos' %>" style="width:100%" />
+    </label>
+    <p class="muted small">Ej. <code>/data/documentos</code> montado como volumen. Árbol: <code>{slug}/{año}/{mes}/…</code> y <code>{slug}/Trabajadores/…</code>.</p>
+  </fieldset>
+
+  <fieldset style="grid-column:1/-1" id="blk-s3">
+    <legend>Bucket S3 / Linode</legend>
+    <label>Endpoint
+      <select name="endpointPreset" id="endpointPreset">
+        <% (linodeEndpoints || []).forEach(function(e) { %>
+        <option value="<%= e.value %>" <%= (S.endpoint || '') === e.value ? 'selected' : '' %>><%= e.label %></option>
+        <% }); %>
+      </select>
+    </label>
+    <label>Endpoint URL
+      <input name="endpoint" id="endpoint" value="<%= S.endpoint || 'https://us-east-1.linodeobjects.com' %>" />
+    </label>
+    <label>Region <input name="region" value="<%= S.region || 'us-east-1' %>" /></label>
+    <label>Bucket <input name="bucket" value="<%= S.bucket || '' %>" /></label>
+    <label>Access Key <input name="accessKeyId" value="<%= S.accessKeyId || '' %>" autocomplete="off" /></label>
+    <label>Secret Key
+      <input type="password" name="secretAccessKey" value="<%= S.secretAccessKey || '' %>" autocomplete="new-password" placeholder="******** para no cambiar" />
+    </label>
+    <label>Prefijo (opcional) <input name="prefix" value="<%= S.prefix || '' %>" /></label>
+    <label class="checkbox"><input type="checkbox" name="forcePathStyle" value="1" <%= S.forcePathStyle !== false ? 'checked' : '' %> /> Path-style (recomendado Linode)</label>
+  </fieldset>
+
+  <label style="grid-column:1/-1">Notas
+    <input name="notas" value="<%= C.notas || '' %>" />
+  </label>
+  <button type="submit">Guardar</button>
+</form>
+<script>
+(function () {
+  var sel = document.getElementById('proveedor');
+  var local = document.getElementById('blk-local');
+  var s3 = document.getElementById('blk-s3');
+  function sync() {
+    var v = sel.value;
+    local.style.opacity = v === 'local' ? '1' : '.45';
+    s3.style.opacity = v === 's3' ? '1' : '.45';
+  }
+  sel.addEventListener('change', sync);
+  sync();
+  var preset = document.getElementById('endpointPreset');
+  var endpoint = document.getElementById('endpoint');
+  if (preset && endpoint) {
+    preset.addEventListener('change', function () {
+      if (preset.value) endpoint.value = preset.value;
+    });
+  }
+})();
+</script>
+<% } %>
+<%- include('../../Partials/layout-bottom') %>

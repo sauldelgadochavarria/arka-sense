@@ -1,0 +1,56 @@
+<%- include('../../Partials/layout-top', { title: 'Configuración de correo', session }) %>
+<div class="page-header">
+  <h1>Correo que envía los recibos</h1>
+  <p class="page-subtitle">
+    Puedes tener varios perfiles (Gmail, Microsoft 365, SMTP, SendGrid…) y marcar uno como
+    <strong>predeterminado</strong>: ese es el que usa el envío de nómina.
+  </p>
+</div>
+<div class="toolbar">
+  <a class="btn" href="/nomina/envio-correo">← Envío de recibos</a>
+  <a class="btn" href="/config-empresa">Datos de empresa</a>
+  <a class="btn btn-primary" href="/nomina/correo/nuevo">+ Nuevo perfil</a>
+  <form method="post" action="/nomina/correo/seed-ejemplo" class="inline-form">
+    <button type="submit">Crear perfil simulación</button>
+  </form>
+</div>
+<% if (error) { %><p class="alert"><%= error %></p><% } %>
+<% if (!empresa) { %>
+<p>Sin empresa.</p>
+<% } else if (!(rows || []).length) { %>
+<p class="muted">Aún no hay perfiles. Crea uno o pulsa “Crear perfil simulación” para probar el flujo sin SMTP.</p>
+<% } else { %>
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>Código</th><th>Nombre</th><th>Proveedor</th><th>Remitente</th>
+      <th>Predeterminado</th><th>Activo</th><th>Enviados</th><th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <% rows.forEach(function(c) { %>
+    <tr class="<%= !c.activo ? 'row-muted' : '' %>">
+      <td><code><%= c.codigo %></code></td>
+      <td><%= c.nombre %></td>
+      <td><%= c.proveedor %></td>
+      <td><%= c.fromEmail || '—' %><% if (c.fromNombre) { %> <span class="muted">(<%= c.fromNombre %>)</span><% } %></td>
+      <td><%= c.esDefault ? 'Sí' : '' %></td>
+      <td><%= c.activo ? 'Sí' : 'No' %></td>
+      <td><%= c.totalEnviados || 0 %></td>
+      <td class="actions">
+        <a href="/nomina/correo/<%= c._id %>/edit">Editar</a>
+        <% if (!c.esDefault && c.activo) { %>
+        <form method="post" action="/nomina/correo/<%= c._id %>/default" class="inline-form">
+          <button type="submit">Usar para enviar</button>
+        </form>
+        <% } %>
+        <form method="post" action="/nomina/correo/<%= c._id %>/toggle" class="inline-form">
+          <button type="submit"><%= c.activo ? 'Desactivar' : 'Activar' %></button>
+        </form>
+      </td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<% } %>
+<%- include('../../Partials/layout-bottom') %>

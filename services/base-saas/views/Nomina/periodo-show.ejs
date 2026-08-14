@@ -1,4 +1,5 @@
 <%- include('../Partials/layout-top', { title: 'Período de nómina', session }) %>
+<% const _canEdit = typeof canEdit !== 'undefined' ? canEdit : true; %>
 <h1>
   Período <%= periodo.tipoPeriodo %>
   <% if (periodo.numeroPeriodo != null) { %>#<%= periodo.numeroPeriodo %><% } %>
@@ -11,6 +12,22 @@
   <strong><%= new Date(periodo.fechaFin).toLocaleDateString('es-MX') %></strong>
   · <%= periodo.diasPeriodo %> días
   · Estatus: <span class="badge badge-<%= periodo.estatus === 'cerrado' ? 'baja' : periodo.estatus === 'calculado' ? 'activo' : periodo.estatus === 'calculando' ? 'suspendido' : 'suspendido' %>"><%= estatusLabels[periodo.estatus] || periodo.estatus %></span>
+  <% const lbPer = periodo.layoutBancario || {}; %>
+  <% if (lbPer.estatus === 'generado') { %>
+  · Dispersión: <span class="badge badge-activo">Layout generado</span>
+  <span class="muted small">(<%= lbPer.layoutCodigo || '' %> · <%= lbPer.archivoNombre || '' %>)</span>
+  <% } else if (periodo.estatus === 'calculado' || periodo.estatus === 'cerrado') { %>
+  · Dispersión: <span class="badge badge-suspendido">Pendiente</span>
+  <% } %>
+  <% const correoPer = periodo.correo || {}; %>
+  <% if (correoPer.estatus === 'enviado') { %>
+  · Correo: <span class="badge badge-activo">Enviado</span>
+  <span class="muted small"><%= correoPer.enviadoAt ? new Date(correoPer.enviadoAt).toLocaleString('es-MX') : '' %></span>
+  <% } else if (correoPer.estatus === 'parcial') { %>
+  · Correo: <span class="badge badge-suspendido">Parcial</span>
+  <% } else if (periodo.estatus === 'cerrado') { %>
+  · Correo: <span class="badge badge-suspendido">Pendiente</span>
+  <% } %>
 </p>
 <%
   function fmtDt(v) {
@@ -31,15 +48,18 @@
   · Fecha de cierre: <strong><%= fmtDt(fechaCierre) %></strong>
   · Cerró: <strong><%= (typeof cerradoPor !== 'undefined' && cerradoPor) ? cerradoPor : (periodo.cerradoPorLabel || periodo.cerradoPorUserId || '—') %></strong>
   <% if (periodo.cierreResumen && periodo.cierreResumen.recibosArchivados) { %>
-  · Histórico: <%= periodo.cierreResumen.recibosArchivados %> recibos ·
-  <%= periodo.cierreResumen.conceptosAcumulados || 0 %> líneas a acumulados
+  · Histórico: <%= periodo.cierreResumen.recibosArchivados %> recibos
+  <% if (periodo.cierreResumen.operativosEliminados != null) { %>
+  · Temporal limpiado: <%= periodo.cierreResumen.operativosEliminados %>
+  <% } %>
+  · <%= periodo.cierreResumen.conceptosAcumulados || 0 %> líneas a acumulados
   <% } %>
 </p>
 
 <%
   const prest = periodo.prestaciones || {};
   const estatusPrest = String(periodo.estatus || '').toLowerCase();
-  const puedeEditarPrest = estatusPrest === 'abierto' || estatusPrest === 'calculado';
+  const puedeEditarPrest = _canEdit && (estatusPrest === 'abierto' || estatusPrest === 'calculado');
   const fmtMoney = function (n) {
     return Number(n || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 });
   };
@@ -104,7 +124,7 @@
   <strong>Sin pre-nómina vinculada.</strong>
   El recálculo usa calendario/expediente (todos los activos, <%= periodo.diasPeriodo %> días).
   La asistencia de pre-nómina <em>no</em> aplica hasta vincular.
-  <% if (typeof prenominaCandidatos !== 'undefined' && prenominaCandidatos.length) { %>
+  <% if (_canEdit && typeof prenominaCandidatos !== 'undefined' && prenominaCandidatos.length) { %>
   <p class="muted small" style="grid-column:1/-1">
     Solo puedes vincular una pre-nómina del <strong>mismo tipo</strong> (<%= periodo.tipoPeriodo %>).
     Vincular <em>no</em> cambia el tipo del período de nómina.
@@ -160,15 +180,24 @@
 
 <div class="toolbar">
   <a class="btn" href="/nomina/periodos">← Períodos</a>
-  <% if (periodo.estatus !== 'cerrado' && periodo.estatus !== 'calculando') { %>
+  <% if (!_canEdit) { %>
+  <span class="muted small">Consulta — calcular/cerrar requiere rol Nómina operativa</span>
+  <% } %>
+  <% if (_canEdit && periodo.estatus !== 'cerrado' && periodo.estatus !== 'calculando') { %>
   <form method="post" action="/nomina/periodos/<%= periodo._id %>/calcular" class="inline-form">
     <button type="submit" <%= preflight && !preflight.ok ? 'disabled' : '' %>>Calcular nómina (async)</button>
   </form>
   <% } %>
-  <% if (periodo.estatus === 'calculado') { %>
-  <form method="post" action="/nomina/periodos/<%= periodo._id %>/cerrar" class="inline-form" onsubmit="return confirm('¿Cerrar período? Se archivará el histórico, se actualizarán acumulados y no se podrá recalcular.');">
+  <% if (_canEdit && periodo.estatus === 'calculado') { %>
+  <form method="post" action="/nomina/periodos/<%= periodo._id %>/cerrar" class="inline-form" onsubmit="return confirm('¿Cerrar período? Los recibos se moverán al histórico (copiar + borrar del temporal), se actualizarán acumulados y no se podrá recalcular.');">
     <button type="submit">Cerrar período</button>
   </form>
+  <% } %>
+  <% if (_canEdit && (periodo.estatus === 'calculado' || periodo.estatus === 'cerrado')) { %>
+  <a class="btn btn-primary" href="/nomina/dispersion-bancaria?periodoId=<%= periodo._id %>">Generar archivo bancario</a>
+  <% } %>
+  <% if (_canEdit && periodo.estatus === 'cerrado') { %>
+  <a class="btn" href="/nomina/envio-correo?periodoId=<%= periodo._id %>"><%= (periodo.correo && periodo.correo.estatus === 'enviado') ? 'Reenviar correos' : 'Enviar recibos por correo' %></a>
   <% } %>
 </div>
 
@@ -201,6 +230,8 @@
       <th>Percepciones</th>
       <th>Deducciones</th>
       <th>Neto</th>
+      <th>Dispersión</th>
+      <th>Correo</th>
       <th>Cálculo</th>
       <th>Cierre</th>
       <th></th>
@@ -208,12 +239,14 @@
   </thead>
   <tbody id="recibos-body">
     <% if (!recibos.length) { %>
-    <tr><td colspan="12" class="muted">Sin recibos. Ejecuta el cálculo del período.</td></tr>
+    <tr><td colspan="14" class="muted"><%= periodo.estatus === 'cerrado' ? 'Sin recibos en histórico para este período.' : 'Sin recibos. Ejecuta el cálculo del período.' %></td></tr>
     <% } %>
     <% recibos.forEach(function(r) {
          const fuente = r.insumosFuente || 'default';
          const fuenteLabel = fuente === 'prenomina' ? 'Pre-nómina / asistencia'
            : (fuente === 'prenomina_sin_detalle' ? 'Pre-nómina (sin detalle)' : 'Calendario / expediente');
+         const lb = r.layoutBancario || {};
+         const cor = r.correo || {};
     %>
     <tr>
       <td><%= r.numEmpleado %></td>
@@ -225,6 +258,26 @@
       <td>$<%= r.totalPercepciones.toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></td>
       <td>$<%= r.totalDeducciones.toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></td>
       <td>$<%= r.netoPagar.toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></td>
+      <td>
+        <% if (lb.estatus === 'generado') { %>
+        <span class="badge badge-activo" title="<%= lb.layoutCodigo || '' %>">Generado</span>
+        <% } else { %>
+        <span class="muted small">—</span>
+        <% } %>
+      </td>
+      <td>
+        <% if (cor.estatus === 'enviado') { %>
+        <span class="badge badge-activo" title="<%= cor.destinatario || '' %>">Enviado</span>
+        <% } else if (cor.estatus === 'error') { %>
+        <span class="badge badge-baja" title="<%= cor.errorMensaje || '' %>">Error</span>
+        <% } else if (cor.estatus === 'omitido') { %>
+        <span class="muted small">Omitido</span>
+        <% } else if (periodo.estatus === 'cerrado') { %>
+        <span class="muted small">Pendiente</span>
+        <% } else { %>
+        <span class="muted small">—</span>
+        <% } %>
+      </td>
       <td class="muted small"><%= fmtDt(r.fechaCalculo) %></td>
       <td class="muted small"><%= fmtDt(r.fechaCierre) %></td>
       <td><a href="/nomina/periodos/<%= periodo._id %>/recibos/<%= r._id %>">Detalle</a></td>

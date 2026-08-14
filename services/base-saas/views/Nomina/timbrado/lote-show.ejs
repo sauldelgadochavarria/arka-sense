@@ -1,0 +1,64 @@
+<%- include('../../Partials/layout-top', { title: 'Lote de timbrado', session }) %>
+<% const L = lote || {}; const T = L.totales || {}; %>
+<div class="page-header">
+  <h1>Lote de timbrado</h1>
+  <p class="page-subtitle">Estatus: <strong><%= L.estatus %></strong> · Modo: <%= L.modo %> · Serie: <%= L.serie || '—' %></p>
+</div>
+<div class="toolbar">
+  <a class="btn" href="/nomina/timbrado">← Timbrado</a>
+</div>
+
+<div class="report-summary">
+  <p>
+    Recibos: <%= T.recibos || 0 %>
+    · Timbrados: <%= T.timbrados || 0 %>
+    · Errores: <%= T.errores || 0 %>
+    · Omitidos: <%= T.omitidos || 0 %>
+    · Neto: $<%= Number(T.neto || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 }) %>
+  </p>
+  <% if (L.errorMensaje) { %><p class="alert"><%= L.errorMensaje %></p><% } %>
+</div>
+
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>Empleado</th><th>Nombre</th><th>Neto</th><th>Estatus</th><th>UUID</th><th>Serie-Folio</th><th>Error</th><th>Archivos</th>
+    </tr>
+  </thead>
+  <tbody>
+    <% (L.items || []).forEach(function(it) { %>
+    <tr>
+      <td><%= it.numEmpleado %></td>
+      <td><%= it.nombre %></td>
+      <td class="num">$<%= Number(it.netoPagar || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></td>
+      <td><%= it.estatus %></td>
+      <td><code class="small"><%= it.uuid || '—' %></code></td>
+      <td><%= (it.serie || '') + (it.folio ? ('-' + it.folio) : '') %></td>
+      <td class="muted"><%= it.errorMensaje || '' %></td>
+      <td>
+        <% if (it.archivoXmlId) { %>
+        <a href="/nomina/timbrado/archivos/<%= it.archivoXmlId %>/descargar">XML</a>
+        <% } %>
+        <% if (it.archivoPdfId) { %>
+        <%= it.archivoXmlId ? ' · ' : '' %>
+        <a href="/nomina/timbrado/archivos/<%= it.archivoPdfId %>/descargar">PDF</a>
+        <% } %>
+        <% if (it.historicoId || it.reciboId) { %>
+        <%= (it.archivoXmlId || it.archivoPdfId) ? ' · ' : '' %>
+        <% if (it.historicoId) { %>
+        <a href="/nomina/recibos-pdf/html?historicoId=<%= it.historicoId %>" target="_blank">Ver</a>
+        <% } else if (it.reciboId) { %>
+        <a href="/nomina/recibos-pdf/html?reciboId=<%= it.reciboId %>" target="_blank">Ver</a>
+        <% } %>
+        <% } %>
+        <% if (!it.archivoXmlId && !it.archivoPdfId && !it.historicoId && !it.reciboId) { %>—<% } %>
+      </td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<p class="muted small">
+  XML y PDF/HTML se guardan en Mongo (<code>nomina_cfdi_archivos</code>), fuera del histórico.
+  El “PDF” actual es HTML de la plantilla (imprimir → Guardar como PDF); binario nativo pendiente.
+</p>
+<%- include('../../Partials/layout-bottom') %>

@@ -2,6 +2,11 @@ const mongoose = require('mongoose');
 const { getFixedMongooseConnection, FIXED_CONNECTIONS } = require('../services/cachingService');
 const { COLLECTION_ATTENDANCE_RECORDS } = require('../config/constants');
 
+/**
+ * Marcación de asistencia.
+ * REJL corto plazo: se conserva el evento original; ajustes/anulaciones dejan rastro
+ * (nunca borrado físico en operación normal).
+ */
 const attendanceRecordSchema = new mongoose.Schema(
   {
     tenantId: { type: String, required: true, trim: true, index: true },
@@ -10,6 +15,8 @@ const attendanceRecordSchema = new mongoose.Schema(
     subsidiariaId: { type: mongoose.Schema.Types.ObjectId, ref: 'Subsidiaria' },
     fecha: { type: Date, required: true, index: true },
     timestamp: { type: Date, required: true, index: true },
+    /** Marca de tiempo tal como se registró la primera vez (inalterable en espíritu). */
+    timestampOriginal: { type: Date, default: null },
     tipoMarcacion: {
       type: String,
       enum: ['entrada', 'salida_comida', 'regreso_comida', 'salida'],
@@ -22,13 +29,33 @@ const attendanceRecordSchema = new mongoose.Schema(
     },
     registradoPorUserId: { type: String, default: '' },
     notas: { type: String, default: '' },
-    procesado: { type: Boolean, default: false }
+    procesado: { type: Boolean, default: false },
+    /** original = primera captura; ajuste = corregida con motivo. */
+    origen: {
+      type: String,
+      enum: ['original', 'ajuste'],
+      default: 'original'
+    },
+    /** activa participa en el cálculo; anulada se conserva pero no computa. */
+    estado: {
+      type: String,
+      enum: ['activa', 'anulada'],
+      default: 'activa',
+      index: true
+    },
+    motivoAjuste: { type: String, default: '' },
+    ajustadoPorUserId: { type: String, default: '' },
+    ajustadoEn: { type: Date, default: null },
+    motivoAnulacion: { type: String, default: '' },
+    anuladoPorUserId: { type: String, default: '' },
+    anuladoEn: { type: Date, default: null }
   },
   { timestamps: true, collection: COLLECTION_ATTENDANCE_RECORDS }
 );
 
 attendanceRecordSchema.index({ tenantId: 1, empleadoId: 1, fecha: 1 });
 attendanceRecordSchema.index({ tenantId: 1, timestamp: -1 });
+attendanceRecordSchema.index({ tenantId: 1, estado: 1, fecha: 1 });
 
 async function getAttendanceRecordModel() {
   const conn = await getFixedMongooseConnection(FIXED_CONNECTIONS.CONFIG);

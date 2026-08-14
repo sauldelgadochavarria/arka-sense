@@ -1918,3 +1918,26 @@ button.btn-danger {
     margin: 12mm;
   }
 }
+
+.cump-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 1rem 0 1.25rem;
+}
+.cump-stats .stat-card.bad {
+  border-color: #c0392b;
+}
+.cump-pill {
+  display: inline-block;
+  font-weight: 600;
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+.cump-ok { color: #1e7a3a; }
+.cump-warn { color: #9a6b00; }
+.cump-bad { color: #b42318; }
+.cump-table td, .cump-table th { vertical-align: middle; }
+@media (max-width: 800px) {
+  .cump-stats { grid-template-columns: 1fr 1fr; }
+}

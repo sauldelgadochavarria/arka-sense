@@ -90,7 +90,7 @@ const CATEGORIAS_VARIABLES = [
   { id: 'fiscal', label: 'Parámetros fiscales', descripcion: 'UMA, salario mínimo y base de cotización.' },
   { id: 'horas_extra', label: 'Horas extra', descripcion: 'Cantidades de HE dobles y triples del período.' },
   { id: 'prenomina', label: 'Pre-nómina / asistencia', descripcion: 'Totales y métricas provenientes del módulo de asistencia.' },
-  { id: 'prestaciones', label: 'Prestaciones e insumos especiales', descripcion: 'INFONAVIT, fondo de ahorro, prima vacacional y finiquito.' },
+  { id: 'prestaciones', label: 'Prestaciones e insumos especiales', descripcion: 'INFONAVIT, FONACOT, fondo de ahorro, prima vacacional y finiquito.' },
   { id: 'conceptos_percepcion', label: 'Conceptos — Percepciones', descripcion: 'Resultado de otros conceptos de percepción ya calculados.' },
   { id: 'conceptos_deduccion', label: 'Conceptos — Deducciones', descripcion: 'Resultado de otros conceptos de deducción ya calculados.' },
   { id: 'conceptos_otro', label: 'Conceptos — Otros pagos', descripcion: 'Resultado de conceptos tipo otro pago.' }
@@ -290,8 +290,73 @@ const VARIABLES_CONTEXTO = [
     label: 'Descuento INFONAVIT',
     tipo: 'number',
     categoria: 'prestaciones',
-    descripcion: 'Monto de descuento INFONAVIT del empleado en el período.',
+    descripcion: 'Monto de descuento INFONAVIT del empleado en el período (ya con tope 30%).',
     ejemplo: 800
+  },
+  {
+    key: 'fonacotDescuento',
+    label: 'Descuento FONACOT',
+    tipo: 'number',
+    categoria: 'prestaciones',
+    descripcion:
+      'Monto FONACOT del período (cédula: fijo o %). Aplica tope legal 10–20% y remanente del 30% tras INFONAVIT.',
+    ejemplo: 450
+  },
+  {
+    key: 'fonacotDescuentoBruto',
+    label: 'FONACOT bruto (antes de topes)',
+    tipo: 'number',
+    categoria: 'prestaciones',
+    descripcion: 'Importe calculado antes de tope legal y prelación 30%.',
+    ejemplo: 600
+  },
+  {
+    key: 'creditosBaseNominal',
+    label: 'Base nominal créditos',
+    tipo: 'number',
+    categoria: 'prestaciones',
+    descripcion: 'Salario bruto/nominal del período usado para % FONACOT y tope 30%.',
+    ejemplo: 5000
+  },
+  {
+    key: 'creditosTope30',
+    label: 'Tope 30% créditos',
+    tipo: 'number',
+    categoria: 'prestaciones',
+    descripcion: '30% de la base nominal (límite conjunto INFONAVIT + FONACOT [+ sindicato si aplica]).',
+    ejemplo: 1500
+  },
+  {
+    key: 'cuotaSindicalDescuento',
+    label: 'Cuota sindical',
+    tipo: 'number',
+    categoria: 'prestaciones',
+    descripcion: 'Monto sindical del período (fijo o % bruto). Si base=neto_fiscal, la fórmula usa cuotaSindicalPct.',
+    ejemplo: 150
+  },
+  {
+    key: 'cuotaSindicalPct',
+    label: '% cuota sindical',
+    tipo: 'number',
+    categoria: 'prestaciones',
+    descripcion: 'Porcentaje configurado (usado si base neto_fiscal).',
+    ejemplo: 1.5
+  },
+  {
+    key: 'cuotaSindicalActiva',
+    label: 'Cuota sindical activa (0/1)',
+    tipo: 'number',
+    categoria: 'prestaciones',
+    descripcion: '1 si el empleado tiene tipo de cuota sindical.',
+    ejemplo: 1
+  },
+  {
+    key: 'cuotaSindicalEnTope30Flag',
+    label: 'Sindical en tope 30% (0/1)',
+    tipo: 'number',
+    categoria: 'prestaciones',
+    descripcion: '1 si esta corrida aplica el tope 30% a la cuota sindical.',
+    ejemplo: 0
   },
   {
     key: 'aplicaFondoAhorro',

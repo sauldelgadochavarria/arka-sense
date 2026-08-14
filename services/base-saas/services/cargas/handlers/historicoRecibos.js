@@ -19,7 +19,7 @@ function claveImport(row) {
 async function validateHistorico(tenantId, empresaId, rows) {
   const Empleado = await getEmpleadoModel();
   const empleados = await Empleado.find({ tenantId })
-    .select('_id numEmpleado firstName lastName tipoEmpleado tipoContrato')
+    .select('_id numEmpleado firstName lastName tipoEmpleado tipoContrato subsidiariaId')
     .lean();
   const byNum = new Map(empleados.map((e) => [String(e.numEmpleado), e]));
   const errores = [];
@@ -57,6 +57,7 @@ async function validateHistorico(tenantId, empresaId, rows) {
       nombre: `${emp.firstName || ''} ${emp.lastName || ''}`.trim(),
       tipoEmpleado: emp.tipoEmpleado || '',
       tipoContrato: emp.tipoContrato || '',
+      subsidiariaId: emp.subsidiariaId || null,
       anio: toNum(data.anio, fechaInicio.getFullYear()),
       numeroPeriodo: toNum(data.numeroPeriodo, 0) || 0,
       tipoPeriodo: String(data.tipoPeriodo || 'semanal').trim().toLowerCase(),
@@ -116,6 +117,7 @@ async function applyHistorico(tenantId, empresaId, validos) {
         {
           $set: {
             empresaId,
+            subsidiariaId: row.subsidiariaId || null,
             periodoId: null,
             reciboOrigenId: null,
             origen: 'importacion',

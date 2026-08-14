@@ -1,0 +1,129 @@
+<%- include('../Partials/layout-top', { title: 'Lote de ajuste anual', session }) %>
+<%
+  const L = lote || {};
+  const T = L.totales || {};
+  const P = L.parametrosFiscales || {};
+  const auths = L.autorizaciones || [];
+  function money(n) {
+    if (n == null || n === '') return '—';
+    return Number(n).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  const nextPend = auths.find(function (a) { return a.estatus === 'pendiente'; });
+%>
+<div class="page-header">
+  <h1><%= L.nombre || 'Lote de ajuste anual' %></h1>
+  <p class="page-subtitle">
+    Estatus: <strong><%= L.estatus %></strong>
+    · Propósito: <%= L.proposito %>
+    · Modo: <%= L.modo %>
+    <% if (L.retroactivo) { %> · <strong>Retroactivo</strong><% } %>
+  </p>
+</div>
+<div class="toolbar">
+  <a class="btn" href="/personal/ajuste-anual">← Ajuste anual</a>
+  <% if (L._id) { %>
+  <a class="btn" href="/personal/ajuste-anual/lotes/<%= L._id %>/export">Exportar CSV</a>
+  <% } %>
+</div>
+
+<% if (error) { %><p class="alert"><%= error %></p><% } %>
+<% if (!L._id) { %>
+<p>Lote no encontrado.</p>
+<% } else { %>
+
+<div class="report-summary">
+  <p>
+    Aplicables: <%= T.aplicables || 0 %>
+    · Δ masa mensual: $<%= money(T.deltaMasa) %> (<%= money(T.pctMasa) %>%)
+    · Costo c/ cargas: $<%= money(T.costoTotalMensual) %>/mes
+    · IMSS $<%= money(T.imssPatronalMensual) %>
+    · INFONAVIT $<%= money(T.infonavitPatronalMensual) %>
+    · ISN $<%= money(T.isnMensual) %>
+  </p>
+  <p class="muted">
+    SM $<%= money(P.salarioMinimo) %> · UMA $<%= money(P.uma) %> · Tope SBC $<%= money(P.topeSbc) %>
+    <% if (L.vigenciaDesde) { %> · Vigencia <%= new Date(L.vigenciaDesde).toLocaleDateString('es-MX') %><% } %>
+    <% if (L.fechaAplicacion) { %> · Aplicación <%= new Date(L.fechaAplicacion).toLocaleDateString('es-MX') %><% } %>
+  </p>
+  <% if (L.retroactivo) { %>
+  <p class="alert">
+    Retroactivo desde <%= L.fechaRetroactiva ? new Date(L.fechaRetroactiva).toLocaleDateString('es-MX') : '—' %>.
+    Tras aplicar, recalcula los períodos <strong>abiertos</strong> cubiertos. Los cerrados no se reabren (histórico ISR intacto).
+  </p>
+  <% } %>
+</div>
+
+<h2>Autorización (sin Director TI)</h2>
+<ol>
+  <% auths.forEach(function(a) { %>
+  <li>
+    <strong><%= a.nombre %></strong> — <%= a.estatus %>
+    <% if (a.userLabel) { %> · <%= a.userLabel %><% } %>
+    <% if (a.fecha) { %> · <%= new Date(a.fecha).toLocaleString('es-MX') %><% } %>
+    <% if (a.comentario) { %> · <span class="muted"><%= a.comentario %></span><% } %>
+  </li>
+  <% }); %>
+</ol>
+
+<% if (canManage && (L.estatus === 'en_autorizacion' || L.estatus === 'borrador')) { %>
+<div class="toolbar">
+  <% if (nextPend) { %>
+  <form method="post" action="/personal/ajuste-anual/lotes/<%= L._id %>/autorizar" class="inline-form">
+    <input type="hidden" name="etapa" value="<%= nextPend.etapa %>" />
+    <input name="comentario" placeholder="Comentario (opcional)" />
+    <button type="submit" class="btn btn-primary">Autorizar: <%= nextPend.nombre %></button>
+  </form>
+  <% } %>
+  <% if (isAdmin) { %>
+  <form method="post" action="/personal/ajuste-anual/lotes/<%= L._id %>/autorizar" class="inline-form">
+    <input type="hidden" name="adminTodas" value="1" />
+    <button type="submit" class="btn">Autorizar todas (admin)</button>
+  </form>
+  <% } %>
+  <form method="post" action="/personal/ajuste-anual/lotes/<%= L._id %>/rechazar" class="inline-form"
+    onsubmit="return confirm('¿Rechazar este lote?');">
+    <input name="comentario" placeholder="Motivo" required />
+    <button type="submit" class="btn">Rechazar</button>
+  </form>
+</div>
+<% } %>
+
+<% if (canManage && L.estatus === 'autorizado') { %>
+<form method="post" action="/personal/ajuste-anual/lotes/<%= L._id %>/aplicar"
+  onsubmit="return confirm('Esto actualiza salario diario + SDI y registra REAJUSTE en el historial laboral. ¿Continuar?');">
+  <button type="submit" class="btn btn-primary">Aplicar en nómina (SBC + percepciones)</button>
+</form>
+<p class="hint">Después recalcula el período abierto para ISR. Movimiento IMSS (modificación de salario) si el SDI cambia.</p>
+<% } %>
+
+<% if (L.estatus === 'aplicado') { %>
+<p class="muted">Aplicado <%= L.aplicadoAt ? new Date(L.aplicadoAt).toLocaleString('es-MX') : '' %>
+  por <%= L.aplicadoPorLabel || '—' %>. Sigue rotación/clima fuera de este módulo.</p>
+<% } %>
+
+<h2>Detalle</h2>
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>Empleado</th><th>Nombre</th><th>Depto</th><th>%</th>
+      <th>SD actual</th><th>SD nuevo</th><th>SDI nuevo</th><th>SBC nuevo</th><th>Notas</th>
+    </tr>
+  </thead>
+  <tbody>
+    <% (L.items || []).forEach(function(it) { %>
+    <tr class="<%= it.omitido ? 'row-muted' : '' %>">
+      <td><code><%= it.numEmpleado %></code></td>
+      <td><%= it.nombre %></td>
+      <td><%= it.departamentoNombre %></td>
+      <td class="num"><%= money(it.porcentaje) %></td>
+      <td class="num">$<%= money(it.salarioDiarioAntes) %></td>
+      <td class="num">$<%= money(it.salarioDiarioDespues) %></td>
+      <td class="num">$<%= money(it.sdiDespues) %></td>
+      <td class="num">$<%= money(it.sbcDespues) %></td>
+      <td class="muted small"><%= it.omitido ? it.omitidoMotivo : (it.alertas || []).join(' · ') %></td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<% } %>
+<%- include('../Partials/layout-bottom') %>

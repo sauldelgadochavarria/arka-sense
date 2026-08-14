@@ -93,6 +93,31 @@ const TIPOS_CREDITO_INFONAVIT = [
   { value: 'cuota_fija', label: 'Cuota fija semanal' }
 ];
 
+const TIPOS_CREDITO_FONACOT = [
+  { value: '', label: 'Sin crédito FONACOT' },
+  { value: 'monto_fijo', label: 'Monto fijo del período (cédula)' },
+  { value: 'porcentaje', label: 'Porcentaje sobre salario bruto (10 / 15 / 20)' }
+];
+
+const TIPOS_CUOTA_SINDICAL = [
+  { value: '', label: 'Sin cuota sindical' },
+  { value: 'monto_fijo', label: 'Monto fijo del período' },
+  { value: 'porcentaje', label: 'Porcentaje' }
+];
+
+const CUOTA_SINDICAL_TOPE30_OPTS = [
+  { value: '', label: 'Según política empresa / CCT' },
+  { value: 'empresa', label: 'Según política empresa / CCT' },
+  { value: 'si', label: 'Sí — dentro del tope 30%' },
+  { value: 'no', label: 'No — después de impuestos/gobierno' }
+];
+
+const CUOTA_SINDICAL_BASE_OPTS = [
+  { value: '', label: 'Según política empresa' },
+  { value: 'bruto', label: 'Sobre salario bruto / nominal' },
+  { value: 'neto_fiscal', label: 'Sobre remanente tras ISR/IMSS/créditos ley' }
+];
+
 module.exports = {
   CATALOGOS_SAT,
   TIPOS_MAPEO_LEGADO,
@@ -101,5 +126,9 @@ module.exports = {
   CODIGOS_TABLA_FISCAL,
   PERIODICIDADES_TABLA,
   TIPOS_CREDITO_INFONAVIT,
+  TIPOS_CREDITO_FONACOT,
+  TIPOS_CUOTA_SINDICAL,
+  CUOTA_SINDICAL_TOPE30_OPTS,
+  CUOTA_SINDICAL_BASE_OPTS,
   tipoTablaFiscal
 };

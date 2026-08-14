@@ -5,6 +5,7 @@
 <form method="post" action="/personal-empleados/<%= empleado._id %>" class="form-grid form-wide">
   <%- include('partials/empleado-fields', {
     empleado, subsidiarias, departamentos, puestos, turnos,
+    centrosCosto: typeof centrosCosto !== 'undefined' ? centrosCosto : [],
     tiposPeriodo: typeof tiposPeriodo !== 'undefined' ? tiposPeriodo : [],
     supervisores, gruposDispositivos, plantillas, asignacionCtx,
     tiposRegistro, tiposContrato,

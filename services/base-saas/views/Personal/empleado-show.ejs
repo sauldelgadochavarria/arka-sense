@@ -68,7 +68,7 @@
         <% if (dom.colonia) { %><br /><span class="muted">Col. <%= dom.colonia %></span><% } %>
       </dd>
       <dt>Población</dt><dd><%= dom.poblacion || '—' %></dd>
-      <dt>Entidad</dt><dd><%= dom.entidad || '—' %></dd>
+      <dt>Entidad</dt><dd><%= typeof labelEntidadDom !== 'undefined' ? labelEntidadDom : (dom.entidad || '—') %></dd>
       <dt>C.P.</dt><dd><%= dom.codigoPostal || '—' %></dd>
     </dl>
   </section>

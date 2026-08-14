@@ -1,0 +1,170 @@
+<%- include('../Partials/layout-top', { title: 'Envío de recibos por correo', session }) %>
+<%
+  function money(n) {
+    return Number(n || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  function fmtDt(v) {
+    if (!v) return '—';
+    try { return new Date(v).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' }); }
+    catch (_) { return '—'; }
+  }
+  const Pv = preview || null;
+  const R = Pv && Pv.resumen ? Pv.resumen : null;
+  const ya = !!(Pv && Pv.yaEnviado);
+  const correoPer = (periodo && periodo.correo) || {};
+%>
+<div class="page-header">
+  <h1>Envío de recibos por correo</h1>
+  <p class="page-subtitle">
+    Solo períodos <strong>cerrados</strong> con recibos <strong>timbrados</strong>.
+    Se adjunta XML + PDF/HTML del CFDI al correo del empleado (laboral o personal).
+  </p>
+</div>
+<div class="toolbar">
+  <a class="btn" href="/nomina/timbrado">← Timbrado</a>
+  <a class="btn" href="/nomina/periodos">Períodos</a>
+  <a class="btn btn-primary" href="/nomina/correo">Configurar correo que envía</a>
+</div>
+
+<% if (error) { %><p class="alert"><%= error %></p><% } %>
+
+<% const MC = typeof mailCfg !== 'undefined' && mailCfg ? mailCfg : null; %>
+<p class="hint">
+  Perfil activo:
+  <strong><%= MC ? ((MC.codigo || '') + ' — ' + (MC.nombre || MC.proveedor || '')) : 'ninguno' %></strong>
+  · Modo: <strong><%= modo === 'real' ? 'SMTP real' : 'simulación' %></strong>
+  <% if (MC && MC.fromEmail) { %> · From: <%= MC.fromEmail %><% } %>
+  <% if (modo !== 'real') { %>
+  — no sale a internet hasta que configures un proveedor real en
+  <a href="/nomina/correo">Configuración de correo</a>.
+  <% } %>
+</p>
+
+<% if (!empresa) { %>
+<p>Sin empresa.</p>
+<% } else { %>
+
+<form method="get" action="/nomina/envio-correo" class="filter-form form-grid">
+  <label>Perfil de correo
+    <select name="correoConfigId" onchange="this.form.submit()">
+      <option value="">— Predeterminado —</option>
+      <% (typeof perfiles !== 'undefined' ? perfiles : []).forEach(function(c) { %>
+      <option value="<%= c._id %>" <%= MC && String(MC._id) === String(c._id) ? 'selected' : '' %>>
+        <%= c.codigo %> — <%= c.nombre %> <%= c.esDefault ? '(default)' : '' %>
+      </option>
+      <% }); %>
+    </select>
+  </label>
+  <label>Período cerrado
+    <select name="periodoId" onchange="this.form.submit()">
+      <option value="">— Selecciona —</option>
+      <% (periodos || []).forEach(function(p) { %>
+      <option value="<%= p._id %>" <%= periodo && String(periodo._id) === String(p._id) ? 'selected' : '' %>>
+        <%= p.tipoPeriodo || '' %> #<%= p.numeroPeriodo != null ? p.numeroPeriodo : '' %>
+        <%= p.anio || '' %>
+        (<%= p.correo && p.correo.estatus && p.correo.estatus !== 'pendiente' ? p.correo.estatus : 'sin envío' %>)
+      </option>
+      <% }); %>
+    </select>
+  </label>
+  <button type="submit" class="btn">Ver recibos</button>
+</form>
+
+<% if (periodo && Pv) { %>
+<section class="panel">
+  <h2 class="panel-title"><%= Pv.labelPeriodo %></h2>
+  <p>
+    Timbrados aplicables: <%= (Pv.items || []).filter(function(i){ return i.aplicable; }).length %>
+    · Enviados: <%= R.enviados || 0 %>
+    · Pendientes: <%= R.pendientes || 0 %>
+    · Errores: <%= R.errores || 0 %>
+    · Omitidos: <%= R.omitidos || 0 %>
+    · Período:
+    <strong><%= correoPer.estatus || R.estatus || 'pendiente' %></strong>
+    <% if (correoPer.enviadoAt) { %>
+    · Último envío: <%= fmtDt(correoPer.enviadoAt) %>
+    (<%= correoPer.ultimoAlcance || '—' %>)
+    <% } %>
+  </p>
+
+  <% if (!ya) { %>
+  <form method="post" action="/nomina/envio-correo/enviar" class="toolbar"
+    onsubmit="return confirm('¿Enviar los recibos timbrados pendientes de este período?');">
+    <input type="hidden" name="periodoId" value="<%= periodo._id %>" />
+    <% if (MC && MC._id) { %><input type="hidden" name="correoConfigId" value="<%= MC._id %>" /><% } %>
+    <input type="hidden" name="alcance" value="pendientes" />
+    <button type="submit" class="btn btn-primary">Enviar recibos timbrados</button>
+  </form>
+  <% } else { %>
+  <div class="alert" style="background:#fff8e6;border:1px solid #e6c35c;padding:12px 14px">
+    <p style="margin:0 0 8px">
+      Este período <strong>ya está marcado como enviado</strong>
+      <% if (correoPer.enviadoAt) { %>(<%= fmtDt(correoPer.enviadoAt) %>)<% } %>.
+      Si reenvías, indica el alcance:
+    </p>
+    <form method="post" action="/nomina/envio-correo/enviar" id="form-reenvio">
+      <input type="hidden" name="periodoId" value="<%= periodo._id %>" />
+      <% if (MC && MC._id) { %><input type="hidden" name="correoConfigId" value="<%= MC._id %>" /><% } %>
+      <label class="checkbox" style="display:block;margin:6px 0">
+        <input type="radio" name="alcance" value="pendientes" checked />
+        Solo pendientes (sin envío o con error)
+      </label>
+      <label class="checkbox" style="display:block;margin:6px 0">
+        <input type="radio" name="alcance" value="todos" />
+        Todos los timbrados (incluye los que ya se enviaron)
+      </label>
+      <button type="submit" class="btn btn-primary">Reenviar</button>
+    </form>
+  </div>
+  <script>
+    document.getElementById('form-reenvio').addEventListener('submit', function (ev) {
+      var alcance = (this.querySelector('input[name="alcance"]:checked') || {}).value;
+      var msg = alcance === 'todos'
+        ? 'El período ya fue marcado como enviado. ¿Reenviar TODOS los recibos, incluidos los que ya se enviaron?'
+        : '¿Reenviar solo los recibos pendientes o con error?';
+      if (!confirm(msg)) ev.preventDefault();
+    });
+  </script>
+  <% } %>
+</section>
+
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>Empleado</th><th>Nombre</th><th>Correo</th><th>Neto</th>
+      <th>Timbrado</th><th>Envío</th><th>Último</th><th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <% (Pv.items || []).forEach(function(it) { %>
+    <tr class="<%= it.aplicable ? '' : 'row-muted' %>">
+      <td><code><%= it.numEmpleado %></code></td>
+      <td><%= it.nombre %></td>
+      <td><%= it.email || '—' %></td>
+      <td class="num">$<%= money(it.netoPagar) %></td>
+      <td><%= it.timbrado ? 'Sí' : 'No' %></td>
+      <td>
+        <%= (it.correo && it.correo.estatus) || (it.omitidoMotivo ? 'omitido' : 'pendiente') %>
+        <% if (it.omitidoMotivo) { %><span class="muted small"> (<%= it.omitidoMotivo %>)</span><% } %>
+        <% if (it.correo && it.correo.errorMensaje) { %><span class="muted small"> <%= it.correo.errorMensaje %></span><% } %>
+      </td>
+      <td class="muted small"><%= fmtDt(it.correo && it.correo.enviadoAt) %></td>
+      <td>
+        <% if (it.aplicable) { %>
+        <form method="post" action="/nomina/envio-correo/enviar" class="inline-form"
+          onsubmit="return confirm('¿Enviar o reenviar el recibo de <%= String(it.numEmpleado || '').replace(/'/g, '') %> a <%= String(it.email || '').replace(/'/g, '') %>?');">
+          <input type="hidden" name="periodoId" value="<%= periodo._id %>" />
+          <% if (MC && MC._id) { %><input type="hidden" name="correoConfigId" value="<%= MC._id %>" /><% } %>
+          <input type="hidden" name="historicoId" value="<%= it.historicoId %>" />
+          <input type="hidden" name="alcance" value="todos" />
+          <button type="submit" class="btn"><%= it.correo && it.correo.estatus === 'enviado' ? 'Reenviar' : 'Enviar' %></button>
+        </form>
+        <% } else { %>—<% } %>
+      </td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<% } %>
+<% } %>
+<%- include('../Partials/layout-bottom') %>

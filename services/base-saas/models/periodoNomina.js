@@ -49,7 +49,9 @@ const periodoNominaSchema = new mongoose.Schema(
     /** Resumen del archivo histórico al cerrar. */
     cierreResumen: {
       recibosArchivados: { type: Number, default: 0 },
-      conceptosAcumulados: { type: Number, default: 0 }
+      conceptosAcumulados: { type: Number, default: 0 },
+      /** Recibos borrados de la colección temporal al mover. */
+      operativosEliminados: { type: Number, default: 0 }
     },
     notas: { type: String, default: '' },
     /**
@@ -69,7 +71,11 @@ const periodoNominaSchema = new mongoose.Schema(
       percepciones: { type: Number, default: 0 },
       deducciones: { type: Number, default: 0 },
       neto: { type: Number, default: 0 }
-    }
+    },
+    /** Última generación de archivo bancario / dispersión. */
+    layoutBancario: require('./layoutBancarioStatusFields').layoutBancarioStatusFields(),
+    /** Envío de recibos timbrados por correo. */
+    correo: require('./envioCorreoStatusFields').envioCorreoPeriodoFields()
   },
   { timestamps: true, collection: COLLECTION_NOMINA_PERIODOS }
 );

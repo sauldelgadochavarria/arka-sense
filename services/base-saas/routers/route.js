@@ -10,6 +10,7 @@ const departamentosController = require('../controllers/departamentosController'
 const puestosController = require('../controllers/puestosController');
 const empleadosController = require('../controllers/empleadosController');
 const historialLaboralController = require('../controllers/historialLaboralController');
+const ajusteAnualController = require('../controllers/ajusteAnualController');
 const tipoPeriodoNominaController = require('../controllers/tipoPeriodoNominaController');
 const periodoAdministracionController = require('../controllers/periodoAdministracionController');
 const centroCostoController = require('../controllers/centroCostoController');
@@ -17,6 +18,7 @@ const movimientoAsistenciaNominaController = require('../controllers/movimientoA
 const turnosController = require('../controllers/turnosController');
 const marcacionesController = require('../controllers/marcacionesController');
 const asistenciaDiariaController = require('../controllers/asistenciaDiariaController');
+const registroJornadaController = require('../controllers/registroJornadaController');
 const incidenciasController = require('../controllers/incidenciasController');
 const vacacionesController = require('../controllers/vacacionesController');
 const portalController = require('../controllers/portalController');
@@ -30,8 +32,13 @@ const dispositivosController = require('../controllers/dispositivosController');
 const gruposDispositivosController = require('../controllers/gruposDispositivosController');
 const rotacionesController = require('../controllers/rotacionesController');
 const reportesController = require('../controllers/reportesController');
+const nominaReportesController = require('../controllers/nominaReportesController');
+const suaExportController = require('../controllers/suaExportController');
+const confrontaImssController = require('../controllers/confrontaImssController');
 const ayudaController = require('../controllers/ayudaController');
 const { getDashboardKpis } = require('../services/dashboardKpiService');
+const { tableroCumplimiento } = require('../services/gestionDocumentalService');
+const { tenantHasFeature } = require('../libs/tenantFeatureFlags');
 const { requireEmpresaForTenant } = require('../libs/tenantScope');
 const { requirePortalEmpleado } = require('../middleware/requirePortalEmpleado');
 const { requireAdminAccess } = require('../middleware/requireAdminAccess');
@@ -54,12 +61,27 @@ router.get(['/', '/dashboard', '/inicio'], async (req, res) => {
   const { empresa } = await requireEmpresaForTenant(req.session.tenantId);
   const kpis = empresa ? await getDashboardKpis(req.session.tenantId) : null;
   const featureFlags = req.tenant?.featureFlags || req.session?.featureFlags || {};
+  let cumplimiento = null;
+  if (empresa && tenantHasFeature(featureFlags, 'gestion_documental')) {
+    try {
+      const full = await tableroCumplimiento({
+        tenantId: req.session.tenantId,
+        empresaId: empresa._id
+      });
+      const nomina = (full.filas || []).filter((f) => f.procesoCodigo === 'NOMINA').slice(0, 1);
+      const resto = (full.filas || []).filter((f) => f.procesoCodigo !== 'NOMINA');
+      cumplimiento = { ...full, filas: [...nomina, ...resto] };
+    } catch (err) {
+      console.warn('[dashboard cumplimiento]', err.message);
+    }
+  }
   res.render('dashboard', {
     session: req.session,
     tenant: req.tenant,
     menuTree: res.locals.menuTree,
     featureFlags,
-    kpis
+    kpis,
+    cumplimiento
   });
 });
 
@@ -116,6 +138,16 @@ router.post('/personal-empleados/:id/reactivar', empleadosController.reactivarEm
 router.post('/personal-empleados/:id/calcular-sdi', empleadosController.calcularSdiAction);
 
 const tablaPrestacionesController = require('../controllers/tablaPrestacionesController');
+const layoutBancarioController = require('../controllers/layoutBancarioController');
+const timbradoController = require('../controllers/timbradoController');
+const envioCorreoController = require('../controllers/envioCorreoController');
+const correoConfigController = require('../controllers/correoConfigController');
+const gestionDocumentalController = require('../controllers/gestionDocumentalController');
+const multer = require('multer');
+const uploadDocumentoMem = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 25 * 1024 * 1024 }
+});
 router.get('/personal/prestaciones', tablaPrestacionesController.listTablas);
 router.get('/personal/prestaciones/nueva', tablaPrestacionesController.newTabla);
 router.post('/personal/prestaciones', tablaPrestacionesController.createTabla);
@@ -123,12 +155,96 @@ router.post('/personal/prestaciones/seed-global', tablaPrestacionesController.se
 router.get('/personal/prestaciones/:id/edit', tablaPrestacionesController.editTabla);
 router.post('/personal/prestaciones/:id', tablaPrestacionesController.updateTabla);
 router.post('/personal/prestaciones/:id/toggle', tablaPrestacionesController.toggleTabla);
+
+router.get('/nomina/layouts-bancarios', layoutBancarioController.list);
+router.get('/nomina/layouts-bancarios/nuevo', layoutBancarioController.newForm);
+router.post('/nomina/layouts-bancarios', layoutBancarioController.create);
+router.post('/nomina/layouts-bancarios/seed-ejemplo', layoutBancarioController.seedEjemplo);
+router.get('/nomina/layouts-bancarios/:id/edit', layoutBancarioController.edit);
+router.post('/nomina/layouts-bancarios/:id', layoutBancarioController.update);
+router.post('/nomina/layouts-bancarios/:id/toggle', layoutBancarioController.toggle);
+router.get('/nomina/layouts-bancarios/:id/preview', layoutBancarioController.preview);
+
+router.get('/nomina/dispersion-bancaria', layoutBancarioController.wizardDispersion);
+router.post('/nomina/dispersion-bancaria/generar', layoutBancarioController.generarDispersion);
+
+router.get('/nomina/reportes', nominaReportesController.index);
+router.get('/nomina/reportes/export', nominaReportesController.exportCsv);
+
+router.get('/nomina/sua', suaExportController.index);
+router.get('/nomina/sua/descargar', suaExportController.download);
+
+router.get('/nomina/confronta', confrontaImssController.index);
+router.post('/nomina/confronta', confrontaImssController.index);
+router.get('/nomina/confronta/export', confrontaImssController.exportCsv);
+
+router.get('/nomina/pac', timbradoController.listPac);
+router.get('/nomina/pac/nuevo', timbradoController.newPacForm);
+router.post('/nomina/pac', timbradoController.createPac);
+router.post('/nomina/pac/seed-ejemplo', timbradoController.seedPacEjemplo);
+router.get('/nomina/pac/:id/edit', timbradoController.editPac);
+router.post('/nomina/pac/:id', timbradoController.updatePac);
+router.post('/nomina/pac/:id/toggle', timbradoController.togglePac);
+
+router.get('/nomina/recibos-pdf', timbradoController.listPlantillas);
+router.get('/nomina/recibos-pdf/nuevo', timbradoController.newPlantillaForm);
+router.post('/nomina/recibos-pdf', timbradoController.createPlantilla);
+router.post('/nomina/recibos-pdf/seed-ejemplo', timbradoController.seedPlantillaEjemplo);
+router.get('/nomina/recibos-pdf/html', timbradoController.reciboPdfHtml);
+router.get('/nomina/recibos-pdf/:id/edit', timbradoController.editPlantilla);
+router.post('/nomina/recibos-pdf/:id', timbradoController.updatePlantilla);
+router.post('/nomina/recibos-pdf/:id/toggle', timbradoController.togglePlantilla);
+router.post('/nomina/recibos-pdf/:id/aplicar-cfdi', timbradoController.aplicarLayoutCfdi);
+router.get('/nomina/recibos-pdf/:id/preview', timbradoController.previewPlantilla);
+
+router.get('/nomina/timbrado', timbradoController.wizardTimbrado);
+router.post('/nomina/timbrado/generar', timbradoController.generarTimbrado);
+router.get('/nomina/timbrado/lotes/:id', timbradoController.showLote);
+router.get('/nomina/timbrado/archivos/:id/descargar', timbradoController.descargarCfdiArchivo);
+
+router.get('/nomina/envio-correo', envioCorreoController.wizard);
+router.post('/nomina/envio-correo/enviar', envioCorreoController.enviar);
+
+router.get('/nomina/correo', correoConfigController.list);
+router.get('/nomina/correo/nuevo', correoConfigController.newForm);
+router.post('/nomina/correo', correoConfigController.create);
+router.post('/nomina/correo/seed-ejemplo', correoConfigController.seedEjemplo);
+router.get('/nomina/correo/:id/edit', correoConfigController.edit);
+router.post('/nomina/correo/:id', correoConfigController.update);
+router.post('/nomina/correo/:id/toggle', correoConfigController.toggle);
+router.post('/nomina/correo/:id/default', correoConfigController.setDefault);
+router.post('/nomina/correo/:id/probar', correoConfigController.probar);
+
+router.get('/nomina/gestion-documental', gestionDocumentalController.tablero);
+router.get('/nomina/gestion-documental/expediente', gestionDocumentalController.explorador);
+router.get('/nomina/gestion-documental/config', gestionDocumentalController.configForm);
+router.post('/nomina/gestion-documental/config', gestionDocumentalController.saveConfigAction);
+router.get('/nomina/gestion-documental/subir', gestionDocumentalController.uploadForm);
+router.post(
+  '/nomina/gestion-documental/subir',
+  uploadDocumentoMem.single('archivo'),
+  gestionDocumentalController.uploadAction
+);
+router.get('/nomina/gestion-documental/reporte', gestionDocumentalController.reporte);
+router.post('/nomina/gestion-documental/reindexar', gestionDocumentalController.reindexar);
+router.get('/nomina/gestion-documental/:id/descargar', gestionDocumentalController.descargar);
+router.post('/nomina/gestion-documental/:id/eliminar', gestionDocumentalController.eliminar);
+
 router.get('/personal-empleados/:id/historial-laboral', historialLaboralController.showHistorialEmpleado);
 router.post('/personal-empleados/:id/historial-laboral', historialLaboralController.createMovimientoManual);
 
 router.get('/personal/tipos-movimiento-laboral', historialLaboralController.listTipos);
 router.post('/personal/tipos-movimiento-laboral', historialLaboralController.createTipo);
 router.post('/personal/tipos-movimiento-laboral/:id/toggle', historialLaboralController.toggleTipo);
+
+router.get('/personal/ajuste-anual', ajusteAnualController.wizard);
+router.post('/personal/ajuste-anual', ajusteAnualController.wizard);
+router.post('/personal/ajuste-anual/guardar', ajusteAnualController.guardar);
+router.get('/personal/ajuste-anual/lotes/:id', ajusteAnualController.showLote);
+router.post('/personal/ajuste-anual/lotes/:id/autorizar', ajusteAnualController.postAutorizar);
+router.post('/personal/ajuste-anual/lotes/:id/rechazar', ajusteAnualController.postRechazar);
+router.post('/personal/ajuste-anual/lotes/:id/aplicar', ajusteAnualController.postAplicar);
+router.get('/personal/ajuste-anual/lotes/:id/export', ajusteAnualController.exportCsv);
 
 router.get('/asistencia-turnos', turnosController.listTurnos);
 router.post('/asistencia-turnos', turnosController.createTurno);
@@ -152,9 +268,15 @@ router.post('/asistencia-rotaciones/:id/toggle', rotacionesController.togglePlan
 
 router.get('/asistencia-marcaciones', marcacionesController.listMarcaciones);
 router.post('/asistencia-marcaciones', marcacionesController.createMarcacion);
+router.post('/asistencia-marcaciones/:id/ajustar', marcacionesController.ajustarMarcacion);
+router.post('/asistencia-marcaciones/:id/anular', marcacionesController.anularMarcacion);
+router.post('/asistencia-marcaciones/:id/eliminar', marcacionesController.borrarMarcacionBloqueado);
+router.delete('/asistencia-marcaciones/:id', marcacionesController.borrarMarcacionBloqueado);
 
 router.get('/asistencia-diaria', asistenciaDiariaController.listDiaria);
 router.post('/asistencia-diaria/reprocesar', asistenciaDiariaController.reprocesarDiaria);
+
+router.get('/asistencia-registro-jornada', registroJornadaController.showRegistroJornada);
 
 router.get('/incidencias', incidenciasController.listIncidencias);
 router.post('/incidencias', incidenciasController.createIncidencia);
@@ -192,6 +314,7 @@ router.post('/nomina/conceptos/probar-formula', nominaController.probarFormulaAp
 router.get('/nomina/configuracion', nominaController.configuracion);
 router.post('/nomina/configuracion/isr-motor', nominaController.saveIsrMotorConfig);
 router.post('/nomina/configuracion/dias-pagados', nominaController.saveDiasPagadosConfig);
+router.post('/nomina/configuracion/descuentos', nominaController.saveDescuentosConfig);
 router.get('/nomina/placeholder/:slug', nominaPlaceholderController.show);
 router.get('/nomina/catalogos', nominaCatalogosController.index);
 router.get('/nomina/catalogos/sat', nominaCatalogosController.catalogoSat);

@@ -30,7 +30,14 @@ const conceptoHistoricoSubSchema = new mongoose.Schema(
 const nominaHistoricoReciboSchema = new mongoose.Schema(
   {
     tenantId: { type: String, required: true, trim: true, index: true },
-    empresaId: { type: mongoose.Schema.Types.ObjectId, ref: 'Empresa', default: null },
+    empresaId: { type: mongoose.Schema.Types.ObjectId, ref: 'Empresa', default: null, index: true },
+    /** Subsidiaria del empleado al momento del cierre (partición / filtros). */
+    subsidiariaId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Subsidiaria',
+      default: null,
+      index: true
+    },
     /** Presente en cierres locales; null en importación de legado. */
     periodoId: { type: mongoose.Schema.Types.ObjectId, ref: 'PeriodoNomina', default: null, index: true },
     reciboOrigenId: { type: mongoose.Schema.Types.ObjectId, ref: 'ReciboNomina', default: null },
@@ -57,7 +64,12 @@ const nominaHistoricoReciboSchema = new mongoose.Schema(
       numEmpleado: { type: String, default: '' },
       nombre: { type: String, default: '' },
       tipoEmpleado: { type: String, default: '' },
-      tipoContrato: { type: String, default: '' }
+      tipoContrato: { type: String, default: '' },
+      departamentoId: { type: mongoose.Schema.Types.ObjectId, ref: 'Departamento', default: null },
+      departamentoNombre: { type: String, default: '' },
+      centroCostoId: { type: mongoose.Schema.Types.ObjectId, ref: 'CentroCosto', default: null },
+      centroCostoCodigo: { type: String, default: '' },
+      centroCostoNombre: { type: String, default: '' }
     },
     diasLaborados: { type: Number, default: 0 },
     diasPagados: { type: Number, default: null },
@@ -75,20 +87,26 @@ const nominaHistoricoReciboSchema = new mongoose.Schema(
     cerradoPorUserId: { type: String, default: '' },
     /** Auditoría: ID del recibo en la corrida de cálculo. */
     calculoId: { type: String, trim: true, default: '', index: true },
-    calculoLoteId: { type: String, trim: true, default: '', index: true }
+    calculoLoteId: { type: String, trim: true, default: '', index: true },
+    /** Estatus de inclusión en archivo bancario. */
+    layoutBancario: require('./layoutBancarioStatusFields').layoutBancarioStatusFields(),
+    /** Estatus CFDI / PAC. */
+    timbrado: require('./timbradoStatusFields').timbradoStatusFields(),
+    /** Envío del XML/PDF por correo. */
+    correo: require('./envioCorreoStatusFields').envioCorreoReciboFields()
   },
   { timestamps: true, collection: COLLECTION_NOMINA_HISTORICO }
 );
 
-// Cierres locales: un recibo por período/empleado
+// Cierres locales: un recibo por tenant + empresa + período + empleado
 nominaHistoricoReciboSchema.index(
-  { tenantId: 1, periodoId: 1, empleadoId: 1 },
+  { tenantId: 1, empresaId: 1, periodoId: 1, empleadoId: 1 },
   {
     unique: true,
-    partialFilterExpression: { periodoId: { $type: 'objectId' } }
+    partialFilterExpression: { periodoId: { $type: 'objectId' }, origen: 'cierre' }
   }
 );
-// Importaciones: clave deduplicada
+// Importaciones: clave deduplicada por tenant
 nominaHistoricoReciboSchema.index(
   { tenantId: 1, claveImportacion: 1 },
   {
@@ -96,6 +114,8 @@ nominaHistoricoReciboSchema.index(
     partialFilterExpression: { claveImportacion: { $type: 'string', $gt: '' } }
   }
 );
+nominaHistoricoReciboSchema.index({ tenantId: 1, subsidiariaId: 1, anio: 1, mes: 1 });
+nominaHistoricoReciboSchema.index({ tenantId: 1, empresaId: 1, subsidiariaId: 1, empleadoId: 1, anio: 1 });
 nominaHistoricoReciboSchema.index({ tenantId: 1, empleadoId: 1, anio: 1, mes: 1 });
 nominaHistoricoReciboSchema.index({ tenantId: 1, anio: 1, mes: 1 });
 

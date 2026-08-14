@@ -108,6 +108,95 @@ function resolverInfonavitDescuento(empleado, contexto, parametros) {
 }
 
 /**
+ * Base salarial nominal del período (bruto) para créditos / tope 30%.
+ */
+function baseNominalCreditos(empleado, contexto) {
+  const cfg = empleado.nominaConfig || {};
+  if (Number(cfg.sueldoIntegrado) > 0) return Number(cfg.sueldoIntegrado);
+  const dias =
+    Number(cfg.diasCotizacionImss) > 0
+      ? Number(cfg.diasCotizacionImss)
+      : Number(contexto.diasLaborados) || 0;
+  const sdi = Number(contexto.sueldoDiario) || 0;
+  return roundMoney(sdi * dias);
+}
+
+/**
+ * FONACOT según cédula:
+ * - monto_fijo: importe del período
+ * - porcentaje: % sobre salario bruto/nominal (máx. 10% si SM; 10/15/20 si superior, tope 20%)
+ * Prelación vs tope 30%: primero INFONAVIT, luego FONACOT con el remanente.
+ *
+ * @returns {{ descuento: number, bruto: number, topeLegal: number, tope30: number, disponible30: number, pctAplicado: number, esSalarioMinimo: boolean }}
+ */
+function resolverFonacotDescuento(empleado, contexto, parametros, infonavitAplicado = 0) {
+  const vacio = {
+    descuento: 0,
+    bruto: 0,
+    topeLegal: 0,
+    tope30: 0,
+    disponible30: 0,
+    pctAplicado: 0,
+    esSalarioMinimo: false
+  };
+  const cfg = empleado.nominaConfig || {};
+  const tipo = String(cfg.tipoCreditoFonacot || '').trim();
+  if (!tipo) return vacio;
+
+  const base = baseNominalCreditos(empleado, contexto);
+  if (base <= 0) return vacio;
+
+  const salMin = Number(parametros.salarioMinimo) || 0;
+  const sdi = Number(contexto.sueldoDiario) || 0;
+  const esSalarioMinimo = salMin > 0 && sdi > 0 && sdi <= salMin * 1.001;
+  /** Tope legal del propio FONACOT sobre el bruto */
+  const maxPctLegal = esSalarioMinimo ? 10 : 20;
+  const topeLegal = roundMoney((maxPctLegal / 100) * base);
+  const tope30 = roundMoney(0.3 * base);
+  const disponible30 = roundMoney(Math.max(0, tope30 - (Number(infonavitAplicado) || 0)));
+
+  let bruto = 0;
+  let pctAplicado = 0;
+
+  if (Number(cfg.fonacotDescuento) > 0) {
+    bruto = Number(cfg.fonacotDescuento);
+  } else if (tipo === 'monto_fijo') {
+    bruto = Number(cfg.fonacotMonto) || 0;
+  } else if (tipo === 'porcentaje') {
+    let pct = Number(cfg.fonacotPorcentaje) || 0;
+    if (pct > maxPctLegal) pct = maxPctLegal;
+    if (pct < 0) pct = 0;
+    // Permitidos típicos 10 / 15 / 20 (SM solo 10)
+    pctAplicado = pct;
+    bruto = (pct / 100) * base;
+  }
+
+  bruto = roundMoney(bruto);
+  const trasTopeLegal = roundMoney(Math.min(bruto, topeLegal));
+  const descuento = roundMoney(Math.min(trasTopeLegal, disponible30));
+
+  return {
+    descuento,
+    bruto,
+    topeLegal,
+    tope30,
+    disponible30,
+    pctAplicado,
+    esSalarioMinimo
+  };
+}
+
+/**
+ * Aplica tope 30% del salarial nominal a INFONAVIT (prioridad sobre FONACOT).
+ */
+function aplicarTope30Credito(monto, baseNominal) {
+  const base = Number(baseNominal) || 0;
+  const m = Number(monto) || 0;
+  if (base <= 0 || m <= 0) return 0;
+  return roundMoney(Math.min(m, 0.3 * base));
+}
+
+/**
  * Prorratea el tope UMA mensual al período de nómina.
  * Quincenal/catorcenal con 14 días de referencia → exactamente la mitad
  * (1.3 × UMA_mensual / 2 ≈ 2,318).
@@ -291,6 +380,64 @@ function resolverDespensa(empleado, contexto, parametros, periodoOpts = {}) {
   };
 }
 
+/**
+ * Cuota sindical (u otra deducción voluntaria similar).
+ * @param {number} consumidoTope30 — INFONAVIT+FONACOT ya aplicados (si entra al 30%)
+ * @param {object} politica — mergePoliticaDescuentos + flags resueltos
+ */
+function resolverCuotaSindical(empleado, contexto, parametros, consumidoTope30 = 0, politica = {}) {
+  const vacio = {
+    descuento: 0,
+    bruto: 0,
+    activa: 0,
+    enTope30: 0,
+    usaNetoFiscal: 0,
+    pct: 0,
+    disponible30: 0
+  };
+  const cfg = empleado.nominaConfig || {};
+  const tipo = String(cfg.tipoCuotaSindical || '').trim();
+  if (!tipo) return vacio;
+
+  const base = baseNominalCreditos(empleado, contexto);
+  const enTope30 = !!politica.enTope30;
+  const usaNetoFiscal = politica.base === 'neto_fiscal' && tipo === 'porcentaje';
+  const tope30 = roundMoney(0.3 * (base || 0));
+  const disponible30 = roundMoney(Math.max(0, tope30 - (Number(consumidoTope30) || 0)));
+
+  let bruto = 0;
+  let pct = 0;
+
+  if (Number(cfg.cuotaSindicalDescuento) > 0) {
+    bruto = Number(cfg.cuotaSindicalDescuento);
+  } else if (tipo === 'monto_fijo') {
+    bruto = Number(cfg.cuotaSindicalMonto) || 0;
+  } else if (tipo === 'porcentaje') {
+    pct = Number(cfg.cuotaSindicalPorcentaje) || 0;
+    if (pct < 0) pct = 0;
+    if (!usaNetoFiscal) {
+      bruto = base > 0 ? (pct / 100) * base : 0;
+    }
+    // si usaNetoFiscal, el importe lo calcula la fórmula con dependencias
+  }
+
+  bruto = roundMoney(bruto);
+  let descuento = bruto;
+  if (enTope30 && !usaNetoFiscal) {
+    descuento = roundMoney(Math.min(bruto, disponible30));
+  }
+
+  return {
+    descuento: usaNetoFiscal ? 0 : descuento,
+    bruto,
+    activa: 1,
+    enTope30: enTope30 ? 1 : 0,
+    usaNetoFiscal: usaNetoFiscal ? 1 : 0,
+    pct,
+    disponible30
+  };
+}
+
 function resolverInsumosNominaEmpleado(empleado, contexto, parametros, periodoOpts = {}) {
   const cfg = empleado.nominaConfig || {};
   const fondo = resolverFondoAhorro(empleado, contexto, parametros);
@@ -298,8 +445,45 @@ function resolverInsumosNominaEmpleado(empleado, contexto, parametros, periodoOp
   const prima = resolverDiasPrimaVacacional(empleado, contexto, periodoOpts);
   const tabla = periodoOpts.tablaPrestaciones || null;
 
+  const {
+    mergePoliticaDescuentos,
+    resolveConceptoEnTope30,
+    resolveConceptoBase
+  } = require('./politicaDescuentosDefaults');
+  const polEmpresa = mergePoliticaDescuentos(periodoOpts.politicaDescuentos || {});
+  const enTope30 = resolveConceptoEnTope30('CUOTA_SINDICAL', cfg, polEmpresa);
+  const baseSind = resolveConceptoBase('CUOTA_SINDICAL', cfg, polEmpresa);
+
+  const baseCreditos = baseNominalCreditos(empleado, contexto);
+  const infonavitBruto = roundMoney(resolverInfonavitDescuento(empleado, contexto, parametros));
+  const infonavitDescuento = aplicarTope30Credito(infonavitBruto, baseCreditos);
+  const fonacot = resolverFonacotDescuento(empleado, contexto, parametros, infonavitDescuento);
+  const consumido30 = roundMoney(infonavitDescuento + fonacot.descuento);
+  const sindical = resolverCuotaSindical(empleado, contexto, parametros, consumido30, {
+    enTope30,
+    base: baseSind === 'neto_fiscal' ? 'neto_fiscal' : 'bruto'
+  });
+
   return {
-    infonavitDescuento: resolverInfonavitDescuento(empleado, contexto, parametros),
+    infonavitDescuento,
+    infonavitDescuentoBruto: infonavitBruto,
+    fonacotDescuento: fonacot.descuento,
+    fonacotDescuentoBruto: fonacot.bruto,
+    fonacotTopeLegal: fonacot.topeLegal,
+    fonacotTope30: fonacot.tope30,
+    fonacotDisponible30: fonacot.disponible30,
+    fonacotPctAplicado: fonacot.pctAplicado,
+    fonacotEsSalarioMinimo: fonacot.esSalarioMinimo ? 1 : 0,
+    cuotaSindicalDescuento: sindical.descuento,
+    cuotaSindicalDescuentoBruto: sindical.bruto,
+    cuotaSindicalActiva: sindical.activa,
+    cuotaSindicalEnTope30Flag: sindical.enTope30,
+    cuotaSindicalUsaNetoFiscal: sindical.usaNetoFiscal,
+    cuotaSindicalPct: sindical.pct,
+    cuotaSindicalDisponible30: sindical.disponible30,
+    creditosBaseNominal: baseCreditos,
+    creditosTope30: roundMoney(0.3 * (baseCreditos || 0)),
+    creditosConsumido30: consumido30,
     fondoAhorroEmpresa: fondo.empresa,
     fondoAhorroTrabajador: fondo.trabajador,
     fondoAhorroTopeExento: fondo.topeExento,
@@ -323,6 +507,10 @@ function resolverInsumosNominaEmpleado(empleado, contexto, parametros, periodoOp
 module.exports = {
   DIAS_MES_UMA,
   resolverInfonavitDescuento,
+  resolverFonacotDescuento,
+  resolverCuotaSindical,
+  baseNominalCreditos,
+  aplicarTope30Credito,
   resolverFondoAhorro,
   resolverDespensa,
   resolverDiasPrimaVacacional,

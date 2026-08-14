@@ -15,7 +15,7 @@ const {
   evaluateCondicion,
   extractVariablesUsadas
 } = require('./formulaEvaluator');
-const { aplicarTabla, obtenerParametrosVigentes, cargarRangosTabla, aplicarTablaSync, isrDelPeriodo, imssObreroDelPeriodo, imssPatronalDelPeriodo, sbcDiario, cargarRangosIsrParaPeriodo } = require('./tablasFiscalesService');
+const { aplicarTabla, obtenerParametrosVigentes, cargarRangosTabla, aplicarTablaSync, isrDelPeriodo, imssObreroDelPeriodo, imssObreroSsDelPeriodo, imssObreroRcvDelPeriodo, imssPatronalDelPeriodo, sbcDiario, cargarRangosIsrParaPeriodo } = require('./tablasFiscalesService');
 const { obtenerInsumosPrenomina, tieneActividadPrenomina } = require('./prenominaBridge');
 const { resolverInsumosNominaEmpleado } = require('../../libs/nominaEmpleadoInsumos');
 const getPayrollDetailModel = require('../../models/payrollDetail');
@@ -204,7 +204,8 @@ async function calcularReciboEmpleado(
       despensaPagoMensual: prest.despensaPagoMensual !== false,
       fechaInicio: periodo.fechaInicio,
       fechaFin: periodo.fechaFin,
-      tablaPrestaciones
+      tablaPrestaciones,
+      politicaDescuentos: diasOpts.politicaDescuentos || {}
     }
   );
 
@@ -303,6 +304,10 @@ async function calcularReciboEmpleado(
     // IMSS cotiza sobre SDI/SBC (no el salario diario contractual si hay SDI capturado)
     imssObrero: (_sueldo, dias) =>
       imssObreroDelPeriodo(sdiDiario, dias, parametros.uma, fiscalCtx.imssCtx || {}),
+    imssObreroSs: (_sueldo, dias) =>
+      imssObreroSsDelPeriodo(sdiDiario, dias, parametros.uma, fiscalCtx.imssCtx || {}),
+    imssObreroRcv: (_sueldo, dias) =>
+      imssObreroRcvDelPeriodo(sdiDiario, dias, parametros.uma, fiscalCtx.imssCtx || {}),
     imssPatronal: (_sueldo, dias) =>
       imssPatronalDelPeriodo(sdiDiario, dias, parametros.uma, fiscalCtx.imssCtx || {})
   });
@@ -696,11 +701,13 @@ async function calcularPeriodo(tenantId, periodoId, options = {}) {
   const tiposPeriodo = await listTiposPeriodo(tenantId, false);
 
   const politicaDias = mergePolitica(empresaDoc?.nominaDias || {});
+  const { mergePoliticaDescuentos } = require('../../libs/politicaDescuentosDefaults');
+  const politicaDescuentos = mergePoliticaDescuentos(empresaDoc?.nominaDescuentos || {});
   const tipoPeriodoRef =
     (tiposPeriodo || []).find(
       (t) => String(t.tipoMotor || '').toLowerCase() === String(periodo.tipoPeriodo || '').toLowerCase()
     ) || null;
-  const diasOpts = { politica: politicaDias, tipoPeriodoRef };
+  const diasOpts = { politica: politicaDias, tipoPeriodoRef, politicaDescuentos };
 
   if (periodo.payrollPeriodId) {
     // Con pre-nómina vinculada: solo quien tuvo días/HE/percepciones (no “solo faltas”)
@@ -863,7 +870,8 @@ async function cerrarPeriodo(tenantId, periodoId, userId = '', userLabel = '') {
         cerradoPorLabel: label,
         cierreResumen: {
           recibosArchivados: cierre.archivados || 0,
-          conceptosAcumulados: cierre.conceptosAcumulados || 0
+          conceptosAcumulados: cierre.conceptosAcumulados || 0,
+          operativosEliminados: cierre.operativosEliminados || 0
         }
       }
     }
@@ -876,9 +884,10 @@ async function cerrarPeriodo(tenantId, periodoId, userId = '', userLabel = '') {
     periodoId,
     userId,
     userLabel: label,
-    mensaje: `Período cerrado: ${cierre.archivados || 0} recibos archivados, ${cierre.conceptosAcumulados || 0} líneas a acumulados`,
+    mensaje: `Período cerrado: ${cierre.archivados || 0} recibos movidos a histórico, ${cierre.operativosEliminados || 0} eliminados del temporal, ${cierre.conceptosAcumulados || 0} líneas a acumulados`,
     detalle: {
       archivados: cierre.archivados,
+      operativosEliminados: cierre.operativosEliminados || 0,
       conceptosAcumulados: cierre.conceptosAcumulados,
       totales: periodo.totales || {}
     }

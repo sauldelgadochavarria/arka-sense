@@ -40,7 +40,10 @@ const reciboNominaSchema = new mongoose.Schema(
     cerrado: { type: Boolean, default: false },
     /** Motor SAT + Inteligente (proyección). CFDI siempre usa isrMotor.isrRetenidoCfdi = ISR SAT. */
     isrMotor: { type: mongoose.Schema.Types.Mixed, default: null },
-    errorCalculo: { type: String, default: '' }
+    errorCalculo: { type: String, default: '' },
+    layoutBancario: require('./layoutBancarioStatusFields').layoutBancarioStatusFields(),
+    timbrado: require('./timbradoStatusFields').timbradoStatusFields(),
+    correo: require('./envioCorreoStatusFields').envioCorreoReciboFields()
   },
   { timestamps: true, collection: COLLECTION_NOMINA_RECIBOS }
 );

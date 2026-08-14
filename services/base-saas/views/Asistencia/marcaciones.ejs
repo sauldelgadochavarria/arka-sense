@@ -7,58 +7,88 @@
   <form method="get" action="/asistencia-marcaciones" class="inline-form">
     <label>Fecha</label>
     <input type="date" name="fecha" value="<%= fecha %>" onchange="this.form.submit()" />
+    <% if (verAnuladas) { %><input type="hidden" name="anuladas" value="1" /><% } %>
   </form>
   <a class="btn" href="/asistencia-diaria?fecha=<%= fecha %>">Ver asistencia del día</a>
+  <a class="btn" href="/asistencia-registro-jornada?desde=<%= fecha %>&amp;hasta=<%= fecha %>">Registro de jornada</a>
   <form method="post" action="/asistencia-diaria/reprocesar?fecha=<%= fecha %>" class="inline-form">
     <button type="submit">Reprocesar día → asistencia</button>
   </form>
+  <% if (verAnuladas) { %>
+  <a class="btn" href="/asistencia-marcaciones?fecha=<%= fecha %>">Ocultar anuladas</a>
+  <% } else { %>
+  <a class="btn" href="/asistencia-marcaciones?fecha=<%= fecha %>&amp;anuladas=1">Ver anuladas</a>
+  <% } %>
 </div>
 
 <p class="muted">
-  Flujo: <strong>marcación</strong> → se genera/actualiza el <strong>resumen diario</strong>
-  (presente / retardo / incompleto / …) → ese resumen alimenta el <strong>pre-cálculo</strong> del período.
-  Solo con <em>entrada</em> el día suele quedar <strong>incompleto</strong> (no cuenta como día trabajado hasta registrar <em>salida</em>).
+  Flujo: <strong>marcación</strong> → resumen diario → pre-nómina.
+  Las marcaciones <strong>no se borran</strong>: se <em>anulan</em> o <em>ajustan</em> con motivo (bitácora REJL).
 </p>
 
 <table>
   <thead>
     <tr>
       <th>Hora</th>
+      <th>Original</th>
       <th>Empleado</th>
       <th>Tipo</th>
-      <th>Método</th>
-      <th>Procesada</th>
+      <th>Estado</th>
       <th>Asistencia del día</th>
       <th>Notas</th>
+      <th>Acciones</th>
     </tr>
   </thead>
   <tbody>
     <% if (!marcaciones.length) { %>
-    <tr><td colspan="7" class="muted">Sin marcaciones para esta fecha.</td></tr>
+    <tr><td colspan="8" class="muted">Sin marcaciones para esta fecha.</td></tr>
     <% } %>
     <% marcaciones.forEach(function(m) {
          const daily = (typeof dailyMap !== 'undefined' && dailyMap) ? dailyMap.get(String(m.empleadoId)) : null;
          const estLabel = daily
            ? ((estatusDiarioLabels && estatusDiarioLabels[daily.estatus]) || daily.estatus)
-           : 'Sin resumen (reprocesar)';
+           : 'Sin resumen';
+         const anulada = m.estado === 'anulada';
+         const tsOrig = m.timestampOriginal || m.timestamp;
     %>
-    <tr>
-      <td><%= formatTimeHHMM(m.timestamp) %></td>
+    <tr class="<%= anulada ? 'row-muted' : '' %>">
+      <td><%= formatTimeHHMM(m.timestamp) %><% if (m.origen === 'ajuste') { %> <span class="badge">ajuste</span><% } %></td>
+      <td class="muted small"><%= formatTimeHHMM(tsOrig) %></td>
       <td><%= empMap.get(String(m.empleadoId)) || '—' %></td>
       <td><%= m.tipoMarcacion %></td>
-      <td><%= m.metodo %></td>
       <td>
-        <span class="badge badge-<%= m.procesado ? 'activo' : 'suspendido' %>">
-          <%= m.procesado ? 'Sí' : 'Pendiente' %>
+        <span class="badge badge-<%= anulada ? 'suspendido' : 'activo' %>">
+          <%= anulada ? 'Anulada' : 'Activa' %>
         </span>
       </td>
       <td>
         <span class="badge badge-<%= daily ? daily.estatus : 'falta' %>"><%= estLabel %></span>
-        <% if (daily && daily.estatus === 'incompleto') { %>
-        <span class="muted small">· falta salida</span>
-        <% } %>
       </td>
       <td><%= m.notas || '—' %></td>
+      <td>
+        <% if (!anulada) { %>
+        <details>
+          <summary>Ajustar / anular</summary>
+          <form method="post" action="/asistencia-marcaciones/<%= m._id %>/ajustar?fecha=<%= fecha %>" class="form-grid" style="margin-top:0.5rem;min-width:220px">
+            <input type="datetime-local" name="timestamp" value="<%= fecha %>T<%= formatTimeHHMM(m.timestamp) %>" required />
+            <select name="tipoMarcacion" required>
+              <% tiposMarcacion.forEach(function(t) { %>
+              <option value="<%= t.value %>" <%= t.value === m.tipoMarcacion ? 'selected' : '' %>><%= t.label %></option>
+              <% }); %>
+            </select>
+            <input name="motivo" placeholder="Motivo del ajuste (obligatorio)" required />
+            <input name="notas" placeholder="Notas" value="<%= m.notas || '' %>" />
+            <button type="submit">Guardar ajuste</button>
+          </form>
+          <form method="post" action="/asistencia-marcaciones/<%= m._id %>/anular?fecha=<%= fecha %>" class="form-grid" style="margin-top:0.5rem" onsubmit="return confirm('¿Anular esta marcación? Quedará en historial.');">
+            <input name="motivo" placeholder="Motivo de anulación (obligatorio)" required />
+            <button type="submit" class="btn-danger">Anular</button>
+          </form>
+        </details>
+        <% } else { %>
+        <span class="muted small"><%= m.motivoAnulacion || 'Anulada' %></span>
+        <% } %>
+      </td>
     </tr>
     <% }); %>
   </tbody>
@@ -86,5 +116,25 @@
   <input name="notas" placeholder="Notas / justificación (opcional)" />
   <button type="submit">Registrar marcación</button>
 </form>
+
+<% if (bitacora && bitacora.length) { %>
+<h2>Bitácora del día</h2>
+<table>
+  <thead>
+    <tr><th>Hora</th><th>Acción</th><th>Usuario</th><th>Motivo</th><th>Detalle</th></tr>
+  </thead>
+  <tbody>
+    <% bitacora.forEach(function(b) { %>
+    <tr>
+      <td><%= formatTimeHHMM(b.createdAt) %></td>
+      <td><code><%= b.accion %></code></td>
+      <td><%= b.userLabel || b.userId || '—' %></td>
+      <td><%= b.motivo || '—' %></td>
+      <td class="muted small"><%= b.mensaje || '—' %></td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<% } %>
 <% } %>
 <%- include('../Partials/layout-bottom') %>

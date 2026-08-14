@@ -1,0 +1,146 @@
+<%- include('../Partials/layout-top', { title: 'Reportes de nómina', session }) %>
+<%
+  const f = filters || {};
+  const cats = catalogs || {};
+  const r = result;
+%>
+<div class="page-header">
+  <h1>Reportes de nómina</h1>
+  <p class="page-subtitle">Totales por empleado, detalle por concepto o resumen por depto / centro de costo. Usa recibos vivos o histórico según el estatus del período.</p>
+</div>
+
+<% if (error) { %><p class="alert"><%= error %></p><% } %>
+<% if (!empresa) { %>
+<p>No hay empresa vinculada a este tenant.</p>
+<% } else { %>
+
+<div class="toolbar">
+  <a class="btn" href="/nomina">← Nómina</a>
+  <% if (r && r.rows && r.rows.length) { %>
+  <a class="btn btn-primary" href="/nomina/reportes/export?<%= exportQuery %>">Exportar CSV</a>
+  <% } %>
+</div>
+
+<form method="get" action="/nomina/reportes" class="filter-form form-grid">
+  <label>Período
+    <select name="periodoId" required>
+      <option value="">— Selecciona —</option>
+      <% (cats.periodos || []).forEach(function(p) { %>
+      <option value="<%= p._id %>" <%= f.periodoId && String(f.periodoId) === String(p._id) ? 'selected' : '' %>>
+        <%= labelPeriodo(p) %>
+      </option>
+      <% }); %>
+    </select>
+  </label>
+
+  <label>Vista
+    <select name="vista" id="vista-select">
+      <option value="totales" <%= f.vista === 'totales' ? 'selected' : '' %>>Totales por empleado</option>
+      <option value="detalle" <%= f.vista === 'detalle' ? 'selected' : '' %>>Detalle (conceptos en columnas)</option>
+      <option value="resumen" <%= f.vista === 'resumen' ? 'selected' : '' %>>Resumen</option>
+    </select>
+  </label>
+
+  <label id="agrupar-wrap" style="<%= f.vista === 'resumen' ? '' : 'display:none' %>">Agrupar por
+    <select name="agrupar">
+      <option value="departamento" <%= f.agrupar === 'departamento' ? 'selected' : '' %>>Departamento</option>
+      <option value="centroCosto" <%= f.agrupar === 'centroCosto' ? 'selected' : '' %>>Centro de costo</option>
+      <option value="ambos" <%= f.agrupar === 'ambos' ? 'selected' : '' %>>Depto + Centro de costo</option>
+    </select>
+  </label>
+
+  <label>Departamento
+    <select name="departamentoId">
+      <option value="">Todos</option>
+      <% (cats.departamentos || []).forEach(function(d) { %>
+      <option value="<%= d._id %>" <%= f.departamentoId && String(f.departamentoId) === String(d._id) ? 'selected' : '' %>><%= d.nombre %></option>
+      <% }); %>
+    </select>
+  </label>
+
+  <label>Centro de costo
+    <select name="centroCostoId">
+      <option value="">Todos</option>
+      <% (cats.centrosCosto || []).forEach(function(c) { %>
+      <option value="<%= c._id %>" <%= f.centroCostoId && String(f.centroCostoId) === String(c._id) ? 'selected' : '' %>><%= c.codigo %> — <%= c.nombre %></option>
+      <% }); %>
+    </select>
+  </label>
+
+  <button type="submit">Generar</button>
+</form>
+
+<script>
+(function () {
+  var vista = document.getElementById('vista-select');
+  var wrap = document.getElementById('agrupar-wrap');
+  if (!vista || !wrap) return;
+  function sync() { wrap.style.display = vista.value === 'resumen' ? '' : 'none'; }
+  vista.addEventListener('change', sync);
+})();
+</script>
+
+<% if (r && r.periodo) { %>
+<div class="report-summary summary-cards">
+  <p>
+    <strong>Fuente:</strong>
+    <%= r.fuente === 'historico' ? 'Nómina cerrada (histórico)' : 'Nómina abierta / en proceso' %>
+    · <strong>Estatus:</strong> <%= r.summary.estatusPeriodo %>
+    <% if (r.summary.empleados != null) { %> · <strong>Empleados:</strong> <%= r.summary.empleados %><% } %>
+    <% if (r.summary.grupos != null) { %> · <strong>Grupos:</strong> <%= r.summary.grupos %><% } %>
+    <% if (r.summary.conceptos != null) { %> · <strong>Conceptos:</strong> <%= r.summary.conceptos %><% } %>
+  </p>
+  <% if (r.summary.netoPagar != null) { %>
+  <p>
+    Perc. $<%= formatMoney(r.summary.totalPercepciones) %>
+    · Ded. $<%= formatMoney(r.summary.totalDeducciones) %>
+    · Neto $<%= formatMoney(r.summary.netoPagar) %>
+  </p>
+  <% } %>
+</div>
+<% } %>
+
+<% if (r && r.summary && r.summary.mensaje && !(r.rows && r.rows.length)) { %>
+<p class="muted"><%= r.summary.mensaje %></p>
+<% } %>
+
+<% if (r && r.rows && r.rows.length) { %>
+<div class="table-scroll">
+<table class="data-table report-table">
+  <thead>
+    <tr>
+      <% (r.columns || []).forEach(function(c) { %>
+      <th class="<%= c.type === 'money' || c.type === 'number' ? 'num' : '' %>"><%= c.label %></th>
+      <% }); %>
+    </tr>
+  </thead>
+  <tbody>
+    <% r.rows.forEach(function(row) { %>
+    <tr>
+      <% (r.columns || []).forEach(function(c) { %>
+      <td class="<%= c.type === 'money' || c.type === 'number' ? 'num' : '' %>">
+        <% if (c.type === 'money') { %>$<%= formatMoney(row[c.key]) %><% } else { %><%= row[c.key] != null ? row[c.key] : '' %><% } %>
+      </td>
+      <% }); %>
+    </tr>
+    <% }); %>
+  </tbody>
+  <% if (r.summary) { %>
+  <tfoot>
+    <tr>
+      <% (r.columns || []).forEach(function(c, idx) { %>
+      <td class="<%= c.type === 'money' || c.type === 'number' ? 'num' : '' %>">
+        <% if (idx === 0) { %><strong>Totales</strong><% } else if (c.type === 'money' && r.summary[c.key] != null) { %><strong>$<%= formatMoney(r.summary[c.key]) %></strong><% } else if (c.key === 'empleados' && r.summary.empleados != null && r.vista === 'resumen') { %><strong><%= r.summary.empleados %></strong><% } %>
+      </td>
+      <% }); %>
+    </tr>
+  </tfoot>
+  <% } %>
+</table>
+</div>
+<% } else if (f.periodoId) { %>
+<p class="muted">Sin recibos para los filtros seleccionados (¿período aún sin calcular o filtros muy restrictivos?).</p>
+<% } %>
+
+<% } %>
+<%- include('../Partials/layout-bottom') %>

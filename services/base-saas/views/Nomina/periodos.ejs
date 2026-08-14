@@ -1,12 +1,17 @@
 <%- include('../Partials/layout-top', { title: 'Períodos de nómina', session }) %>
+<% const _canEdit = typeof canEdit !== 'undefined' ? canEdit : true; %>
 <h1>Períodos de nómina</h1>
 <div class="toolbar">
   <a class="btn" href="/nomina">← Nómina</a>
 </div>
+<% if (!_canEdit) { %>
+<p class="alert">Consulta: puedes ver períodos y recibos. Calcular, cerrar o abrir período requiere el rol <strong>Nómina operativa</strong>.</p>
+<% } %>
 <% if (!empresa) { %>
 <p>No hay empresa vinculada a este tenant.</p>
 <% } else { %>
 
+<% if (_canEdit) { %>
 <h2>Nuevo período</h2>
 <form method="post" action="/nomina/periodos" class="form-grid">
   <label>Tipo de período
@@ -96,6 +101,7 @@
   if (fechaInp) fechaInp.addEventListener('change', refresh);
 })();
 </script>
+<% } %>
 
 <h2>Períodos</h2>
 <table>
@@ -109,6 +115,7 @@
       <th>Fin</th>
       <th>Pre-nómina</th>
       <th>Estatus</th>
+      <th>Dispersión</th>
       <th>Despensa</th>
       <th>Calculó</th>
       <th>Cerró</th>
@@ -119,9 +126,11 @@
   </thead>
   <tbody>
     <% if (!periodos.length) { %>
-    <tr><td colspan="14" class="muted">Sin períodos. Al abrir el primero se sembrarán conceptos y fórmulas base.</td></tr>
+    <tr><td colspan="15" class="muted">Sin períodos. Al abrir el primero se sembrarán conceptos y fórmulas base.</td></tr>
     <% } %>
-    <% periodos.forEach(function(p) { %>
+    <% periodos.forEach(function(p) {
+         const lb = p.layoutBancario || {};
+    %>
     <tr>
       <td><strong><%= p.numeroPeriodo != null ? p.numeroPeriodo : '—' %></strong></td>
       <td><%= p.anio || (p.fechaInicio ? new Date(p.fechaInicio).getFullYear() : '—') %></td>
@@ -131,6 +140,13 @@
       <td><%= new Date(p.fechaFin).toLocaleDateString('es-MX') %></td>
       <td class="muted small"><%= p.payrollPeriodId ? 'Vinculada' : 'Sin vincular' %></td>
       <td><span class="badge badge-<%= p.estatus === 'cerrado' ? 'baja' : p.estatus === 'calculado' ? 'activo' : 'suspendido' %>"><%= estatusLabels[p.estatus] || p.estatus %></span></td>
+      <td>
+        <% if (lb.estatus === 'generado') { %>
+        <span class="badge badge-activo" title="<%= lb.layoutCodigo || '' %>">Generado</span>
+        <% } else if (p.estatus === 'calculado' || p.estatus === 'cerrado') { %>
+        <span class="muted small">Pendiente</span>
+        <% } else { %>—<% } %>
+      </td>
       <td class="muted small"><%= p.prestaciones && p.prestaciones.pagaDespensa ? 'Sí' : 'No' %></td>
       <td class="muted small"><%= p.calculadoPorLabel || '—' %></td>
       <td class="muted small"><%= p.cerradoPorLabel || '—' %></td>

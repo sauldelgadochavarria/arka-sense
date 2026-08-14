@@ -1,0 +1,99 @@
+<%- include('../../Partials/layout-top', { title: 'Gestión documental', session }) %>
+<div class="page-header">
+  <h1>Gestión documental</h1>
+  <p class="page-subtitle">
+    Expediente por empresa → año → mes → período / SUA / impuestos / INFONAVIT, y expediente de trabajadores.
+    Storage: <%= config && config.proveedor === 's3' ? 'Bucket S3/Linode' : 'Carpeta local' %>.
+  </p>
+</div>
+<div class="toolbar">
+  <a class="btn" href="/nomina/gestion-documental">← Cumplimiento</a>
+  <a class="btn btn-primary" href="/nomina/gestion-documental/subir">+ Subir</a>
+  <a class="btn" href="/nomina/gestion-documental/reporte">Reporte cobertura</a>
+  <a class="btn" href="/nomina/gestion-documental/config">Configuración storage</a>
+  <form method="post" action="/nomina/gestion-documental/reindexar" class="inline-form" onsubmit="return confirm('¿Releer carpeta/bucket e indexar archivos nuevos?');">
+    <button type="submit">Reindexar / recargar</button>
+  </form>
+</div>
+<% if (error) { %><p class="alert"><%= error %></p><% } %>
+<% if (typeof success !== 'undefined' && success) { %><p class="alert alert-success"><%= success %></p><% } %>
+<% if (!empresa) { %>
+<p>Sin empresa.</p>
+<% } else { %>
+<form method="get" class="form-grid" style="margin-bottom:1rem">
+  <label>Año <input type="number" name="anio" value="<%= filtros.anio %>" /></label>
+  <label>Mes
+    <select name="mes">
+      <option value="">— Todos —</option>
+      <% (meses || []).forEach(function(m) { %>
+      <option value="<%= m.num %>" <%= Number(filtros.mes) === m.num ? 'selected' : '' %>><%= m.nombre %></option>
+      <% }); %>
+    </select>
+  </label>
+  <label>Ámbito
+    <select name="ambito">
+      <option value="">— Todos —</option>
+      <option value="periodo" <%= filtros.ambito === 'periodo' ? 'selected' : '' %>>Período</option>
+      <option value="mes" <%= filtros.ambito === 'mes' ? 'selected' : '' %>>Mes</option>
+      <option value="empleado" <%= filtros.ambito === 'empleado' ? 'selected' : '' %>>Trabajador</option>
+    </select>
+  </label>
+  <label>Grupo
+    <select name="grupo">
+      <option value="">— Todos —</option>
+      <% (grupos || []).forEach(function(g) { %>
+      <option value="<%= g.codigo %>" <%= filtros.grupo === g.codigo ? 'selected' : '' %>><%= g.nombre %></option>
+      <% }); %>
+    </select>
+  </label>
+  <label>Tipo
+    <select name="tipoCodigo">
+      <option value="">— Todos —</option>
+      <% (tipos || []).forEach(function(t) { %>
+      <option value="<%= t.codigo %>" <%= filtros.tipoCodigo === t.codigo ? 'selected' : '' %>><%= t.nombre %></option>
+      <% }); %>
+    </select>
+  </label>
+  <button type="submit">Filtrar</button>
+</form>
+
+<details open style="margin-bottom:1rem">
+  <summary>Árbol <%= filtros.anio %></summary>
+  <pre class="muted" style="max-height:220px;overflow:auto;font-size:12px"><%= JSON.stringify(tree || {}, null, 2) %></pre>
+</details>
+
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>Tipo</th><th>Ámbito</th><th>Año/Mes</th><th>Período / Empleado</th>
+      <th>Archivo</th><th>Tamaño</th><th>Versión</th><th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <% if (!(rows || []).length) { %>
+    <tr><td colspan="8" class="muted">Sin documentos indexados. Sube archivos o reindexa el storage.</td></tr>
+    <% } %>
+    <% (rows || []).forEach(function(d) { %>
+    <tr>
+      <td><code><%= d.tipoCodigo %></code></td>
+      <td><%= d.ambito %></td>
+      <td><%= d.anio || '—' %><% if (d.mes) { %>/<%= d.mes %><% } %></td>
+      <td>
+        <% if (d.ambito === 'empleado') { %><%= d.numEmpleado %> <%= d.empleadoNombre %>
+        <% } else { %><%= d.periodoLabel || '—' %><% } %>
+      </td>
+      <td><%= d.nombreOriginal %></td>
+      <td><%= d.tamanio ? (Math.round(d.tamanio/1024) + ' KB') : '—' %></td>
+      <td>v<%= d.version || 1 %></td>
+      <td class="actions">
+        <a href="/nomina/gestion-documental/<%= d._id %>/descargar">Descargar</a>
+        <form method="post" action="/nomina/gestion-documental/<%= d._id %>/eliminar" class="inline-form" onsubmit="return confirm('¿Archivar documento?');">
+          <button type="submit">Archivar</button>
+        </form>
+      </td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<% } %>
+<%- include('../../Partials/layout-bottom') %>

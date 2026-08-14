@@ -3,6 +3,7 @@
 const getTablaPrestacionesModel = require('../models/tablaPrestaciones');
 const getConceptoAplicadoModel = require('../models/conceptoAplicado');
 const getReciboNominaModel = require('../models/reciboNomina');
+const getNominaHistoricoReciboModel = require('../models/nominaHistoricoRecibo');
 const getConceptoNominaModel = require('../models/conceptoNomina');
 const { calcularAniosServicio, diasVacacionesPorAntiguedad } = require('../config/vacacionesLFT');
 const { buildTablaGlobalDefault } = require('../config/prestacionesDefaults');
@@ -35,8 +36,11 @@ const CONCEPTOS_NO_VARIABLES = new Set([
   'ISR_AJUSTADO',
   'ISR_DIFERENCIA',
   'IMSS_OBRERO',
+  'IMSS_RCV',
   'IMSS_PATRONAL',
   'INFONAVIT',
+  'FONACOT',
+  'CUOTA_SINDICAL',
   'FONDO_AHORRO_EMPRESA',
   'FONDO_AHORRO_TRABAJADOR',
   'FINIQUITO_FONDO_AHORRO',
@@ -186,18 +190,28 @@ async function promedioVariablesUltimos2Meses(tenantId, empleadoId, { fechaRef =
   inicio.setMonth(inicio.getMonth() - 2);
 
   const Recibo = await getReciboNominaModel();
+  const Historico = await getNominaHistoricoReciboModel();
   const Aplicado = await getConceptoAplicadoModel();
   const Concepto = await getConceptoNominaModel();
 
-  const recibos = await Recibo.find({
-    tenantId,
-    empleadoId,
-    fechaCalculo: { $gte: inicio, $lte: fin }
-  })
-    .select('_id')
-    .lean();
+  const [recibosOp, recibosHist] = await Promise.all([
+    Recibo.find({
+      tenantId,
+      empleadoId,
+      fechaCalculo: { $gte: inicio, $lte: fin }
+    })
+      .select('_id')
+      .lean(),
+    Historico.find({
+      tenantId,
+      empleadoId,
+      fechaCalculo: { $gte: inicio, $lte: fin }
+    })
+      .select('_id conceptos')
+      .lean()
+  ]);
 
-  if (!recibos.length) {
+  if (!recibosOp.length && !recibosHist.length) {
     return { promedioDiario: 0, totalVariables: 0, diasVentana: 0, recibos: 0 };
   }
 
@@ -222,13 +236,23 @@ async function promedioVariablesUltimos2Meses(tenantId, empleadoId, { fechaRef =
     }
   }
 
-  const reciboIds = recibos.map((r) => r._id);
-  const lineas = await Aplicado.find({
-    tenantId,
-    reciboId: { $in: reciboIds },
-    tipo: 'percepcion',
-    requiereRevision: { $ne: true }
-  }).lean();
+  const lineas = [];
+  if (recibosOp.length) {
+    const opLines = await Aplicado.find({
+      tenantId,
+      reciboId: { $in: recibosOp.map((r) => r._id) },
+      tipo: 'percepcion',
+      requiereRevision: { $ne: true }
+    }).lean();
+    lineas.push(...opLines);
+  }
+  for (const h of recibosHist) {
+    for (const c of h.conceptos || []) {
+      if (c.tipo && c.tipo !== 'percepcion') continue;
+      if (c.requiereRevision) continue;
+      lineas.push(c);
+    }
+  }
 
   let total = 0;
   for (const l of lineas) {
@@ -238,7 +262,6 @@ async function promedioVariablesUltimos2Meses(tenantId, empleadoId, { fechaRef =
     if (hasNatFlags || variableCodes.size) {
       if (!variableCodes.has(code)) continue;
     }
-    // Preferir la parte que sí integra SBC si el recibo la guardó
     const integra =
       l.imss && l.imss.integraSBC != null ? Number(l.imss.integraSBC) : Number(l.importe) || 0;
     total += integra;
@@ -250,7 +273,7 @@ async function promedioVariablesUltimos2Meses(tenantId, empleadoId, { fechaRef =
     promedioDiario: redondear2(promedioDiario),
     totalVariables: redondear2(total),
     diasVentana,
-    recibos: recibos.length,
+    recibos: recibosOp.length + recibosHist.length,
     desde: inicio,
     hasta: fin
   };

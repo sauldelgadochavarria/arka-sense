@@ -1,0 +1,52 @@
+<%- include('../../Partials/layout-top', { title: 'Generar archivo bancario', session }) %>
+<h1>Generar archivo bancario</h1>
+<p class="muted">
+  Elige un período calculado/cerrado, un layout y la <strong>fecha de pago</strong> (queda en <code>lote.fechaPago</code>).
+  Al generar se descarga el archivo y se marca el período y los recibos como <strong>layout generado</strong>.
+</p>
+
+<% if (!empresa) { %>
+<p class="warn-text">No hay empresa vinculada.</p>
+<% } else if (!(layouts || []).length) { %>
+<p class="warn-text">
+  No hay layouts activos.
+  <a href="/nomina/layouts-bancarios">Configura un layout</a> primero.
+</p>
+<% } else { %>
+<form method="post" action="/nomina/dispersion-bancaria/generar" class="form-grid">
+  <label>Período
+    <select name="periodoId" required>
+      <option value="">— Selecciona —</option>
+      <% (periodos || []).forEach(function(p) {
+           const lb = p.layoutBancario || {};
+           const sel = periodoPre && String(periodoPre._id) === String(p._id);
+      %>
+      <option value="<%= p._id %>" <%= sel ? 'selected' : '' %>>
+        #<%= p.numeroPeriodo != null ? p.numeroPeriodo : '—' %>
+        <%= p.tipoPeriodo %> · <%= p.tipoNomina %>
+        · <%= new Date(p.fechaInicio).toLocaleDateString('es-MX') %>–<%= new Date(p.fechaFin).toLocaleDateString('es-MX') %>
+        (<%= p.estatus %>)
+        <% if (lb.estatus === 'generado') { %> · ya generado<% } %>
+      </option>
+      <% }); %>
+    </select>
+  </label>
+  <label>Layout bancario
+    <select name="layoutId" required>
+      <option value="">— Selecciona —</option>
+      <% (layouts || []).forEach(function(l) { %>
+      <option value="<%= l._id %>"><%= l.codigo %> — <%= l.nombre %> (<%= l.modo %>)</option>
+      <% }); %>
+    </select>
+  </label>
+  <label>Fecha de pago
+    <input type="date" name="fechaPago" required value="<%= fechaPagoDefault || '' %>" />
+  </label>
+  <div class="toolbar" style="grid-column:1/-1">
+    <button type="submit" class="btn btn-primary">Generar y descargar</button>
+    <a class="btn" href="/nomina/layouts-bancarios">Layouts</a>
+    <a class="btn" href="/nomina/periodos">Períodos</a>
+  </div>
+</form>
+<% } %>
+<%- include('../../Partials/layout-bottom') %>

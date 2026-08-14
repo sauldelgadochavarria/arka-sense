@@ -35,7 +35,12 @@ const FORMULAS_CANONICAS = {
     fase: 2
   },
   IMSS_OBRERO: {
-    formula: 'si(diasCotizacion > 0, imssObrero(sueldoDiario, diasCotizacion), 0)',
+    formula: 'si(diasCotizacion > 0, imssObreroSs(sueldoDiario, diasCotizacion), 0)',
+    condicion: '',
+    fase: 2
+  },
+  IMSS_RCV: {
+    formula: 'si(diasCotizacion > 0, imssObreroRcv(sueldoDiario, diasCotizacion), 0)',
     condicion: '',
     fase: 2
   },
@@ -207,7 +212,7 @@ async function upsertCanonicalFormula(colF, tid, codigo, tipoPeriodo, spec) {
         },
         DEDUCCIONES_TOTALES: {
           formula:
-            'ISR + IMSS_OBRERO + DED_FONDO_AHORRO + DED_FONDO_AHORRO_EMPRESA + DED_SEGURO_VIDA + DED_SGMM',
+            'ISR + IMSS_OBRERO + IMSS_RCV + INFONAVIT + FONACOT + CUOTA_SINDICAL + DED_FONDO_AHORRO + DED_FONDO_AHORRO_EMPRESA + DED_SEGURO_VIDA + DED_SGMM',
           fase: 3
         },
         NETO_PAGAR: {
@@ -290,6 +295,7 @@ async function upsertCanonicalFormula(colF, tid, codigo, tipoPeriodo, spec) {
   const dedCodes = [
     'ISR',
     'IMSS_OBRERO',
+    'IMSS_RCV',
     'DED_FONDO_AHORRO',
     'DED_FONDO_AHORRO_EMPRESA',
     'DED_SEGURO_VIDA',

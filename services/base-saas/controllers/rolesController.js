@@ -18,6 +18,7 @@ async function createRole(req, res) {
     puedeVerReportes: req.body.puedeVerReportes === 'on',
     puedeVerNomina: req.body.puedeVerNomina === 'on',
     puedeGestionarNomina: req.body.puedeGestionarNomina === 'on',
+    puedeGestionarPrenomina: req.body.puedeGestionarPrenomina === 'on',
     activo: true
   });
   res.redirect('/config-roles');

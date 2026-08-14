@@ -1,0 +1,133 @@
+<%- include('../Partials/layout-top', { title: 'Registro de jornada', session }) %>
+<div class="page-header">
+  <h1>Registro de jornada</h1>
+  <p class="page-subtitle">
+    Inicio y fin de jornada, comida, tiempo efectivo, horas ordinarias/extra y acumulado semanal
+    (preparación Art. 132 fr. XXXIV LFT — evidencia interna).
+  </p>
+</div>
+
+<% if (!empresa) { %>
+<p>No hay empresa vinculada a este tenant.</p>
+<% } else { %>
+
+<div class="toolbar">
+  <a class="btn" href="/asistencia-marcaciones">← Marcaciones</a>
+  <a class="btn" href="/asistencia-diaria">Asistencia del día</a>
+</div>
+
+<form method="get" action="/asistencia-registro-jornada" class="filter-form form-grid">
+  <label>Desde
+    <input type="date" name="desde" value="<%= filters.desde %>" required />
+  </label>
+  <label>Hasta
+    <input type="date" name="hasta" value="<%= filters.hasta %>" required />
+  </label>
+  <label>Empleado
+    <select name="empleadoId">
+      <option value="">Todos</option>
+      <% empleados.forEach(function(e) { %>
+      <option value="<%= e._id %>" <%= filters.empleadoId === String(e._id) ? 'selected' : '' %>>
+        <%= e.firstName %> <%= e.lastName %> (<%= e.numEmpleado %>)
+      </option>
+      <% }); %>
+    </select>
+  </label>
+  <button type="submit">Consultar</button>
+</form>
+
+<h2>Detalle diario</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Fecha</th>
+      <th>Empleado</th>
+      <th>Inicio</th>
+      <th>Salida comida</th>
+      <th>Regreso</th>
+      <th>Fin</th>
+      <th>Efectivo</th>
+      <th>Ordinario</th>
+      <th>HE</th>
+      <th>Estatus</th>
+    </tr>
+  </thead>
+  <tbody>
+    <% if (!filas.length) { %>
+    <tr><td colspan="10" class="muted">Sin registros de jornada en el rango.</td></tr>
+    <% } %>
+    <% filas.forEach(function(f) {
+         const ymd = f.fecha ? new Date(f.fecha).toISOString().slice(0, 10) : '—';
+         const est = (estatusDiarioLabels && estatusDiarioLabels[f.estatus]) || f.estatus || '—';
+    %>
+    <tr>
+      <td><%= ymd %></td>
+      <td><%= f.nombre %> <span class="muted small">(<%= f.numEmpleado %>)</span></td>
+      <td><%= f.entradaFmt %></td>
+      <td><%= f.salidaComidaFmt %></td>
+      <td><%= f.regresoComidaFmt %></td>
+      <td><%= f.salidaFmt %></td>
+      <td><%= fmtMin(f.minutosEfectivos) %></td>
+      <td><%= fmtMin(f.minutosOrdinarios) %></td>
+      <td><%= fmtMin(f.minutosHE) %></td>
+      <td><span class="badge badge-<%= f.estatus || 'falta' %>"><%= est %></span></td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+
+<h2>Acumulado semanal</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Semana</th>
+      <th>Empleado</th>
+      <th>Horas efectivas</th>
+      <th>Horas ordinarias</th>
+      <th>HE (total)</th>
+      <th>HE dobles*</th>
+      <th>HE triples*</th>
+    </tr>
+  </thead>
+  <tbody>
+    <% if (!semanas.length) { %>
+    <tr><td colspan="7" class="muted">Sin acumulados.</td></tr>
+    <% } %>
+    <% semanas.forEach(function(s) { %>
+    <tr>
+      <td><code><%= s.week %></code></td>
+      <td><%= s.nombre %> <span class="muted small">(<%= s.numEmpleado %>)</span></td>
+      <td><%= s.horasEfectivas %></td>
+      <td><%= s.horasOrdinarias %></td>
+      <td><%= s.horasHE %></td>
+      <td><%= fmtMin(s.heDoblesSemana) %></td>
+      <td><%= fmtMin(s.heTriplesSemana) %></td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<p class="muted small">* Clasificación LFT (tope 3 h/día y 9 h/semana al doble). No sustituye aún el calendario progresivo de 40 h.</p>
+
+<% if (bitacora && bitacora.length) { %>
+<h2>Bitácora relacionada</h2>
+<table>
+  <thead>
+    <tr><th>Fecha</th><th>Acción</th><th>Usuario</th><th>Motivo / mensaje</th></tr>
+  </thead>
+  <tbody>
+    <% bitacora.forEach(function(b) {
+         const when = b.createdAt ? new Date(b.createdAt).toISOString().replace('T', ' ').slice(0, 16) : '—';
+    %>
+    <tr>
+      <td><%= when %></td>
+      <td><code><%= b.accion %></code></td>
+      <td><%= b.userLabel || b.userId || '—' %></td>
+      <td><%= b.motivo || b.mensaje || '—' %></td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<% } %>
+
+<% } %>
+<%- include('../Partials/layout-bottom') %>

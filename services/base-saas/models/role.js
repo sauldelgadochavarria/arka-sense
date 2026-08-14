@@ -12,7 +12,14 @@ const roleSchema = new mongoose.Schema(
     esAdminSistema: { type: Boolean, default: false },
     puedeVerReportes: { type: Boolean, default: false },
     puedeVerNomina: { type: Boolean, default: false },
+    /** Abrir período, calcular, cerrar, editar conceptos y config fiscal. */
     puedeGestionarNomina: { type: Boolean, default: false },
+    puedeGestionarPrenomina: { type: Boolean, default: false },
+    puedeGestionarPersonal: { type: Boolean, default: false },
+    puedeGestionarAsistencia: { type: Boolean, default: false },
+    puedeAprobarIncidencias: { type: Boolean, default: false },
+    puedeGestionarIntegraciones: { type: Boolean, default: false },
+    esPortalEmpleado: { type: Boolean, default: false },
     activo: { type: Boolean, default: true },
     tenantFeatureKey: { type: String, trim: true, default: 'core' }
   },

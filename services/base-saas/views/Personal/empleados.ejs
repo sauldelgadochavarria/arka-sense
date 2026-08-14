@@ -60,6 +60,7 @@
   <%- include('partials/empleado-fields', {
     empleado: null,
     subsidiarias, departamentos, puestos, turnos,
+    centrosCosto: typeof centrosCosto !== 'undefined' ? centrosCosto : [],
     tiposPeriodo: typeof tiposPeriodo !== 'undefined' ? tiposPeriodo : [],
     supervisores, gruposDispositivos, plantillas,
     asignacionCtx: null,

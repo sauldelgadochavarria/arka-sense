@@ -228,7 +228,9 @@ async function recalculateDailyAttendance(tenantId, empleadoId, fechaInput) {
   const records = await AttendanceRecord.find({
     tenantId,
     empleadoId,
-    fecha: { $gte: fecha, $lte: endOfDay(fecha) }
+    fecha: { $gte: fecha, $lte: endOfDay(fecha) },
+    // Legado sin campo estado = activa; anuladas no computan jornada
+    $or: [{ estado: 'activa' }, { estado: { $exists: false } }, { estado: null }]
   })
     .sort({ timestamp: 1 })
     .lean();
