@@ -1,0 +1,107 @@
+<%- include('../../Partials/layout-top', { title: 'Recalcular finiquito', session }) %>
+<% const formData = form || {}; const B = typeof bloqueo !== 'undefined' ? bloqueo : {}; %>
+<div class="page-header">
+  <h1>Recalcular · <%= doc.numEmpleado %> <%= doc.nombreEmpleado %></h1>
+  <p class="page-subtitle">
+    Puedes recalcular las veces que necesites
+    <% if (doc.periodoId) { %>antes y después de vincular<% } else { %>antes de vincular al período<% } %>.
+    Queda <strong>permanente</strong> solo cuando el período esté cerrado.
+  </p>
+</div>
+<p>
+  <a href="/nomina/finiquitos/<%= doc._id %>">← Volver al cálculo</a>
+</p>
+<% if (typeof error !== 'undefined' && error) { %><p class="alert"><%= error %></p><% } %>
+<% if (doc.periodoId && periodo) { %>
+<p class="alert ok">
+  Vinculado a período <%= periodo.tipoNomina %> #<%= periodo.numeroPeriodo %>/<%= periodo.anio %>
+  (<%= periodo.estatus %>). Al guardar se re-inyecta el recibo automáticamente.
+</p>
+<% } %>
+
+<form method="post" action="/nomina/finiquitos/<%= doc._id %>/recalcular" class="form-grid form-wide">
+  <label>Fecha de baja
+    <input type="date" name="fechaBaja" value="<%= formData.fechaBaja || '' %>" required />
+  </label>
+  <label>Fecha de ingreso (cálculo)
+    <input type="date" name="fechaIngreso" value="<%= formData.fechaIngreso || '' %>" />
+  </label>
+  <label>Causa de terminación
+    <select name="causaTerminacion" required>
+      <% (causas || []).forEach(function(c) {
+        const sel = String(formData.causaTerminacion || '') === c.codigo ? 'selected' : '';
+      %>
+      <option value="<%= c.codigo %>" <%= sel %>><%= c.nombre %></option>
+      <% }); %>
+    </select>
+  </label>
+
+  <h3 class="form-section">Parámetros (overrides)</h3>
+  <label>Salario diario
+    <input type="number" step="0.01" name="salarioDiario" value="<%= formData.salarioDiario || '' %>" />
+  </label>
+  <label>Salario base indemnización
+    <input type="number" step="0.01" name="salarioBaseIndemnizacion" value="<%= formData.salarioBaseIndemnizacion || '' %>" />
+  </label>
+  <label>Salario base prima antigüedad
+    <input type="number" step="0.01" name="salarioBasePrimaAntiguedad" value="<%= formData.salarioBasePrimaAntiguedad || '' %>" />
+  </label>
+  <label>Días aguinaldo
+    <input type="number" step="1" name="diasAguinaldo" value="<%= formData.diasAguinaldo || defaults.diasAguinaldo %>" />
+  </label>
+  <label>Prima vacacional (0–1)
+    <input type="number" step="0.01" name="porcentajePrimaVacacional" value="<%= formData.porcentajePrimaVacacional || defaults.porcentajePrimaVacacional %>" />
+  </label>
+  <label>Días vacaciones pendientes
+    <input type="number" step="0.01" name="diasVacacionesPendientes" value="<%= formData.diasVacacionesPendientes || 0 %>" />
+  </label>
+  <label>Días sueldo pendiente
+    <input type="number" step="0.01" name="diasPendientes" value="<%= formData.diasPendientes || 0 %>" />
+  </label>
+  <label>Fondo de ahorro saldo
+    <input type="number" step="0.01" name="fondoAhorroSaldo" value="<%= formData.fondoAhorroSaldo || '' %>" />
+  </label>
+  <label>Descuento empresa / préstamo
+    <input type="number" step="0.01" name="descuentoEmpresa" value="<%= formData.descuentoEmpresa || '' %>" />
+  </label>
+  <label class="checkbox-label">
+    <input type="checkbox" name="aplicaIndemnizacionTresMeses" <%= formData.aplicaIndemnizacionTresMeses ? 'checked' : '' %> />
+    Indemnización 3 meses
+  </label>
+  <label class="checkbox-label">
+    <input type="checkbox" name="aplica20DiasPorAnio" <%= formData.aplica20DiasPorAnio ? 'checked' : '' %> />
+    20 días por año
+  </label>
+  <label class="checkbox-label">
+    <input type="checkbox" name="aplicaPrimaAntiguedad" <%= formData.aplicaPrimaAntiguedad ? 'checked' : '' %> />
+    Forzar prima de antigüedad
+  </label>
+
+  <h3 class="form-section">Negociación</h3>
+  <label class="checkbox-label">
+    <input type="checkbox" name="negociacionActiva" <%= formData.negociacionActiva ? 'checked' : '' %> />
+    Activar negociación
+  </label>
+  <label>Gratificación / bono
+    <input type="number" step="0.01" name="gratificacion" value="<%= formData.gratificacion || 0 %>" />
+  </label>
+  <label class="checkbox-label">
+    <input type="checkbox" name="gratificacionEsSeparacion" <%= formData.gratificacionEsSeparacion ? 'checked' : '' %> />
+    Es pago por separación / mutuo acuerdo (SAT 023 · bolsa 90×UMA)
+  </label>
+  <p class="muted small" style="grid-column:1/-1">
+    Por defecto: bono extraordinario (100% gravado). Marca la casilla solo si aplica Art. 93 fr. XIII.
+  </p>
+  <label>Notas negociación
+    <input type="text" name="negociacionNotas" value="<%= formData.negociacionNotas || '' %>" />
+  </label>
+  <label>Notas del cálculo
+    <input type="text" name="notas" value="<%= formData.notas || '' %>" />
+  </label>
+
+  <div class="form-actions" style="grid-column:1/-1">
+    <button type="submit" class="btn btn-primary">Recalcular<%= doc.periodoId ? ' y actualizar recibo' : '' %></button>
+    <a class="btn" href="/nomina/finiquitos/<%= doc._id %>">Cancelar</a>
+  </div>
+</form>
+<%- include('../../Partials/layout-bottom') %>

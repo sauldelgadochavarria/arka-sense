@@ -26,7 +26,22 @@ const PARAMETROS = [
   { clave: 'FONDO_AHORRO_PORC', valor: 13, descripcion: '% máximo del salario para fondo de ahorro (tope exento)' },
   { clave: 'FONDO_AHORRO_TOPE_UMA', valor: 1.3, descripcion: 'Veces la UMA anual para tope exento del fondo de ahorro' },
   { clave: 'FONDO_AHORRO_DIAS_ANIO', valor: 365, descripcion: 'Días para calcular UMA anual del fondo de ahorro' },
-  { clave: 'IMSS_TOPE_UMA', valor: 25, descripcion: 'Tope SBC en veces UMA' }
+  { clave: 'IMSS_TOPE_UMA', valor: 25, descripcion: 'Tope SBC en veces UMA' },
+  {
+    clave: 'ISR_SEPARACION_MULTIPLICADOR_UMA',
+    valor: 90,
+    descripcion: 'Art. 93 fr. XIII LISR: UMAs exentas por año de servicio (bolsa global de separación)'
+  },
+  {
+    clave: 'ISR_SEPARACION_DIAS_REDONDEO_ANIO',
+    valor: 183,
+    descripcion: 'LISR: días de residuo (≥) para redondear +1 año de servicio en exención de separación'
+  },
+  {
+    clave: 'ISR_SEPARACION_DIAS_ANIO',
+    valor: 365,
+    descripcion: 'LISR: días por año para calcular años de servicio en exención de separación'
+  }
 ];
 
 /**

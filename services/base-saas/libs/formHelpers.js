@@ -22,7 +22,14 @@ function parseOptionalObjectId(value) {
 
 function parseDate(value) {
   if (!value) return null;
-  const date = new Date(value);
+  const s = String(value).trim();
+  // Fecha-only (input type=date): guardar mediodía UTC para no perder el día por zona horaria
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (m) {
+    const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12, 0, 0));
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  const date = new Date(s);
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
@@ -48,7 +55,10 @@ function toDateInputValue(value) {
   if (!value) return '';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
-  return date.toISOString().slice(0, 10);
+  const y = date.getUTCFullYear();
+  const mo = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(date.getUTCDate()).padStart(2, '0');
+  return `${y}-${mo}-${d}`;
 }
 
 function parseCheckbox(body, fieldName) {

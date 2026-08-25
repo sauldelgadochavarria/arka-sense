@@ -38,6 +38,7 @@ const confrontaImssController = require('../controllers/confrontaImssController'
 const ayudaController = require('../controllers/ayudaController');
 const { getDashboardKpis } = require('../services/dashboardKpiService');
 const { tableroCumplimiento } = require('../services/gestionDocumentalService');
+const { getFlujoNominaActual } = require('../services/flujoNominaDashboardService');
 const { tenantHasFeature } = require('../libs/tenantFeatureFlags');
 const { requireEmpresaForTenant } = require('../libs/tenantScope');
 const { requirePortalEmpleado } = require('../middleware/requirePortalEmpleado');
@@ -61,7 +62,9 @@ router.get(['/', '/dashboard', '/inicio'], async (req, res) => {
   const { empresa } = await requireEmpresaForTenant(req.session.tenantId);
   const kpis = empresa ? await getDashboardKpis(req.session.tenantId) : null;
   const featureFlags = req.tenant?.featureFlags || req.session?.featureFlags || {};
+  const hasNomina = tenantHasFeature(featureFlags, 'nomina');
   let cumplimiento = null;
+  let flujoNomina = null;
   if (empresa && tenantHasFeature(featureFlags, 'gestion_documental')) {
     try {
       const full = await tableroCumplimiento({
@@ -75,13 +78,25 @@ router.get(['/', '/dashboard', '/inicio'], async (req, res) => {
       console.warn('[dashboard cumplimiento]', err.message);
     }
   }
+  if (empresa) {
+    try {
+      flujoNomina = await getFlujoNominaActual({
+        tenantId: req.session.tenantId,
+        empresaId: empresa._id,
+        hasNomina
+      });
+    } catch (err) {
+      console.warn('[dashboard flujo]', err.message);
+    }
+  }
   res.render('dashboard', {
     session: req.session,
     tenant: req.tenant,
     menuTree: res.locals.menuTree,
     featureFlags,
     kpis,
-    cumplimiento
+    cumplimiento,
+    flujoNomina
   });
 });
 
@@ -143,6 +158,7 @@ const timbradoController = require('../controllers/timbradoController');
 const envioCorreoController = require('../controllers/envioCorreoController');
 const correoConfigController = require('../controllers/correoConfigController');
 const gestionDocumentalController = require('../controllers/gestionDocumentalController');
+const finiquitoController = require('../controllers/finiquitoController');
 const multer = require('multer');
 const uploadDocumentoMem = multer({
   storage: multer.memoryStorage(),
@@ -170,6 +186,16 @@ router.post('/nomina/dispersion-bancaria/generar', layoutBancarioController.gene
 
 router.get('/nomina/reportes', nominaReportesController.index);
 router.get('/nomina/reportes/export', nominaReportesController.exportCsv);
+
+router.get('/nomina/finiquitos', finiquitoController.list);
+router.get('/nomina/finiquitos/nuevo', finiquitoController.newForm);
+router.post('/nomina/finiquitos/preview', finiquitoController.preview);
+router.post('/nomina/finiquitos', finiquitoController.create);
+router.get('/nomina/finiquitos/:id/editar', finiquitoController.editForm);
+router.post('/nomina/finiquitos/:id/recalcular', finiquitoController.recalcularAction);
+router.post('/nomina/finiquitos/:id/eliminar', finiquitoController.eliminarAction);
+router.post('/nomina/finiquitos/:id/emitir-periodo', finiquitoController.emitirPeriodo);
+router.get('/nomina/finiquitos/:id', finiquitoController.show);
 
 router.get('/nomina/sua', suaExportController.index);
 router.get('/nomina/sua/descargar', suaExportController.download);

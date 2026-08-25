@@ -82,6 +82,8 @@ const nominaHistoricoReciboSchema = new mongoose.Schema(
     insumosResumen: { type: mongoose.Schema.Types.Mixed, default: {} },
     conceptos: { type: [conceptoHistoricoSubSchema], default: [] },
     isrMotor: { type: mongoose.Schema.Types.Mixed, default: null },
+    /** Snapshot nodo nomina12:SeparacionIndemnizacion (finiquito 022/023/025). */
+    cfdiSeparacionIndemnizacion: { type: mongoose.Schema.Types.Mixed, default: null },
     fechaCalculo: { type: Date },
     fechaCierre: { type: Date, required: true },
     cerradoPorUserId: { type: String, default: '' },

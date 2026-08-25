@@ -361,7 +361,31 @@ Versiones al reemplazar; vigencia en docs de trabajador (INE, contrato, domicili
 
 ---
 
-## 13. Checklist
+## 13. Finiquitos y liquidaciones
+
+Motor laboral **independiente** del motor de fórmulas ordinaria, reutiliza expediente + `tablas_prestaciones`.
+
+Principios:
+
+1. **Componentes** (sueldo, aguinaldo, vacaciones, prima, indemnizaciones…) — no un `if causa → liquidación`.
+2. **Legal ≠ negociado**: `importeLegal` + `ajuste` = `importeFinal` (auditoría).
+3. Período `tipoNomina: finiquito | indemnizacion` + `empleadoIds[]` (se crea/vincula al emitir desde el cálculo).
+4. UI: `/nomina/finiquitos` — preview, guardado, **emitir a período** (inyecta recibo `FIN_*`).
+5. **Sin período no se puede timbrar.** Dispersión bancaria es opcional (`omitirDispersionBancaria`; pago cheque/firma).
+6. Cierre del período = mismo flujo que nómina ordinaria.
+7. **Exención separación (Art. 93 fr. XIII):** bolsa global `añosLISR × multiplicador(90) × UMA` sobre conceptos con `aplicaExencion90Uma` (SAT 022/023/025). Años LISR = `floor(días/365) + 1` si residuo ≥ 183 (params `ISR_SEPARACION_*`).
+8. **Bono/gratificación extraordinaria** (`FIN_GRATIFICACION`): 100% gravado; no entra a la bolsa. Opción UI para marcarla como separación (023).
+9. **Deducciones en dos bloques:**
+   - **A) Nómina** (`FIN_SALARIO_PENDIENTE` / días pendientes): ISR período, IMSS SS+RCV, INFONAVIT, FONACOT, fondo trabajador, descuento empresa — proporcionales a esos días.
+   - **B) Finiquito:** ISR (tabla mensual) sobre gravado de aguinaldo/vacaciones/prima/fondo/bono.
+   - **C) Separación:** ISR estimado Art. 95 (tasa del sueldo mensual × gravado de separación).
+10. **CFDI `nomina12:SeparacionIndemnizacion`:** `services/cfdi/separacionIndemnizacionBuilder.js` arma `TotalPagado`, `NumAñosServicio`, `UltimoSueldoMensOrd`, `IngresoAcumulable`, `IngresoNoAcumulable` desde `finiquito_calculos` / recibo; se snapshot en `recibo.cfdiSeparacionIndemnizacion` al emitir; `timbradoService` lo inyecta en payload PAC y en XML simulado.
+
+Pendiente: mapping CFDI 4.0 completo (todas las percepciones/deducciones ordinarias) hacia el PAC; el nodo de separación ya está cableado.
+
+---
+
+## 14. Checklist
 
 - [x] Documento de arquitectura  
 - [x] `concept_catalog` + `company_concept_config`  
@@ -384,6 +408,7 @@ Versiones al reemplazar; vigencia en docs de trabajador (INE, contrato, domicili
 - [x] Ajuste anual de sueldos (preview, SM/25 UMA, autorización Líder→RRHH→Finanzas)  
 - [x] Envío de recibos por correo (período/recibo marcados, reenvío con confirmación)
 - [x] Gestión documental (feature `gestion_documental`: expediente año/mes/período + trabajadores; storage local o Linode/S3; reporte cobertura; reindex)
+- [x] Finiquitos/liquidaciones (motor laboral + legal/negociación; período especial; ISR Art. 95 pendiente)
 - [ ] Plantillas por industria
 - [ ] Timbrado CFDI payload completo + cancelación  
 - [ ] REJL fase 2 (móvil/GPS, biometría, export STPS, calendario 40 h)  

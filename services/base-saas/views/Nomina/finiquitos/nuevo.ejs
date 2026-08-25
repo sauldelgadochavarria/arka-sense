@@ -1,0 +1,464 @@
+<%- include('../../Partials/layout-top', { title: 'Nuevo finiquito', session }) %>
+<%
+  const formData = (typeof form !== 'undefined' && form) ? form : {};
+  const P = (typeof preview !== 'undefined' && preview) ? preview : null;
+  const Previews = (typeof previews !== 'undefined' && Array.isArray(previews)) ? previews : [];
+  const selectedIds = new Set(
+    (Array.isArray(formData.empleadoIds) ? formData.empleadoIds : formData.empleadoId ? [formData.empleadoId] : [])
+      .map(String)
+  );
+  function ymdUtc(d) {
+    if (!d) return '';
+    const x = new Date(d);
+    if (Number.isNaN(x.getTime())) return '';
+    return x.toISOString().slice(0, 10);
+  }
+  const empleadosMeta = {};
+  (empleados || []).forEach(function (e) {
+    empleadosMeta[String(e._id)] = {
+      ingreso: ymdUtc(e.fechaIngreso),
+      salario: e.salarioDiario != null ? Number(e.salarioDiario) : null,
+      depto: e.departamentoId ? String(e.departamentoId) : '',
+      cc: e.centroCostoId ? String(e.centroCostoId) : '',
+      tipo: String(e.tipoEmpleado || '')
+    };
+  });
+%>
+<div class="page-header">
+  <h1>Nuevo finiquito / liquidación</h1>
+  <p class="page-subtitle">
+    Selecciona uno o varios empleados. Filtra por departamento, centro de costo o tipo;
+    por defecto se listan todos. Causa, fecha y overrides se aplican al lote.
+  </p>
+</div>
+<p><a href="/nomina/finiquitos">← Lista</a></p>
+<% if (typeof error !== 'undefined' && error) { %><p class="alert"><%= error %></p><% } %>
+<% if (!empresa) { %>
+<p>Sin empresa.</p>
+<% } else { %>
+<form method="post" action="/nomina/finiquitos/preview" class="form-grid form-wide" id="fin-form-nuevo">
+  <h3 class="form-section" style="grid-column:1/-1">Filtros de empleados</h3>
+  <label>Departamento
+    <select id="filtro-depto">
+      <option value="">— Todos —</option>
+      <% (departamentos || []).forEach(function(d) { %>
+      <option value="<%= d._id %>"><%= d.nombre %></option>
+      <% }); %>
+    </select>
+  </label>
+  <label>Centro de costo
+    <select id="filtro-cc">
+      <option value="">— Todos —</option>
+      <% (centrosCosto || []).forEach(function(c) { %>
+      <option value="<%= c._id %>"><%= c.codigo ? (c.codigo + ' — ') : '' %><%= c.nombre %></option>
+      <% }); %>
+    </select>
+  </label>
+  <label>Tipo de empleado
+    <select id="filtro-tipo">
+      <option value="">— Todos —</option>
+      <% (tiposEmpleado || []).forEach(function(t) { %>
+      <option value="<%= t.value %>"><%= t.label %></option>
+      <% }); %>
+    </select>
+  </label>
+  <p class="muted small" style="grid-column:1/-1" id="fin-filtro-count"></p>
+
+  <div style="grid-column:1/-1">
+    <div style="display:flex;flex-wrap:wrap;gap:.75rem;align-items:center;margin-bottom:.5rem">
+      <strong>Empleados</strong>
+      <button type="button" class="btn" id="fin-sel-visibles">Seleccionar visibles</button>
+      <button type="button" class="btn" id="fin-clr-sel">Limpiar selección</button>
+      <span class="muted small" id="fin-sel-count">0 seleccionados</span>
+    </div>
+    <div id="fin-emp-list" class="fin-emp-list" style="max-height:280px;overflow:auto;border:1px solid var(--border,#ddd);border-radius:6px;padding:.5rem">
+      <% (empleados || []).forEach(function(e) {
+        const id = String(e._id);
+        const checked = selectedIds.has(id) ? 'checked' : '';
+        const fi = ymdUtc(e.fechaIngreso);
+      %>
+      <label class="fin-emp-row checkbox" style="display:flex;gap:.5rem;align-items:flex-start;padding:.35rem .25rem;margin:0"
+        data-depto="<%= e.departamentoId || '' %>"
+        data-cc="<%= e.centroCostoId || '' %>"
+        data-tipo="<%= e.tipoEmpleado || '' %>"
+        data-ingreso="<%= fi %>"
+        data-salario="<%= e.salarioDiario != null ? e.salarioDiario : '' %>">
+        <input type="checkbox" name="empleadoIds" value="<%= id %>" <%= checked %> class="fin-emp-cb" />
+        <span>
+          <strong><%= e.numEmpleado %></strong> — <%= e.firstName %> <%= e.lastName %>
+          <span class="muted small">(<%= e.estatus %><% if (e.motivoBaja) { %> · <%= e.motivoBaja %><% } %><% if (e.tipoEmpleado) { %> · <%= e.tipoEmpleado %><% } %>)</span>
+        </span>
+      </label>
+      <% }); %>
+      <% if (!(empleados || []).length) { %>
+      <p class="muted">No hay empleados activos/baja en la empresa.</p>
+      <% } %>
+    </div>
+    <p class="muted small" id="fin-emp-hint" style="margin-top:.5rem"></p>
+  </div>
+
+  <label>Fecha de baja
+    <input type="date" name="fechaBaja" id="fin-baja" value="<%= formData.fechaBaja || (typeof hoy !== 'undefined' ? hoy : '') %>" required />
+  </label>
+  <label id="fin-ingreso-wrap">Fecha de ingreso (cálculo)
+    <input type="date" name="fechaIngreso" id="fin-ingreso" value="<%= formData.fechaIngreso || '' %>" />
+  </label>
+  <p class="muted small" style="grid-column:1/-1" id="fin-ingreso-help">
+    Con un solo empleado se precarga su fecha de ingreso. En lote se usa la del expediente de cada uno.
+  </p>
+  <label>Causa de terminación
+    <select name="causaTerminacion" required>
+      <% (causas || []).forEach(function(c) {
+        const sel = String(formData.causaTerminacion || '') === c.codigo ? 'selected' : '';
+      %>
+      <option value="<%= c.codigo %>" <%= sel %>><%= c.nombre %></option>
+      <% }); %>
+    </select>
+  </label>
+  <label>Período especial (opcional)
+    <select name="periodoId">
+      <option value="">— Sin vincular —</option>
+      <% (periodos || []).forEach(function(p) {
+        const sel = String(formData.periodoId || '') === String(p._id) ? 'selected' : '';
+      %>
+      <option value="<%= p._id %>" <%= sel %>>
+        <%= p.tipoNomina %> #<%= p.numeroPeriodo || '' %>
+        · <%= p.fechaInicio ? new Date(p.fechaInicio).toLocaleDateString('es-MX') : '' %>
+        – <%= p.fechaFin ? new Date(p.fechaFin).toLocaleDateString('es-MX') : '' %>
+      </option>
+      <% }); %>
+    </select>
+  </label>
+
+  <h3 class="form-section">Parámetros (overrides)</h3>
+  <p class="muted small" style="grid-column:1/-1">
+    En lote, salario y días pendientes se aplican por igual a todos los seleccionados (vacío = expediente de cada uno).
+  </p>
+  <label>Salario diario
+    <input type="number" step="0.01" name="salarioDiario" id="fin-salario" value="<%= formData.salarioDiario || '' %>" placeholder="Del expediente" />
+  </label>
+  <label>Salario base indemnización
+    <input type="number" step="0.01" name="salarioBaseIndemnizacion" value="<%= formData.salarioBaseIndemnizacion || '' %>" />
+  </label>
+  <label>Salario base prima antigüedad
+    <input type="number" step="0.01" name="salarioBasePrimaAntiguedad" value="<%= formData.salarioBasePrimaAntiguedad || '' %>" />
+  </label>
+  <label>Días aguinaldo
+    <input type="number" step="1" name="diasAguinaldo" value="<%= formData.diasAguinaldo || defaults.diasAguinaldo %>" />
+  </label>
+  <label>Prima vacacional (0–1)
+    <input type="number" step="0.01" name="porcentajePrimaVacacional" value="<%= formData.porcentajePrimaVacacional || defaults.porcentajePrimaVacacional %>" />
+  </label>
+  <label>Días vacaciones pendientes
+    <input type="number" step="0.01" name="diasVacacionesPendientes" value="<%= formData.diasVacacionesPendientes || 0 %>" />
+  </label>
+  <label>Días sueldo pendiente
+    <input type="number" step="0.01" name="diasPendientes" value="<%= formData.diasPendientes || 0 %>" />
+  </label>
+  <label>Fondo de ahorro saldo
+    <input type="number" step="0.01" name="fondoAhorroSaldo" value="<%= formData.fondoAhorroSaldo || '' %>" />
+  </label>
+  <label>Descuento empresa / préstamo
+    <input type="number" step="0.01" name="descuentoEmpresa" value="<%= formData.descuentoEmpresa || '' %>" placeholder="Opcional" />
+  </label>
+
+  <label class="checkbox"><input type="checkbox" name="aplicaIndemnizacionTresMeses" <%= formData.aplicaIndemnizacionTresMeses ? 'checked' : '' %> /> Indemnización 3 meses</label>
+  <label class="checkbox"><input type="checkbox" name="aplica20DiasPorAnio" <%= formData.aplica20DiasPorAnio ? 'checked' : '' %> /> 20 días por año</label>
+  <label class="checkbox"><input type="checkbox" name="aplicaPrimaAntiguedad" <%= formData.aplicaPrimaAntiguedad ? 'checked' : '' %> /> Forzar prima de antigüedad</label>
+
+  <h3 class="form-section">Negociación</h3>
+  <label class="checkbox"><input type="checkbox" name="negociacionActiva" <%= formData.negociacionActiva ? 'checked' : '' %> /> Activar negociación</label>
+  <label>Gratificación / bono
+    <input type="number" step="0.01" name="gratificacion" value="<%= formData.gratificacion || 0 %>" />
+  </label>
+  <label class="checkbox">
+    <input type="checkbox" name="gratificacionEsSeparacion" <%= formData.gratificacionEsSeparacion ? 'checked' : '' %> />
+    Es pago por separación / mutuo acuerdo (SAT 023 · entra a bolsa 90×UMA)
+  </label>
+  <p class="muted small" style="grid-column:1/-1">
+    Por defecto es <strong>bono extraordinario</strong> (100% gravado). Marca la casilla solo si es gratificación por separación (Art. 93).
+  </p>
+  <label>Notas negociación
+    <input type="text" name="negociacionNotas" value="<%= formData.negociacionNotas || '' %>" />
+  </label>
+  <label>Notas generales
+    <textarea name="notas" rows="2"><%= formData.notas || '' %></textarea>
+  </label>
+
+  <div class="form-actions">
+    <button type="submit" class="btn">Previsualizar cálculo</button>
+  </div>
+</form>
+
+<% if (Previews.length > 1) { %>
+<section class="panel" style="margin-top:1.5rem">
+  <h2 class="panel-title">Vista previa — <%= Previews.length %> empleados</h2>
+  <p class="muted">Mismos parámetros de causa/fecha/overrides para el lote. Revisa netos antes de guardar.</p>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Empleado</th>
+        <th>Antigüedad</th>
+        <th>Finiquito</th>
+        <th>Liquidación</th>
+        <th>Deducciones</th>
+        <th>Neto</th>
+        <th>Alertas</th>
+      </tr>
+    </thead>
+    <tbody>
+      <%
+        let sumNeto = 0;
+        Previews.forEach(function(Pv) {
+          sumNeto += Number(Pv.totales && Pv.totales.netoPagar || 0);
+      %>
+      <tr>
+        <td><%= Pv.empleado.numEmpleado %></td>
+        <td><%= Pv.empleado.nombre %></td>
+        <td class="muted small"><%= Pv.antiguedad.aniosCompletos %> a · <%= Pv.antiguedad.aniosProporcionales %> prop.</td>
+        <td>$<%= money(Pv.totales.finiquitoLegal) %></td>
+        <td>$<%= money(Pv.totales.liquidacionLegal) %></td>
+        <td>$<%= money(Pv.totales.deducciones) %></td>
+        <td><strong>$<%= money(Pv.totales.netoPagar) %></strong></td>
+        <td class="muted small"><%= (Pv.alertas || []).length ? Pv.alertas.length + ' aviso(s)' : '—' %></td>
+      </tr>
+      <% }); %>
+    </tbody>
+    <tfoot>
+      <tr>
+        <td colspan="6" style="text-align:right"><strong>Suma netos</strong></td>
+        <td><strong>$<%= money(sumNeto) %></strong></td>
+        <td></td>
+      </tr>
+    </tfoot>
+  </table>
+  <form method="post" action="/nomina/finiquitos" class="form-actions" style="margin-top:1rem">
+    <% (formData.empleadoIds || []).forEach(function(id) { %>
+    <input type="hidden" name="empleadoIds" value="<%= id %>" />
+    <% }); %>
+    <%- include('partials-hidden-params', { formData }) %>
+    <label class="muted small" style="display:flex;gap:.5rem;align-items:center;margin:.75rem 0">
+      <input type="checkbox" name="crearPeriodoNomina" value="on" checked />
+      Crear / vincular período de nómina al guardar
+      <span class="muted">(sin período no se puede timbrar; un período compartido para el lote)</span>
+    </label>
+    <label class="muted small" style="display:flex;gap:.5rem;align-items:center;margin:.5rem 0 1rem">
+      <input type="checkbox" name="habilitarDispersionBancaria" value="on" />
+      Incluir dispersión bancaria
+    </label>
+    <button type="submit" class="btn btn-primary">Guardar <%= Previews.length %> cálculos</button>
+  </form>
+</section>
+<% } else if (P) { %>
+<section class="panel" style="margin-top:1.5rem">
+  <h2 class="panel-title">Vista previa — <%= P.empleado.nombre %></h2>
+  <p class="muted">
+    Ingreso: <strong><%= P.empleado.fechaIngreso ? new Date(P.empleado.fechaIngreso).toLocaleDateString('es-MX') : '—' %></strong>
+    · Baja: <strong><%= P.empleado.fechaBaja ? new Date(P.empleado.fechaBaja).toLocaleDateString('es-MX') : '—' %></strong>
+    · SD usado: <strong>$<%= money(P.empleado.salarioDiario) %></strong>
+  </p>
+  <p class="muted">
+    Antigüedad: <%= P.antiguedad.aniosCompletos %> años, <%= P.antiguedad.meses %> meses, <%= P.antiguedad.dias %> días
+    (<%= P.antiguedad.aniosProporcionales %> proporcionales)
+  </p>
+  <% if ((P.alertas || []).length) { %>
+  <ul class="alert-list-compact">
+    <% P.alertas.forEach(function(a) { %><li class="alert-item alert-warn"><%= a %></li><% }); %>
+  </ul>
+  <% } %>
+  <div class="stats-grid">
+    <div class="stat-card"><strong>$<%= money(P.totales.finiquitoLegal) %></strong><span>Finiquito legal</span></div>
+    <div class="stat-card"><strong>$<%= money(P.totales.liquidacionLegal) %></strong><span>Liquidación legal</span></div>
+    <div class="stat-card warn"><strong>$<%= money(P.totales.deducciones) %></strong><span>Deducciones</span></div>
+    <div class="stat-card ok"><strong>$<%= money(P.totales.netoPagar) %></strong><span>Neto a pagar</span></div>
+  </div>
+  <% const RD = P.resumenDeducciones || P.totales.deduccionesDetalle || null; %>
+  <% if (RD) { %>
+  <p class="muted small">
+    Bloque nómina (<%= RD.bloqueNomina && RD.bloqueNomina.diasPendientes || 0 %> d):
+    ISR $<%= money(RD.isrNomina) %> · IMSS $<%= money((RD.imssSs||0)+(RD.imssRcv||0)) %> · INFONAVIT $<%= money(RD.infonavit) %> · FONACOT $<%= money(RD.fonacot) %>
+    · Finiquito ISR $<%= money(RD.isrFiniquito) %> · Separación ISR $<%= money(RD.isrSeparacion) %>
+  </p>
+  <% } %>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Concepto</th>
+        <th>Bloque</th>
+        <th>Legal</th>
+        <th>Ajuste</th>
+        <th>Final</th>
+        <th>Gravado</th>
+        <th>Exento</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% (P.conceptos || []).forEach(function(c) { %>
+      <tr class="<%= c.tipo === 'deduccion' ? 'row-deduccion' : '' %>">
+        <td><code><%= c.codigo %></code> <%= c.descripcion %>
+          <% if (c.detalle && c.detalle.topado) { %>
+          <br /><span class="muted small">Base topada 2×SM: $<%= money(c.detalle.tope) %></span>
+          <% } %>
+        </td>
+        <td class="muted small"><%= c.tipo === 'deduccion' ? (c.grupo || 'deducción') : (c.codigo === 'FIN_SALARIO_PENDIENTE' ? 'nómina' : (c.aplicaExencion90Uma ? 'separación' : 'finiquito')) %></td>
+        <td>$<%= money(c.importeLegal) %></td>
+        <td>$<%= money(c.ajuste) %></td>
+        <td>$<%= money(c.importeFinal) %></td>
+        <td>$<%= money(c.gravadoISR) %></td>
+        <td>$<%= money(c.exentoISR) %></td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table>
+  <form method="post" action="/nomina/finiquitos" class="form-actions" style="margin-top:1rem">
+    <input type="hidden" name="empleadoIds" value="<%= P.empleado.id || formData.empleadoId || (formData.empleadoIds && formData.empleadoIds[0]) || '' %>" />
+    <%- include('partials-hidden-params', { formData }) %>
+    <label class="muted small" style="display:flex;gap:.5rem;align-items:center;margin:.75rem 0">
+      <input type="checkbox" name="crearPeriodoNomina" value="on" checked />
+      Crear / vincular período de nómina al guardar
+      <span class="muted">(sin período no se puede timbrar)</span>
+    </label>
+    <label class="muted small" style="display:flex;gap:.5rem;align-items:center;margin:.5rem 0 1rem">
+      <input type="checkbox" name="habilitarDispersionBancaria" value="on" />
+      Incluir dispersión bancaria (si no, pago cheque/firma es válido; el cierre sigue disponible)
+    </label>
+    <button type="submit" class="btn btn-primary">Guardar cálculo</button>
+  </form>
+</section>
+<% } %>
+<% } %>
+<script>
+(function () {
+  var list = document.getElementById('fin-emp-list');
+  var filtroDepto = document.getElementById('filtro-depto');
+  var filtroCc = document.getElementById('filtro-cc');
+  var filtroTipo = document.getElementById('filtro-tipo');
+  var countFiltro = document.getElementById('fin-filtro-count');
+  var countSel = document.getElementById('fin-sel-count');
+  var hint = document.getElementById('fin-emp-hint');
+  var sal = document.getElementById('fin-salario');
+  var ingresoInput = document.getElementById('fin-ingreso');
+  var ingresoWrap = document.getElementById('fin-ingreso-wrap');
+  var ingresoHelp = document.getElementById('fin-ingreso-help');
+  var bajaInput = document.getElementById('fin-baja');
+  var form = document.getElementById('fin-form-nuevo');
+  if (!list) return;
+
+  function rows() {
+    return Array.prototype.slice.call(list.querySelectorAll('.fin-emp-row'));
+  }
+
+  function checkedVisible() {
+    return rows().filter(function (r) {
+      return r.style.display !== 'none' && r.querySelector('.fin-emp-cb').checked;
+    });
+  }
+
+  function aplicarFiltros() {
+    var d = filtroDepto ? filtroDepto.value : '';
+    var c = filtroCc ? filtroCc.value : '';
+    var t = filtroTipo ? filtroTipo.value : '';
+    var vis = 0;
+    rows().forEach(function (row) {
+      var ok =
+        (!d || row.getAttribute('data-depto') === d) &&
+        (!c || row.getAttribute('data-cc') === c) &&
+        (!t || row.getAttribute('data-tipo') === t);
+      row.style.display = ok ? '' : 'none';
+      if (ok) vis += 1;
+    });
+    if (countFiltro) {
+      countFiltro.textContent =
+        'Mostrando ' + vis + ' de ' + rows().length +
+        (d || c || t ? ' (filtros activos)' : ' (sin filtros)');
+    }
+    actualizarSeleccion();
+  }
+
+  function actualizarSeleccion() {
+    var cbs = list.querySelectorAll('.fin-emp-cb:checked');
+    var n = cbs.length;
+    if (countSel) countSel.textContent = n + ' seleccionado' + (n === 1 ? '' : 's');
+
+    if (ingresoWrap) ingresoWrap.style.opacity = n > 1 ? '0.55' : '1';
+    if (ingresoHelp) {
+      ingresoHelp.textContent = n > 1
+        ? 'Lote: la fecha de ingreso del formulario se ignora; se usa la del expediente de cada empleado.'
+        : 'Con un solo empleado se precarga su fecha de ingreso. En lote se usa la del expediente de cada uno.';
+    }
+
+    if (n === 1) {
+      var row = cbs[0].closest('.fin-emp-row');
+      var fi = row.getAttribute('data-ingreso') || '';
+      var sd = row.getAttribute('data-salario') || '';
+      if (ingresoInput && !ingresoInput.dataset.userEdited) ingresoInput.value = fi;
+      if (hint) {
+        hint.textContent =
+          'Expediente: ingreso ' + (fi || 'sin fecha') +
+          ' · salario diario $' + (sd !== '' ? Number(sd).toFixed(2) : '0.00');
+      }
+      if (sal && !sal.value && sd !== '') sal.placeholder = 'Expediente: ' + Number(sd).toFixed(2);
+    } else if (hint) {
+      hint.textContent = n
+        ? 'Lote de ' + n + ' empleados. Overrides (si los capturas) se aplican a todos.'
+        : 'Marca uno o más empleados para previsualizar.';
+    }
+  }
+
+  if (filtroDepto) filtroDepto.addEventListener('change', aplicarFiltros);
+  if (filtroCc) filtroCc.addEventListener('change', aplicarFiltros);
+  if (filtroTipo) filtroTipo.addEventListener('change', aplicarFiltros);
+
+  list.addEventListener('change', function (ev) {
+    if (ev.target && ev.target.classList.contains('fin-emp-cb')) actualizarSeleccion();
+  });
+
+  var btnVis = document.getElementById('fin-sel-visibles');
+  if (btnVis) {
+    btnVis.addEventListener('click', function () {
+      rows().forEach(function (r) {
+        if (r.style.display === 'none') return;
+        r.querySelector('.fin-emp-cb').checked = true;
+      });
+      actualizarSeleccion();
+    });
+  }
+  var btnClr = document.getElementById('fin-clr-sel');
+  if (btnClr) {
+    btnClr.addEventListener('click', function () {
+      rows().forEach(function (r) {
+        r.querySelector('.fin-emp-cb').checked = false;
+      });
+      actualizarSeleccion();
+    });
+  }
+
+  if (ingresoInput) {
+    ingresoInput.addEventListener('input', function () {
+      ingresoInput.dataset.userEdited = '1';
+    });
+  }
+
+  if (form) {
+    form.addEventListener('submit', function (ev) {
+      var n = list.querySelectorAll('.fin-emp-cb:checked').length;
+      if (!n) {
+        ev.preventDefault();
+        alert('Selecciona al menos un empleado.');
+      }
+    });
+  }
+
+  function hoyYmd() {
+    var d = new Date();
+    var m = String(d.getMonth() + 1).padStart(2, '0');
+    var day = String(d.getDate()).padStart(2, '0');
+    return d.getFullYear() + '-' + m + '-' + day;
+  }
+  if (bajaInput && !bajaInput.value) bajaInput.value = hoyYmd();
+
+  aplicarFiltros();
+})();
+</script>
+<%- include('../../Partials/layout-bottom') %>

@@ -40,6 +40,11 @@ const reciboNominaSchema = new mongoose.Schema(
     cerrado: { type: Boolean, default: false },
     /** Motor SAT + Inteligente (proyección). CFDI siempre usa isrMotor.isrRetenidoCfdi = ISR SAT. */
     isrMotor: { type: mongoose.Schema.Types.Mixed, default: null },
+    /**
+     * Snapshot nodo nomina12:SeparacionIndemnizacion (022/023/025).
+     * Se llena al emitir finiquito; el timbrado lo consume para el XML/payload.
+     */
+    cfdiSeparacionIndemnizacion: { type: mongoose.Schema.Types.Mixed, default: null },
     errorCalculo: { type: String, default: '' },
     layoutBancario: require('./layoutBancarioStatusFields').layoutBancarioStatusFields(),
     timbrado: require('./timbradoStatusFields').timbradoStatusFields(),

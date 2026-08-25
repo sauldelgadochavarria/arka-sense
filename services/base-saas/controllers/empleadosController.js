@@ -251,17 +251,20 @@ async function createEmpleado(req, res) {
     const Empleado = await getEmpleadoModel();
     const payload = buildEmpleadoPayload(req.body, req.session.tenantId, empresa._id);
     const issues = validateEmpleadoImssIsn(payload, empresa);
-    if (issues.length) {
-      req.flash('error', issues.join('. '));
-      return res.redirect('/personal-empleados');
-    }
     const empleado = await Empleado.create(payload);
     await syncAsignacionFromBody(req.session.tenantId, empresa._id, empleado._id, req.body);
     await registrarAlta(req.session.tenantId, empresa._id, empleado.toObject(), {
       registradoPor: req.session.username || req.session.userName || ''
     });
-    req.flash('success', 'Empleado creado');
-    res.redirect('/personal-empleados');
+    if (issues.length) {
+      req.flash(
+        'error',
+        `Empleado creado. Completa datos IMSS/ISN: ${issues.join('. ')}`
+      );
+    } else {
+      req.flash('success', 'Empleado creado');
+    }
+    res.redirect(`/personal-empleados/${empleado._id}`);
   } catch (err) {
     console.error('[empleados]', err);
     req.flash('error', err.code === 11000 ? 'El número de empleado o código externo ya existe' : 'Error al crear empleado');
@@ -422,18 +425,26 @@ async function updateEmpleado(req, res) {
     const antes = empleado.toObject();
     const payload = buildEmpleadoPayload(req.body, req.session.tenantId, empresa._id);
     const issues = validateEmpleadoImssIsn(payload, empresa);
-    if (issues.length) {
-      req.flash('error', issues.join('. '));
-      return res.redirect(`/personal-empleados/${empleado._id}/edit`);
-    }
     Object.assign(empleado, payload);
+    // Nested paths: asegurar que Mongoose detecte cambios
+    empleado.markModified('domicilio');
+    empleado.markModified('nominaConfig');
+    empleado.markModified('datosBancarios');
     await empleado.save();
     await syncAsignacionFromBody(req.session.tenantId, empresa._id, empleado._id, req.body);
     await registrarCambioAutomatico(req.session.tenantId, empresa._id, antes, empleado.toObject(), {
       registradoPor: req.session.username || req.session.userName || ''
     });
 
-    req.flash('success', 'Empleado actualizado');
+    if (issues.length) {
+      req.flash('success', 'Empleado actualizado');
+      req.flash(
+        'error',
+        `Guardado OK. Falta completar IMSS/ISN (no bloquea el expediente): ${issues.join('. ')}`
+      );
+    } else {
+      req.flash('success', 'Empleado actualizado');
+    }
     res.redirect(`/personal-empleados/${empleado._id}`);
   } catch (err) {
     console.error('[empleados]', err);

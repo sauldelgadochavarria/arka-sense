@@ -22,9 +22,63 @@ const {
   mergeEmpleadoPdf
 } = require('./reciboPdfService');
 const { buildXmlSimulado, guardarCfdiArchivo } = require('./cfdiArchivoService');
+const {
+  buildSeparacionIndemnizacionData,
+  buildSeparacionIndemnizacionJson
+} = require('./cfdi/separacionIndemnizacionBuilder');
+const getFiniquitoCalculoModel = require('../models/finiquitoCalculo');
 
 function money(n) {
   return Math.round((Number(n) || 0) * 100) / 100;
+}
+
+/**
+ * Resuelve snapshot SeparacionIndemnizacion: recibo → histórico → finiquito_calculos → conceptos.
+ */
+async function resolverSeparacionIndemnizacion(tenantId, src) {
+  if (src?.cfdiSeparacionIndemnizacion && Number(src.cfdiSeparacionIndemnizacion.TotalPagado) > 0) {
+    return buildSeparacionIndemnizacionData({ override: src.cfdiSeparacionIndemnizacion });
+  }
+  try {
+    const Finiquito = await getFiniquitoCalculoModel();
+    const q = { tenantId };
+    if (src.reciboId) q.reciboId = src.reciboId;
+    else if (src.empleadoId && src.periodoSnap) {
+      /* buscar por empleado + período vía finiquito.periodoId no siempre disponible aquí */
+    }
+    let fin = null;
+    if (src.reciboId) {
+      fin = await Finiquito.findOne({ tenantId, reciboId: src.reciboId }).lean();
+    }
+    if (!fin && src.empleadoId) {
+      fin = await Finiquito.findOne({
+        tenantId,
+        empleadoId: src.empleadoId,
+        estatus: { $nin: ['cancelado'] }
+      })
+        .sort({ updatedAt: -1 })
+        .lean();
+    }
+    if (fin?.totales?.cfdiSeparacionIndemnizacion) {
+      return buildSeparacionIndemnizacionData({ override: fin.totales.cfdiSeparacionIndemnizacion });
+    }
+    if (fin) {
+      return buildSeparacionIndemnizacionData({
+        conceptos: fin.conceptos || [],
+        antiguedad: fin.antiguedad || {},
+        salarioDiario: fin.parametros?.salarioDiario || src.empleadoSnap?.salarioDiario || 0,
+        fiscalSeparacion: fin.totales?.fiscalSeparacion || {}
+      });
+    }
+  } catch {
+    /* sin finiquito */
+  }
+  return buildSeparacionIndemnizacionData({
+    conceptos: src.conceptos || [],
+    antiguedad: {},
+    salarioDiario: src.empleadoSnap?.salarioDiario || src.insumosResumen?.sueldoDiario || 0,
+    fiscalSeparacion: {}
+  });
 }
 
 function catalogMapsFromRows(catalogRows) {
@@ -76,6 +130,7 @@ async function loadRecibosParaTimbrar(tenantId, periodo) {
           conceptos: h.conceptos || [],
           basesFiscales: h.basesFiscales || {},
           isrMotor: h.isrMotor || null,
+          cfdiSeparacionIndemnizacion: h.cfdiSeparacionIndemnizacion || null,
           timbrado: h.timbrado || {},
           empleadoSnap: snap,
           periodoSnap: h.periodo || {}
@@ -120,6 +175,8 @@ async function loadRecibosParaTimbrar(tenantId, periodo) {
         conceptos: byRecibo.get(String(r._id)) || [],
         basesFiscales: r.basesFiscales || {},
         isrMotor: r.isrMotor || null,
+        cfdiSeparacionIndemnizacion: r.cfdiSeparacionIndemnizacion || null,
+        insumosResumen: r.insumosResumen || {},
         timbrado: r.timbrado || {},
         empleadoSnap: emp,
         periodoSnap: {
@@ -298,13 +355,24 @@ async function procesarLote({ tenantId, empresaId, empresa, loteId, recibosByKey
       let folio = String(folioSeq);
 
       let xmlRaw = '';
+      const sepData = src ? await resolverSeparacionIndemnizacion(tenantId, src) : { aplica: false };
+      const sepJson = buildSeparacionIndemnizacionJson(sepData);
+
       if (lote.modo === 'real') {
-        // Payload CFDI nómina completo: fase siguiente. Por ahora error controlado si no hay stub.
+        // Payload CFDI nómina: incluye SeparacionIndemnizacion cuando aplica (022/023/025).
+        // El resto del mapping SAT (Emisor/Receptor/Percepciones completas) sigue en evolución.
         const payload = {
           Version: '4.0',
-          _nota: 'Payload CFDI nómina pendiente de armar; use simulación hasta completar mapping SAT.',
+          _nota:
+            'Payload CFDI nómina parcial: SeparacionIndemnizacion listo; completar mapping SAT restante.',
           Receptor: { Nombre: item.nombre },
-          Totales: { Neto: item.netoPagar }
+          Totales: { Neto: item.netoPagar },
+          Nomina12: {
+            TipoNomina: String(periodo.tipoNomina || '').toLowerCase().includes('finiquito')
+              ? 'E'
+              : 'O',
+            ...(sepJson || {})
+          }
         };
         const resp = await timbrarJsonSw({
           urlTimbrado: pac.urlTimbrado,
@@ -361,7 +429,8 @@ async function procesarLote({ tenantId, empresaId, empresa, loteId, recibosByKey
             serie,
             folio,
             fecha: item.fechaTimbrado,
-            fechaCertificacion: item.fechaTimbrado
+            fechaCertificacion: item.fechaTimbrado,
+            separacionIndemnizacion: sepData?.aplica ? sepData : null
           },
           catalogoNombres,
           catalogoMeta
@@ -370,6 +439,11 @@ async function procesarLote({ tenantId, empresaId, empresa, loteId, recibosByKey
       }
 
       if (!xmlRaw) {
+        const tipoNominaCfdi =
+          String(periodo.tipoNomina || '').toLowerCase().includes('finiquito') ||
+          String(periodo.tipoNomina || '').toLowerCase().includes('indemnizacion')
+            ? 'E'
+            : 'O';
         xmlRaw = buildXmlSimulado({
           uuid,
           serie,
@@ -379,7 +453,13 @@ async function procesarLote({ tenantId, empresaId, empresa, loteId, recibosByKey
           nombreEmisor: empresa?.razonSocial || empresa?.nombreComercial || '',
           rfcReceptor: src?.empleadoSnap?.rfc || '',
           nombreReceptor: item.nombre,
-          total: item.netoPagar
+          total: item.netoPagar,
+          tipoNomina: tipoNominaCfdi,
+          fechaPago: periodo.fechaFin || item.fechaTimbrado,
+          fechaInicialPago: periodo.fechaInicio || item.fechaTimbrado,
+          fechaFinalPago: periodo.fechaFin || item.fechaTimbrado,
+          numDiasPagados: periodo.diasPeriodo || src?.diasLaborados || 1,
+          separacionIndemnizacion: sepData?.aplica ? sepData : null
         });
       }
 

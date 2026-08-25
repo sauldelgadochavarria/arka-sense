@@ -12,6 +12,9 @@
   <strong><%= new Date(periodo.fechaFin).toLocaleDateString('es-MX') %></strong>
   · <%= periodo.diasPeriodo %> días
   · Estatus: <span class="badge badge-<%= periodo.estatus === 'cerrado' ? 'baja' : periodo.estatus === 'calculado' ? 'activo' : periodo.estatus === 'calculando' ? 'suspendido' : 'suspendido' %>"><%= estatusLabels[periodo.estatus] || periodo.estatus %></span>
+  <% if (periodo.omitirDispersionBancaria) { %>
+  · <span class="muted small">Dispersión bancaria opcional</span>
+  <% } %>
   <% const lbPer = periodo.layoutBancario || {}; %>
   <% if (lbPer.estatus === 'generado') { %>
   · Dispersión: <span class="badge badge-activo">Layout generado</span>
@@ -184,9 +187,16 @@
   <span class="muted small">Consulta — calcular/cerrar requiere rol Nómina operativa</span>
   <% } %>
   <% if (_canEdit && periodo.estatus !== 'cerrado' && periodo.estatus !== 'calculando') { %>
+  <% if (periodo.tipoNomina === 'finiquito' || periodo.tipoNomina === 'indemnizacion') { %>
+  <p class="muted small" style="margin:0">
+    Período especial: los montos vienen del motor de finiquitos (no uses «Calcular nómina» ordinaria).
+    Re-inyecta desde el cálculo en <a href="/nomina/finiquitos">Finiquitos</a>.
+  </p>
+  <% } else { %>
   <form method="post" action="/nomina/periodos/<%= periodo._id %>/calcular" class="inline-form">
     <button type="submit" <%= preflight && !preflight.ok ? 'disabled' : '' %>>Calcular nómina (async)</button>
   </form>
+  <% } %>
   <% } %>
   <% if (_canEdit && periodo.estatus === 'calculado') { %>
   <form method="post" action="/nomina/periodos/<%= periodo._id %>/cerrar" class="inline-form" onsubmit="return confirm('¿Cerrar período? Los recibos se moverán al histórico (copiar + borrar del temporal), se actualizarán acumulados y no se podrá recalcular.');">
@@ -194,6 +204,9 @@
   </form>
   <% } %>
   <% if (_canEdit && (periodo.estatus === 'calculado' || periodo.estatus === 'cerrado')) { %>
+  <% if (periodo.omitirDispersionBancaria) { %>
+  <p class="muted small" style="margin:0 0 .5rem">Dispersión bancaria opcional (finiquito/cheque a la firma). Puedes generar layout si aplica.</p>
+  <% } %>
   <a class="btn btn-primary" href="/nomina/dispersion-bancaria?periodoId=<%= periodo._id %>">Generar archivo bancario</a>
   <% } %>
   <% if (_canEdit && periodo.estatus === 'cerrado') { %>

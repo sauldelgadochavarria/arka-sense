@@ -18,8 +18,9 @@
   <input name="apellidoPaterno" placeholder="Apellido paterno *" value="<%= apPat || lastFallback %>" required />
   <input name="apellidoMaterno" placeholder="Apellido materno" value="<%= apMat %>" />
   <input type="hidden" name="lastName" value="<%= empleado ? empleado.lastName : '' %>" />
-  <input name="fechaIngreso" type="date" title="Fecha de alta" value="<%= empleado && empleado.fechaIngreso ? toDateInputValue(empleado.fechaIngreso) : '' %>" />
-  <select name="tipoContrato" required>
+  <label>Fecha de alta
+    <input name="fechaIngreso" type="date" required value="<%= empleado && empleado.fechaIngreso ? toDateInputValue(empleado.fechaIngreso) : '' %>" />
+  </label>  <select name="tipoContrato" required>
     <option value="">— Tipo de contrato * —</option>
     <% (tiposContrato || []).forEach(function(t) { %>
     <option value="<%= t.value %>" <%= empleado && empleado.tipoContrato === t.value ? 'selected' : (!empleado && t.value === 'indefinido' ? 'selected' : '') %>><%= t.label %></option>
@@ -41,8 +42,9 @@
 
 <fieldset class="form-section">
   <legend>Información salarial (SDI / SBC)</legend>
-  <input name="salarioDiario" type="number" min="0" step="0.01" placeholder="Salario diario (parte fija)" value="<%= empleado && empleado.salarioDiario != null ? empleado.salarioDiario : '' %>" />
-  <select name="tipoSalario" id="tipoSalario">
+  <label>Salario diario (parte fija)
+    <input name="salarioDiario" type="number" min="0" step="0.01" placeholder="Ej. 500.00" value="<%= empleado && empleado.salarioDiario != null ? empleado.salarioDiario : '' %>" />
+  </label>  <select name="tipoSalario" id="tipoSalario">
     <% _tiposSalario.forEach(function(t) { %>
     <option value="<%= t.value %>" <%= (empleado && (empleado.tipoSalario || 'fijo') === t.value) ? 'selected' : (!empleado && t.value === 'fijo' ? 'selected' : '') %>><%= t.label %></option>
     <% }); %>

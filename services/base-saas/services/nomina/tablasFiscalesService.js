@@ -52,14 +52,26 @@ async function obtenerParametroVigente(clave, fechaReferencia = new Date()) {
 }
 
 async function obtenerParametrosVigentes(fechaReferencia = new Date()) {
-  const [uma, salarioMinimo, fondoAhorroPorc, topeUma, fondoTopeUma, fondoDiasAnio] =
-    await Promise.all([
+  const [
+    uma,
+    salarioMinimo,
+    fondoAhorroPorc,
+    topeUma,
+    fondoTopeUma,
+    fondoDiasAnio,
+    sepMult,
+    sepDiasRedondeo,
+    sepDiasAnio
+  ] = await Promise.all([
       obtenerParametroVigente('UMA', fechaReferencia),
       obtenerParametroVigente('SALARIO_MINIMO', fechaReferencia),
       obtenerParametroVigente('FONDO_AHORRO_PORC', fechaReferencia),
       obtenerParametroVigente('IMSS_TOPE_UMA', fechaReferencia),
       obtenerParametroVigente('FONDO_AHORRO_TOPE_UMA', fechaReferencia),
-      obtenerParametroVigente('FONDO_AHORRO_DIAS_ANIO', fechaReferencia)
+      obtenerParametroVigente('FONDO_AHORRO_DIAS_ANIO', fechaReferencia),
+      obtenerParametroVigente('ISR_SEPARACION_MULTIPLICADOR_UMA', fechaReferencia),
+      obtenerParametroVigente('ISR_SEPARACION_DIAS_REDONDEO_ANIO', fechaReferencia),
+      obtenerParametroVigente('ISR_SEPARACION_DIAS_ANIO', fechaReferencia)
     ]);
   const umaVal = uma ?? 113.14;
   const factorFondo = fondoTopeUma ?? 1.3;
@@ -78,7 +90,11 @@ async function obtenerParametrosVigentes(fechaReferencia = new Date()) {
     /** 1.3 × UMA mensual (ej. 3,566.22 × 1.3 = 4,636.09) */
     topeUmaMensualFondoAhorro: Math.round(factorFondo * umaMensual * 100) / 100,
     /** @deprecated preferir topeUmaMensualFondoAhorro prorrateado al período */
-    topeAnualFondoAhorro: factorFondo * umaVal * diasAnioFondo
+    topeAnualFondoAhorro: factorFondo * umaVal * diasAnioFondo,
+    /** Exención global pagos por separación (Art. 93 fr. XIII) */
+    multiplicadorExencionSeparacion: Number(sepMult) > 0 ? Number(sepMult) : 90,
+    diasRedondeoAnioLisr: Number(sepDiasRedondeo) > 0 ? Number(sepDiasRedondeo) : 183,
+    diasAnioLisr: Number(sepDiasAnio) > 0 ? Number(sepDiasAnio) : 365
   };
 }
 

@@ -1,0 +1,21 @@
+<input type="hidden" name="fechaBaja" value="<%= formData.fechaBaja %>" />
+<input type="hidden" name="fechaIngreso" value="<%= formData.fechaIngreso || '' %>" />
+<input type="hidden" name="causaTerminacion" value="<%= formData.causaTerminacion %>" />
+<input type="hidden" name="periodoId" value="<%= formData.periodoId || '' %>" />
+<input type="hidden" name="salarioDiario" value="<%= formData.salarioDiario || '' %>" />
+<input type="hidden" name="salarioBaseIndemnizacion" value="<%= formData.salarioBaseIndemnizacion || '' %>" />
+<input type="hidden" name="salarioBasePrimaAntiguedad" value="<%= formData.salarioBasePrimaAntiguedad || '' %>" />
+<input type="hidden" name="diasAguinaldo" value="<%= formData.diasAguinaldo || '' %>" />
+<input type="hidden" name="porcentajePrimaVacacional" value="<%= formData.porcentajePrimaVacacional || '' %>" />
+<input type="hidden" name="diasVacacionesPendientes" value="<%= formData.diasVacacionesPendientes || 0 %>" />
+<input type="hidden" name="diasPendientes" value="<%= formData.diasPendientes || 0 %>" />
+<input type="hidden" name="fondoAhorroSaldo" value="<%= formData.fondoAhorroSaldo || '' %>" />
+<input type="hidden" name="descuentoEmpresa" value="<%= formData.descuentoEmpresa || '' %>" />
+<% if (formData.aplicaIndemnizacionTresMeses) { %><input type="hidden" name="aplicaIndemnizacionTresMeses" value="on" /><% } %>
+<% if (formData.aplica20DiasPorAnio) { %><input type="hidden" name="aplica20DiasPorAnio" value="on" /><% } %>
+<% if (formData.aplicaPrimaAntiguedad) { %><input type="hidden" name="aplicaPrimaAntiguedad" value="on" /><% } %>
+<% if (formData.negociacionActiva) { %><input type="hidden" name="negociacionActiva" value="on" /><% } %>
+<% if (formData.gratificacionEsSeparacion) { %><input type="hidden" name="gratificacionEsSeparacion" value="on" /><% } %>
+<input type="hidden" name="gratificacion" value="<%= formData.gratificacion || 0 %>" />
+<input type="hidden" name="negociacionNotas" value="<%= formData.negociacionNotas || '' %>" />
+<input type="hidden" name="notas" value="<%= formData.notas || '' %>" />

@@ -692,10 +692,22 @@ async function calcularPeriodo(tenantId, periodoId, options = {}) {
 
   const empleadosQuery = {
     tenantId,
-    activo: true,
-    estatus: 'activo',
     salarioDiario: { $gt: 0 }
   };
+
+  const tipoNominaEsp = String(periodo.tipoNomina || '').toLowerCase();
+  const esFiniquitoLike = tipoNominaEsp === 'finiquito' || tipoNominaEsp === 'indemnizacion';
+  const idsPeriodo = Array.isArray(periodo.empleadoIds) ? periodo.empleadoIds.filter(Boolean) : [];
+
+  if (esFiniquitoLike && idsPeriodo.length) {
+    empleadosQuery._id = { $in: idsPeriodo };
+    // Incluye baja reciente: el finiquito se paga tras la terminación.
+  } else if (esFiniquitoLike) {
+    empleadosQuery.$or = [{ estatus: 'activo', activo: true }, { estatus: 'baja' }];
+  } else {
+    empleadosQuery.activo = true;
+    empleadosQuery.estatus = 'activo';
+  }
 
   let empleados;
   const tiposPeriodo = await listTiposPeriodo(tenantId, false);

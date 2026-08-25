@@ -1,0 +1,55 @@
+<%- include('../../Partials/layout-top', { title: 'Finiquitos', session }) %>
+<div class="page-header">
+  <h1>Finiquitos y liquidaciones</h1>
+  <p class="page-subtitle">
+    Cálculo laboral → período de nómina (cierre como nómina). Dispersión bancaria opcional.
+    <strong>Sin período no se puede timbrar.</strong>
+  </p>
+</div>
+<div class="toolbar">
+  <a class="btn btn-primary" href="/nomina/finiquitos/nuevo">+ Nuevo cálculo</a>
+  <a class="btn" href="/nomina/periodos">Períodos de nómina</a>
+</div>
+<% if (!empresa) { %>
+<p class="alert">Sin empresa.</p>
+<% } else if (!(items || []).length) { %>
+<p class="muted">Aún no hay finiquitos calculados. Crea el primero con el empleado y la causa de terminación.</p>
+<% } else { %>
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>Empleado</th>
+      <th>Causa</th>
+      <th>Fecha baja</th>
+      <th>Finiquito legal</th>
+      <th>Liquidación</th>
+      <th>Neto</th>
+      <th>Período</th>
+      <th>Estatus</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <% items.forEach(function(f) { %>
+    <tr>
+      <td><%= f.numEmpleado %> <%= f.nombreEmpleado %></td>
+      <td><%= f.causaTerminacion %></td>
+      <td><%= f.fechaBaja ? new Date(f.fechaBaja).toLocaleDateString('es-MX') : '' %></td>
+      <td>$<%= money(f.totales && f.totales.finiquitoLegal) %></td>
+      <td>$<%= money(f.totales && f.totales.liquidacionLegal) %></td>
+      <td><strong>$<%= money(f.totales && f.totales.netoPagar) %></strong></td>
+      <td>
+        <% if (f.periodoId) { %>
+        <a href="/nomina/periodos/<%= f.periodoId %>">Vinculado</a>
+        <% } else { %>
+        <span class="muted" title="Sin período no se puede timbrar">Sin período</span>
+        <% } %>
+      </td>
+      <td><%= (estatusLabels && estatusLabels[f.estatus]) || f.estatus %></td>
+      <td><a href="/nomina/finiquitos/<%= f._id %>">Ver</a></td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<% } %>
+<%- include('../../Partials/layout-bottom') %>

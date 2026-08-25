@@ -39,7 +39,7 @@ const EMPLEADOS_DEMO = [
     codigoLegadoDepto: 25,
     codigoLegadoPuesto: 1139,
     salarioDiario: 206.13,
-    fechaIngreso: new Date('1956-09-06')
+    fechaIngreso: new Date('2016-09-06')
   },
   {
     codigoExterno: '2138',

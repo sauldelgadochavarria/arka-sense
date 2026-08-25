@@ -617,6 +617,15 @@ async function calcularPeriodoAction(req, res) {
       return res.redirect('/nomina/periodos');
     }
 
+    const tipoEsp = String(periodo.tipoNomina || '').toLowerCase();
+    if (tipoEsp === 'finiquito' || tipoEsp === 'indemnizacion') {
+      req.flash(
+        'error',
+        'Este período es de finiquito/indemnización: los montos se inyectan desde /nomina/finiquitos. No uses el cálculo ordinario (sobrescribiría los conceptos FIN_*).'
+      );
+      return res.redirect(`/nomina/periodos/${req.params.id}`);
+    }
+
     const preflight = await validatePeriodoForCalculo(req.session.tenantId, periodo);
     if (!preflight.ok) {
       req.flash('error', preflight.bloqueos.map((b) => b.mensaje).join(' · '));

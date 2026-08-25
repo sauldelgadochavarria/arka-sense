@@ -15,7 +15,9 @@ function sha256Hex(buf) {
 }
 
 /**
- * XML mínimo de simulación (no es CFDI válido SAT; sirve para retención/descarga hasta PAC real).
+ * XML de simulación CFDI 4.0 + complemento Nómina 1.2 (parcial).
+ * Incluye nomina12:SeparacionIndemnizacion cuando aplica (claves 022/023/025).
+ * No es CFDI firmado válido SAT; sirve para retención/descarga y validar el nodo.
  */
 function buildXmlSimulado({
   uuid,
@@ -26,24 +28,91 @@ function buildXmlSimulado({
   nombreEmisor = '',
   rfcReceptor = '',
   nombreReceptor = '',
-  total = 0
+  total = 0,
+  tipoNomina = 'O',
+  fechaPago = null,
+  fechaInicialPago = null,
+  fechaFinalPago = null,
+  numDiasPagados = 0,
+  separacionIndemnizacion = null,
+  percepcionesXml = '',
+  deduccionesXml = ''
 }) {
+  const {
+    buildSeparacionIndemnizacionXml,
+    buildPercepcionesSeparacionXml
+  } = require('./cfdi/separacionIndemnizacionBuilder');
+
   const fecha = (fechaTimbrado instanceof Date ? fechaTimbrado : new Date(fechaTimbrado)).toISOString();
   const esc = (s) =>
     String(s || '')
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/"/g, '&quot;');
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4"
-  xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital"
-  Version="4.0" Serie="${esc(serie)}" Folio="${esc(folio)}" Total="${Number(total).toFixed(2)}"
-  Fecha="${esc(fecha)}">
-  <cfdi:Emisor Rfc="${esc(rfcEmisor)}" Nombre="${esc(nombreEmisor)}"/>
-  <cfdi:Receptor Rfc="${esc(rfcReceptor)}" Nombre="${esc(nombreReceptor)}"/>
+  const ymd = (d) => {
+    const x = d instanceof Date ? d : d ? new Date(d) : new Date(fechaTimbrado);
+    if (Number.isNaN(x.getTime())) return fecha.slice(0, 10);
+    return x.toISOString().slice(0, 10);
+  };
+
+  const sepData =
+    separacionIndemnizacion && separacionIndemnizacion.aplica !== false && Number(separacionIndemnizacion.TotalPagado) > 0
+      ? { aplica: true, ...separacionIndemnizacion }
+      : null;
+
+  const sepXml = sepData ? buildSeparacionIndemnizacionXml(sepData) : '';
+  const percSepXml = sepData ? buildPercepcionesSeparacionXml(sepData) : '';
+  const totalSepAttr = sepData
+    ? ` TotalSeparacionIndemnizacion="${Number(sepData.TotalSeparacionIndemnizacion || sepData.TotalPagado).toFixed(2)}"`
+    : '';
+
+  const percInner = [percepcionesXml, percSepXml].filter(Boolean).join('\n      ');
+  const percBlock = percInner
+    ? `<nomina12:Percepciones TotalSueldos="0.00" TotalGravado="0.00" TotalExento="0.00"${totalSepAttr}>
+      ${percInner}
+      ${sepXml}
+    </nomina12:Percepciones>`
+    : sepXml
+      ? `<nomina12:Percepciones TotalSueldos="0.00" TotalGravado="0.00" TotalExento="0.00"${totalSepAttr}>
+      ${percSepXml}
+      ${sepXml}
+    </nomina12:Percepciones>`
+      : '';
+
+  const dedBlock = deduccionesXml
+    ? `<nomina12:Deducciones TotalOtrasDeducciones="0.00" TotalImpuestosRetenidos="0.00">
+      ${deduccionesXml}
+    </nomina12:Deducciones>`
+    : '';
+
+  const nominaBlock =
+    percBlock || dedBlock
+      ? `
+  <cfdi:Complemento>
+    <nomina12:Nomina Version="1.2" TipoNomina="${esc(tipoNomina)}"
+      FechaPago="${esc(ymd(fechaPago || fechaTimbrado))}"
+      FechaInicialPago="${esc(ymd(fechaInicialPago || fechaTimbrado))}"
+      FechaFinalPago="${esc(ymd(fechaFinalPago || fechaTimbrado))}"
+      NumDiasPagados="${Number(numDiasPagados) || 1}">
+      ${percBlock}
+      ${dedBlock}
+    </nomina12:Nomina>
+    <tfd:TimbreFiscalDigital Version="1.1" UUID="${esc(uuid)}" FechaTimbrado="${esc(fecha)}"/>
+  </cfdi:Complemento>`
+      : `
   <cfdi:Complemento>
     <tfd:TimbreFiscalDigital Version="1.1" UUID="${esc(uuid)}" FechaTimbrado="${esc(fecha)}"/>
-  </cfdi:Complemento>
+  </cfdi:Complemento>`;
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4"
+  xmlns:nomina12="http://www.sat.gob.mx/nomina12"
+  xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital"
+  Version="4.0" Serie="${esc(serie)}" Folio="${esc(folio)}" Total="${Number(total).toFixed(2)}"
+  Fecha="${esc(fecha)}" TipoDeComprobante="N" Moneda="MXN" SubTotal="${Number(total).toFixed(2)}">
+  <cfdi:Emisor Rfc="${esc(rfcEmisor)}" Nombre="${esc(nombreEmisor)}"/>
+  <cfdi:Receptor Rfc="${esc(rfcReceptor)}" Nombre="${esc(nombreReceptor)}" UsoCFDI="CN01"/>
+  ${nominaBlock}
 </cfdi:Comprobante>
 `;
 }

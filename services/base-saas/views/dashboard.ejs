@@ -1,4 +1,106 @@
 <%- include('Partials/layout-top', { title: 'Dashboard', session, menuTree }) %>
+<%
+  const ff = (typeof featureFlags !== 'undefined' && featureFlags) ? featureFlags : {};
+  const hasNomina = !!ff.nomina;
+  const hasGestDoc = !!ff.gestion_documental;
+  const flujo = (typeof flujoNomina !== 'undefined' && flujoNomina) ? flujoNomina : null;
+  const pasoActual = flujo && flujo.pasoActual ? Number(flujo.pasoActual) : 0;
+  const pasosDone = new Set((flujo && flujo.pasosCompletados) || []);
+  const cicloCompleto = !!(flujo && flujo.cicloCompleto);
+
+  const flujoPasos = [
+    {
+      n: 1,
+      titulo: 'Asistencia',
+      desc: 'Marcaciones, turnos y asistencia del día',
+      href: '/asistencia-diaria',
+      links: [
+        { label: 'Del día', href: '/asistencia-diaria' },
+        { label: 'Marcaciones', href: '/asistencia-marcaciones' }
+      ]
+    },
+    {
+      n: 2,
+      titulo: 'Pre-nómina',
+      desc: 'Períodos y conceptos de asistencia',
+      href: '/prenomina-periodos',
+      links: [
+        { label: 'Períodos', href: '/prenomina-periodos' },
+        { label: 'Conceptos', href: '/prenomina-conceptos' }
+      ]
+    },
+    {
+      n: 3,
+      titulo: 'Incidencias',
+      desc: 'Aprobar faltas, vacaciones y extras',
+      href: '/incidencias/pendientes',
+      links: [
+        { label: 'Pendientes', href: '/incidencias/pendientes' },
+        { label: 'Vacaciones', href: '/incidencias/vacaciones' }
+      ]
+    },
+    {
+      n: 4,
+      titulo: 'Cálculo',
+      desc: 'Nómina formal y conceptos fiscales',
+      href: hasNomina ? '/nomina/periodos' : '/nomina',
+      requireNomina: true,
+      links: [
+        { label: 'Períodos', href: '/nomina/periodos' },
+        { label: 'Conceptos', href: '/nomina/conceptos' }
+      ]
+    },
+    {
+      n: 5,
+      titulo: 'Revisión',
+      desc: 'Reportes y validación del período',
+      href: hasNomina ? '/nomina/reportes' : '/reportes',
+      links: [
+        { label: 'Reportes nómina', href: '/nomina/reportes', requireNomina: true },
+        { label: 'KPIs', href: '/reportes/kpis' }
+      ]
+    },
+    {
+      n: 6,
+      titulo: 'Cierre',
+      desc: 'Autorizar y cerrar el período',
+      href: hasNomina ? '/nomina/periodos' : '/nomina',
+      requireNomina: true,
+      links: [
+        { label: 'Períodos', href: '/nomina/periodos' }
+      ]
+    },
+    {
+      n: 7,
+      titulo: 'Bancos',
+      desc: 'Layouts y dispersión bancaria',
+      href: '/nomina/dispersion-bancaria',
+      requireNomina: true,
+      links: [
+        { label: 'Dispersión', href: '/nomina/dispersion-bancaria' },
+        { label: 'Layouts', href: '/nomina/layouts-bancarios' }
+      ]
+    },
+    {
+      n: 8,
+      titulo: 'CFDI',
+      desc: 'Timbrar y emitir recibos',
+      href: '/nomina/timbrado',
+      requireNomina: true,
+      links: [
+        { label: 'Timbrar', href: '/nomina/timbrado' },
+        { label: 'PDF', href: '/nomina/recibos-pdf' },
+        { label: 'Correo', href: '/nomina/envio-correo' }
+      ]
+    }
+  ];
+
+  if (flujo && flujo.href) {
+    flujoPasos.forEach(function (p) {
+      if (p.n === pasoActual) p.href = flujo.href;
+    });
+  }
+%>
 
 <div class="page-header">
   <h1>Bienvenido, <%= session.user %></h1>
@@ -8,101 +110,63 @@
   </p>
 </div>
 
-<div class="card-grid">
-  <a class="module-card" href="/personal-empleados">
-    <h3>Personal</h3>
-    <p>Empleados, departamentos, puestos y empresa.</p>
-    <ul>
-      <li><a href="/personal-empleados">Empleados</a></li>
-      <li><a href="/personal-departamentos">Departamentos</a></li>
-      <li><a href="/config-empresa">Datos de empresa</a></li>
-      <li><a href="/config-empresa/cargas">Cargas iniciales</a></li>
-    </ul>
-  </a>
-
-  <a class="module-card" href="/asistencia-diaria">
-    <h3>Asistencia</h3>
-    <p>Turnos, marcaciones y resumen diario.</p>
-    <ul>
-      <li><a href="/asistencia-turnos">Turnos</a></li>
-      <li><a href="/asistencia-marcaciones">Marcaciones</a></li>
-      <li><a href="/asistencia-diaria">Asistencia del día</a></li>
-    </ul>
-  </a>
-
-  <a class="module-card" href="/incidencias">
-    <h3>Incidencias</h3>
-    <p>Solicitudes, vacaciones y portal empleado.</p>
-    <ul>
-      <li><a href="/incidencias/pendientes">Bandeja pendientes</a></li>
-      <li><a href="/incidencias/vacaciones">Vacaciones</a></li>
-      <li><a href="/portal">Portal empleado</a></li>
-    </ul>
-  </a>
-
-  <a class="module-card" href="/prenomina-periodos">
-    <h3>Pre-nómina</h3>
-    <p>Períodos, cálculo y conceptos (asistencia).</p>
-    <ul>
-      <li><a href="/prenomina-periodos">Períodos</a></li>
-      <li><a href="/prenomina-conceptos">Conceptos</a></li>
-    </ul>
-  </a>
-
-  <% if (typeof featureFlags !== 'undefined' && featureFlags && featureFlags.nomina) { %>
-  <a class="module-card" href="/nomina">
-    <h3>Nómina</h3>
-    <p>Cálculo formal, conceptos fiscales y cierre.</p>
-    <ul>
-      <li><a href="/nomina">Inicio nómina</a></li>
-      <li><a href="/nomina/periodos">Períodos</a></li>
-      <li><a href="/nomina/conceptos">Conceptos</a></li>
-    </ul>
-  </a>
+<section class="dash-flow">
+  <div class="section-header">
+    <h2>Flujo del proceso de nómina</h2>
+    <span class="muted small">Del registro de asistencia al CFDI</span>
+  </div>
+  <% if (flujo) { %>
+  <p class="flow-status<%= cicloCompleto ? ' is-done' : '' %>">
+    <% if (cicloCompleto) { %>
+      <strong>Ciclo completo</strong> — <%= flujo.detalle %>
+    <% } else { %>
+      Estás en <strong><%= flujo.label %></strong>
+      <% if (flujo.periodo && flujo.periodo.rango) { %>
+        · período <%= flujo.periodo.numeroPeriodo != null ? '#' + flujo.periodo.numeroPeriodo : '' %>
+        <%= flujo.periodo.rango %>
+        (<%= flujo.periodo.estatus %>)
+      <% } %>
+      — <%= flujo.detalle %>
+      <% if (flujo.href) { %>
+        <a href="<%= flujo.href %>">Continuar →</a>
+      <% } %>
+    <% } %>
+  </p>
   <% } %>
-
-  <% if (typeof featureFlags !== 'undefined' && featureFlags && featureFlags.gestion_documental) { %>
-  <a class="module-card" href="/nomina/gestion-documental">
-    <h3>Gestión documental</h3>
-    <p>Expediente CFDI, SUA, impuestos y trabajadores.</p>
-    <ul>
-      <li><a href="/nomina/gestion-documental">Cumplimiento</a></li>
-      <li><a href="/nomina/gestion-documental/expediente">Expediente</a></li>
-      <li><a href="/nomina/gestion-documental/reporte">Cobertura</a></li>
-      <li><a href="/nomina/gestion-documental/config">Storage</a></li>
-    </ul>
-  </a>
-  <% } %>
-
-  <a class="module-card" href="/integraciones/perfiles">
-    <h3>Integraciones</h3>
-    <p>Exportación, ABC y dispositivos.</p>
-    <ul>
-      <li><a href="/integraciones/exportacion">Exportar pre-nómina</a></li>
-      <li><a href="/integraciones/abc">Sync ABC</a></li>
-      <li><a href="/integraciones/dispositivos">Dispositivos</a></li>
-    </ul>
-  </a>
-
-  <a class="module-card" href="/reportes">
-    <h3>Reportes</h3>
-    <p>KPIs, consultas operativas y exportación.</p>
-    <ul>
-      <li><a href="/reportes/kpis">Dashboard KPIs</a></li>
-      <li><a href="/reportes">Centro de reportes</a></li>
-    </ul>
-  </a>
-
-  <a class="module-card" href="/config-users">
-    <h3>Configuración</h3>
-    <p>Usuarios, roles y subsidiarias.</p>
-    <ul>
-      <li><a href="/config-users">Usuarios</a></li>
-      <li><a href="/config-roles">Roles</a></li>
-      <li><a href="/config-subsidiarias">Subsidiarias</a></li>
-    </ul>
-  </a>
-</div>
+  <ol class="flow-track">
+    <% flujoPasos.forEach(function(paso, idx) {
+      const locked = paso.requireNomina && !hasNomina;
+      const isCurrent = !locked && pasoActual === paso.n;
+      const isDone = !locked && (pasosDone.has(paso.n) || (cicloCompleto && paso.n <= 8));
+      let cls = 'flow-step';
+      if (locked) cls += ' is-locked';
+      if (isCurrent && !cicloCompleto) cls += ' is-current';
+      if (isDone && !isCurrent) cls += ' is-done';
+      if (cicloCompleto && isCurrent) cls += ' is-done is-current';
+    %>
+    <li class="<%= cls %>">
+      <% if (idx > 0) { %><span class="flow-arrow" aria-hidden="true">→</span><% } %>
+      <a class="flow-card" href="<%= locked ? '#' : paso.href %>"<%= locked ? ' aria-disabled="true" tabindex="-1"' : '' %>>
+        <span class="flow-num"><% if (isDone && !(isCurrent && !cicloCompleto)) { %>✓<% } else { %><%= paso.n %><% } %></span>
+        <span class="flow-title"><%= paso.titulo %></span>
+        <span class="flow-desc"><%= paso.desc %></span>
+        <% if (isCurrent && !cicloCompleto) { %><span class="flow-badge">Ahora</span><% } %>
+        <% if (!locked && paso.links && paso.links.length) { %>
+        <span class="flow-links">
+          <% paso.links.forEach(function(l) {
+            if (l.requireNomina && !hasNomina) return;
+          %>
+          <span class="flow-link" data-href="<%= l.href %>"><%= l.label %></span>
+          <% }); %>
+        </span>
+        <% } else if (locked) { %>
+        <span class="flow-desc muted">Activa el módulo Nómina</span>
+        <% } %>
+      </a>
+    </li>
+    <% }); %>
+  </ol>
+</section>
 
 <% if (typeof cumplimiento !== 'undefined' && cumplimiento && cumplimiento.filas) { %>
 <%
@@ -118,7 +182,7 @@
   }
   const Ex = cumplimiento.expedientes || {};
 %>
-<section class="dashboard-kpis">
+<section class="dashboard-kpis dash-section">
   <div class="section-header">
     <h2>Cumplimiento</h2>
     <a href="/nomina/gestion-documental">Ver tablero completo →</a>
@@ -147,7 +211,7 @@
 <% } %>
 
 <% if (typeof kpis !== 'undefined' && kpis) { %>
-<section class="dashboard-kpis">
+<section class="dashboard-kpis dash-section">
   <div class="section-header">
     <h2>Indicadores del día</h2>
     <a href="/reportes/kpis">Ver dashboard completo →</a>
@@ -165,5 +229,132 @@
   <% } %>
 </section>
 <% } %>
+
+<section class="dash-section">
+  <div class="section-header">
+    <h2>Accesos directos y catálogos</h2>
+    <span class="muted small">Configuración y consultas frecuentes</span>
+  </div>
+  <div class="card-grid">
+    <div class="module-card">
+      <h3><a href="/personal-empleados">Personal</a></h3>
+      <p>Empleados, departamentos, puestos y empresa.</p>
+      <ul>
+        <li><a href="/personal-empleados">Empleados</a></li>
+        <li><a href="/personal-departamentos">Departamentos</a></li>
+        <li><a href="/config-empresa">Datos de empresa</a></li>
+        <li><a href="/config-empresa/cargas">Cargas iniciales</a></li>
+      </ul>
+    </div>
+
+    <div class="module-card">
+      <h3><a href="/asistencia-diaria">Asistencia</a></h3>
+      <p>Turnos, marcaciones y resumen diario.</p>
+      <ul>
+        <li><a href="/asistencia-turnos">Turnos</a></li>
+        <li><a href="/asistencia-marcaciones">Marcaciones</a></li>
+        <li><a href="/asistencia-diaria">Asistencia del día</a></li>
+      </ul>
+    </div>
+
+    <div class="module-card">
+      <h3><a href="/incidencias">Incidencias</a></h3>
+      <p>Solicitudes, vacaciones y portal empleado.</p>
+      <ul>
+        <li><a href="/incidencias/pendientes">Bandeja pendientes</a></li>
+        <li><a href="/incidencias/vacaciones">Vacaciones</a></li>
+        <li><a href="/portal">Portal empleado</a></li>
+      </ul>
+    </div>
+
+    <div class="module-card">
+      <h3><a href="/prenomina-periodos">Pre-nómina</a></h3>
+      <p>Períodos, cálculo y conceptos (asistencia).</p>
+      <ul>
+        <li><a href="/prenomina-periodos">Períodos</a></li>
+        <li><a href="/prenomina-conceptos">Conceptos</a></li>
+      </ul>
+    </div>
+
+    <% if (hasNomina) { %>
+    <div class="module-card">
+      <h3><a href="/nomina">Nómina</a></h3>
+      <p>Cálculo formal, conceptos fiscales y cierre.</p>
+      <ul>
+        <li><a href="/nomina">Inicio nómina</a></li>
+        <li><a href="/nomina/periodos">Períodos</a></li>
+        <li><a href="/nomina/conceptos">Conceptos</a></li>
+        <li><a href="/nomina/finiquitos">Finiquitos</a></li>
+        <li><a href="/nomina/configuracion">Configuración</a></li>
+      </ul>
+    </div>
+
+    <div class="module-card">
+      <h3><a href="/nomina/dispersion-bancaria">Dispersión y timbrado</a></h3>
+      <p>Bancos, CFDI, correo y SUA.</p>
+      <ul>
+        <li><a href="/nomina/dispersion-bancaria">Dispersión bancaria</a></li>
+        <li><a href="/nomina/timbrado">Timbrar CFDI</a></li>
+        <li><a href="/nomina/sua">Exportar SUA</a></li>
+        <li><a href="/nomina/reportes">Reportes nómina</a></li>
+      </ul>
+    </div>
+    <% } %>
+
+    <% if (hasGestDoc) { %>
+    <div class="module-card">
+      <h3><a href="/nomina/gestion-documental">Gestión documental</a></h3>
+      <p>Expediente CFDI, SUA, impuestos y trabajadores.</p>
+      <ul>
+        <li><a href="/nomina/gestion-documental">Cumplimiento</a></li>
+        <li><a href="/nomina/gestion-documental/expediente">Expediente</a></li>
+        <li><a href="/nomina/gestion-documental/reporte">Cobertura</a></li>
+        <li><a href="/nomina/gestion-documental/config">Storage</a></li>
+      </ul>
+    </div>
+    <% } %>
+
+    <div class="module-card">
+      <h3><a href="/integraciones/perfiles">Integraciones</a></h3>
+      <p>Exportación, ABC y dispositivos.</p>
+      <ul>
+        <li><a href="/integraciones/exportacion">Exportar pre-nómina</a></li>
+        <li><a href="/integraciones/abc">Sync ABC</a></li>
+        <li><a href="/integraciones/dispositivos">Dispositivos</a></li>
+      </ul>
+    </div>
+
+    <div class="module-card">
+      <h3><a href="/reportes">Reportes</a></h3>
+      <p>KPIs, consultas operativas y exportación.</p>
+      <ul>
+        <li><a href="/reportes/kpis">Dashboard KPIs</a></li>
+        <li><a href="/reportes">Centro de reportes</a></li>
+      </ul>
+    </div>
+
+    <div class="module-card">
+      <h3><a href="/config-users">Configuración</a></h3>
+      <p>Usuarios, roles y subsidiarias.</p>
+      <ul>
+        <li><a href="/config-users">Usuarios</a></li>
+        <li><a href="/config-roles">Roles</a></li>
+        <li><a href="/config-subsidiarias">Subsidiarias</a></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<script>
+(function () {
+  document.querySelectorAll('.flow-link[data-href]').forEach(function (el) {
+    el.addEventListener('click', function (ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      window.location.href = el.getAttribute('data-href');
+    });
+  });
+})();
+</script>
 
 <%- include('Partials/layout-bottom') %>

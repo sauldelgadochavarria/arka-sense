@@ -1,0 +1,176 @@
+<%- include('../../Partials/layout-top', { title: 'Finiquito', session }) %>
+<%
+  const B = (typeof bloqueo !== 'undefined' && bloqueo) ? bloqueo : { permanente: false, puedeRecalcular: true, puedeEliminar: !doc.periodoId, puedeEmitir: true };
+%>
+<div class="page-header">
+  <h1>Finiquito · <%= doc.numEmpleado %> <%= doc.nombreEmpleado %></h1>
+  <p class="page-subtitle">
+    <%= doc.causaTerminacion %> · Baja <%= doc.fechaBaja ? new Date(doc.fechaBaja).toLocaleDateString('es-MX') : '' %>
+    · <%= (estatusLabels && estatusLabels[doc.estatus]) || doc.estatus %>
+    <% if (B.permanente) { %> · <strong>Permanente</strong> (<%= B.motivo %>)<% } %>
+  </p>
+</div>
+<div class="toolbar" style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center">
+  <a class="btn" href="/nomina/finiquitos">← Lista</a>
+
+  <% if (canEdit && B.puedeRecalcular) { %>
+  <a class="btn" href="/nomina/finiquitos/<%= doc._id %>/editar">Recalcular</a>
+  <% } %>
+
+  <% if (doc.periodoId && periodo) { %>
+  <a class="btn btn-primary" href="/nomina/periodos/<%= doc.periodoId %>">
+    Ver período <%= periodo.tipoNomina %> #<%= periodo.numeroPeriodo %>/<%= periodo.anio %>
+  </a>
+  <% } else if (canEdit && B.puedeEmitir) { %>
+  <form method="post" action="/nomina/finiquitos/<%= doc._id %>/emitir-periodo" class="form-inline" style="display:inline-flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+    <label class="muted small" style="display:inline-flex;gap:.35rem;align-items:center">
+      <input type="checkbox" name="habilitarDispersionBancaria" value="on" />
+      Incluir dispersión bancaria
+    </label>
+    <button type="submit" class="btn btn-primary">Crear período e inyectar a nómina</button>
+  </form>
+  <% } %>
+
+  <% if (canEdit && B.puedeEliminar) { %>
+  <form method="post" action="/nomina/finiquitos/<%= doc._id %>/eliminar" style="display:inline;margin-left:auto"
+        onsubmit="return confirm('¿Borrar este cálculo<%= doc.periodoId ? ' y quitar el recibo del período' : '' %>? Esta acción no se puede deshacer.');">
+    <button type="submit" class="btn btn-danger">Borrar cálculo</button>
+  </form>
+  <% } %>
+</div>
+
+<% if (B.permanente) { %>
+<div class="alert" role="status">
+  <strong>Cálculo permanente:</strong> el período está cerrado (o el estatus ya no permite cambios).
+  No se puede borrar ni recalcular.
+</div>
+<% } else if (!doc.periodoId) { %>
+<div class="alert" role="status">
+  <strong>Sin período de nómina:</strong> puedes <strong>recalcular</strong> o <strong>borrar</strong> libremente.
+  <strong>Sin período no se puede timbrar</strong>. Al emitir, el recibo entra al flujo de cierre.
+</div>
+<% } else if (periodo) { %>
+<div class="alert ok" role="status">
+  Vinculado a período <strong><%= periodo.tipoNomina %></strong>
+  #<%= periodo.numeroPeriodo %>/<%= periodo.anio %>
+  (<%= periodo.estatus %>).
+  Puedes <strong>recalcular</strong> las veces que necesites; al guardar se actualiza el recibo del período.
+  <% if (periodo.omitirDispersionBancaria) { %>
+  Dispersión bancaria <strong>opcional</strong>.
+  <% } %>
+  Al cerrar el período el cálculo queda permanente.
+</div>
+<% } %>
+
+<div class="stats-grid">
+  <div class="stat-card"><strong>$<%= money(doc.totales.finiquitoLegal) %></strong><span>Finiquito legal</span></div>
+  <div class="stat-card"><strong>$<%= money(doc.totales.liquidacionLegal) %></strong><span>Liquidación legal</span></div>
+  <div class="stat-card warn"><strong>$<%= money(doc.totales.deducciones) %></strong><span>Deducciones (ISR/IMSS/créditos)</span></div>
+  <div class="stat-card ok"><strong>$<%= money(doc.totales.netoPagar) %></strong><span>Neto a pagar</span></div>
+</div>
+<p class="muted small">* ISR de separación = estimación Art. 95. Deducciones de nómina solo sobre días pendientes; ISR de finiquito sobre el resto de percepciones ordinarias.</p>
+
+<% const FS = (doc.totales && doc.totales.fiscalSeparacion) || {}; %>
+<% if (FS.topeExentoSeparacion != null || FS.sumaTotalSeparacion) { %>
+<div class="panel" style="margin:1rem 0">
+  <h3 class="panel-title">Bolsa exenta separación (Art. 93 fr. XIII)</h3>
+  <p class="muted small">
+    Años LISR: <strong><%= FS.aniosServicioLisr || 0 %></strong>
+    (redondeo ≥ <%= FS.diasRedondeoAnioLisr || 183 %> días)
+    · Tope: <%= FS.aniosServicioLisr || 0 %> × <%= FS.multiplicadorExencionSeparacion || 90 %> × UMA
+    = <strong>$<%= money(FS.topeExentoSeparacion) %></strong>
+  </p>
+  <p class="muted small">
+    Suma conceptos con flag 90×UMA: <strong>$<%= money(FS.sumaTotalSeparacion) %></strong>
+    · Exento bolsa: <strong>$<%= money(FS.exentoTotalSeparacion) %></strong>
+    · Gravado bolsa: <strong>$<%= money(FS.gravadoTotalSeparacion) %></strong>
+  </p>
+</div>
+<% } %>
+
+<% const CSI = (doc.totales && doc.totales.cfdiSeparacionIndemnizacion) || null; %>
+<% if (CSI && CSI.TotalPagado) { %>
+<div class="panel" style="margin:1rem 0">
+  <h3 class="panel-title">CFDI · nomina12:SeparacionIndemnizacion</h3>
+  <p class="muted small">
+    TotalPagado <strong>$<%= money(CSI.TotalPagado) %></strong>
+    · NumAñosServicio <strong><%= CSI.NumAniosServicio %></strong>
+    · UltimoSueldoMensOrd <strong>$<%= money(CSI.UltimoSueldoMensOrd) %></strong>
+  </p>
+  <p class="muted small">
+    IngresoAcumulable <strong>$<%= money(CSI.IngresoAcumulable) %></strong>
+    · IngresoNoAcumulable <strong>$<%= money(CSI.IngresoNoAcumulable) %></strong>
+  </p>
+  <p class="muted small">Al timbrar (simulación o PAC), este snapshot alimenta el nodo XML obligatorio para claves 022 / 023 / 025.</p>
+</div>
+<% } %>
+
+<% const DD = (doc.totales && doc.totales.deduccionesDetalle) || {}; %>
+<% if (DD.totalDeducciones != null) { %>
+<div class="panel" style="margin:1rem 0">
+  <h3 class="panel-title">Deducciones por bloque</h3>
+  <p class="muted small">
+    <strong>A) Nómina</strong> (<%= (DD.bloqueNomina && DD.bloqueNomina.diasPendientes) || 0 %> días pendientes):
+    ISR $<%= money(DD.isrNomina) %> · IMSS SS $<%= money(DD.imssSs) %> · RCV $<%= money(DD.imssRcv) %>
+    · INFONAVIT $<%= money(DD.infonavit) %> · FONACOT $<%= money(DD.fonacot) %>
+    · Fondo trab. $<%= money(DD.fondoAhorroTrabajador) %> · Empresa $<%= money(DD.descuentoEmpresa) %>
+  </p>
+  <p class="muted small">
+    <strong>B) Finiquito</strong> ISR $<%= money(DD.isrFiniquito) %>
+    · <strong>C) Separación</strong> ISR est. $<%= money(DD.isrSeparacion) %>
+    · Total ISR $<%= money(DD.totalIsr) %>
+  </p>
+</div>
+<% } %>
+
+<p>
+  Antigüedad: <strong><%= doc.antiguedad.aniosCompletos %></strong> años,
+  <%= doc.antiguedad.meses %> meses, <%= doc.antiguedad.dias %> días
+  (<%= doc.antiguedad.aniosProporcionales %> proporcionales)
+</p>
+
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>Concepto</th>
+      <th>Bloque</th>
+      <th>SAT</th>
+      <th>Origen</th>
+      <th>Fiscal</th>
+      <th>Legal</th>
+      <th>Ajuste</th>
+      <th>Final</th>
+      <th>Gravado</th>
+      <th>Exento</th>
+    </tr>
+  </thead>
+  <tbody>
+    <% (doc.conceptos || []).forEach(function(c) {
+      const bloque = c.tipo === 'deduccion'
+        ? (c.grupo || 'deducción')
+        : (c.codigo === 'FIN_SALARIO_PENDIENTE' ? 'nómina' : (c.aplicaExencion90Uma ? 'separación' : 'finiquito'));
+    %>
+    <tr>
+      <td><code><%= c.codigo %></code> <%= c.descripcion %></td>
+      <td class="muted small"><%= bloque %></td>
+      <td><%= c.claveSAT || '—' %><% if (c.aplicaExencion90Uma) { %> <span class="muted small">90UMA</span><% } %></td>
+      <td><%= c.origen %></td>
+      <td><%= c.tipoFiscal %></td>
+      <td>$<%= money(c.importeLegal) %></td>
+      <td>$<%= money(c.ajuste) %></td>
+      <td>$<%= money(c.importeFinal) %></td>
+      <td>$<%= money(c.gravadoISR) %></td>
+      <td>$<%= money(c.exentoISR) %>
+        <% if (c.reglaFiscal === 'prima_vacacional' || c.reglaFiscal === 'aguinaldo' || c.reglaFiscal === 'fondo_ahorro') { %>
+        <br /><span class="muted small"><%= c.reglaFiscal %><% if (c.detalle && c.detalle.topeExentoMonto) { %> · tope $<%= money(c.detalle.topeExentoMonto) %><% } %></span>
+        <% } %>
+      </td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+
+<% if (doc.notas) { %>
+<p><strong>Notas:</strong> <%= doc.notas %></p>
+<% } %>
+<%- include('../../Partials/layout-bottom') %>

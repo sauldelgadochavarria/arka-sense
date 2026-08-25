@@ -13,8 +13,26 @@ const periodoNominaSchema = new mongoose.Schema(
     },
     tipoNomina: {
       type: String,
-      enum: ['ordinaria', 'extraordinaria', 'finiquito', 'aguinaldo'],
+      enum: [
+        'ordinaria',
+        'extraordinaria',
+        'finiquito',
+        'aguinaldo',
+        'ptu',
+        'primas',
+        'comisiones',
+        'indemnizacion',
+        'otro'
+      ],
       default: 'ordinaria'
+    },
+    /**
+     * Empleados objetivo para períodos especiales (finiquito / indemnización).
+     * Vacío = comportamiento ordinario (todos los activos / prenómina).
+     */
+    empleadoIds: {
+      type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Empleado' }],
+      default: []
     },
     fechaInicio: { type: Date, required: true, index: true },
     fechaFin: { type: Date, required: true, index: true },
@@ -72,6 +90,11 @@ const periodoNominaSchema = new mongoose.Schema(
       deducciones: { type: Number, default: 0 },
       neto: { type: Number, default: 0 }
     },
+    /**
+     * Finiquito/liquidación: el pago puede ser cheque/efectivo a la firma.
+     * Si true, la dispersión bancaria es opcional (no bloquea cierre ni flujo).
+     */
+    omitirDispersionBancaria: { type: Boolean, default: false },
     /** Última generación de archivo bancario / dispersión. */
     layoutBancario: require('./layoutBancarioStatusFields').layoutBancarioStatusFields(),
     /** Envío de recibos timbrados por correo. */

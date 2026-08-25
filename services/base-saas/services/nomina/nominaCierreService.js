@@ -207,6 +207,7 @@ async function archivarYAcumularCierre({ tenantId, periodo, userId = '' }) {
       fechaCierre,
       cerradoPorUserId: userId || '',
       isrMotor: recibo.isrMotor || null,
+      cfdiSeparacionIndemnizacion: recibo.cfdiSeparacionIndemnizacion || null,
       calculoId: recibo.calculoId || '',
       calculoLoteId: recibo.calculoLoteId || periodo.calculoLoteId || '',
       layoutBancario: recibo.layoutBancario || {},

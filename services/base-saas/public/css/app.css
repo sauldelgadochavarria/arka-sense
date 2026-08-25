@@ -1,6 +1,6 @@
 @import url('variables.css');
 
-/* ── Base ───────────────────────────────────────────── */
+/* ?? Base ????????????????????????????????????????????? */
 *,
 *::before,
 *::after {
@@ -47,7 +47,7 @@ code {
   border-radius: 4px;
 }
 
-/* ── Shell: topbar + sidebar + contenido ───────────── */
+/* ?? Shell: topbar + sidebar + contenido ????????????? */
 .app-shell {
   min-height: 100vh;
   display: flex;
@@ -186,7 +186,7 @@ code {
   width: 100%;
 }
 
-/* ── Encabezado de página ───────────────────────────── */
+/* ?? Encabezado de p?gina ????????????????????????????? */
 .page-header {
   margin-bottom: 1.5rem;
 }
@@ -201,7 +201,7 @@ code {
   margin: 0;
 }
 
-/* ── Paneles y tarjetas ─────────────────────────────── */
+/* ?? Paneles y tarjetas ??????????????????????????????? */
 .panel {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
@@ -249,6 +249,15 @@ code {
   margin: 0 0 0.35rem;
   color: var(--color-brand);
   font-size: 1rem;
+}
+
+.module-card h3 a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.module-card h3 a:hover {
+  text-decoration: underline;
 }
 
 .module-card p {
@@ -305,7 +314,7 @@ code {
 .stat-card.warn strong { color: var(--color-warning); }
 .stat-card.bad strong { color: var(--color-danger); }
 
-/* ── Tablas ─────────────────────────────────────────── */
+/* ?? Tablas ??????????????????????????????????????????? */
 .table-wrap {
   overflow-x: auto;
   border: 1px solid var(--color-border);
@@ -344,7 +353,7 @@ tbody tr:last-child td {
   border-bottom: none;
 }
 
-/* ── Formularios ────────────────────────────────────── */
+/* ?? Formularios ?????????????????????????????????????? */
 .form-grid {
   display: grid;
   gap: 0.75rem;
@@ -454,7 +463,7 @@ textarea {
   font-size: 0.9rem;
 }
 
-/* ── Botones y toolbar ──────────────────────────────── */
+/* ?? Botones y toolbar ???????????????????????????????? */
 button,
 .btn {
   display: inline-flex;
@@ -527,7 +536,7 @@ button.btn-danger {
   margin-top: 1.5rem;
 }
 
-/* ── Alertas y badges ───────────────────────────────── */
+/* ?? Alertas y badges ????????????????????????????????? */
 .alert {
   background: var(--color-danger-bg);
   color: var(--color-danger-text);
@@ -609,7 +618,7 @@ button.btn-danger {
 .preview-box .tipo-preview-flags { margin-bottom: 0.75rem; }
 .periodo-config-panel { margin: 0.75rem 0 1.25rem; }
 
-/* ── Módulo Nómina (scaffold) ─────────────────────── */
+/* ?? M?dulo N?mina (scaffold) ??????????????????????? */
 .module-banner {
   margin-bottom: 1.25rem;
   padding: 1rem 1.25rem;
@@ -1110,7 +1119,7 @@ button.btn-danger {
   color: var(--color-warning-text);
 }
 
-/* ── Reportes y KPIs ───────────────────────────────── */
+/* ?? Reportes y KPIs ????????????????????????????????? */
 .report-catalog .module-card {
   min-height: 8rem;
 }
@@ -1192,6 +1201,190 @@ button.btn-danger {
 
 .alert-item.alert-warn { color: #b45309; }
 .alert-item.alert-info { color: var(--color-text-muted); }
+
+.dash-section {
+  margin-top: 1.75rem;
+}
+
+.dash-flow {
+  margin: 0 0 0.5rem;
+}
+
+.flow-track {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: stretch;
+}
+
+.flow-step {
+  position: relative;
+  flex: 1 1 140px;
+  min-width: 132px;
+  max-width: 180px;
+  display: flex;
+  align-items: stretch;
+}
+
+.flow-arrow {
+  position: absolute;
+  left: -0.55rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.flow-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  width: 100%;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0.85rem 0.9rem;
+  text-decoration: none;
+  color: inherit;
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s;
+}
+
+.flow-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--color-primary);
+  color: inherit;
+}
+
+.flow-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 999px;
+  background: var(--color-brand, #1e3a5f);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 700;
+  margin-bottom: 0.15rem;
+}
+
+.flow-title {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--color-brand, #1e3a5f);
+}
+
+.flow-desc {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  line-height: 1.3;
+}
+
+.flow-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.45rem;
+}
+
+.flow-link {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--color-primary, #2563eb);
+  background: rgba(37, 99, 235, 0.08);
+  border-radius: 999px;
+  padding: 0.15rem 0.45rem;
+  cursor: pointer;
+}
+
+.flow-link:hover {
+  background: rgba(37, 99, 235, 0.16);
+}
+
+.flow-step.is-locked .flow-card {
+  opacity: 0.55;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.flow-step.is-locked .flow-num {
+  background: #94a3b8;
+}
+
+.flow-status {
+  margin: 0 0 0.85rem;
+  padding: 0.65rem 0.9rem;
+  background: rgba(37, 99, 235, 0.06);
+  border: 1px solid rgba(37, 99, 235, 0.2);
+  border-radius: var(--radius-md);
+  font-size: 0.9rem;
+}
+
+.flow-status a {
+  margin-left: 0.35rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.flow-status.is-done {
+  background: rgba(22, 163, 74, 0.08);
+  border-color: rgba(22, 163, 74, 0.25);
+}
+
+.flow-step.is-current .flow-card {
+  border-color: var(--color-primary, #2563eb);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2), var(--shadow-md);
+  background: #f8fbff;
+}
+
+.flow-step.is-current .flow-num {
+  background: var(--color-primary, #2563eb);
+}
+
+.flow-step.is-done .flow-card {
+  border-color: rgba(22, 163, 74, 0.35);
+}
+
+.flow-step.is-done .flow-num {
+  background: #16a34a;
+}
+
+.flow-badge {
+  align-self: flex-start;
+  margin-top: 0.25rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: #1d4ed8;
+  background: rgba(37, 99, 235, 0.12);
+  border-radius: 999px;
+  padding: 0.12rem 0.45rem;
+}
+
+@media (max-width: 900px) {
+  .flow-step {
+    max-width: none;
+    flex: 1 1 calc(50% - 0.5rem);
+  }
+  .flow-arrow {
+    display: none;
+  }
+}
+
+@media (max-width: 560px) {
+  .flow-step {
+    flex: 1 1 100%;
+  }
+}
 
 .dashboard-kpis {
   margin-top: 2rem;
@@ -1367,7 +1560,7 @@ button.btn-danger {
 .row-muted { opacity: 0.65; }
 .neto-total { font-size: 1.15rem; margin-top: 1rem; }
 
-/* ── Detalle ─────────────────────────────────────────── */
+/* ?? Detalle ??????????????????????????????????????????? */
 .detail-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
@@ -1393,7 +1586,7 @@ button.btn-danger {
   margin-right: 6px;
 }
 
-/* ── Auth (login) ───────────────────────────────────── */
+/* ?? Auth (login) ????????????????????????????????????? */
 .auth-page {
   min-height: 100vh;
   display: flex;
@@ -1461,12 +1654,12 @@ button.btn-danger {
   color: #fff;
 }
 
-/* ── Portal empleado ────────────────────────────────── */
+/* ?? Portal empleado ?????????????????????????????????? */
 .portal-bar {
   background: linear-gradient(135deg, #0f766e, #14b8a6);
 }
 
-/* ── Responsive ─────────────────────────────────────── */
+/* ?? Responsive ??????????????????????????????????????? */
 @media (max-width: 900px) {
   .app-body {
     flex-direction: column;
@@ -1507,7 +1700,7 @@ button.btn-danger {
   }
 }
 
-/* —— Centro de ayuda / knowledge base —— */
+/* ?? Centro de ayuda / knowledge base ?? */
 .kb-section {
   margin: 1.5rem 0 2rem;
 }
@@ -1591,7 +1784,7 @@ button.btn-danger {
   gap: 0.4rem;
 }
 
-/* ?? Pre-recibo (pantalla + impresi�n) ????????????????? */
+/* ?? Pre-recibo (pantalla + impresi?n) ????????????????? */
 .pre-recibo {
   --pr-ink: #1e293b;
   --pr-muted: #64748b;

@@ -805,6 +805,14 @@ async function seedNominaMenus(Menu, adminRoleId) {
     parentId: calculoId,
     orden: 373
   });
+  await upsertMenuNode(Menu, {
+    ...common,
+    menuPrincipal: 'Finiquitos',
+    rutaApp: '/nomina/finiquitos',
+    parentId: calculoId,
+    orden: 374,
+    requiredFeatureKeys: ['nomina']
+  });
 
   const timbradoId = await upsertMenuNode(Menu, {
     ...common,
