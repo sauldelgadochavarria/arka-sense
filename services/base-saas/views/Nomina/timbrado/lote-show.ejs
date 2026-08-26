@@ -31,10 +31,10 @@
       <td><%= it.numEmpleado %></td>
       <td><%= it.nombre %></td>
       <td class="num">$<%= Number(it.netoPagar || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></td>
-      <td><%= it.estatus %></td>
+      <td><%= it.estatus %><% if (it.estatus === 'omitido' && it.errorMensaje) { %><br /><span class="muted small"><%= it.errorMensaje %></span><% } %></td>
       <td><code class="small"><%= it.uuid || '—' %></code></td>
       <td><%= (it.serie || '') + (it.folio ? ('-' + it.folio) : '') %></td>
-      <td class="muted"><%= it.errorMensaje || '' %></td>
+      <td class="muted"><%= it.estatus !== 'omitido' ? (it.errorMensaje || '') : '' %></td>
       <td>
         <% if (it.archivoXmlId) { %>
         <a href="/nomina/timbrado/archivos/<%= it.archivoXmlId %>/descargar">XML</a>

@@ -98,7 +98,17 @@ const periodoNominaSchema = new mongoose.Schema(
     /** Última generación de archivo bancario / dispersión. */
     layoutBancario: require('./layoutBancarioStatusFields').layoutBancarioStatusFields(),
     /** Envío de recibos timbrados por correo. */
-    correo: require('./envioCorreoStatusFields').envioCorreoPeriodoFields()
+    correo: require('./envioCorreoStatusFields').envioCorreoPeriodoFields(),
+    /**
+     * Avance manual del flujo en dashboard (pasos que no tienen estatus propio).
+     * 5 Revisión → revisionCompletada; 6 Cierre = estatus cerrado; 7 Bancos = layoutBancario; 8 CFDI = lote timbrado.
+     */
+    flujoProceso: {
+      revisionCompletada: { type: Boolean, default: false },
+      revisionAt: { type: Date, default: null },
+      revisionPorUserId: { type: String, default: '' },
+      revisionPorLabel: { type: String, default: '' }
+    }
   },
   { timestamps: true, collection: COLLECTION_NOMINA_PERIODOS }
 );

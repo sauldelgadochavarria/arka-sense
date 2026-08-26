@@ -829,7 +829,11 @@ async function calcularPeriodo(tenantId, periodoId, options = {}) {
         calculoLoteId,
         calculadoPorUserId: userId,
         calculadoPorLabel: userLabel,
-        totales
+        totales,
+        'flujoProceso.revisionCompletada': false,
+        'flujoProceso.revisionAt': null,
+        'flujoProceso.revisionPorUserId': '',
+        'flujoProceso.revisionPorLabel': ''
       }
     }
   );

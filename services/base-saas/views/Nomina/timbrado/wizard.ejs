@@ -1,7 +1,7 @@
 <%- include('../../Partials/layout-top', { title: 'Timbrado CFDI', session }) %>
 <div class="page-header">
   <h1>Proceso de timbrado</h1>
-  <p class="page-subtitle">Genera un lote de timbrado sobre un período calculado o cerrado. Por defecto simula UUID (sin llamar al PAC) hasta completar el payload CFDI.</p>
+  <p class="page-subtitle">Genera un lote de timbrado sobre un período calculado o cerrado. Modo simulación no llama al PAC; modo real re-timbrará recibos que solo tenían UUID simulado.</p>
 </div>
 
 <div class="toolbar">
@@ -27,7 +27,6 @@
       <% (periodos || []).forEach(function(p) { %>
       <option value="<%= p._id %>">
         <%= p.tipoPeriodo || '' %> #<%= p.numeroPeriodo != null ? p.numeroPeriodo : '' %>
-        (<%= p.estatus %>)
         <%= p.fechaInicio ? new Date(p.fechaInicio).toLocaleDateString('es-MX') : '' %>
         –
         <%= p.fechaFin ? new Date(p.fechaFin).toLocaleDateString('es-MX') : '' %>
@@ -35,6 +34,9 @@
       <% }); %>
     </select>
   </label>
+  <% if (!(periodos || []).length) { %>
+  <p class="muted small" style="grid-column:1/-1">No hay períodos <strong>cerrados</strong> disponibles. Calcula y cierra un período antes de timbrar.</p>
+  <% } %>
   <label>PAC
     <select name="pacConfigId" required>
       <option value="">— Selecciona —</option>

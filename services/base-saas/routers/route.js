@@ -38,7 +38,8 @@ const confrontaImssController = require('../controllers/confrontaImssController'
 const ayudaController = require('../controllers/ayudaController');
 const { getDashboardKpis } = require('../services/dashboardKpiService');
 const { tableroCumplimiento } = require('../services/gestionDocumentalService');
-const { getFlujoNominaActual } = require('../services/flujoNominaDashboardService');
+const { getFlujoNominaActual, confirmarRevisionPeriodo, omitirDispersionPeriodo } = require('../services/flujoNominaDashboardService');
+const { parseOptionalObjectId } = require('../libs/formHelpers');
 const { tenantHasFeature } = require('../libs/tenantFeatureFlags');
 const { requireEmpresaForTenant } = require('../libs/tenantScope');
 const { requirePortalEmpleado } = require('../middleware/requirePortalEmpleado');
@@ -58,11 +59,12 @@ router.get('/portal/vacaciones', requirePortalEmpleado, portalController.portalV
 
 router.use(requireAdminAccess);
 
-router.get(['/', '/dashboard', '/inicio'], async (req, res) => {
+router.get(['/', '/dashboard', '/inicio', '/nomina/flujo'], async (req, res) => {
   const { empresa } = await requireEmpresaForTenant(req.session.tenantId);
   const kpis = empresa ? await getDashboardKpis(req.session.tenantId) : null;
   const featureFlags = req.tenant?.featureFlags || req.session?.featureFlags || {};
   const hasNomina = tenantHasFeature(featureFlags, 'nomina');
+  const periodoId = parseOptionalObjectId(req.query.periodoId);
   let cumplimiento = null;
   let flujoNomina = null;
   if (empresa && tenantHasFeature(featureFlags, 'gestion_documental')) {
@@ -83,7 +85,8 @@ router.get(['/', '/dashboard', '/inicio'], async (req, res) => {
       flujoNomina = await getFlujoNominaActual({
         tenantId: req.session.tenantId,
         empresaId: empresa._id,
-        hasNomina
+        hasNomina,
+        periodoId
       });
     } catch (err) {
       console.warn('[dashboard flujo]', err.message);
@@ -96,8 +99,51 @@ router.get(['/', '/dashboard', '/inicio'], async (req, res) => {
     featureFlags,
     kpis,
     cumplimiento,
-    flujoNomina
+    flujoNomina,
+    flujoBasePath: req.path === '/nomina/flujo' ? '/nomina/flujo' : '/dashboard'
   });
+});
+
+router.post('/nomina/flujo/periodos/:id/confirmar-revision', async (req, res) => {
+  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const returnTo = String(req.body.returnTo || `/dashboard?periodoId=${req.params.id}`).trim();
+  if (error || !empresa) {
+    if (req.flash) req.flash('error', error || 'Sin empresa');
+    return res.redirect(returnTo || '/dashboard');
+  }
+  try {
+    await confirmarRevisionPeriodo({
+      tenantId: req.session.tenantId,
+      empresaId: empresa._id,
+      periodoId: req.params.id,
+      userId: req.session.userId || '',
+      userLabel: req.session.user || ''
+    });
+    if (req.flash) req.flash('success', 'Revisión confirmada. Siguiente paso: cierre del período.');
+  } catch (err) {
+    if (req.flash) req.flash('error', err.message || 'No se pudo confirmar la revisión');
+  }
+  return res.redirect(returnTo || `/dashboard?periodoId=${req.params.id}`);
+});
+
+router.post('/nomina/flujo/periodos/:id/omitir-dispersion', async (req, res) => {
+  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const returnTo = String(req.body.returnTo || `/dashboard?periodoId=${req.params.id}`).trim();
+  if (error || !empresa) {
+    if (req.flash) req.flash('error', error || 'Sin empresa');
+    return res.redirect(returnTo || '/dashboard');
+  }
+  try {
+    await omitirDispersionPeriodo({
+      tenantId: req.session.tenantId,
+      empresaId: empresa._id,
+      periodoId: req.params.id
+    });
+    if (req.flash) req.flash('success', 'Dispersión omitida. Puedes continuar con CFDI.');
+  } catch (err) {
+    if (req.flash) req.flash('error', err.message || 'No se pudo omitir la dispersión');
+  }
+  return res.redirect(returnTo || `/dashboard?periodoId=${req.params.id}`);
 });
 
 router.get('/config-users', usersController.listUsers);
@@ -211,6 +257,7 @@ router.post('/nomina/pac/seed-ejemplo', timbradoController.seedPacEjemplo);
 router.get('/nomina/pac/:id/edit', timbradoController.editPac);
 router.post('/nomina/pac/:id', timbradoController.updatePac);
 router.post('/nomina/pac/:id/toggle', timbradoController.togglePac);
+router.post('/nomina/pac/:id/probar', timbradoController.probarPac);
 
 router.get('/nomina/recibos-pdf', timbradoController.listPlantillas);
 router.get('/nomina/recibos-pdf/nuevo', timbradoController.newPlantillaForm);

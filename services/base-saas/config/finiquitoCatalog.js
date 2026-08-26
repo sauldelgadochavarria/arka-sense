@@ -286,10 +286,12 @@ const CONCEPTOS_FINIQUITO = [
     tipoFiscal: 'ORDINARIO',
     origenDefault: 'LEY',
     grupo: 'deduccion_nomina',
-    claveSAT: '003',
+    // c_TipoDeduccion 001 = Seguridad social (cuotas IMSS obrero, incl. RCV/CEAV)
+    claveSAT: '001',
     aplicaExencion90Uma: false,
     bloqueDeduccion: 'nomina'
   },
+
   {
     codigo: 'FIN_DED_INFONAVIT',
     nombre: 'INFONAVIT (proporcional días pendientes)',
@@ -319,7 +321,7 @@ const CONCEPTOS_FINIQUITO = [
     tipoFiscal: 'ORDINARIO',
     origenDefault: 'NOMINA',
     grupo: 'deduccion_nomina',
-    claveSAT: '',
+    claveSAT: '004',
     aplicaExencion90Uma: false,
     bloqueDeduccion: 'nomina'
   },
@@ -330,7 +332,7 @@ const CONCEPTOS_FINIQUITO = [
     tipoFiscal: 'ORDINARIO',
     origenDefault: 'MANUAL',
     grupo: 'deduccion_nomina',
-    claveSAT: '',
+    claveSAT: '004',
     aplicaExencion90Uma: false,
     bloqueDeduccion: 'nomina'
   },

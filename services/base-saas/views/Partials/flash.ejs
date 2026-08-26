@@ -1,6 +1,10 @@
-<% if (typeof success !== 'undefined' && success && success.length) { %>
-<div class="alert alert-success"><%= success[0] %></div>
+<% 
+  const _ok = Array.isArray(success) ? success : (success ? [String(success)] : []);
+  const _err = Array.isArray(error) ? error : (error ? [String(error)] : []);
+%>
+<% if (_ok.length) { %>
+<div class="alert alert-success"><%= _ok[0] %></div>
 <% } %>
-<% if (typeof error !== 'undefined' && error && error.length) { %>
-<div class="alert alert-warning"><%= error[0] %></div>
+<% if (_err.length) { %>
+<div class="alert alert-warning"><%= _err[0] %></div>
 <% } %>

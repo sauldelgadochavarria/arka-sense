@@ -13,7 +13,13 @@ const getNominaHistoricoReciboModel = require('../models/nominaHistoricoRecibo')
 const getEmpleadoModel = require('../models/empleado');
 const getReciboPdfPlantillaModel = require('../models/reciboPdfPlantilla');
 const getConceptCatalogModel = require('../models/conceptCatalog');
-const { authenticateSw, timbrarJsonSw, uuidSimulado } = require('./pacClientService');
+const { authenticateSw, timbrarCfdiSw, uuidSimulado } = require('./pacClientService');
+const { guardarCfdiArchivo } = require('./cfdiArchivoService');
+const { buildCfdiNominaPayload, toCfdiXml } = require('./cfdi/nomina12Builder');
+const { urlTimbradoParaFormato } = require('./cfdi/nomina12Helpers');
+const {
+  buildSeparacionIndemnizacionData
+} = require('./cfdi/separacionIndemnizacionBuilder');
 const {
   renderPlantillaHtml,
   buildReciboPdfContext,
@@ -21,15 +27,16 @@ const {
   enrichEmpleadoPdf,
   mergeEmpleadoPdf
 } = require('./reciboPdfService');
-const { buildXmlSimulado, guardarCfdiArchivo } = require('./cfdiArchivoService');
-const {
-  buildSeparacionIndemnizacionData,
-  buildSeparacionIndemnizacionJson
-} = require('./cfdi/separacionIndemnizacionBuilder');
 const getFiniquitoCalculoModel = require('../models/finiquitoCalculo');
+const { CONCEPTOS_FINIQUITO } = require('../config/finiquitoCatalog');
+const { pacAmbienteEsPrueba } = require('../config/timbradoCatalog');
 
 function money(n) {
   return Math.round((Number(n) || 0) * 100) / 100;
+}
+
+function xmlSimuladoDesdePayload(cfdiPayload, uuid) {
+  return toCfdiXml(cfdiPayload.ctx, { incluirTfdSimulado: true, uuidSimulado: uuid });
 }
 
 /**
@@ -95,7 +102,45 @@ function catalogMapsFromRows(catalogRows) {
       claveSAT: (c.sat && c.sat.clave) || c.claveSAT || ''
     };
   }
+  // Conceptos de finiquito viven en config (no siempre en concept_catalog).
+  for (const c of CONCEPTOS_FINIQUITO || []) {
+    const code = String(c.codigo).toUpperCase();
+    if (!catalogoMeta[code]) {
+      catalogoNombres[code] = c.nombre;
+      catalogoMeta[code] = {
+        nombre: c.nombre,
+        tipo: c.tipo || '',
+        satTipo: '',
+        naturaleza: c.tipo === 'deduccion' ? 'deduccion' : 'percepcion',
+        claveSAT: c.claveSAT || ''
+      };
+    } else if (!catalogoMeta[code].nombre && c.nombre) {
+      catalogoMeta[code].nombre = c.nombre;
+      catalogoNombres[code] = c.nombre;
+    }
+    if (!catalogoMeta[code].claveSAT && c.claveSAT) {
+      catalogoMeta[code].claveSAT = c.claveSAT;
+    }
+  }
   return { catalogoNombres, catalogoMeta };
+}
+
+/**
+ * En ambiente de prueba (PAC ambiente=0) usa RFC/razón social de Config PAC.
+ */
+function empresaParaCfdi(empresa, pac) {
+  const base = { ...(empresa || {}) };
+  if (!pacAmbienteEsPrueba(pac?.ambiente)) return base;
+  const rfcTest = String(pac.rfcSatTest || '').trim().toUpperCase();
+  const nombreTest = String(pac.nombreSatTest || '').trim();
+  if (rfcTest) {
+    base.rfc = rfcTest;
+    if (nombreTest) base.razonSocial = nombreTest;
+  }
+  if (!base.codigoPostal && !base.cp) {
+    base.codigoPostal = '26015';
+  }
+  return base;
 }
 
 async function loadRecibosParaTimbrar(tenantId, periodo) {
@@ -192,6 +237,38 @@ async function loadRecibosParaTimbrar(tenantId, periodo) {
 }
 
 /**
+ * Decide si un recibo entra al lote o se omite según timbrado previo y modo del lote.
+ * - Timbrado real previo → omitir siempre.
+ * - Timbrado simulado + lote real → reprocesar (pasar a PAC).
+ * - Timbrado simulado + lote simulación → omitir (evitar duplicar UUID sim).
+ */
+function resolverEstatusInicialItem(reciboTimbrado, loteModo) {
+  const t = reciboTimbrado || {};
+  if (t.estatus !== 'timbrado') {
+    return { estatus: 'pendiente', errorMensaje: '', uuid: '', serie: '', folio: '' };
+  }
+  if (t.modo === 'real') {
+    return {
+      estatus: 'omitido',
+      errorMensaje: `Ya timbrado ante PAC (UUID ${t.uuid || '—'})`,
+      uuid: t.uuid || '',
+      serie: t.serie || '',
+      folio: t.folio || ''
+    };
+  }
+  if (loteModo === 'real') {
+    return { estatus: 'pendiente', errorMensaje: '', uuid: '', serie: '', folio: '' };
+  }
+  return {
+    estatus: 'omitido',
+    errorMensaje: `Timbrado simulado previo (UUID ${t.uuid || '—'})`,
+    uuid: t.uuid || '',
+    serie: t.serie || '',
+    folio: t.folio || ''
+  };
+}
+
+/**
  * Crea lote de timbrado (borrador) y opcionalmente lo procesa.
  */
 async function crearYProcesarLote({
@@ -212,8 +289,8 @@ async function crearYProcesarLote({
 
   const periodo = await Periodo.findOne({ _id: periodoId, tenantId, empresaId }).lean();
   if (!periodo) throw new Error('Período no encontrado');
-  if (!['calculado', 'cerrado'].includes(periodo.estatus)) {
-    throw new Error('El período debe estar calculado o cerrado para timbrar');
+  if (periodo.estatus !== 'cerrado') {
+    throw new Error('Solo se pueden timbrar períodos cerrados. Cierra el período e inténtalo de nuevo.');
   }
 
   const pac = await Pac.findOne({ _id: pacConfigId, tenantId, empresaId, activo: true }).lean();
@@ -223,21 +300,24 @@ async function crearYProcesarLote({
   if (!recibos.length) throw new Error('No hay recibos para timbrar en el período');
 
   const modo = forzarReal || pac.modoReal ? 'real' : 'simulacion';
-  const items = recibos.map((r) => ({
-    reciboId: r.reciboId,
-    historicoId: r.historicoId,
-    empleadoId: r.empleadoId,
-    numEmpleado: r.numEmpleado,
-    nombre: r.nombre,
-    netoPagar: r.netoPagar,
-    estatus: r.timbrado?.estatus === 'timbrado' ? 'omitido' : 'pendiente',
-    uuid: r.timbrado?.uuid || '',
-    serie: r.timbrado?.serie || '',
-    folio: r.timbrado?.folio || '',
-    errorMensaje: '',
-    intentos: 0,
-    modo: ''
-  }));
+  const items = recibos.map((r) => {
+    const ini = resolverEstatusInicialItem(r.timbrado, modo);
+    return {
+      reciboId: r.reciboId,
+      historicoId: r.historicoId,
+      empleadoId: r.empleadoId,
+      numEmpleado: r.numEmpleado,
+      nombre: r.nombre,
+      netoPagar: r.netoPagar,
+      estatus: ini.estatus,
+      uuid: ini.uuid,
+      serie: ini.serie,
+      folio: ini.folio,
+      errorMensaje: ini.errorMensaje,
+      intentos: 0,
+      modo: ''
+    };
+  });
 
   const lote = await Lote.create({
     tenantId,
@@ -312,6 +392,14 @@ async function procesarLote({ tenantId, empresaId, empresa, loteId, recibosByKey
 
   let token = null;
   if (lote.modo === 'real') {
+    if (!String(pac.usuario || '').trim()) {
+      throw new Error('PAC modo real: captura el usuario (correo SW) en Config PAC');
+    }
+    if (!String(pac.password || '').trim()) {
+      throw new Error(
+        'PAC modo real: falta contraseña. Edita el PAC y vuelve a escribirla (no dejes ******** si nunca se guardó).'
+      );
+    }
     try {
       const auth = await authenticateSw({
         urlAuth: pac.urlAuth,
@@ -355,47 +443,68 @@ async function procesarLote({ tenantId, empresaId, empresa, loteId, recibosByKey
       let folio = String(folioSeq);
 
       let xmlRaw = '';
+      let cfdiPayload = null;
       const sepData = src ? await resolverSeparacionIndemnizacion(tenantId, src) : { aplica: false };
-      const sepJson = buildSeparacionIndemnizacionJson(sepData);
+      const empresaCfdi = empresaParaCfdi(empresa, pac);
+
+      cfdiPayload = buildCfdiNominaPayload({
+        empresa: empresaCfdi,
+        empleado: src?.empleadoSnap || {},
+        periodo: { ...periodo, ...(src?.periodoSnap || {}) },
+        recibo: src || { netoPagar: item.netoPagar, nombre: item.nombre, numEmpleado: item.numEmpleado },
+        conceptos: src?.conceptos || [],
+        catalogoMeta,
+        separacionIndemnizacion: sepData?.aplica ? sepData : null,
+        serie,
+        folio,
+        fechaEmision: new Date()
+      });
 
       if (lote.modo === 'real') {
-        // Payload CFDI nómina: incluye SeparacionIndemnizacion cuando aplica (022/023/025).
-        // El resto del mapping SAT (Emisor/Receptor/Percepciones completas) sigue en evolución.
-        const payload = {
-          Version: '4.0',
-          _nota:
-            'Payload CFDI nómina parcial: SeparacionIndemnizacion listo; completar mapping SAT restante.',
-          Receptor: { Nombre: item.nombre },
-          Totales: { Neto: item.netoPagar },
-          Nomina12: {
-            TipoNomina: String(periodo.tipoNomina || '').toLowerCase().includes('finiquito')
-              ? 'E'
-              : 'O',
-            ...(sepJson || {})
-          }
-        };
-        const resp = await timbrarJsonSw({
-          urlTimbrado: pac.urlTimbrado,
+        const formatoStamp = String(lote.formato || pac.formato || 'JSON').toUpperCase();
+        const urlStamp =
+          pac.urlTimbradoXml && formatoStamp === 'XML'
+            ? pac.urlTimbradoXml
+            : urlTimbradoParaFormato(pac.urlTimbrado, formatoStamp);
+
+        // Diagnóstico: payload completo antes de enviar al PAC (logs del contenedor).
+        console.log(
+          `[timbrado] emp=${item.numEmpleado} formato=${formatoStamp} url=${urlStamp}`
+        );
+        console.log(
+          `[timbrado] emisor.Rfc="${cfdiPayload?.json?.Emisor?.Rfc || ''}" ` +
+            `receptor.Rfc="${cfdiPayload?.json?.Receptor?.Rfc || ''}" ` +
+            `empresa.rfc="${empresa?.rfc || ''}"`
+        );
+        if (formatoStamp === 'XML') {
+          console.log('[timbrado] XML a enviar:\n', cfdiPayload.xml);
+        } else {
+          console.log('[timbrado] JSON a enviar:\n', JSON.stringify(cfdiPayload.json, null, 2));
+        }
+
+        const stamp = await timbrarCfdiSw({
+          formato: formatoStamp,
+          urlTimbrado: urlStamp,
           token,
-          payload,
+          jsonPayload: cfdiPayload.json,
+          xmlPayload: cfdiPayload.xml,
           timeoutMs: (pac.timeout || 30) * 1000
         });
-        uuid = resp.data?.uuid || resp.uuid || '';
-        if (!uuid) throw new Error('PAC no devolvió UUID (revisar payload CFDI)');
-        xmlRaw =
-          resp.data?.cfdi ||
-          resp.data?.xml ||
-          resp.cfdi ||
-          resp.xml ||
-          '';
+        uuid = stamp.uuid;
+        xmlRaw = stamp.xml || cfdiPayload.xml;
+        if (stamp.fechaTimbrado) {
+          const ft = new Date(stamp.fechaTimbrado);
+          if (!Number.isNaN(ft.getTime())) item.fechaTimbrado = ft;
+        }
       } else {
         uuid = uuidSimulado();
+        xmlRaw = xmlSimuladoDesdePayload(cfdiPayload, uuid);
       }
 
       item.uuid = uuid;
       item.serie = serie;
       item.folio = folio;
-      item.fechaTimbrado = new Date();
+      if (!item.fechaTimbrado) item.fechaTimbrado = new Date();
       item.estatus = 'timbrado';
       item.errorMensaje = '';
       const shortUuid = uuid.slice(0, 8);
@@ -438,29 +547,8 @@ async function procesarLote({ tenantId, empresaId, empresa, loteId, recibosByKey
         pdfHtml = renderPlantillaHtml(plantilla.plantillaHtml, ctx);
       }
 
-      if (!xmlRaw) {
-        const tipoNominaCfdi =
-          String(periodo.tipoNomina || '').toLowerCase().includes('finiquito') ||
-          String(periodo.tipoNomina || '').toLowerCase().includes('indemnizacion')
-            ? 'E'
-            : 'O';
-        xmlRaw = buildXmlSimulado({
-          uuid,
-          serie,
-          folio,
-          fechaTimbrado: item.fechaTimbrado,
-          rfcEmisor: empresa?.rfc || '',
-          nombreEmisor: empresa?.razonSocial || empresa?.nombreComercial || '',
-          rfcReceptor: src?.empleadoSnap?.rfc || '',
-          nombreReceptor: item.nombre,
-          total: item.netoPagar,
-          tipoNomina: tipoNominaCfdi,
-          fechaPago: periodo.fechaFin || item.fechaTimbrado,
-          fechaInicialPago: periodo.fechaInicio || item.fechaTimbrado,
-          fechaFinalPago: periodo.fechaFin || item.fechaTimbrado,
-          numDiasPagados: periodo.diasPeriodo || src?.diasLaborados || 1,
-          separacionIndemnizacion: sepData?.aplica ? sepData : null
-        });
+      if (!xmlRaw && cfdiPayload) {
+        xmlRaw = xmlSimuladoDesdePayload(cfdiPayload, uuid);
       }
 
       const metaComun = {

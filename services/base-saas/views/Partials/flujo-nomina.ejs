@@ -1,0 +1,193 @@
+<%
+  const flujo = (typeof flujoNomina !== 'undefined' && flujoNomina) ? flujoNomina : null;
+  const pasoActual = flujo && flujo.pasoActual ? Number(flujo.pasoActual) : 0;
+  const pasosDone = new Set((flujo && flujo.pasosCompletados) || []);
+  const cicloCompleto = !!(flujo && flujo.cicloCompleto);
+  const periodosOpts = (flujo && flujo.periodos) || [];
+  const periodoSel = flujo && flujo.periodo ? flujo.periodo.id : '';
+  const acciones = (flujo && flujo.acciones) || [];
+  const hasNomina = typeof featureFlags !== 'undefined' && featureFlags && featureFlags.nomina;
+  const basePath = (typeof flujoBasePath !== 'undefined' && flujoBasePath) ? flujoBasePath : '/dashboard';
+
+  const flujoPasos = [
+    {
+      n: 1,
+      titulo: 'Asistencia',
+      desc: 'Marcaciones, turnos y asistencia del día',
+      href: '/asistencia-diaria',
+      links: [
+        { label: 'Del día', href: '/asistencia-diaria' },
+        { label: 'Marcaciones', href: '/asistencia-marcaciones' }
+      ]
+    },
+    {
+      n: 2,
+      titulo: 'Pre-nómina',
+      desc: 'Períodos y conceptos de asistencia',
+      href: '/prenomina-periodos',
+      links: [
+        { label: 'Períodos', href: '/prenomina-periodos' },
+        { label: 'Conceptos', href: '/prenomina-conceptos' }
+      ]
+    },
+    {
+      n: 3,
+      titulo: 'Incidencias',
+      desc: 'Aprobar faltas, vacaciones y extras',
+      href: '/incidencias/pendientes',
+      links: [
+        { label: 'Pendientes', href: '/incidencias/pendientes' },
+        { label: 'Vacaciones', href: '/incidencias/vacaciones' }
+      ]
+    },
+    {
+      n: 4,
+      titulo: 'Cálculo',
+      desc: 'Nómina formal y conceptos fiscales',
+      href: hasNomina ? '/nomina/periodos' : '/nomina',
+      requireNomina: true,
+      links: [
+        { label: 'Períodos', href: '/nomina/periodos' },
+        { label: 'Conceptos', href: '/nomina/conceptos' }
+      ]
+    },
+    {
+      n: 5,
+      titulo: 'Revisión',
+      desc: 'Reportes y validación del período',
+      href: hasNomina ? '/nomina/reportes' : '/reportes',
+      links: [
+        { label: 'Reportes nómina', href: '/nomina/reportes', requireNomina: true },
+        { label: 'KPIs', href: '/reportes/kpis' }
+      ]
+    },
+    {
+      n: 6,
+      titulo: 'Cierre',
+      desc: 'Autorizar y cerrar el período',
+      href: flujo && flujo.periodo ? ('/nomina/periodos/' + flujo.periodo.id) : '/nomina/periodos',
+      requireNomina: true,
+      links: [
+        { label: 'Períodos', href: '/nomina/periodos' }
+      ]
+    },
+    {
+      n: 7,
+      titulo: 'Bancos',
+      desc: 'Layouts y dispersión bancaria',
+      href: '/nomina/dispersion-bancaria',
+      requireNomina: true,
+      links: [
+        { label: 'Dispersión', href: '/nomina/dispersion-bancaria' },
+        { label: 'Layouts', href: '/nomina/layouts-bancarios' }
+      ]
+    },
+    {
+      n: 8,
+      titulo: 'CFDI',
+      desc: 'Timbrar y emitir recibos',
+      href: '/nomina/timbrado',
+      requireNomina: true,
+      links: [
+        { label: 'Timbrar', href: '/nomina/timbrado' },
+        { label: 'PDF', href: '/nomina/recibos-pdf' },
+        { label: 'Correo', href: '/nomina/envio-correo' }
+      ]
+    }
+  ];
+
+  if (flujo && flujo.href) {
+    flujoPasos.forEach(function (p) {
+      if (p.n === pasoActual) p.href = flujo.href;
+    });
+  }
+%>
+
+<section class="dash-flow">
+  <div class="section-header flow-header-row">
+    <div>
+      <h2>Flujo del proceso de nómina</h2>
+      <span class="muted small">Del registro de asistencia al CFDI</span>
+    </div>
+    <% if (periodosOpts.length) { %>
+    <form method="get" action="<%= basePath %>" class="flow-periodo-form">
+      <label class="flow-periodo-label">
+        <span class="muted small">Período</span>
+        <select name="periodoId" onchange="this.form.submit()" aria-label="Seleccionar período">
+          <% periodosOpts.forEach(function(p) { %>
+          <option value="<%= p.id %>" <%= String(p.id) === String(periodoSel) ? 'selected' : '' %>>
+            <%= p.label %>
+          </option>
+          <% }); %>
+        </select>
+      </label>
+    </form>
+    <% } %>
+  </div>
+
+  <% if (flujo) { %>
+  <p class="flow-status<%= cicloCompleto ? ' is-done' : '' %>">
+    <% if (cicloCompleto) { %>
+      <strong>Ciclo completo</strong> — <%= flujo.detalle %>
+    <% } else { %>
+      Estás en <strong><%= flujo.label %></strong>
+      <% if (flujo.periodo && flujo.periodo.rango) { %>
+        · período <%= flujo.periodo.numeroPeriodo != null ? '#' + flujo.periodo.numeroPeriodo : '' %>
+        <%= flujo.periodo.rango %>
+        (<%= flujo.periodo.estatus %>)
+      <% } %>
+      — <%= flujo.detalle %>
+      <% if (flujo.href) { %>
+        <a href="<%= flujo.href %>">Continuar →</a>
+      <% } %>
+    <% } %>
+  </p>
+  <% if (acciones.length) { %>
+  <div class="flow-acciones">
+    <% acciones.forEach(function(a) {
+      if (a.tipo === 'post') { %>
+    <form method="post" action="<%= a.href %>" class="inline-form"<%= a.confirm ? (' onsubmit="return confirm(\'' + String(a.confirm).replace(/'/g, "\\'") + '\')"') : '' %>>
+      <input type="hidden" name="returnTo" value="<%= basePath %><%= periodoSel ? ('?periodoId=' + periodoSel) : '' %>" />
+      <button type="submit" class="<%= a.className || 'btn' %>"><%= a.label %></button>
+    </form>
+    <% } else { %>
+    <a class="<%= a.className || 'btn' %>" href="<%= a.href %>"><%= a.label %></a>
+    <% } }); %>
+  </div>
+  <% } %>
+  <% } %>
+
+  <ol class="flow-track">
+    <% flujoPasos.forEach(function(paso, idx) {
+      const locked = paso.requireNomina && !hasNomina;
+      const isCurrent = !locked && pasoActual === paso.n;
+      const isDone = !locked && (pasosDone.has(paso.n) || (cicloCompleto && paso.n <= 8));
+      let cls = 'flow-step';
+      if (locked) cls += ' is-locked';
+      if (isCurrent && !cicloCompleto) cls += ' is-current';
+      if (isDone && !isCurrent) cls += ' is-done';
+      if (cicloCompleto && isCurrent) cls += ' is-done is-current';
+    %>
+    <li class="<%= cls %>">
+      <% if (idx > 0) { %><span class="flow-arrow" aria-hidden="true">→</span><% } %>
+      <a class="flow-card" href="<%= locked ? '#' : paso.href %>"<%= locked ? ' aria-disabled="true" tabindex="-1"' : '' %>>
+        <span class="flow-num"><% if (isDone && !(isCurrent && !cicloCompleto)) { %>✓<% } else { %><%= paso.n %><% } %></span>
+        <span class="flow-title"><%= paso.titulo %></span>
+        <span class="flow-desc"><%= paso.desc %></span>
+        <% if (isCurrent && !cicloCompleto) { %><span class="flow-badge">Ahora</span><% } %>
+        <% if (!locked && paso.links && paso.links.length) { %>
+        <span class="flow-links">
+          <% paso.links.forEach(function(l) {
+            if (l.requireNomina && !hasNomina) return;
+          %>
+          <span class="flow-link" data-href="<%= l.href %>"><%= l.label %></span>
+          <% }); %>
+        </span>
+        <% } else if (locked) { %>
+        <span class="flow-desc muted">Activa el módulo Nómina</span>
+        <% } %>
+      </a>
+    </li>
+    <% }); %>
+  </ol>
+</section>

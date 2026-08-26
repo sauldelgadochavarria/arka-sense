@@ -19,9 +19,17 @@ const getReciboNominaModel = require('../models/reciboNomina');
 const getEmpleadoModel = require('../models/empleado');
 const getConceptoAplicadoModel = require('../models/conceptoAplicado');
 const getConceptCatalogModel = require('../models/conceptCatalog');
-const { PAC_PROVEEDORES, PAC_SW_DEFAULTS, RECIBO_PDF_VARIABLES } = require('../config/timbradoCatalog');
+const {
+  PAC_PROVEEDORES,
+  PAC_SW_DEFAULTS,
+  PAC_SW_TEST_URLS,
+  RECIBO_PDF_VARIABLES,
+  syncSwPacUrls,
+  validateSwPacAmbiente
+} = require('../config/timbradoCatalog');
 const { PLANTILLA_PDF_CFDI } = require('../config/reciboPdfPlantillaCfdi');
 const { crearYProcesarLote } = require('../services/timbradoService');
+const { authenticateSw } = require('../services/pacClientService');
 const { obtenerCfdiArchivoParaDescarga } = require('../services/cfdiArchivoService');
 const {
   renderPlantillaHtml,
@@ -55,6 +63,7 @@ function pacFromBody(body, tenantId, empresaId) {
     usuario: trimString(body.usuario),
     urlAuth: trimString(body.urlAuth),
     urlTimbrado: trimString(body.urlTimbrado),
+    urlTimbradoXml: trimString(body.urlTimbradoXml),
     urlCancelacion: trimString(body.urlCancelacion),
     urlConsulta: trimString(body.urlConsulta),
     timeout: parsePositiveNumber(body.timeout) ?? 30,
@@ -105,11 +114,11 @@ async function newPacForm(req, res) {
   res.render('Nomina/timbrado/pac-edit', {
     session: req.session,
     empresa,
-    error,
     isNew: true,
     pac: { ...PAC_SW_DEFAULTS, codigo: 'SW-PROD', nombre: 'SW Sapien producción', activo: true, generarLayout: true },
     subsidiarias,
-    proveedores: PAC_PROVEEDORES
+    proveedores: PAC_PROVEEDORES,
+    testUrls: PAC_SW_TEST_URLS
   });
 }
 
@@ -118,11 +127,11 @@ async function createPac(req, res) {
   if (error || !empresa) return flashRedirect(req, res, '/nomina/pac', 'error', error || 'Sin empresa');
   try {
     const Pac = await getPacConfigModel();
-    const payload = pacFromBody(req.body, req.session.tenantId, empresa._id);
+    const payload = syncSwPacUrls(pacFromBody(req.body, req.session.tenantId, empresa._id));
     if (!payload.codigo) throw new Error('Código requerido');
     if (!payload.password) payload.password = '';
     await Pac.create(payload);
-    return flashRedirect(req, res, '/nomina/pac', 'success', 'PAC guardado');
+    return flashRedirect(req, res, '/nomina/pac', 'success', 'PAC guardado correctamente.');
   } catch (err) {
     return flashRedirect(req, res, '/nomina/pac/nuevo', 'error', err.message || 'Error al guardar');
   }
@@ -144,11 +153,11 @@ async function editPac(req, res) {
   res.render('Nomina/timbrado/pac-edit', {
     session: req.session,
     empresa,
-    error,
     isNew: false,
     pac: maskPac(pac),
     subsidiarias,
-    proveedores: PAC_PROVEEDORES
+    proveedores: PAC_PROVEEDORES,
+    testUrls: PAC_SW_TEST_URLS
   });
 }
 
@@ -157,7 +166,7 @@ async function updatePac(req, res) {
   if (error || !empresa) return flashRedirect(req, res, '/nomina/pac', 'error', error || 'Sin empresa');
   try {
     const Pac = await getPacConfigModel();
-    const payload = pacFromBody(req.body, req.session.tenantId, empresa._id);
+    const payload = syncSwPacUrls(pacFromBody(req.body, req.session.tenantId, empresa._id));
     delete payload.tenantId;
     delete payload.empresaId;
     delete payload.codigo;
@@ -165,7 +174,13 @@ async function updatePac(req, res) {
       { _id: req.params.id, tenantId: req.session.tenantId, empresaId: empresa._id },
       { $set: payload }
     );
-    return flashRedirect(req, res, '/nomina/pac', 'success', 'PAC actualizado');
+    return flashRedirect(
+      req,
+      res,
+      `/nomina/pac/${req.params.id}/edit`,
+      'success',
+      'PAC guardado correctamente.'
+    );
   } catch (err) {
     return flashRedirect(req, res, `/nomina/pac/${req.params.id}/edit`, 'error', err.message);
   }
@@ -182,6 +197,51 @@ async function togglePac(req, res) {
   return res.redirect('/nomina/pac');
 }
 
+async function probarPac(req, res) {
+  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  if (error || !empresa) return flashRedirect(req, res, '/nomina/pac', 'error', error || 'Sin empresa');
+  const Pac = await getPacConfigModel();
+  const pac = await Pac.findOne({
+    _id: req.params.id,
+    tenantId: req.session.tenantId,
+    empresaId: empresa._id
+  }).lean();
+  if (!pac) return flashRedirect(req, res, '/nomina/pac', 'error', 'PAC no encontrado');
+  const ambienteError = validateSwPacAmbiente(pac);
+  if (ambienteError) {
+    return flashRedirect(req, res, `/nomina/pac/${pac._id}/edit`, 'error', ambienteError);
+  }
+  try {
+    const auth = await authenticateSw({
+      urlAuth: pac.urlAuth,
+      usuario: pac.usuario,
+      password: pac.password,
+      timeoutMs: (pac.timeout || 30) * 1000
+    });
+    const preview = auth.token.slice(0, 16);
+    const host = String(pac.urlAuth || '').replace(/^https?:\/\//, '').split('/')[0];
+    return flashRedirect(
+      req,
+      res,
+      `/nomina/pac/${pac._id}/edit`,
+      'success',
+      `Conexión OK con SW (${host}). Token obtenido (${preview}…).`
+    );
+  } catch (err) {
+    const hint =
+      String(pac.ambiente) === '0' && String(pac.urlAuth || '').includes('services.sw.com.mx')
+        ? ' Revise que ambiente y URL coincidan (pruebas → services.test.sw.com.mx).'
+        : '';
+    return flashRedirect(
+      req,
+      res,
+      `/nomina/pac/${pac._id}/edit`,
+      'error',
+      (err.message || 'Error de autenticación') + hint
+    );
+  }
+}
+
 async function seedPacEjemplo(req, res) {
   const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
   if (error || !empresa) return flashRedirect(req, res, '/nomina/pac', 'error', error || 'Sin empresa');
@@ -194,6 +254,8 @@ async function seedPacEjemplo(req, res) {
       codigo: 'SW-DEMO',
       nombre: 'SW Sapien demo (simulación)',
       ...PAC_SW_DEFAULTS,
+      ...PAC_SW_TEST_URLS,
+      ambiente: '0',
       activo: true,
       generarLayout: true,
       modoReal: false,
@@ -201,7 +263,7 @@ async function seedPacEjemplo(req, res) {
       password: '',
       emailErrores: '',
       carpetaXml: '',
-      notas: 'Ejemplo para pruebas en modo simulación'
+      notas: 'Ejemplo para pruebas en modo simulación (ambiente sandbox SW)'
     });
   }
   return flashRedirect(req, res, '/nomina/pac', 'success', 'PAC demo listo');
@@ -515,7 +577,7 @@ async function wizardTimbrado(req, res) {
         Periodo.find({
           tenantId: req.session.tenantId,
           empresaId: empresa._id,
-          estatus: { $in: ['calculado', 'cerrado'] }
+          estatus: 'cerrado'
         })
           .sort({ anio: -1, numeroPeriodo: -1 })
           .limit(40)
@@ -687,6 +749,7 @@ module.exports = {
   editPac,
   updatePac,
   togglePac,
+  probarPac,
   seedPacEjemplo,
   listPlantillas,
   newPlantillaForm,

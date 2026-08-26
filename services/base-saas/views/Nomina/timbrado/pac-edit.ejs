@@ -24,12 +24,15 @@
         <option value="0" <%= String(P.ambiente) === '0' ? 'selected' : '' %>>0 — Prueba</option>
       </select>
     </label>
-    <label>Formato
-      <select name="formato">
-        <option value="JSON" <%= P.formato !== 'XML' ? 'selected' : '' %>>JSON</option>
-        <option value="XML" <%= P.formato === 'XML' ? 'selected' : '' %>>XML</option>
+    <label>Formato de envío al PAC
+      <select name="formato" id="pac-formato">
+        <option value="JSON" <%= P.formato !== 'XML' ? 'selected' : '' %>>JSON (application/jsontoxml — SW)</option>
+        <option value="XML" <%= P.formato === 'XML' ? 'selected' : '' %>>XML (multipart — PAC genéricos)</option>
       </select>
     </label>
+    <p class="muted small" style="grid-column:1/-1">
+      Nómina 1.2 se genera en ambos formatos desde el mismo builder. El PAC elige cuál enviar según esta opción.
+    </p>
     <label>Subsidiaria
       <select name="subsidiariaId">
         <option value="">— Todas / empresa —</option>
@@ -52,11 +55,22 @@
       <input type="password" name="password" value="<%= P.password || '' %>" autocomplete="new-password" placeholder="<%= isNew ? '' : '******** para no cambiar' %>" />
     </label>
     <label>URL Auth
-      <input name="urlAuth" value="<%= P.urlAuth || '' %>" style="min-width:28rem" />
+      <input name="urlAuth" id="pac-url-auth" value="<%= P.urlAuth || '' %>" style="min-width:28rem" />
     </label>
-    <label>URL Timbrado
-      <input name="urlTimbrado" value="<%= P.urlTimbrado || '' %>" style="min-width:28rem" />
+    <p class="muted small" style="grid-column:1/-1">
+      Producción: <code>services.sw.com.mx</code> · Pruebas: <code>services.test.sw.com.mx</code>.
+      Las credenciales de prueba no funcionan en producción (y viceversa).
+    </p>
+    <label>URL Timbrado (JSON)
+      <input name="urlTimbrado" id="pac-url-timbrado-json" value="<%= P.urlTimbrado || '' %>" style="min-width:28rem" placeholder="…/v3/cfdi33/issue/json/v4" />
     </label>
+    <label>URL Timbrado (XML)
+      <input name="urlTimbradoXml" id="pac-url-timbrado-xml" value="<%= P.urlTimbradoXml || '' %>" style="min-width:28rem" placeholder="…/cfdi33/issue/v4" />
+    </label>
+    <p class="muted small" style="grid-column:1/-1">
+      JSON: <code>application/jsontoxml</code> + Bearer. XML: <code>multipart/form-data</code> campo <code>xml</code>.
+      Ref. <a href="https://developers.sw.com.mx/knowledge-base/nomina-1-2/" target="_blank" rel="noopener">Nómina 1.2 SW</a>.
+    </p>
     <label>URL Cancelación
       <input name="urlCancelacion" value="<%= P.urlCancelacion || '' %>" style="min-width:28rem" />
     </label>
@@ -110,9 +124,49 @@
   </fieldset>
 
   <% if (!isNew) { %>
-  <p class="muted">Total timbrados: <%= P.totalTimbrados || 0 %> · Último uso: <%= P.ultimaFechaUso ? new Date(P.ultimaFechaUso).toLocaleString('es-MX') : '—' %></p>
+  <p class="muted" style="grid-column:1/-1">Total timbrados: <%= P.totalTimbrados || 0 %> · Último uso: <%= P.ultimaFechaUso ? new Date(P.ultimaFechaUso).toLocaleString('es-MX') : '—' %></p>
   <% } %>
 
-  <button type="submit"><%= isNew ? 'Crear' : 'Guardar' %></button>
+  <button type="submit" class="btn btn-primary"><%= isNew ? 'Crear' : 'Guardar' %></button>
 </form>
+
+<% if (!isNew && P._id) { %>
+<form method="post" action="/nomina/pac/<%= P._id %>/probar" class="inline-form" style="margin:1rem 0">
+  <button type="submit" class="btn">Probar autenticación SW</button>
+</form>
+<% } %>
+
+<script>
+(function () {
+  var amb = document.querySelector('select[name="ambiente"]');
+  var auth = document.getElementById('pac-url-auth');
+  var timbradoJson = document.getElementById('pac-url-timbrado-json');
+  var timbradoXml = document.getElementById('pac-url-timbrado-xml');
+  var testUrls = <%- JSON.stringify(testUrls || {}) %>;
+  var prodAuth = 'https://services.sw.com.mx/v2/security/authenticate';
+  var prodJson = 'https://services.sw.com.mx/v3/cfdi33/issue/json/v4';
+  var prodXml = 'https://services.sw.com.mx/cfdi33/issue/v4';
+  if (!amb) return;
+  function esUrlProd(u) {
+    return u && u.indexOf('services.sw.com.mx') >= 0 && u.indexOf('services.test.') < 0;
+  }
+  function esUrlTest(u) {
+    return u && u.indexOf('services.test.sw.com.mx') >= 0;
+  }
+  function aplicarAmbiente() {
+    var esTest = amb.value === '0';
+    if (auth && (!auth.value || (esTest && esUrlProd(auth.value)) || (!esTest && esUrlTest(auth.value)))) {
+      auth.value = esTest ? (testUrls.urlAuth || prodAuth.replace('services.', 'services.test.')) : prodAuth;
+    }
+    if (timbradoJson && (!timbradoJson.value || (esTest && esUrlProd(timbradoJson.value)) || (!esTest && esUrlTest(timbradoJson.value)))) {
+      timbradoJson.value = esTest ? (testUrls.urlTimbrado || prodJson.replace('services.', 'services.test.')) : prodJson;
+    }
+    if (timbradoXml && (!timbradoXml.value || (esTest && esUrlProd(timbradoXml.value)) || (!esTest && esUrlTest(timbradoXml.value)))) {
+      timbradoXml.value = esTest ? (testUrls.urlTimbradoXml || prodXml.replace('services.', 'services.test.')) : prodXml;
+    }
+  }
+  amb.addEventListener('change', aplicarAmbiente);
+  aplicarAmbiente();
+})();
+</script>
 <%- include('../../Partials/layout-bottom') %>

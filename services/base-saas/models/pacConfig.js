@@ -41,6 +41,8 @@ const pacConfigSchema = new mongoose.Schema(
     password: { type: String, default: '' },
     urlAuth: { type: String, trim: true, default: '' },
     urlTimbrado: { type: String, trim: true, default: '' },
+    /** URL emisión/timbrado XML (multipart). Si vacío se deriva de urlTimbrado. */
+    urlTimbradoXml: { type: String, trim: true, default: '' },
     urlCancelacion: { type: String, trim: true, default: '' },
     urlConsulta: { type: String, trim: true, default: '' },
     timeout: { type: Number, default: 30, min: 5, max: 300 },

@@ -1,8 +1,9 @@
 'use strict';
 
 /**
- * Resuelve en qué paso del flujo de nómina está el tenant,
- * según período de nómina, pre-nómina, incidencias, dispersión y timbrado.
+ * Resuelve en qué paso del flujo de nómina está el tenant / un período concreto.
+ * Pasos: 1 Asistencia → 2 Pre-nómina → 3 Incidencias → 4 Cálculo →
+ *        5 Revisión → 6 Cierre → 7 Bancos → 8 CFDI
  */
 
 const getPeriodoNominaModel = require('../models/periodoNomina');
@@ -18,21 +19,68 @@ function formatRango(inicio, fin) {
   return `${a} – ${b}`;
 }
 
+function labelPeriodoOption(p) {
+  const num = p.numeroPeriodo != null ? `#${p.numeroPeriodo}` : '';
+  const rango = formatRango(p.fechaInicio, p.fechaFin);
+  return `${p.tipoPeriodo || ''} ${num} ${rango} (${p.estatus})`.replace(/\s+/g, ' ').trim();
+}
+
 /**
- * @returns {Promise<{
- *   pasoActual: number,
- *   pasosCompletados: number[],
- *   periodo: object|null,
- *   label: string,
- *   detalle: string,
- *   href: string|null
- * }>}
+ * Períodos para el selector del flujo (abiertos / en proceso / cerrados recientes).
  */
-async function getFlujoNominaActual({ tenantId, empresaId, hasNomina = true }) {
+async function listPeriodosParaFlujo({ tenantId, empresaId, limit = 25 }) {
+  if (!tenantId || !empresaId) return [];
+  const PeriodoNomina = await getPeriodoNominaModel();
+  const rows = await PeriodoNomina.find({ tenantId, empresaId })
+    .sort({ fechaFin: -1, numeroPeriodo: -1 })
+    .limit(limit)
+    .select(
+      'tipoPeriodo numeroPeriodo fechaInicio fechaFin estatus flujoProceso layoutBancario omitirDispersionBancaria'
+    )
+    .lean();
+  return rows.map((p) => ({
+    id: String(p._id),
+    label: labelPeriodoOption(p),
+    estatus: p.estatus,
+    numeroPeriodo: p.numeroPeriodo,
+    rango: formatRango(p.fechaInicio, p.fechaFin),
+    tipoPeriodo: p.tipoPeriodo,
+    revisionCompletada: Boolean(p.flujoProceso?.revisionCompletada)
+  }));
+}
+
+async function resolverPeriodo({ tenantId, empresaId, periodoId }) {
+  const PeriodoNomina = await getPeriodoNominaModel();
+  if (periodoId) {
+    const byId = await PeriodoNomina.findOne({ _id: periodoId, tenantId, empresaId }).lean();
+    if (byId) return byId;
+  }
+  const periodoActivo = await PeriodoNomina.findOne({
+    tenantId,
+    empresaId,
+    estatus: { $in: ['abierto', 'calculando', 'calculado'] }
+  })
+    .sort({ fechaFin: -1 })
+    .lean();
+  if (periodoActivo) return periodoActivo;
+  return PeriodoNomina.findOne({ tenantId, empresaId }).sort({ fechaFin: -1 }).lean();
+}
+
+/**
+ * @returns {Promise<object>}
+ */
+async function getFlujoNominaActual({
+  tenantId,
+  empresaId,
+  hasNomina = true,
+  periodoId = null
+} = {}) {
   const empty = {
     pasoActual: 1,
     pasosCompletados: [],
     periodo: null,
+    periodos: [],
+    acciones: [],
     label: 'Asistencia',
     detalle: 'Inicia el ciclo con marcaciones y asistencia del día',
     href: '/asistencia-diaria'
@@ -40,19 +88,11 @@ async function getFlujoNominaActual({ tenantId, empresaId, hasNomina = true }) {
 
   if (!tenantId || !empresaId) return empty;
 
-  const PeriodoNomina = await getPeriodoNominaModel();
   const PayrollPeriod = await getPayrollPeriodModel();
   const Incidencia = await getIncidenciaModel();
 
-  const [periodoActivo, periodoReciente, prenominaAbierta, pendientes] = await Promise.all([
-    PeriodoNomina.findOne({
-      tenantId,
-      empresaId,
-      estatus: { $in: ['abierto', 'calculando', 'calculado'] }
-    })
-      .sort({ fechaFin: -1 })
-      .lean(),
-    PeriodoNomina.findOne({ tenantId, empresaId }).sort({ fechaFin: -1 }).lean(),
+  const [periodo, prenominaAbierta, pendientes, periodos] = await Promise.all([
+    resolverPeriodo({ tenantId, empresaId, periodoId }),
     PayrollPeriod.findOne({
       tenantId,
       empresaId,
@@ -60,10 +100,10 @@ async function getFlujoNominaActual({ tenantId, empresaId, hasNomina = true }) {
     })
       .sort({ fechaFin: -1 })
       .lean(),
-    Incidencia.countDocuments({ tenantId, estatus: 'pendiente' })
+    Incidencia.countDocuments({ tenantId, estatus: 'pendiente' }),
+    listPeriodosParaFlujo({ tenantId, empresaId })
   ]);
 
-  const periodo = periodoActivo || periodoReciente;
   const LABEL = {
     1: 'Asistencia',
     2: 'Pre-nómina',
@@ -85,24 +125,31 @@ async function getFlujoNominaActual({ tenantId, empresaId, hasNomina = true }) {
     8: '/nomina/timbrado'
   };
 
-  function pack(paso, detalle) {
+  function pack(paso, detalle, extra = {}) {
     const completados = [];
     for (let i = 1; i < paso; i += 1) completados.push(i);
     return {
       pasoActual: paso,
       pasosCompletados: completados,
+      periodos,
       periodo: periodo
         ? {
             id: String(periodo._id),
             estatus: periodo.estatus,
             tipoPeriodo: periodo.tipoPeriodo,
             numeroPeriodo: periodo.numeroPeriodo,
-            rango: formatRango(periodo.fechaInicio, periodo.fechaFin)
+            rango: formatRango(periodo.fechaInicio, periodo.fechaFin),
+            revisionCompletada: Boolean(periodo.flujoProceso?.revisionCompletada),
+            layoutBancarioEstatus: periodo.layoutBancario?.estatus || '',
+            omitirDispersionBancaria: Boolean(periodo.omitirDispersionBancaria)
           }
         : null,
       label: LABEL[paso] || 'Asistencia',
       detalle,
-      href: HREF[paso] || '/asistencia-diaria'
+      href: HREF[paso] || '/asistencia-diaria',
+      acciones: extra.acciones || [],
+      cicloCompleto: false,
+      ...extra
     };
   }
 
@@ -122,6 +169,7 @@ async function getFlujoNominaActual({ tenantId, empresaId, hasNomina = true }) {
   const est = String(periodo.estatus || '').toLowerCase();
   const rango = formatRango(periodo.fechaInicio, periodo.fechaFin);
   const num = periodo.numeroPeriodo != null ? `#${periodo.numeroPeriodo}` : '';
+  const pid = String(periodo._id);
 
   if (est === 'abierto' || est === 'calculando') {
     if (pendientes > 0) {
@@ -134,18 +182,62 @@ async function getFlujoNominaActual({ tenantId, empresaId, hasNomina = true }) {
       4,
       est === 'calculando'
         ? `Calculando nómina ${num} ${rango}`
-        : `Período abierto ${num} ${rango} · listo para calcular`
+        : `Período abierto ${num} ${rango} · listo para calcular`,
+      {
+        acciones: [
+          { tipo: 'link', label: 'Ir a calcular', href: `/nomina/periodos/${pid}` }
+        ]
+      }
     );
   }
 
   if (est === 'calculado') {
-    return pack(5, `Período calculado ${num} ${rango} · revisa reportes antes de cerrar`);
+    const revisionOk = Boolean(periodo.flujoProceso?.revisionCompletada);
+    if (!revisionOk) {
+      return pack(5, `Período calculado ${num} ${rango} · revisa reportes y confirma la revisión`, {
+        acciones: [
+          { tipo: 'link', label: 'Ver reportes', href: '/nomina/reportes' },
+          {
+            tipo: 'post',
+            label: 'Confirmar revisión',
+            href: `/nomina/flujo/periodos/${pid}/confirmar-revision`,
+            className: 'btn btn-primary'
+          }
+        ]
+      });
+    }
+    return pack(6, `Revisión OK · período ${num} ${rango} · autoriza y cierra`, {
+      acciones: [
+        {
+          tipo: 'post',
+          label: 'Cerrar período',
+          href: `/nomina/periodos/${pid}/cerrar`,
+          className: 'btn btn-primary',
+          confirm: '¿Cerrar el período? Ya no admitirá cambios de cálculo.'
+        },
+        { tipo: 'link', label: 'Ver período', href: `/nomina/periodos/${pid}` }
+      ]
+    });
   }
 
   // cerrado → dispersión → timbrado
-  const bancoOk = String(periodo.layoutBancario?.estatus || '') === 'generado';
+  const omitirBanco = Boolean(periodo.omitirDispersionBancaria);
+  const bancoOk =
+    omitirBanco || String(periodo.layoutBancario?.estatus || '') === 'generado';
+
   if (!bancoOk) {
-    return pack(7, `Período cerrado ${num} ${rango} · genera archivo bancario`);
+    return pack(7, `Período cerrado ${num} ${rango} · genera archivo bancario (o marca omisión)`, {
+      acciones: [
+        { tipo: 'link', label: 'Dispersión bancaria', href: '/nomina/dispersion-bancaria' },
+        {
+          tipo: 'post',
+          label: 'Omitir dispersión (cheque/efectivo)',
+          href: `/nomina/flujo/periodos/${pid}/omitir-dispersion`,
+          className: 'btn',
+          confirm: '¿Omitir dispersión bancaria para este período?'
+        }
+      ]
+    });
   }
 
   let timbradoOk = false;
@@ -165,14 +257,56 @@ async function getFlujoNominaActual({ tenantId, empresaId, hasNomina = true }) {
   }
 
   if (!timbradoOk) {
-    return pack(8, `Dispersión lista · emite CFDI del período ${num} ${rango}`);
+    return pack(8, `Dispersión lista · emite CFDI del período ${num} ${rango}`, {
+      acciones: [
+        { tipo: 'link', label: 'Ir a timbrar', href: '/nomina/timbrado' }
+      ]
+    });
   }
 
-  // Ciclo completo del período más reciente: marcar CFDI como actual (completado visual en UI)
   const done = pack(8, `Ciclo completo · período ${num} ${rango} (dispersión + CFDI)`);
   done.pasosCompletados = [1, 2, 3, 4, 5, 6, 7, 8];
   done.cicloCompleto = true;
   return done;
 }
 
-module.exports = { getFlujoNominaActual };
+async function confirmarRevisionPeriodo({
+  tenantId,
+  empresaId,
+  periodoId,
+  userId = '',
+  userLabel = ''
+}) {
+  const Periodo = await getPeriodoNominaModel();
+  const periodo = await Periodo.findOne({ _id: periodoId, tenantId, empresaId });
+  if (!periodo) throw new Error('Período no encontrado');
+  if (periodo.estatus !== 'calculado') {
+    throw new Error('Solo se puede confirmar revisión en períodos calculados');
+  }
+  periodo.flujoProceso = periodo.flujoProceso || {};
+  periodo.flujoProceso.revisionCompletada = true;
+  periodo.flujoProceso.revisionAt = new Date();
+  periodo.flujoProceso.revisionPorUserId = String(userId || '');
+  periodo.flujoProceso.revisionPorLabel = String(userLabel || '');
+  await periodo.save();
+  return periodo.toObject();
+}
+
+async function omitirDispersionPeriodo({ tenantId, empresaId, periodoId }) {
+  const Periodo = await getPeriodoNominaModel();
+  const periodo = await Periodo.findOne({ _id: periodoId, tenantId, empresaId });
+  if (!periodo) throw new Error('Período no encontrado');
+  if (periodo.estatus !== 'cerrado') {
+    throw new Error('Omite dispersión solo en períodos ya cerrados');
+  }
+  periodo.omitirDispersionBancaria = true;
+  await periodo.save();
+  return periodo.toObject();
+}
+
+module.exports = {
+  getFlujoNominaActual,
+  listPeriodosParaFlujo,
+  confirmarRevisionPeriodo,
+  omitirDispersionPeriodo
+};

@@ -2,6 +2,7 @@
 
 const crypto = require('crypto');
 const getNominaCfdiArchivoModel = require('../models/nominaCfdiArchivo');
+const { buildCfdiNominaPayload } = require('./cfdi/nomina12Builder');
 
 function toBuffer(data) {
   if (Buffer.isBuffer(data)) return data;
@@ -15,9 +16,8 @@ function sha256Hex(buf) {
 }
 
 /**
- * XML de simulación CFDI 4.0 + complemento Nómina 1.2 (parcial).
- * Incluye nomina12:SeparacionIndemnizacion cuando aplica (claves 022/023/025).
- * No es CFDI firmado válido SAT; sirve para retención/descarga y validar el nodo.
+ * XML CFDI 4.0 + Nómina 1.2 (simulación / pre-timbrado).
+ * Usa el builder unificado; incluye SeparacionIndemnizacion cuando aplica.
  */
 function buildXmlSimulado({
   uuid,
@@ -38,88 +38,36 @@ function buildXmlSimulado({
   percepcionesXml = '',
   deduccionesXml = ''
 }) {
-  const {
-    buildSeparacionIndemnizacionXml,
-    buildPercepcionesSeparacionXml
-  } = require('./cfdi/separacionIndemnizacionBuilder');
+  void percepcionesXml;
+  void deduccionesXml;
 
-  const fecha = (fechaTimbrado instanceof Date ? fechaTimbrado : new Date(fechaTimbrado)).toISOString();
-  const esc = (s) =>
-    String(s || '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/"/g, '&quot;');
-  const ymd = (d) => {
-    const x = d instanceof Date ? d : d ? new Date(d) : new Date(fechaTimbrado);
-    if (Number.isNaN(x.getTime())) return fecha.slice(0, 10);
-    return x.toISOString().slice(0, 10);
-  };
+  const payload = buildCfdiNominaPayload({
+    empresa: {
+      rfc: rfcEmisor,
+      razonSocial: nombreEmisor,
+      codigoPostal: '00000'
+    },
+    empleado: { rfc: rfcReceptor, nombre: nombreReceptor },
+    periodo: {
+      tipoNomina: tipoNomina === 'E' ? 'finiquito' : 'ordinaria',
+      fechaInicio: fechaInicialPago || fechaTimbrado,
+      fechaFin: fechaFinalPago || fechaTimbrado,
+      fechaPago: fechaPago || fechaTimbrado,
+      diasPeriodo: numDiasPagados
+    },
+    recibo: { netoPagar: total, diasPagados: numDiasPagados },
+    conceptos: [],
+    separacionIndemnizacion,
+    serie,
+    folio,
+    fechaEmision: fechaTimbrado,
+    incluirTfdSimulado: true,
+    uuidSimulado: uuid
+  });
 
-  const sepData =
-    separacionIndemnizacion && separacionIndemnizacion.aplica !== false && Number(separacionIndemnizacion.TotalPagado) > 0
-      ? { aplica: true, ...separacionIndemnizacion }
-      : null;
-
-  const sepXml = sepData ? buildSeparacionIndemnizacionXml(sepData) : '';
-  const percSepXml = sepData ? buildPercepcionesSeparacionXml(sepData) : '';
-  const totalSepAttr = sepData
-    ? ` TotalSeparacionIndemnizacion="${Number(sepData.TotalSeparacionIndemnizacion || sepData.TotalPagado).toFixed(2)}"`
-    : '';
-
-  const percInner = [percepcionesXml, percSepXml].filter(Boolean).join('\n      ');
-  const percBlock = percInner
-    ? `<nomina12:Percepciones TotalSueldos="0.00" TotalGravado="0.00" TotalExento="0.00"${totalSepAttr}>
-      ${percInner}
-      ${sepXml}
-    </nomina12:Percepciones>`
-    : sepXml
-      ? `<nomina12:Percepciones TotalSueldos="0.00" TotalGravado="0.00" TotalExento="0.00"${totalSepAttr}>
-      ${percSepXml}
-      ${sepXml}
-    </nomina12:Percepciones>`
-      : '';
-
-  const dedBlock = deduccionesXml
-    ? `<nomina12:Deducciones TotalOtrasDeducciones="0.00" TotalImpuestosRetenidos="0.00">
-      ${deduccionesXml}
-    </nomina12:Deducciones>`
-    : '';
-
-  const nominaBlock =
-    percBlock || dedBlock
-      ? `
-  <cfdi:Complemento>
-    <nomina12:Nomina Version="1.2" TipoNomina="${esc(tipoNomina)}"
-      FechaPago="${esc(ymd(fechaPago || fechaTimbrado))}"
-      FechaInicialPago="${esc(ymd(fechaInicialPago || fechaTimbrado))}"
-      FechaFinalPago="${esc(ymd(fechaFinalPago || fechaTimbrado))}"
-      NumDiasPagados="${Number(numDiasPagados) || 1}">
-      ${percBlock}
-      ${dedBlock}
-    </nomina12:Nomina>
-    <tfd:TimbreFiscalDigital Version="1.1" UUID="${esc(uuid)}" FechaTimbrado="${esc(fecha)}"/>
-  </cfdi:Complemento>`
-      : `
-  <cfdi:Complemento>
-    <tfd:TimbreFiscalDigital Version="1.1" UUID="${esc(uuid)}" FechaTimbrado="${esc(fecha)}"/>
-  </cfdi:Complemento>`;
-
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4"
-  xmlns:nomina12="http://www.sat.gob.mx/nomina12"
-  xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital"
-  Version="4.0" Serie="${esc(serie)}" Folio="${esc(folio)}" Total="${Number(total).toFixed(2)}"
-  Fecha="${esc(fecha)}" TipoDeComprobante="N" Moneda="MXN" SubTotal="${Number(total).toFixed(2)}">
-  <cfdi:Emisor Rfc="${esc(rfcEmisor)}" Nombre="${esc(nombreEmisor)}"/>
-  <cfdi:Receptor Rfc="${esc(rfcReceptor)}" Nombre="${esc(nombreReceptor)}" UsoCFDI="CN01"/>
-  ${nominaBlock}
-</cfdi:Comprobante>
-`;
+  return payload.xml;
 }
 
-/**
- * Upsert de un archivo CFDI. Filtro: historicoId+tipo o reciboId+tipo.
- */
 async function guardarCfdiArchivo({
   tenantId,
   empresaId = null,
@@ -172,9 +120,6 @@ async function guardarCfdiArchivo({
   return doc;
 }
 
-/**
- * Metadatos sin binario (para listados / stamps).
- */
 async function metaCfdiArchivo(tenantId, archivoId) {
   const CfdiArchivo = await getNominaCfdiArchivoModel();
   return CfdiArchivo.findOne({ _id: archivoId, tenantId })
@@ -182,17 +127,11 @@ async function metaCfdiArchivo(tenantId, archivoId) {
     .lean();
 }
 
-/**
- * Descarga: solo este documento (incluye BinData).
- */
 async function obtenerCfdiArchivoParaDescarga(tenantId, archivoId) {
   const CfdiArchivo = await getNominaCfdiArchivoModel();
   return CfdiArchivo.findOne({ _id: archivoId, tenantId }).lean();
 }
 
-/**
- * Tras cerrar período: enlaza archivos del recibo operativo al histórico.
- */
 async function enlazarArchivosAHistorico(tenantId, pairs) {
   if (!pairs?.length) return 0;
   const CfdiArchivo = await getNominaCfdiArchivoModel();
