@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Contacto | ArkaSense</title>
+  <meta name="description" content="Contacto ArkaSense: demo, ventas, soporte, privacidad ARCO y seguridad." />
+  <meta name="theme-color" content="#0b1f24" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="index.html">Arka<span>Sense</span></a>
+    <nav class="nav" aria-label="Principal">
+      <a href="index.html#funciones">Funciones</a>
+      <a href="index.html#descargas">Descargas</a>
+      <a href="contacto.html" aria-current="page">Contacto</a>
+      <a href="contrato.html">Legal</a>
+    </nav>
+    <div class="header-cta">
+      <a class="btn btn-ghost" href="index.html#descargas">Descargar app</a>
+      <a class="btn btn-primary" href="https://wa.me/528146262783" target="_blank" rel="noopener">WhatsApp</a>
+    </div>
+    <button class="nav-toggle" type="button" aria-label="Abrir menú" aria-expanded="false"><span></span><span></span></button>
+  </header>
+
+  <header class="page-hero">
+    <p class="eyebrow">Contacto</p>
+    <h1>Hablemos de tu operación</h1>
+    <p class="updated">Demo, ventas, soporte y canales legales (ARCO / seguridad).</p>
+    <nav class="legal-nav" aria-label="Documentos legales">
+      <a href="contrato.html">Contrato / Términos</a>
+      <a href="aviso-privacidad.html">Aviso de privacidad</a>
+      <a href="derechos-arco.html">Derechos ARCO</a>
+      <a href="seguridad.html">Directivas de seguridad</a>
+      <a class="is-active" href="contacto.html">Contacto</a>
+    </nav>
+  </header>
+
+  <section class="contact-page">
+    <div class="contact-copy">
+      <h2>Canales directos</h2>
+      <ul class="contact-list">
+        <li><strong>WhatsApp Business:</strong> <a href="https://wa.me/528146262783" target="_blank" rel="noopener">+52 81 4626 2783</a></li>
+        <li><strong>Ventas / demo:</strong> <a href="mailto:ventas@arkasense.com">ventas@arkasense.com</a></li>
+        <li><strong>General:</strong> <a href="mailto:contacto@arkasense.com">contacto@arkasense.com</a></li>
+        <li><strong>Privacidad / ARCO:</strong> <a href="mailto:privacidad@arkasense.com">privacidad@arkasense.com</a></li>
+        <li><strong>Seguridad:</strong> <a href="mailto:seguridad@arkasense.com">seguridad@arkasense.com</a></li>
+        <li><strong>Horario:</strong> L–V 9:00 – 18:00 hrs (CDMX)</li>
+      </ul>
+      <p class="muted">También puedes escribirnos sobre el <a href="contrato.html">contrato</a>, el <a href="aviso-privacidad.html">aviso de privacidad</a> o las <a href="seguridad.html">directivas de seguridad</a>.</p>
+      <p class="muted small">Familia de productos: <a href="https://arkafiscal.com" target="_blank" rel="noopener">ArkaFiscal</a>.</p>
+    </div>
+
+    <form class="contact-form" action="mailto:ventas@arkasense.com" method="get" enctype="text/plain">
+      <h3>Solicitar contacto</h3>
+      <label>Nombre
+        <input name="nombre" required autocomplete="name" />
+      </label>
+      <label>Correo
+        <input type="email" name="correo" required autocomplete="email" />
+      </label>
+      <label>Teléfono / WhatsApp
+        <input name="telefono" required autocomplete="tel" />
+      </label>
+      <label>Motivo
+        <select name="motivo" required>
+          <option value="">Selecciona…</option>
+          <option>Demo / ventas</option>
+          <option>Soporte</option>
+          <option>Derechos ARCO</option>
+          <option>Seguridad / incidente</option>
+          <option>Contrato / legal</option>
+          <option>Otro</option>
+        </select>
+      </label>
+      <label>Empleados aproximados
+        <select name="empleados">
+          <option value="">Selecciona…</option>
+          <option>1 – 50</option>
+          <option>51 – 200</option>
+          <option>201 – 1000</option>
+          <option>Más de 1000</option>
+        </select>
+      </label>
+      <label>Mensaje
+        <input name="mensaje" placeholder="Cuéntanos brevemente tu caso" />
+      </label>
+      <label class="checkbox">
+        <input type="checkbox" required />
+        He leído y acepto el <a href="contrato.html">Contrato / Términos</a> y el <a href="aviso-privacidad.html">Aviso de Privacidad</a>.
+      </label>
+      <button type="submit" class="btn btn-primary">Enviar</button>
+    </form>
+  </section>
+
+  <footer class="site-footer">
+    <div class="footer-brand">
+      <a class="brand" href="index.html">Arka<span>Sense</span></a>
+    </div>
+    <div class="legal-links">
+      <a href="contrato.html">Contrato</a>
+      <a href="aviso-privacidad.html">Aviso de privacidad</a>
+      <a href="derechos-arco.html">Derechos ARCO</a>
+      <a href="seguridad.html">Seguridad</a>
+      <a href="contacto.html">Contacto</a>
+    </div>
+    <p class="footer-copy">© <span id="y"></span> ArkaSense.</p>
+  </footer>
+  <script src="js/main.js"></script>
+</body>
+</html>

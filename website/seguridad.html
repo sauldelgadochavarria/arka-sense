@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Directivas de Seguridad | ArkaSense</title>
+  <meta name="description" content="Directivas de seguridad de la plataforma ArkaSense: controles técnicos, administrativos y físicos." />
+  <meta name="theme-color" content="#0b1f24" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="index.html">Arka<span>Sense</span></a>
+    <nav class="nav" aria-label="Principal">
+      <a href="index.html#funciones">Funciones</a>
+      <a href="index.html#descargas">Descargas</a>
+      <a href="contacto.html">Contacto</a>
+      <a href="seguridad.html" aria-current="page">Seguridad</a>
+    </nav>
+    <div class="header-cta">
+      <a class="btn btn-ghost" href="aviso-privacidad.html">Privacidad</a>
+      <a class="btn btn-primary" href="contacto.html">Contacto</a>
+    </div>
+    <button class="nav-toggle" type="button" aria-label="Abrir menú" aria-expanded="false"><span></span><span></span></button>
+  </header>
+
+  <header class="page-hero">
+    <p class="eyebrow">Seguridad</p>
+    <h1>Directivas de seguridad</h1>
+    <p class="updated">Última actualización: septiembre de 2026</p>
+    <nav class="legal-nav" aria-label="Documentos legales">
+      <a href="contrato.html">Contrato / Términos</a>
+      <a href="aviso-privacidad.html">Aviso de privacidad</a>
+      <a href="derechos-arco.html">Derechos ARCO</a>
+      <a class="is-active" href="seguridad.html">Directivas de seguridad</a>
+      <a href="contacto.html">Contacto</a>
+    </nav>
+  </header>
+
+  <article class="legal">
+    <p>Estas directivas describen el marco de seguridad con el que ArkaSense protege la confidencialidad, integridad y disponibilidad de la información del Cliente (asistencia, RRHH y nómina).</p>
+
+    <h2>1. Principios</h2>
+    <ul>
+      <li>Mínimo privilegio y separación de ambientes (desarrollo / producción).</li>
+      <li>Cifrado en tránsito (TLS) y cifrado en reposo según el componente.</li>
+      <li>Trazabilidad de accesos administrativos y cambios críticos.</li>
+      <li>Responsabilidad compartida: el Cliente administra usuarios, roles y dispositivos de marcación.</li>
+    </ul>
+
+    <h2>2. Controles técnicos</h2>
+    <ul>
+      <li>Autenticación de usuarios SaaS; sesiones controladas por tenant.</li>
+      <li>Aislamiento lógico multi-tenant (datos asociados al <code>tenantId</code> / empresa).</li>
+      <li>Comunicación HTTPS hacia la Plataforma y APIs.</li>
+      <li>Almacenamiento de secretos y credenciales de integración fuera del código fuente.</li>
+      <li>Respaldo periódico de bases de datos según política operativa del entorno desplegado.</li>
+      <li>Apps oficiales de asistencia publicadas únicamente por canales ArkaSense (descargas del sitio o tiendas autorizadas).</li>
+    </ul>
+
+    <h2>3. Controles administrativos</h2>
+    <ul>
+      <li>Acceso del personal del Proveedor solo para soporte, operación o cumplimiento, bajo necesidad de conocer.</li>
+      <li>Gestión de incidentes: detección, contención, remediación y comunicación al Cliente cuando corresponda legalmente o por impacto material.</li>
+      <li>Revisión de proveedores tecnológicos (hosting, correo, PAC, etc.) con obligaciones de confidencialidad.</li>
+    </ul>
+
+    <h2>4. Controles físicos</h2>
+    <p>La infraestructura de cómputo se aloja en centros de datos o nubes de terceros con controles físicos propios (acceso restringido, CCTV, energía redundante, etc.). El detalle depende del proveedor de hosting contratado para cada despliegue.</p>
+
+    <h2>5. Responsabilidades del Cliente</h2>
+    <ul>
+      <li>Asignar y revocar accesos de usuarios y roles de forma oportuna.</li>
+      <li>Proteger dispositivos de checado (móviles / kioscos / escritorio) y no instalar binarios no oficiales.</li>
+      <li>No compartir contraseñas; reportar sospechas de acceso indebido a <a href="mailto:seguridad@arkasense.com">seguridad@arkasense.com</a>.</li>
+      <li>Configurar correctamente datos personales y laborales de sus colaboradores.</li>
+    </ul>
+
+    <h2>6. Datos sensibles y nómina</h2>
+    <p>La información de nómina y asistencia puede incluir datos personales y, en su caso, datos sensibles conforme a la ley. Su tratamiento se describe en el <a href="aviso-privacidad.html">Aviso de Privacidad</a>; los titulares pueden ejercer <a href="derechos-arco.html">Derechos ARCO</a>.</p>
+
+    <h2>7. Reportar un incidente</h2>
+    <p>Si detectas una vulnerabilidad o incidente de seguridad relacionado con ArkaSense, escribe a <a href="mailto:seguridad@arkasense.com">seguridad@arkasense.com</a> con la mayor cantidad de detalle técnico posible. Evita divulgar datos personales de terceros en el reporte inicial.</p>
+
+    <p><a class="btn btn-primary" href="mailto:seguridad@arkasense.com">Contactar seguridad</a>
+       <a class="btn btn-ghost" href="contacto.html">Contacto general</a></p>
+  </article>
+
+  <footer class="site-footer">
+    <div class="legal-links">
+      <a href="contrato.html">Contrato</a>
+      <a href="aviso-privacidad.html">Aviso de privacidad</a>
+      <a href="derechos-arco.html">Derechos ARCO</a>
+      <a href="seguridad.html">Seguridad</a>
+      <a href="contacto.html">Contacto</a>
+    </div>
+    <p class="footer-copy">© <span id="y"></span> ArkaSense.</p>
+  </footer>
+  <script src="js/main.js"></script>
+</body>
+</html>
