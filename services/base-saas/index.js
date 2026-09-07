@@ -49,6 +49,8 @@ app.use(resolveTenant);
 
 app.get('/health', (_req, res) => res.json({ ok: true, service: 'arka-presence-saas' }));
 
+app.use('/api/v1', require('./routers/mobileApi'));
+
 app.use(authRoutes);
 app.use(appRoutes);
 

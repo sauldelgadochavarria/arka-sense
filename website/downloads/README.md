@@ -1,14 +1,14 @@
 # Descargas ArkaSense — apps de asistencia
 
-Coloca aquí los binarios publicados (mismos nombres que usa el sitio):
+Copia los artefactos compilados desde Flutter:
 
-| Archivo | Plataforma |
-|---------|------------|
-| `arka-sense-android.apk` | Android |
-| `arka-sense-ios.ipa` | iOS (distribución enterprise / TestFlight) |
-| `arka-sense-windows.exe` | Windows |
-| `arka-sense-macos.dmg` | macOS |
+| Archivo destino | Origen típico |
+|-----------------|---------------|
+| `arka-sense-android.apk` | `apps/arka_sense_asistencia/build/app/outputs/flutter-apk/app-release.apk` |
+| `arka-sense-ios.ipa` | build IPA / TestFlight |
+| `arka-sense-windows.exe` | `build/windows/x64/runner/Release/` (empaquetar instalador) |
+| `arka-sense-macos.dmg` | build macOS Release |
+| *(opcional)* Linux | `build/linux/x64/release/bundle/` |
 
-Si usas tiendas (Play Store / App Store), actualiza los `href` en `../index.html` sección `#descargas`.
+Código fuente de la app: `apps/arka_sense_asistencia/` (Flutter). API: `POST /api/v1/asistencia/marcar` en base-saas.
 
-No subas secretos ni certificados de firma a este directorio.

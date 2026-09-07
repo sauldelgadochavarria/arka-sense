@@ -48,7 +48,20 @@ const attendanceRecordSchema = new mongoose.Schema(
     ajustadoEn: { type: Date, default: null },
     motivoAnulacion: { type: String, default: '' },
     anuladoPorUserId: { type: String, default: '' },
-    anuladoEn: { type: Date, default: null }
+    anuladoEn: { type: Date, default: null },
+    /** Captura GPS de la app móvil / kiosco. */
+    ubicacion: {
+      lat: { type: Number, default: null },
+      lng: { type: Number, default: null },
+      accuracyMeters: { type: Number, default: null },
+      capturedAt: { type: Date, default: null }
+    },
+    /** Metadatos del dispositivo que registró la marcación. */
+    dispositivo: {
+      plataforma: { type: String, default: '' },
+      modelo: { type: String, default: '' },
+      appVersion: { type: String, default: '' }
+    }
   },
   { timestamps: true, collection: COLLECTION_ATTENDANCE_RECORDS }
 );
