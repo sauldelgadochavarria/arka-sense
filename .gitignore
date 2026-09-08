@@ -7,3 +7,4 @@ node_modules/
 *.key
 *.ppk
 .cursor/
+services/base-saas/vendor/face-api-models/

@@ -6,6 +6,7 @@ import '../services/api_client.dart';
 import '../services/auth_state.dart';
 import '../services/location_service.dart';
 import 'history_screen.dart';
+import 'liveness_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -66,22 +67,54 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     setState(() => _punching = true);
     try {
+      // 1) Prueba de vida + match facial (máx. 3 intentos en la pantalla)
+      final live = await Navigator.of(context).push<LivenessResult>(
+        MaterialPageRoute(builder: (_) => const LivenessScreen()),
+      );
+      if (!mounted) return;
+      if (live == null) {
+        return; // cancelado
+      }
+      if (!live.success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(live.message)),
+        );
+        return;
+      }
+
+      // 2) GPS + marcación (geocerca la valida el backend)
       final geo = await _location.currentPosition();
+      if (geo.isMocked) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Ubicación simulada (Fake GPS) no permitida')),
+        );
+        return;
+      }
       final body = {
         'tipoMarcacion': tipo,
         'lat': geo.lat,
         'lng': geo.lng,
         'accuracyMeters': geo.accuracyMeters,
+        'isMocked': geo.isMocked,
+        'biometriaOk': true,
+        'biometriaScore': live.confidenceScore,
+        'biometriaChallengeId': live.challengeId,
         ...LocationService.deviceMeta(),
       };
       final res = await context.read<AuthState>().api.post('/asistencia/marcar', body);
       if (!mounted) return;
       final est = res['asistenciaDia'] as Map<String, dynamic>?;
+      final geocerca = res['geocerca'] as Map<String, dynamic>?;
+      final fuera = geocerca?['fueraDeZona'] == true;
+      final site = geocerca?['siteNombre']?.toString();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
             'Registrado: ${_labelTipo(tipo)}'
-            '${est != null ? ' · ${est['estatusLabel']}' : ''}',
+            ' · facial ${(live.confidenceScore * 100).toStringAsFixed(0)}%'
+            '${est != null ? ' · ${est['estatusLabel']}' : ''}'
+            '${fuera ? ' · fuera de zona' : (site != null && site.isNotEmpty ? ' · $site' : '')}',
           ),
         ),
       );
@@ -223,7 +256,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'Se capturará tu ubicación GPS al confirmar.',
+                  'Se pedirá prueba de vida facial y luego tu ubicación GPS.',
                   style: TextStyle(color: Colors.white54, fontSize: 13),
                 ),
               ],

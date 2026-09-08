@@ -63,6 +63,19 @@ services:
     ports:
       - "4003:3000"
 
+  # Landing pública ArkaSense (estático) — separado de la app SaaS
+  website:
+    networks:
+      - base_saas_net
+    build:
+      context: ./website
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./website:/usr/share/nginx/html:ro
+      - ./website/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "5173:80"
+
 networks:
   base_saas_net:
 

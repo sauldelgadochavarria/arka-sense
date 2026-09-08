@@ -22,6 +22,7 @@ const {
   CUOTA_SINDICAL_BASE_OPTS
 } = require('../config/nominaCatalogos');
 const { MOTIVOS_BAJA, TIPOS_CONTRATO, TIPOS_EMPLEADO, ESTATUS_EMPLEADO, TIPOS_REGISTRO } = require('../config/catalogos');
+const { POLITICAS_MARCAJE_GEO } = require('../config/asistencia');
 const {
   ENTIDADES_FEDERATIVAS,
   ESTADOS_CIVILES,
@@ -109,6 +110,7 @@ async function loadEmpleadoCatalogs(tenantId, empresa) {
       supervisores: [],
       turnos: [],
       gruposDispositivos: [],
+      puntosAcceso: [],
       plantillas: [],
       tiposPeriodo: [],
       tablasPrestaciones: [],
@@ -124,10 +126,12 @@ async function loadEmpleadoCatalogs(tenantId, empresa) {
   const Subsidiaria = await getSubsidiariaModel();
   const Turno = await getTurnoModel();
   const GrupoDispositivos = await getGrupoDispositivosModel();
+  const getPuntoAccesoModel = require('../models/puntoAcceso');
+  const PuntoAcceso = await getPuntoAccesoModel();
   const getTablaPrestacionesModel = require('../models/tablaPrestaciones');
   const TablaPrestaciones = await getTablaPrestacionesModel();
   const CentroCosto = await getCentroCostoModel();
-  const [empleados, departamentos, puestos, subsidiarias, turnos, gruposDispositivos, plantillas, tiposPeriodo, tablasPrestaciones, centrosCosto] =
+  const [empleados, departamentos, puestos, subsidiarias, turnos, gruposDispositivos, puntosAcceso, plantillas, tiposPeriodo, tablasPrestaciones, centrosCosto] =
     await Promise.all([
     Empleado.find({ tenantId }).sort({ lastName: 1, firstName: 1 }).lean(),
     Departamento.find({ tenantId, activo: true }).sort({ nombre: 1 }).lean(),
@@ -135,6 +139,7 @@ async function loadEmpleadoCatalogs(tenantId, empresa) {
     Subsidiaria.find({ empresaId: empresa._id, activo: true }).sort({ nombre: 1 }).lean(),
     Turno.find({ tenantId, activo: true }).sort({ nombre: 1 }).lean(),
     GrupoDispositivos.find({ tenantId, activo: true }).sort({ nombre: 1 }).lean(),
+    PuntoAcceso.find({ tenantId, activo: true }).sort({ nombre: 1 }).lean(),
     loadPlantillasActivas(tenantId),
     listTiposPeriodo(tenantId, true),
     TablaPrestaciones.find({ tenantId, empresaId: empresa._id, activo: true })
@@ -153,6 +158,7 @@ async function loadEmpleadoCatalogs(tenantId, empresa) {
     supervisores,
     turnos,
     gruposDispositivos,
+    puntosAcceso,
     plantillas,
     tiposPeriodo,
     tablasPrestaciones,
@@ -228,6 +234,7 @@ async function listEmpleados(req, res) {
     estatus,
     estatusOptions: ESTATUS_EMPLEADO,
     tiposRegistro: TIPOS_REGISTRO,
+    politicasMarcajeGeo: POLITICAS_MARCAJE_GEO,
     toDateInputValue,
     showNominaConfig: showNominaConfig(req),
     tiposCreditoInfonavit: TIPOS_CREDITO_INFONAVIT,
@@ -388,6 +395,7 @@ async function editEmpleado(req, res) {
     ...empleadoFormExtras(umaVigente),
     asignacionCtx,
     tiposRegistro: TIPOS_REGISTRO,
+    politicasMarcajeGeo: POLITICAS_MARCAJE_GEO,
     empresa,
     motivosBaja: MOTIVOS_BAJA,
     tiposContrato: enumsEmp.tiposContrato,

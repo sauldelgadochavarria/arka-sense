@@ -239,6 +239,7 @@
 
 <div class="actions-bar">
   <a class="btn" href="/personal-empleados/<%= empleado._id %>/edit">Editar</a>
+  <a class="btn" href="/personal-empleados/<%= empleado._id %>/biometria-facial">Biometría facial</a>
   <% if (empleado.estatus === 'baja') { %>
   <form method="post" action="/personal-empleados/<%= empleado._id %>/reactivar" class="inline-form">
     <button type="submit">Reactivar</button>

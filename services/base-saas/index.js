@@ -49,6 +49,10 @@ app.use(resolveTenant);
 
 app.get('/health', (_req, res) => res.json({ ok: true, service: 'arka-presence-saas' }));
 
+const biometricsApi = require('./routers/biometricsApi');
+app.use('/api/v1/biometrics', biometricsApi);
+app.use('/api/biometrics', biometricsApi);
+
 app.use('/api/v1', require('./routers/mobileApi'));
 
 app.use(authRoutes);
@@ -60,4 +64,15 @@ app.listen(PORT, () => {
   console.log(`[arka-presence-saas] http://localhost:${PORT}`);
   const { iniciarWorkerNomina } = require('./services/nomina/nominaCalculoJobService');
   iniciarWorkerNomina();
+  // Precarga opcional del motor facial (no bloquea el boot si falla)
+  setImmediate(() => {
+    try {
+      const { ensureReady } = require('./services/biometrics/faceApiService');
+      ensureReady().catch((err) => {
+        console.warn('[biometrics] precarga diferida:', err.message);
+      });
+    } catch (err) {
+      console.warn('[biometrics] no disponible:', err.message);
+    }
+  });
 });

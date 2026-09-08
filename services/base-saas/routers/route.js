@@ -171,6 +171,14 @@ router.get('/config-subsidiarias/:id/edit', subsidiariasController.editSubsidiar
 router.post('/config-subsidiarias/:id', subsidiariasController.updateSubsidiaria);
 router.post('/config-subsidiarias/:id/toggle', subsidiariasController.toggleSubsidiaria);
 
+const puntosAccesoController = require('../controllers/puntosAccesoController');
+router.get('/config-puntos-acceso', puntosAccesoController.listPuntos);
+router.post('/config-puntos-acceso', puntosAccesoController.createPunto);
+router.get('/config-puntos-acceso/:id/edit', puntosAccesoController.editPunto);
+router.post('/config-puntos-acceso/:id', puntosAccesoController.updatePunto);
+router.post('/config-puntos-acceso/:id/toggle', puntosAccesoController.togglePunto);
+
+
 router.get('/config-sistema/enums', systemConfigController.listEnums);
 router.get('/config-sistema/enums/:grupo', systemConfigController.editEnum);
 router.post('/config-sistema/enums/:grupo', systemConfigController.saveEnum);
@@ -198,6 +206,21 @@ router.post('/personal-empleados/:id/baja', empleadosController.bajaEmpleado);
 router.post('/personal-empleados/:id/reactivar', empleadosController.reactivarEmpleado);
 router.post('/personal-empleados/:id/calcular-sdi', empleadosController.calcularSdiAction);
 
+const multer = require('multer');
+const biometriaFacialController = require('../controllers/biometriaFacialController');
+const uploadBiometriaMem = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 }
+});
+router.get('/personal-empleados/:id/biometria-facial', biometriaFacialController.showBiometria);
+router.post(
+  '/personal-empleados/:id/biometria-facial/enroll',
+  uploadBiometriaMem.single('rostro'),
+  biometriaFacialController.enrollAction
+);
+router.post('/personal-empleados/:id/biometria-facial/eliminar', biometriaFacialController.clearAction);
+
+
 const tablaPrestacionesController = require('../controllers/tablaPrestacionesController');
 const layoutBancarioController = require('../controllers/layoutBancarioController');
 const timbradoController = require('../controllers/timbradoController');
@@ -205,7 +228,6 @@ const envioCorreoController = require('../controllers/envioCorreoController');
 const correoConfigController = require('../controllers/correoConfigController');
 const gestionDocumentalController = require('../controllers/gestionDocumentalController');
 const finiquitoController = require('../controllers/finiquitoController');
-const multer = require('multer');
 const uploadDocumentoMem = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 25 * 1024 * 1024 }

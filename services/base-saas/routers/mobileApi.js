@@ -20,6 +20,7 @@ const {
   registrarAuditoriaAsistencia
 } = require('../services/asistenciaAuditoriaService');
 const { TIPOS_MARCACION, ESTATUS_DIARIO } = require('../config/asistencia');
+const { validatePunchLocation } = require('../services/geofence/geofenceService');
 
 const router = express.Router();
 
@@ -221,7 +222,11 @@ router.get('/asistencia/hoy', requireMobileAuth, async (req, res) => {
 
 /**
  * POST /api/v1/asistencia/marcar
- * body: { tipoMarcacion?, lat, lng, accuracyMeters?, notas?, plataforma?, modelo?, appVersion? }
+ * body: {
+ *   tipoMarcacion?, lat, lng, accuracyMeters?, isMocked?,
+ *   justificacionFueraZona?, notas?, plataforma?, modelo?, appVersion?,
+ *   biometriaOk?, biometriaScore?, biometriaChallengeId?
+ * }
  */
 router.post('/asistencia/marcar', requireMobileAuth, async (req, res) => {
   try {
@@ -273,6 +278,42 @@ router.post('/asistencia/marcar', requireMobileAuth, async (req, res) => {
     }
 
     const accuracyMeters = parseNum(req.body.accuracyMeters);
+    const isMocked =
+      req.body.isMocked === true ||
+      req.body.isMocked === 'true' ||
+      req.body.isMocked === 1 ||
+      req.body.isMocked === '1';
+
+    const geo = await validatePunchLocation({
+      tenantId: req.mobileAuth.tenantId,
+      empleado,
+      lat,
+      lng,
+      accuracyMeters,
+      isMocked,
+      at: ahora,
+      justificacionFueraZona: String(req.body.justificacionFueraZona || '')
+    });
+
+    if (!geo.allowed) {
+      return res.status(403).json({
+        ok: false,
+        error: geo.reason || 'Fuera de la geocerca autorizada',
+        geocerca: {
+          fueraDeZona: true,
+          politica: geo.politica,
+          distanceMeters: geo.distanceMeters ?? null,
+          siteNombre: geo.match?.nombre || null
+        }
+      });
+    }
+
+    const match = geo.match;
+    const puntoId =
+      match && match.source === 'punto_acceso' && match.id && !String(match.id).startsWith('sub:')
+        ? match.id
+        : null;
+
     const created = await AttendanceRecord.create({
       tenantId: req.mobileAuth.tenantId,
       empleadoId: empleado._id,
@@ -292,7 +333,20 @@ router.post('/asistencia/marcar', requireMobileAuth, async (req, res) => {
         lat,
         lng,
         accuracyMeters: accuracyMeters != null ? accuracyMeters : null,
-        capturedAt: ahora
+        capturedAt: ahora,
+        isMocked: Boolean(isMocked)
+      },
+      geocerca: {
+        politica: geo.politica || '',
+        skipped: Boolean(geo.skipped),
+        fueraDeZona: Boolean(geo.fueraDeZona),
+        allowed: true,
+        puntoAccesoId: puntoId,
+        siteSource: match?.source || '',
+        siteNombre: match?.nombre || '',
+        distanceMeters: geo.distanceMeters != null ? geo.distanceMeters : null,
+        radioMetros: match?.radioMetros != null ? match.radioMetros : null,
+        justificacionFueraZona: geo.justificacionFueraZona || ''
       },
       dispositivo: {
         plataforma: String(req.body.plataforma || '').trim().slice(0, 40),
@@ -311,7 +365,9 @@ router.post('/asistencia/marcar', requireMobileAuth, async (req, res) => {
       userLabel: req.mobileAuth.name || req.mobileAuth.email,
       ip: req.ip || '',
       userAgent: req.get('user-agent') || '',
-      mensaje: `Marcación móvil ${tipoMarcacion}`,
+      mensaje: `Marcación móvil ${tipoMarcacion}${
+        geo.fueraDeZona ? ' (fuera de zona)' : geo.skipped ? '' : ` @ ${match?.nombre || ''}`
+      }`,
       despues: snapshotMarcacion(created.toObject ? created.toObject() : created)
     });
 
@@ -328,7 +384,15 @@ router.post('/asistencia/marcar', requireMobileAuth, async (req, res) => {
         tipoMarcacion: created.tipoMarcacion,
         timestamp: created.timestamp,
         metodo: created.metodo,
-        ubicacion: created.ubicacion
+        ubicacion: created.ubicacion,
+        geocerca: created.geocerca
+      },
+      geocerca: {
+        fueraDeZona: Boolean(geo.fueraDeZona),
+        skipped: Boolean(geo.skipped),
+        siteNombre: match?.nombre || null,
+        distanceMeters: geo.distanceMeters ?? null,
+        politica: geo.politica
       },
       asistenciaDia: daily
         ? {

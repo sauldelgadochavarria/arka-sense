@@ -1,0 +1,22 @@
+<%- include('../Partials/layout-top', { title: title || 'Editar punto', session }) %>
+<h1>Editar punto de acceso</h1>
+<div class="toolbar">
+  <a class="btn" href="/config-puntos-acceso">← Catálogo</a>
+</div>
+
+<form method="post" action="/config-puntos-acceso/<%= punto._id %>" class="form-grid form-wide">
+  <input name="codigo" placeholder="Código" maxlength="32" value="<%= punto.codigo || '' %>" />
+  <input name="nombre" placeholder="Nombre" required value="<%= punto.nombre %>" />
+  <input name="descripcion" placeholder="Descripción" value="<%= punto.descripcion || '' %>" />
+  <select name="subsidiariaId">
+    <option value="">— Sucursal (opcional) —</option>
+    <% subsidiarias.forEach(function(s) { %>
+    <option value="<%= s._id %>" <%= punto.subsidiariaId && String(punto.subsidiariaId) === String(s._id) ? 'selected' : '' %>><%= s.nombre %></option>
+    <% }); %>
+  </select>
+  <input name="lat" type="number" step="any" required value="<%= punto.lat %>" />
+  <input name="lng" type="number" step="any" required value="<%= punto.lng %>" />
+  <input name="radioMetros" type="number" min="10" max="5000" required value="<%= punto.radioMetros %>" />
+  <button type="submit">Guardar</button>
+</form>
+<%- include('../Partials/layout-bottom') %>

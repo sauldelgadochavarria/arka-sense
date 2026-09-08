@@ -24,12 +24,18 @@
     "seed:tipos-periodo": "node scripts/seed-tipos-periodo.js",
     "import:tipos-periodo": "node scripts/import-tipos-periodo.js",
     "import:movimientos-asistencia": "node scripts/import-movimientos-asistencia.js",
-    "test:nomina": "node scripts/nomina-smoke-test.js"
+    "test:nomina": "node scripts/nomina-smoke-test.js",
+    "biometrics:models": "node scripts/download-face-models.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.758.0",
+    "@tensorflow/tfjs": "^4.22.0",
+    "@tensorflow/tfjs-backend-cpu": "^4.22.0",
+    "@tensorflow/tfjs-node": "^4.22.0",
+    "@vladmandic/face-api": "^1.7.15",
     "bcryptjs": "^2.4.3",
     "body-parser": "^1.20.2",
+    "canvas": "^2.11.2",
     "connect-flash": "^0.1.1",
     "dotenv": "^16.4.5",
     "ejs": "^3.1.10",

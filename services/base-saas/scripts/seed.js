@@ -995,7 +995,7 @@ async function seedPersonalMenus(Menu, adminRoleId) {
  * Solo Configuración (usuarios/roles/subsidiarias) exige rol Admin.
  */
 async function syncOperationalMenuRoles(Menu, adminRoleId) {
-  const configAdminRoutes = ['/config-users', '/config-roles', '/config-subsidiarias'];
+  const configAdminRoutes = ['/config-users', '/config-roles', '/config-subsidiarias', '/config-puntos-acceso'];
 
   await Menu.updateMany({ activo: true }, { $set: { roles: [] } });
 

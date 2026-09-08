@@ -41,7 +41,28 @@ class ApiClient {
     return _decode(res);
   }
 
-  Map<String, dynamic> _decode(http.Response res) {
+  /// Multipart (biometría): no fija Content-Type JSON.
+  Future<Map<String, dynamic>> postMultipart(
+    String path, {
+    required Map<String, String> fields,
+    required Map<String, List<int>> files,
+  }) async {
+    final uri = Uri.parse('${ApiConfig.apiBase}$path');
+    final req = http.MultipartRequest('POST', uri);
+    req.headers['Accept'] = 'application/json';
+    if (token != null && token!.isNotEmpty) {
+      req.headers['Authorization'] = 'Bearer $token';
+    }
+    req.fields.addAll(fields);
+    files.forEach((name, bytes) {
+      req.files.add(http.MultipartFile.fromBytes(name, bytes, filename: '$name.jpg'));
+    });
+    final streamed = await req.send();
+    final res = await http.Response.fromStream(streamed);
+    return _decode(res, acceptSuccessFlag: true);
+  }
+
+  Map<String, dynamic> _decode(http.Response res, {bool acceptSuccessFlag = false}) {
     Map<String, dynamic> data = {};
     try {
       final decoded = jsonDecode(res.body);
@@ -49,9 +70,14 @@ class ApiClient {
     } catch (_) {
       /* ignore */
     }
-    if (res.statusCode >= 400 || data['ok'] == false) {
+    final failed = res.statusCode >= 400 ||
+        data['ok'] == false ||
+        (acceptSuccessFlag && data['success'] == false);
+    if (failed) {
       throw ApiException(
-        (data['error'] as String?) ?? 'Error HTTP ${res.statusCode}',
+        (data['error'] as String?) ??
+            (data['message'] as String?) ??
+            'Error HTTP ${res.statusCode}',
         statusCode: res.statusCode,
       );
     }

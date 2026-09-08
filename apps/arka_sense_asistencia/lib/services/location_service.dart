@@ -6,10 +6,16 @@ import 'package:geolocator/geolocator.dart';
 import '../config/api_config.dart';
 
 class GeoPoint {
-  GeoPoint({required this.lat, required this.lng, this.accuracyMeters});
+  GeoPoint({
+    required this.lat,
+    required this.lng,
+    this.accuracyMeters,
+    this.isMocked = false,
+  });
   final double lat;
   final double lng;
   final double? accuracyMeters;
+  final bool isMocked;
 }
 
 class LocationService {
@@ -34,10 +40,20 @@ class LocationService {
         timeLimit: Duration(seconds: 20),
       ),
     );
+
+    // isMocked: Android/iOS cuando aplica; en desktop suele ser false
+    var mocked = false;
+    try {
+      mocked = pos.isMocked;
+    } catch (_) {
+      mocked = false;
+    }
+
     return GeoPoint(
       lat: pos.latitude,
       lng: pos.longitude,
       accuracyMeters: pos.accuracy,
+      isMocked: mocked,
     );
   }
 

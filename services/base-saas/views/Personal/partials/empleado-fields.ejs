@@ -319,6 +319,25 @@
     <option value="<%= g._id %>" <%= empleado && empleado.grupoDispositivosId && String(empleado.grupoDispositivosId) === String(g._id) ? 'selected' : '' %>><%= g.nombre %></option>
     <% }); %>
   </select>
+  <select name="marcajePoliticaGeo">
+    <% (politicasMarcajeGeo || []).forEach(function(p) { %>
+    <option value="<%= p.value %>" <%= (empleado && empleado.marcajePoliticaGeo ? empleado.marcajePoliticaGeo : 'open_with_flag') === p.value ? 'selected' : '' %>><%= p.label %></option>
+    <% }); %>
+  </select>
+  <fieldset class="form-section">
+    <legend>Puntos de acceso fijos</legend>
+    <p class="hint muted">Además de la geocerca de la sucursal y las asignaciones temporales. <a href="/config-puntos-acceso" target="_blank">Administrar catálogo</a></p>
+    <% const puntosSel = empleado && Array.isArray(empleado.puntoAccesoIds) ? empleado.puntoAccesoIds.map(String) : []; %>
+    <% if (!(puntosAcceso || []).length) { %>
+    <p class="muted">No hay puntos activos. Crea alguno en Configuración → Puntos de acceso.</p>
+    <% } %>
+    <% (puntosAcceso || []).forEach(function(p) { %>
+    <label>
+      <input type="checkbox" name="puntoAccesoIds" value="<%= p._id %>" <%= puntosSel.indexOf(String(p._id)) >= 0 ? 'checked' : '' %> />
+      <%= p.nombre %> (<%= p.radioMetros %> m)
+    </label>
+    <% }); %>
+  </fieldset>
   <div class="checkbox-group">
     <label><input type="checkbox" name="exportarFaltas" value="1" <%= !empleado || empleado.exportarFaltas !== false ? 'checked' : '' %> /> Exportar faltas a nómina</label>
     <label><input type="checkbox" name="exportarRetardos" value="1" <%= !empleado || empleado.exportarRetardos !== false ? 'checked' : '' %> /> Exportar retardos a nómina</label>

@@ -5,6 +5,7 @@ const {
   trimUpper,
   trimLower,
   parseOptionalObjectId,
+  parseObjectIdArray,
   parseDate,
   parsePositiveNumber,
   parseCheckbox
@@ -151,6 +152,18 @@ function buildEmpleadoPayload(body, tenantId, empresaId) {
     codigoExterno: trimString(body.codigoExterno),
     tipoRegistro: tipoRegistroFinal,
     grupoDispositivosId: parseOptionalObjectId(body.grupoDispositivosId),
+    marcajePoliticaGeo: (() => {
+      const v = trimString(body.marcajePoliticaGeo);
+      const ok = [
+        'subsidiaria_default',
+        'strict_assignment',
+        'any_catalog_site',
+        'open_with_flag',
+        'disabled'
+      ];
+      return ok.includes(v) ? v : 'open_with_flag';
+    })(),
+    puntoAccesoIds: parseObjectIdArray(body.puntoAccesoIds),
     exportarFaltas: parseCheckbox(body, 'exportarFaltas'),
     exportarRetardos: parseCheckbox(body, 'exportarRetardos'),
     exportarHorasExtra: parseCheckbox(body, 'exportarHorasExtra'),

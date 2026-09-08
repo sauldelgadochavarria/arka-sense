@@ -12,3 +12,10 @@ services:
   base-saas:
     volumes:
       - base_saas_node_modules:/app/node_modules
+
+  # Landing: sin bind mount → imagen con COPY (Dockerfile prod)
+  website:
+    build:
+      context: ./website
+      dockerfile: Dockerfile
+    volumes: []

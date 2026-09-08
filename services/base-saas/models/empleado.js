@@ -89,6 +89,27 @@ const empleadoSchema = new mongoose.Schema(
     exportarFaltas: { type: Boolean, default: true },
     exportarRetardos: { type: Boolean, default: true },
     exportarHorasExtra: { type: Boolean, default: true },
+    /**
+     * Política de geocerca en app móvil.
+     * @see config/asistencia.js POLITICAS_MARCAJE_GEO
+     */
+    marcajePoliticaGeo: {
+      type: String,
+      enum: [
+        'subsidiaria_default',
+        'strict_assignment',
+        'any_catalog_site',
+        'open_with_flag',
+        'disabled',
+        ''
+      ],
+      default: 'open_with_flag'
+    },
+    /** Puntos de acceso fijos autorizados (además de asignaciones temporales). */
+    puntoAccesoIds: {
+      type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'PuntoAcceso' }],
+      default: []
+    },
     nominaConfig: {
       aplicaFondoAhorro: { type: Boolean, default: false },
       porcentajeFondoAhorro: { type: Number, default: 0, min: 0, max: 100 },
@@ -176,6 +197,19 @@ const empleadoSchema = new mongoose.Schema(
       bancoNombre: { type: String, trim: true, default: '' },
       cuenta: { type: String, trim: true, default: '' },
       clabe: { type: String, trim: true, default: '' }
+    },
+    /**
+     * Plantilla facial 1:1 (FaceNet 128-d). Solo RRHH enrolla;
+     * la app móvil verifica liveness + match.
+     */
+    biometriaFacial: {
+      enrolled: { type: Boolean, default: false },
+      enrolledAt: { type: Date, default: null },
+      enrolledBy: { type: String, trim: true, default: null },
+      modelVersion: { type: String, trim: true, default: '' },
+      embedding: { type: [Number], default: undefined },
+      distanceThreshold: { type: Number, default: 0.62 },
+      detectionScore: { type: Number, default: 0 }
     }
   },
   { timestamps: true, collection: COLLECTION_EMPLEADOS }

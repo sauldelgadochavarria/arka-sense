@@ -1,0 +1,70 @@
+<%- include('../Partials/layout-top', { title: title || 'Puntos de acceso', session }) %>
+<h1>Puntos de acceso</h1>
+<div class="toolbar">
+  <a class="btn" href="/config-subsidiarias">← Subsidiarias</a>
+</div>
+<p class="muted">
+  Catálogo de geocercas (lat, lng, radio) para validar marcaciones móviles.
+  La decisión de «dentro / fuera» la hace el backend. También puedes configurar
+  radio en cada <a href="/config-subsidiarias">subsidiaria</a>.
+</p>
+
+<% if (!empresa) { %>
+<p>No hay empresa vinculada.</p>
+<% } else { %>
+
+<h2>Nuevo punto</h2>
+<form method="post" action="/config-puntos-acceso" class="form-grid form-wide">
+  <input name="codigo" placeholder="Código (opcional)" maxlength="32" />
+  <input name="nombre" placeholder="Nombre (ej. Planta Norte, Cliente X)" required />
+  <input name="descripcion" placeholder="Descripción" />
+  <select name="subsidiariaId">
+    <option value="">— Sucursal (opcional) —</option>
+    <% subsidiarias.forEach(function(s) { %>
+    <option value="<%= s._id %>"><%= s.nombre %></option>
+    <% }); %>
+  </select>
+  <input name="lat" type="number" step="any" placeholder="Latitud" required />
+  <input name="lng" type="number" step="any" placeholder="Longitud" required />
+  <input name="radioMetros" type="number" min="10" max="5000" value="120" placeholder="Radio (m)" required />
+  <button type="submit">Crear punto</button>
+</form>
+<p class="hint">Radio sugerido: 80–150 m (margen GPS en interiores).</p>
+
+<h2>Catálogo</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Código</th>
+      <th>Nombre</th>
+      <th>Sucursal</th>
+      <th>Lat / Lng</th>
+      <th>Radio</th>
+      <th>Activo</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <% if (!puntos.length) { %>
+    <tr><td colspan="7" class="muted">Sin puntos registrados.</td></tr>
+    <% } %>
+    <% puntos.forEach(function(p) { %>
+    <tr class="<%= !p.activo ? 'row-muted' : '' %>">
+      <td><%= p.codigo || '—' %></td>
+      <td><%= p.nombre %></td>
+      <td><%= p.subsidiariaId ? (subMap.get(String(p.subsidiariaId)) || '—') : '—' %></td>
+      <td class="muted small"><%= p.lat %>, <%= p.lng %></td>
+      <td><%= p.radioMetros %> m</td>
+      <td><%= p.activo ? 'Sí' : 'No' %></td>
+      <td class="actions">
+        <a href="/config-puntos-acceso/<%= p._id %>/edit">Editar</a>
+        <form method="post" action="/config-puntos-acceso/<%= p._id %>/toggle" class="inline-form">
+          <button type="submit"><%= p.activo ? 'Desactivar' : 'Activar' %></button>
+        </form>
+      </td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<% } %>
+<%- include('../Partials/layout-bottom') %>

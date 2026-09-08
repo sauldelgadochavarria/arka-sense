@@ -54,7 +54,21 @@ const attendanceRecordSchema = new mongoose.Schema(
       lat: { type: Number, default: null },
       lng: { type: Number, default: null },
       accuracyMeters: { type: Number, default: null },
-      capturedAt: { type: Date, default: null }
+      capturedAt: { type: Date, default: null },
+      isMocked: { type: Boolean, default: false }
+    },
+    /** Resultado de validación de geocerca (backend). */
+    geocerca: {
+      politica: { type: String, default: '' },
+      skipped: { type: Boolean, default: false },
+      fueraDeZona: { type: Boolean, default: false },
+      allowed: { type: Boolean, default: true },
+      puntoAccesoId: { type: mongoose.Schema.Types.ObjectId, ref: 'PuntoAcceso', default: null },
+      siteSource: { type: String, default: '' },
+      siteNombre: { type: String, default: '' },
+      distanceMeters: { type: Number, default: null },
+      radioMetros: { type: Number, default: null },
+      justificacionFueraZona: { type: String, default: '' }
     },
     /** Metadatos del dispositivo que registró la marcación. */
     dispositivo: {

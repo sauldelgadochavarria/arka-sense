@@ -1,0 +1,138 @@
+<%- include('../Partials/layout-top') %>
+<section class="page-header">
+  <p class="breadcrumb"><a href="/personal-empleados">Empleados</a> ·
+    <a href="/personal-empleados/<%= empleado._id %>"><%= empleado.numEmpleado %></a> · Biometría facial</p>
+  <h1>Biometría facial</h1>
+  <p class="muted"><%= empleado.firstName %> <%= empleado.lastName %> · #<%= empleado.numEmpleado %></p>
+</section>
+
+<% if (typeof engine !== 'undefined' && engine && !engine.ready) { %>
+<div class="alert alert-warning">
+  Motor facial no listo: <%= engine.lastError || 'descarga modelos (npm run biometrics:models)' %>
+</div>
+<% } %>
+
+<section class="card-block">
+  <h2>Estado</h2>
+  <dl class="dl-grid">
+    <dt>Plantilla</dt>
+    <dd><% if (bio.enrolled) { %><strong class="ok">Registrada</strong><% } else { %><span class="muted">Pendiente</span><% } %></dd>
+    <dt>Fecha</dt>
+    <dd><%= bio.enrolledAt ? new Date(bio.enrolledAt).toLocaleString('es-MX') : '—' %></dd>
+    <dt>Modelo</dt>
+    <dd><%= bio.modelVersion || '—' %></dd>
+    <dt>Umbral distancia</dt>
+    <dd><%= bio.distanceThreshold != null ? bio.distanceThreshold : 0.62 %></dd>
+  </dl>
+  <% if (bio.enrolled) { %>
+  <form method="post" action="/personal-empleados/<%= empleado._id %>/biometria-facial/eliminar"
+        onsubmit="return confirm('¿Eliminar la plantilla facial de este empleado?');">
+    <button type="submit" class="btn-danger">Eliminar plantilla</button>
+  </form>
+  <% } %>
+</section>
+
+<section class="card-block">
+  <h2><%= bio.enrolled ? 'Actualizar rostro' : 'Capturar rostro de referencia' %></h2>
+  <p class="muted">Usa la cámara (preferible luz frontal, rostro neutro). La imagen no se guarda en disco; solo el vector facial.</p>
+
+  <div class="bio-capture">
+    <video id="bioVideo" autoplay playsinline muted width="480" height="360" style="max-width:100%;background:#111;border-radius:8px;"></video>
+    <canvas id="bioCanvas" width="480" height="360" style="display:none;"></canvas>
+    <div class="actions-bar" style="margin-top:12px;">
+      <button type="button" class="btn" id="bioStartCam">Abrir cámara</button>
+      <button type="button" class="btn" id="bioCapture" disabled>Capturar y registrar</button>
+      <button type="button" id="bioStopCam" disabled>Cerrar cámara</button>
+    </div>
+    <p id="bioMsg" class="muted" style="margin-top:8px;"></p>
+  </div>
+</section>
+
+<p><a href="/personal-empleados/<%= empleado._id %>">← Volver al expediente</a></p>
+
+<script>
+(function () {
+  const video = document.getElementById('bioVideo');
+  const canvas = document.getElementById('bioCanvas');
+  const msg = document.getElementById('bioMsg');
+  const btnStart = document.getElementById('bioStartCam');
+  const btnCap = document.getElementById('bioCapture');
+  const btnStop = document.getElementById('bioStopCam');
+  let stream = null;
+
+  function setMsg(t, isErr) {
+    msg.textContent = t || '';
+    msg.style.color = isErr ? '#c0392b' : '';
+  }
+
+  async function startCam() {
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
+        audio: false
+      });
+      video.srcObject = stream;
+      btnCap.disabled = false;
+      btnStop.disabled = false;
+      setMsg('Cámara lista. Mira al frente y captura.');
+    } catch (e) {
+      setMsg('No se pudo abrir la cámara: ' + (e.message || e), true);
+    }
+  }
+
+  function stopCam() {
+    if (stream) {
+      stream.getTracks().forEach(function (t) { t.stop(); });
+      stream = null;
+    }
+    video.srcObject = null;
+    btnCap.disabled = true;
+    btnStop.disabled = true;
+  }
+
+  async function captureAndEnroll() {
+    if (!stream) return;
+    const ctx = canvas.getContext('2d');
+    canvas.width = video.videoWidth || 480;
+    canvas.height = video.videoHeight || 360;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    setMsg('Procesando rostro…');
+    btnCap.disabled = true;
+
+    canvas.toBlob(async function (blob) {
+      if (!blob) {
+        setMsg('No se pudo capturar la imagen', true);
+        btnCap.disabled = false;
+        return;
+      }
+      const fd = new FormData();
+      fd.append('rostro', blob, 'rostro.jpg');
+      try {
+        const res = await fetch('/personal-empleados/<%= empleado._id %>/biometria-facial/enroll', {
+          method: 'POST',
+          body: fd,
+          credentials: 'same-origin'
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+          setMsg(data.error || data.message || 'Error al registrar', true);
+          btnCap.disabled = false;
+          return;
+        }
+        setMsg(data.message || 'Registrado');
+        stopCam();
+        setTimeout(function () { location.reload(); }, 800);
+      } catch (e) {
+        setMsg(String(e), true);
+        btnCap.disabled = false;
+      }
+    }, 'image/jpeg', 0.92);
+  }
+
+  btnStart.addEventListener('click', startCam);
+  btnStop.addEventListener('click', stopCam);
+  btnCap.addEventListener('click', captureAndEnroll);
+  window.addEventListener('beforeunload', stopCam);
+})();
+</script>
+<%- include('../Partials/layout-bottom') %>
