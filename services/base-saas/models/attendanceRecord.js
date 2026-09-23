@@ -17,6 +17,8 @@ const attendanceRecordSchema = new mongoose.Schema(
     timestamp: { type: Date, required: true, index: true },
     /** Marca de tiempo tal como se registró la primera vez (inalterable en espíritu). */
     timestampOriginal: { type: Date, default: null },
+    /** Instantánea del servidor al crear el registro (evidencia anti-alteración local). */
+    servidorRegisteredAt: { type: Date, default: null },
     tipoMarcacion: {
       type: String,
       enum: ['entrada', 'salida_comida', 'regreso_comida', 'salida'],
@@ -75,6 +77,19 @@ const attendanceRecordSchema = new mongoose.Schema(
       plataforma: { type: String, default: '' },
       modelo: { type: String, default: '' },
       appVersion: { type: String, default: '' }
+    },
+    /** Evidencia facial ligada al checado (si aplica). */
+    biometria: {
+      ok: { type: Boolean, default: null },
+      score: { type: Number, default: null },
+      challengeId: { type: String, default: '' },
+      verifiedAt: { type: Date, default: null }
+    },
+    /** Intento append-only que originó esta marcación. */
+    attemptId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'AttendanceAttempt',
+      default: null
     }
   },
   { timestamps: true, collection: COLLECTION_ATTENDANCE_RECORDS }

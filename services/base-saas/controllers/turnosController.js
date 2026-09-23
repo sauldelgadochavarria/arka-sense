@@ -7,7 +7,28 @@ const {
 const { buildTurnoPayload } = require('../libs/turnoPayload');
 const { describeVentanaTurno, labelTipoTurno } = require('../libs/turnoHelpers');
 const { DIAS_SEMANA, TIPOS_TURNO, MODOS_TOLERANCIA } = require('../config/asistencia');
+const { TIPOS_JORNADA_CFDI } = require('../libs/esquemaJornada');
 
+function stripInternal(payload) {
+  const { _esquemaWarnings, ...rest } = payload;
+  return { data: rest, warnings: _esquemaWarnings || [] };
+}
+
+function flashTurnoError(req, err, fallback) {
+  if (err.message === 'INVALID_SHIFT_TIME') {
+    req.flash('error', 'Horario inválido (use HH:MM)');
+    return;
+  }
+  if (err.code === 'TURNO_EXCEDE_ESQUEMA') {
+    req.flash('error', err.message || 'El turno excede el tope diario del esquema (máx. 12 h)');
+    return;
+  }
+  if (err.code === 11000) {
+    req.flash('error', 'Ya existe un turno con ese nombre');
+    return;
+  }
+  req.flash('error', fallback);
+}
 async function listTurnos(req, res) {
   const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
   const Turno = await getTurnoModel();
@@ -20,6 +41,7 @@ async function listTurnos(req, res) {
     diasSemana: DIAS_SEMANA,
     tiposTurno: TIPOS_TURNO,
     modosTolerancia: MODOS_TOLERANCIA,
+    tiposJornadaCfdi: TIPOS_JORNADA_CFDI,
     labelTipoTurno: (tipo) => labelTipoTurno(tipo, TIPOS_TURNO),
     describeVentana: describeVentanaTurno,
     empresa,
@@ -28,24 +50,46 @@ async function listTurnos(req, res) {
   });
 }
 
+function turnoFormLocals(empresa, error, req) {
+  return {
+    turno: null,
+    diasSemana: DIAS_SEMANA,
+    tiposTurno: TIPOS_TURNO,
+    modosTolerancia: MODOS_TOLERANCIA,
+    tiposJornadaCfdi: TIPOS_JORNADA_CFDI,
+    describeVentana: describeVentanaTurno,
+    empresa,
+    error: error || null,
+    session: req.session
+  };
+}
+
+async function newTurno(req, res) {
+  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  res.render('Asistencia/turno-nuevo', turnoFormLocals(empresa, error, req));
+}
+
 async function createTurno(req, res) {
   try {
     const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
     if (error) {
       req.flash('error', error);
-      return res.redirect('/asistencia-turnos');
+      return res.redirect('/asistencia-turnos/nuevo');
     }
 
     const Turno = await getTurnoModel();
-    const payload = buildTurnoPayload(req.body, req.session.tenantId, empresa._id);
-    await Turno.create({ ...payload, activo: true });
-    req.flash('success', 'Turno creado');
+    const built = stripInternal(buildTurnoPayload(req.body, req.session.tenantId, empresa._id));
+    await Turno.create({ ...built.data, activo: true });
+    if (built.warnings.length) {
+      req.flash('success', `Turno creado. Aviso: ${built.warnings.join(' · ')}`);
+    } else {
+      req.flash('success', 'Turno creado');
+    }
     res.redirect('/asistencia-turnos');
   } catch (err) {
     console.error('[turnos]', err);
-    const msg = err.message === 'INVALID_SHIFT_TIME' ? 'Horario inválido (use HH:MM)' : 'Error al crear turno';
-    req.flash('error', err.code === 11000 ? 'Ya existe un turno con ese nombre' : msg);
-    res.redirect('/asistencia-turnos');
+    flashTurnoError(req, err, 'Error al crear turno');
+    res.redirect('/asistencia-turnos/nuevo');
   }
 }
 
@@ -60,6 +104,7 @@ async function editTurno(req, res) {
     diasSemana: DIAS_SEMANA,
     tiposTurno: TIPOS_TURNO,
     modosTolerancia: MODOS_TOLERANCIA,
+    tiposJornadaCfdi: TIPOS_JORNADA_CFDI,
     describeVentana: describeVentanaTurno,
     empresa,
     error: error || null,
@@ -79,16 +124,19 @@ async function updateTurno(req, res) {
     const turno = await findOneDocByTenant(Turno, req.session.tenantId, req.params.id);
     if (!turno) return res.status(404).send('Turno no encontrado');
 
-    const payload = buildTurnoPayload(req.body, req.session.tenantId, empresa._id);
-    Object.assign(turno, payload);
+    const built = stripInternal(buildTurnoPayload(req.body, req.session.tenantId, empresa._id));
+    Object.assign(turno, built.data);
     await turno.save();
 
-    req.flash('success', 'Turno actualizado');
+    if (built.warnings.length) {
+      req.flash('success', `Turno actualizado. Aviso: ${built.warnings.join(' · ')}`);
+    } else {
+      req.flash('success', 'Turno actualizado');
+    }
     res.redirect('/asistencia-turnos');
   } catch (err) {
     console.error('[turnos]', err);
-    const msg = err.message === 'INVALID_SHIFT_TIME' ? 'Horario inválido (use HH:MM)' : 'Error al actualizar turno';
-    req.flash('error', err.code === 11000 ? 'Ya existe un turno con ese nombre' : msg);
+    flashTurnoError(req, err, 'Error al actualizar turno');
     res.redirect(`/asistencia-turnos/${req.params.id}/edit`);
   }
 }
@@ -104,4 +152,4 @@ async function toggleTurno(req, res) {
   res.redirect('/asistencia-turnos');
 }
 
-module.exports = { listTurnos, createTurno, editTurno, updateTurno, toggleTurno };
+module.exports = { listTurnos, newTurno, createTurno, editTurno, updateTurno, toggleTurno };

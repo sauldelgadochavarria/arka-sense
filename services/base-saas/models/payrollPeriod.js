@@ -27,6 +27,8 @@ const payrollPeriodSchema = new mongoose.Schema(
     numeroPeriodo: { type: Number, default: null },
     fechaInicio: { type: Date, required: true, index: true },
     fechaFin: { type: Date, required: true, index: true },
+    /** Fecha sugerida/confirmada de dispersión (no afecta días pagados ni ISR). */
+    fechaPago: { type: Date, default: null },
     estatus: {
       type: String,
       enum: ['pendiente', 'abierto', 'borrador', 'cerrado'],

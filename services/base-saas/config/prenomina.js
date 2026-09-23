@@ -1,10 +1,11 @@
 'use strict';
 
 const TIPOS_PERIODO = [
-  { value: 'semanal', label: 'Semanal (lun–dom)' },
-  { value: 'quincenal', label: 'Quincenal' },
-  { value: 'mensual', label: 'Mensual' },
-  { value: 'decena', label: 'Decena (cada 10 días)' }
+  { value: 'semanal', label: 'Semanal (familia ISR)' },
+  { value: 'quincenal', label: 'Quincenal (familia ISR)' },
+  { value: 'catorcenal', label: 'Catorcenal (familia ISR)' },
+  { value: 'mensual', label: 'Mensual (familia ISR)' },
+  { value: 'decena', label: 'Decena (familia ISR)' }
 ];
 
 const ESTATUS_PERIODO = {

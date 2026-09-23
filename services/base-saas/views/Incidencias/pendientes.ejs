@@ -1,22 +1,56 @@
 <%- include('../Partials/layout-top', { title: 'Pendientes', session }) %>
-<p><a href="/incidencias">← Incidencias</a></p>
+<p><a href="/incidencias">← Incidencias</a> · <a href="/dashboard">Flujo de nómina</a></p>
 <h1>Bandeja de aprobación</h1>
 
+<p class="muted">
+  Esta bandeja <strong>no es asistencia operativa</strong> ni el cierre de pre-nómina.
+  Es el puente <strong>antes del cálculo de nómina formal</strong>: autorizar (o rechazar)
+  faltas, vacaciones, permisos y <strong>horas extra (HED/HEF…)</strong> que salieron de la asistencia
+  para que el pago quede respaldado.
+</p>
+<% if (typeof periodoNomina !== 'undefined' && periodoNomina) { %>
+<p>
+  Filtrado al período de nómina
+  <strong><%= periodoNomina.tipoPeriodo %> #<%= periodoNomina.numeroPeriodo %></strong>
+  (<%= new Date(periodoNomina.fechaInicio).toLocaleDateString('es-MX') %> –
+  <%= new Date(periodoNomina.fechaFin).toLocaleDateString('es-MX') %>)
+  · estatus nómina: <strong><%= periodoNomina.estatus %></strong>
+  · <a href="/incidencias/pendientes">Ver todas</a>
+  · <a href="/nomina/periodos/<%= periodoNomina._id %>">Ir a cálculo formal</a>
+</p>
+<% } %>
+<% if (typeof porCodigo !== 'undefined' && porCodigo && Object.keys(porCodigo).length) { %>
+<p class="muted small">
+  Resumen:
+  <% Object.keys(porCodigo).forEach(function(k, idx) { %>
+  <%= idx ? ' · ' : '' %><code><%= k %></code> ×<%= porCodigo[k] %>
+  <% }); %>
+  <% if (porCodigo.HED || porCodigo.HEF || porCodigo.HEO) { %>
+  — las HE se generan solas desde checadas; aquí decides si se pagan / autorizan.
+  <% } %>
+</p>
+<% } %>
+
 <% if (!incidencias.length) { %>
-<p class="muted">No hay incidencias pendientes.</p>
+<p class="muted">No hay incidencias pendientes<%= typeof periodoNomina !== 'undefined' && periodoNomina ? ' en este período' : '' %>.</p>
 <% } else { %>
-<form id="bulk-aprobar" method="post" action="/incidencias/aprobar-masivo"></form>
+<form id="bulk-form" method="post" action="/incidencias/aprobar-masivo"></form>
 
 <table>
   <thead>
     <tr>
-      <th></th><th>Fecha</th><th>Empleado</th><th>Tipo</th><th>Días</th><th>Motivo</th><th>Acciones</th>
+      <th>
+        <label class="inline-check" title="Seleccionar todo">
+          <input type="checkbox" id="select-all" />
+        </label>
+      </th>
+      <th>Fecha</th><th>Empleado</th><th>Tipo</th><th>Días</th><th>Motivo</th><th>Acciones</th>
     </tr>
   </thead>
   <tbody>
     <% incidencias.forEach(function(i) { %>
     <tr>
-      <td><input type="checkbox" name="ids" value="<%= i._id %>" form="bulk-aprobar" /></td>
+      <td><input type="checkbox" class="row-check" name="ids" value="<%= i._id %>" form="bulk-form" /></td>
       <td><%= new Date(i.fechaInicio).toLocaleDateString('es-MX') %></td>
       <td><%= empMap.get(String(i.empleadoId)) || '—' %></td>
       <td><code><%= i.codigo %></code></td>
@@ -35,9 +69,50 @@
     <% }); %>
   </tbody>
 </table>
-<div class="actions-bar">
-  <input name="notasResolucion" placeholder="Nota aprobación masiva" form="bulk-aprobar" />
-  <button type="submit" form="bulk-aprobar">Aprobar seleccionadas</button>
+
+<div class="actions-bar" style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin-top:1rem">
+  <label class="inline-check">
+    <input type="checkbox" id="select-all-bar" />
+    Seleccionar todo
+  </label>
+  <span class="muted small" id="bulk-count">0 seleccionada(s)</span>
+  <input name="notasResolucion" placeholder="Nota (aprobación o rechazo masivo)" form="bulk-form" style="min-width:16rem" />
+  <button type="submit" form="bulk-form">Aprobar seleccionadas</button>
+  <button
+    type="submit"
+    form="bulk-form"
+    formaction="/incidencias/rechazar-masivo"
+    class="btn-danger"
+    onclick="return confirm('¿Rechazar las incidencias seleccionadas?');">
+    Rechazar seleccionadas
+  </button>
 </div>
+
+<script>
+(function () {
+  var selectAll = document.getElementById('select-all');
+  var selectAllBar = document.getElementById('select-all-bar');
+  var checks = Array.prototype.slice.call(document.querySelectorAll('.row-check'));
+  var countEl = document.getElementById('bulk-count');
+
+  function syncCount() {
+    var n = checks.filter(function (c) { return c.checked; }).length;
+    if (countEl) countEl.textContent = n + ' seleccionada(s)';
+    var all = checks.length > 0 && n === checks.length;
+    if (selectAll) selectAll.checked = all;
+    if (selectAllBar) selectAllBar.checked = all;
+  }
+
+  function setAll(on) {
+    checks.forEach(function (c) { c.checked = on; });
+    syncCount();
+  }
+
+  if (selectAll) selectAll.addEventListener('change', function () { setAll(selectAll.checked); });
+  if (selectAllBar) selectAllBar.addEventListener('change', function () { setAll(selectAllBar.checked); });
+  checks.forEach(function (c) { c.addEventListener('change', syncCount); });
+  syncCount();
+})();
+</script>
 <% } %>
 <%- include('../Partials/layout-bottom') %>

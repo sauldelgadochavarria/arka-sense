@@ -38,6 +38,12 @@ const payrollDetailSchema = new mongoose.Schema(
     minutosHETriple: { type: Number, default: 0 },
     minutosSalidaAnticipada: { type: Number, default: 0 },
     salarioDiario: { type: Number, default: 0 },
+    /** Snapshot jornada / valor hora al calcular (Sprint 1 reforma 2027). */
+    horasJornada: { type: Number, default: 8 },
+    valorHora: { type: Number, default: 0 },
+    maxHorasOrdinariasSemana: { type: Number, default: 46 },
+    tipoJornadaCfdi: { type: String, default: '01' },
+    excedeLimiteDiario: { type: Boolean, default: false },
     percepciones: [lineaConceptoSchema],
     deducciones: [lineaConceptoSchema],
     totalPercepciones: { type: Number, default: 0 },

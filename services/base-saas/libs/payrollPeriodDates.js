@@ -1,40 +1,62 @@
 'use strict';
 
 const { startOfDay, endOfDay } = require('../libs/timeHelpers');
+const {
+  startOfWeekOn,
+  endOfWeekOn,
+  resolveModoCalendario,
+  normalizeWeekday,
+  addDays
+} = require('./calendarioPeriodo');
 
 function startOfWeekMonday(date) {
-  const d = startOfDay(date);
-  const day = d.getDay();
-  const diff = day === 0 ? -6 : 1 - day;
-  d.setDate(d.getDate() + diff);
-  return d;
+  return startOfWeekOn(date, 1);
 }
 
 function endOfWeekSunday(monday) {
-  const d = new Date(monday);
-  d.setDate(d.getDate() + 6);
-  return endOfDay(d);
+  return endOfWeekOn(monday, 1);
 }
 
-function resolvePeriodRange(tipo, referencia = new Date()) {
+/**
+ * Resuelve ventana de período.
+ * @param {string} tipo - tipoMotor (semanal, quincenal…)
+ * @param {Date} [referencia]
+ * @param {object|null} [tipoPeriodoRef] - catálogo con diaInicioSemana / modoCalendario / diasPeriodo
+ */
+function resolvePeriodRange(tipo, referencia = new Date(), tipoPeriodoRef = null) {
   const ref = startOfDay(referencia);
   const y = ref.getFullYear();
   const m = ref.getMonth();
   const d = ref.getDate();
+  const tipoNorm = String(tipo || tipoPeriodoRef?.tipoMotor || 'quincenal').toLowerCase();
+  const modo = resolveModoCalendario(tipoPeriodoRef, tipoNorm);
+  const weekStartsOn = normalizeWeekday(tipoPeriodoRef?.diaInicioSemana, 1);
+  const diasPeriodo = Number(tipoPeriodoRef?.diasPeriodo) || 0;
 
-  if (tipo === 'semanal') {
-    const inicio = startOfWeekMonday(ref);
-    return { fechaInicio: inicio, fechaFin: endOfWeekSunday(inicio) };
+  if (modo === 'por_dias' && diasPeriodo > 0) {
+    let inicio = ref;
+    if (tipoNorm === 'semanal') {
+      inicio = startOfWeekOn(ref, weekStartsOn);
+    }
+    return {
+      fechaInicio: startOfDay(inicio),
+      fechaFin: endOfDay(addDays(inicio, diasPeriodo - 1))
+    };
   }
 
-  if (tipo === 'quincenal') {
+  if (tipoNorm === 'semanal') {
+    const inicio = startOfWeekOn(ref, weekStartsOn);
+    return { fechaInicio: inicio, fechaFin: endOfWeekOn(ref, weekStartsOn) };
+  }
+
+  if (tipoNorm === 'quincenal') {
     if (d <= 15) {
       return { fechaInicio: new Date(y, m, 1), fechaFin: endOfDay(new Date(y, m, 15)) };
     }
     return { fechaInicio: new Date(y, m, 16), fechaFin: endOfDay(new Date(y, m + 1, 0)) };
   }
 
-  if (tipo === 'decena') {
+  if (tipoNorm === 'decena') {
     if (d <= 10) {
       return { fechaInicio: new Date(y, m, 1), fechaFin: endOfDay(new Date(y, m, 10)) };
     }
@@ -44,7 +66,7 @@ function resolvePeriodRange(tipo, referencia = new Date()) {
     return { fechaInicio: new Date(y, m, 21), fechaFin: endOfDay(new Date(y, m + 1, 0)) };
   }
 
-  if (tipo === 'catorcenal') {
+  if (tipoNorm === 'catorcenal') {
     if (d <= 14) {
       return { fechaInicio: new Date(y, m, 1), fechaFin: endOfDay(new Date(y, m, 14)) };
     }
@@ -55,4 +77,8 @@ function resolvePeriodRange(tipo, referencia = new Date()) {
   return { fechaInicio: new Date(y, m, 1), fechaFin: endOfDay(new Date(y, m + 1, 0)) };
 }
 
-module.exports = { resolvePeriodRange };
+module.exports = {
+  resolvePeriodRange,
+  startOfWeekMonday,
+  endOfWeekSunday
+};

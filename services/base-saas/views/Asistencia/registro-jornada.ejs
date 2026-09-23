@@ -1,9 +1,10 @@
 <%- include('../Partials/layout-top', { title: 'Registro de jornada', session }) %>
+<%- include('partials/flujo-asistencia', { pasoActual: 3, fecha: typeof fecha !== 'undefined' ? fecha : null }) %>
 <div class="page-header">
   <h1>Registro de jornada</h1>
   <p class="page-subtitle">
-    Inicio y fin de jornada, comida, tiempo efectivo, horas ordinarias/extra y acumulado semanal
-    (preparación Art. 132 fr. XXXIV LFT — evidencia interna).
+    Inicio/fin, comida, efectivo, ordinarias/extra y topes reforma 2027
+    (46 h ordinarias/semana · 12 h totales/día — Art. 68).
   </p>
 </div>
 
@@ -14,6 +15,7 @@
 <div class="toolbar">
   <a class="btn" href="/asistencia-marcaciones">← Marcaciones</a>
   <a class="btn" href="/asistencia-diaria">Asistencia del día</a>
+  <a class="btn" href="/asistencia-intentos">Intentos / evidencia</a>
 </div>
 
 <form method="get" action="/asistencia-registro-jornada" class="filter-form form-grid">
@@ -36,6 +38,14 @@
   <button type="submit">Consultar</button>
 </form>
 
+<% if (typeof resumenTopes !== 'undefined' && resumenTopes) { %>
+<div class="summary-cards" style="margin-bottom:1rem">
+  <div class="card"><strong><%= resumenTopes.alertas46 %></strong> semana(s) &gt; tope ordinarias</div>
+  <div class="card"><strong><%= resumenTopes.alertas12 %></strong> día(s) &gt; 12 h</div>
+  <div class="card"><strong><%= resumenTopes.sinTurno %></strong> empleado(s) sin turno</div>
+</div>
+<% } %>
+
 <h2>Detalle diario</h2>
 <table>
   <thead>
@@ -49,18 +59,19 @@
       <th>Efectivo</th>
       <th>Ordinario</th>
       <th>HE</th>
+      <th>Tope día</th>
       <th>Estatus</th>
     </tr>
   </thead>
   <tbody>
     <% if (!filas.length) { %>
-    <tr><td colspan="10" class="muted">Sin registros de jornada en el rango.</td></tr>
+    <tr><td colspan="11" class="muted">Sin registros de jornada en el rango.</td></tr>
     <% } %>
     <% filas.forEach(function(f) {
          const ymd = f.fecha ? new Date(f.fecha).toISOString().slice(0, 10) : '—';
          const est = (estatusDiarioLabels && estatusDiarioLabels[f.estatus]) || f.estatus || '—';
     %>
-    <tr>
+    <tr class="<%= f.excedeLimiteDiario ? 'row-muted' : '' %>">
       <td><%= ymd %></td>
       <td><%= f.nombre %> <span class="muted small">(<%= f.numEmpleado %>)</span></td>
       <td><%= f.entradaFmt %></td>
@@ -70,13 +81,20 @@
       <td><%= fmtMin(f.minutosEfectivos) %></td>
       <td><%= fmtMin(f.minutosOrdinarios) %></td>
       <td><%= fmtMin(f.minutosHE) %></td>
+      <td>
+        <% if (f.excedeLimiteDiario) { %>
+        <span class="badge badge-suspendido">&gt; <%= f.maxHorasTotalesDia || 12 %> h</span>
+        <% } else { %>
+        <span class="badge badge-activo">OK</span>
+        <% } %>
+      </td>
       <td><span class="badge badge-<%= f.estatus || 'falta' %>"><%= est %></span></td>
     </tr>
     <% }); %>
   </tbody>
 </table>
 
-<h2>Acumulado semanal</h2>
+<h2>Acumulado semanal vs tope ordinarias</h2>
 <table>
   <thead>
     <tr>
@@ -84,6 +102,8 @@
       <th>Empleado</th>
       <th>Horas efectivas</th>
       <th>Horas ordinarias</th>
+      <th>Tope esquema</th>
+      <th>Semáforo</th>
       <th>HE (total)</th>
       <th>HE dobles*</th>
       <th>HE triples*</th>
@@ -91,14 +111,25 @@
   </thead>
   <tbody>
     <% if (!semanas.length) { %>
-    <tr><td colspan="7" class="muted">Sin acumulados.</td></tr>
+    <tr><td colspan="9" class="muted">Sin acumulados.</td></tr>
     <% } %>
-    <% semanas.forEach(function(s) { %>
+    <% semanas.forEach(function(s) {
+         const sem = s.semaforo46 || 'ok';
+         const badge = sem === 'alert' ? 'suspendido' : (sem === 'warn' ? 'falta' : 'activo');
+         const label = sem === 'alert' ? 'Excede' : (sem === 'warn' ? 'Cerca' : 'OK');
+    %>
     <tr>
       <td><code><%= s.week %></code></td>
-      <td><%= s.nombre %> <span class="muted small">(<%= s.numEmpleado %>)</span></td>
+      <td>
+        <%= s.nombre %> <span class="muted small">(<%= s.numEmpleado %>)</span>
+        <% if (s.sinTurno) { %> <span class="badge badge-suspendido">sin turno</span><% } %>
+      </td>
       <td><%= s.horasEfectivas %></td>
       <td><%= s.horasOrdinarias %></td>
+      <td><%= s.maxHorasOrdinariasSemana %></td>
+      <td><span class="badge badge-<%= badge %>"><%= label %></span>
+        <% if (s.excedeLimiteDiario) { %> · <span class="badge badge-suspendido">día &gt;12h</span><% } %>
+      </td>
       <td><%= s.horasHE %></td>
       <td><%= fmtMin(s.heDoblesSemana) %></td>
       <td><%= fmtMin(s.heTriplesSemana) %></td>
@@ -106,7 +137,7 @@
     <% }); %>
   </tbody>
 </table>
-<p class="muted small">* Clasificación LFT (tope 3 h/día y 9 h/semana al doble). No sustituye aún el calendario progresivo de 40 h.</p>
+<p class="muted small">* Clasificación LFT (tope 3 h/día y 9 h/semana al doble) según esquema del turno. Semáforo 46 h = ordinarias vs <code>maxHorasOrdinariasSemana</code>.</p>
 
 <% if (bitacora && bitacora.length) { %>
 <h2>Bitácora relacionada</h2>

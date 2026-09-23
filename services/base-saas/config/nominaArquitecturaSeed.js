@@ -619,7 +619,7 @@ const DEFAULT_FORMULA_TEMPLATES = [
     tipoPeriodo: 'quincenal',
     tipoNomina: 'ordinaria',
     formula:
-      'si(INCIDENCIAS.horasExtraDobles > 0, (EMPLEADO.salarioDiario / EMPLEADO.horasJornada) * INCIDENCIAS.horasExtraDobles * 2, 0)',
+      'si(INCIDENCIAS.horasExtraDobles > 0, si(EMPLEADO.valorHora > 0, EMPLEADO.valorHora, EMPLEADO.salarioDiario / EMPLEADO.horasJornada) * INCIDENCIAS.horasExtraDobles * 2, 0)',
     condicion: '',
     dependencias: []
   },
@@ -630,7 +630,7 @@ const DEFAULT_FORMULA_TEMPLATES = [
     tipoPeriodo: 'quincenal',
     tipoNomina: 'ordinaria',
     formula:
-      'si(INCIDENCIAS.horasExtraTriples > 0, (EMPLEADO.salarioDiario / EMPLEADO.horasJornada) * INCIDENCIAS.horasExtraTriples * 3, 0)',
+      'si(INCIDENCIAS.horasExtraTriples > 0, si(EMPLEADO.valorHora > 0, EMPLEADO.valorHora, EMPLEADO.salarioDiario / EMPLEADO.horasJornada) * INCIDENCIAS.horasExtraTriples * 3, 0)',
     condicion: '',
     dependencias: []
   },

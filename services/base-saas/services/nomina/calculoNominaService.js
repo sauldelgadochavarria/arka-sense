@@ -154,7 +154,18 @@ async function calcularReciboEmpleado(
   });
 
   const sueldoDiario = insumos.sueldoDiario ?? empleado.salarioDiario ?? 0;
-  const horasJornada = empleado.turnoHorasJornada || empleado.nominaConfig?.horasJornada || 8;
+  const horasJornada =
+    (insumos.horasJornada != null && Number(insumos.horasJornada) > 0
+      ? Number(insumos.horasJornada)
+      : null) ||
+    empleado.turnoHorasJornada ||
+    empleado.nominaConfig?.horasJornada ||
+    8;
+  const valorHora =
+    (insumos.valorHora != null && Number(insumos.valorHora) > 0
+      ? Number(insumos.valorHora)
+      : null) ||
+    (sueldoDiario > 0 && horasJornada > 0 ? sueldoDiario / horasJornada : 0);
   const baseImss = resolverBaseImss(
     { ...empleado, salarioDiario: sueldoDiario },
     parametros.uma,
@@ -219,12 +230,15 @@ async function calcularReciboEmpleado(
     empleado: {
       salarioDiario: sueldoDiario,
       horasJornada,
+      valorHora,
+      maxHorasOrdinariasSemana: insumos.maxHorasOrdinariasSemana || 46,
+      tipoJornadaCfdi: insumos.tipoJornadaCfdi || '01',
       antiguedadAnios: calcularAntiguedadAnios(empleado.fechaIngreso, periodo.fechaInicio),
       sdi: sdiDiario,
       sbc: sbcEmpleado,
       tipoSalario: baseImss.tipoSalario,
       tipoEmpleado: empleado.tipoEmpleado || '',
-      atributos: { horasJornada },
+      atributos: { horasJornada, valorHora },
       nominaConfig: cfgNomina
     },
     periodo: {

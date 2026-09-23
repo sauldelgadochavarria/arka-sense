@@ -3,6 +3,7 @@
 const getPayrollPeriodModel = require('../models/payrollPeriod');
 const { startOfDay, endOfDay } = require('../libs/timeHelpers');
 const { generarBloquesPeriodoAnio } = require('../libs/generarPeriodosAnio');
+const { sugerirFechaPago } = require('../libs/calendarioPeriodo');
 const {
   ESTATUS_PERIODO_OCUPA_VENTANA,
   ESTATUS_PERIODO_CALCULABLE
@@ -38,7 +39,8 @@ async function generarPeriodosAnuales(tenantId, empresaId, payload) {
     tipoMotor: tipoPeriodoRef.tipoMotor,
     diasPeriodo: tipoPeriodoRef.diasPeriodo,
     fechaInicial,
-    anio
+    anio,
+    tipoPeriodoRef
   });
 
   const PayrollPeriod = await getPayrollPeriodModel();
@@ -80,6 +82,7 @@ async function generarPeriodosAnuales(tenantId, empresaId, payload) {
       numeroPeriodo: bloque.numeroPeriodo,
       fechaInicio: startOfDay(bloque.fechaInicio),
       fechaFin: endOfDay(bloque.fechaFin),
+      fechaPago: sugerirFechaPago(bloque.fechaFin, tipoPeriodoRef),
       tipoNomina,
       estatus: 'pendiente',
       aplicaAsistenciaPrenomina: tipoPeriodoRef.aplicaAsistenciaPrenomina !== false,

@@ -231,6 +231,7 @@ async function seedAsistenciaMenus(Menu, adminRoleId) {
   }
 
   const items = [
+    { menuPrincipal: 'Inicio asistencia', rutaApp: '/asistencia', orden: 40.5 },
     { menuPrincipal: 'Turnos', rutaApp: '/asistencia-turnos', orden: 41 },
     { menuPrincipal: 'Plantillas de horario', rutaApp: '/asistencia-rotaciones', orden: 42 },
     { menuPrincipal: 'Asignaciones plantilla', rutaApp: '/asistencia-rotaciones/asignaciones', orden: 43 },
@@ -238,6 +239,7 @@ async function seedAsistenciaMenus(Menu, adminRoleId) {
     { menuPrincipal: 'Vista calendario', rutaApp: '/asistencia-rotaciones/matriz', orden: 45 },
     { menuPrincipal: 'Marcaciones', rutaApp: '/asistencia-marcaciones', orden: 46 },
     { menuPrincipal: 'Asistencia del día', rutaApp: '/asistencia-diaria', orden: 47 },
+    { menuPrincipal: 'Autorizaciones', rutaApp: '/asistencia-autorizaciones', orden: 47.5 },
     { menuPrincipal: 'Registro de jornada', rutaApp: '/asistencia-registro-jornada', orden: 48 }
   ];
 

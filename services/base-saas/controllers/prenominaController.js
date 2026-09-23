@@ -5,8 +5,10 @@ const getEmpleadoModel = require('../models/empleado');
 const { requireEmpresaForTenant } = require('../libs/tenantScope');
 const { resolvePeriodRange } = require('../libs/payrollPeriodDates');
 const { trimString, parseDate, parseCheckbox } = require('../libs/formHelpers');
-const { startOfDay, endOfDay } = require('../libs/timeHelpers');
+const { startOfDay, endOfDay, ymdInTimeZone, formatTimeHHMM } = require('../libs/timeHelpers');
 const { TIPOS_PERIODO, ESTATUS_PERIODO } = require('../config/prenomina');
+const { ESTATUS_DIARIO } = require('../config/asistencia');
+const { filterEmpleadosByTipoMotor } = require('../libs/empleadoTipoPeriodo');
 const { FORMULAS_CONCEPTO } = require('../config/catalogos');
 const {
   ensurePayrollConceptsForTenant,
@@ -23,7 +25,7 @@ const {
   applyManualAdjustment,
   closePayrollPeriod
 } = require('../services/payrollCalculationService');
-const { validateCodigoExternoForPeriod } = require('../services/payrollPreflightService');
+const { validatePeriodClose } = require('../services/payrollPreflightService');
 const { getContextoPeriodo, abrirPeriodo } = require('../services/periodoAdministracionService');
 const { findOneByTenant, findOneDocByTenant } = require('../libs/tenantScope');
 const { parsePositiveNumber } = require('../libs/formHelpers');
@@ -108,7 +110,8 @@ async function createPeriodo(req, res) {
     }
 
     const ref = parseDate(req.body.fechaReferencia) || new Date();
-    const { fechaInicio, fechaFin } = resolvePeriodRange(tipo, ref);
+    const { fechaInicio, fechaFin } = resolvePeriodRange(tipo, ref, tipoPeriodoRef);
+    const { sugerirFechaPago } = require('../libs/calendarioPeriodo');
 
     const PayrollPeriod = await getPayrollPeriodModel();
     const exists = await PayrollPeriod.findOne({
@@ -127,6 +130,7 @@ async function createPeriodo(req, res) {
       tipo,
       fechaInicio: startOfDay(fechaInicio),
       fechaFin: endOfDay(fechaFin),
+      fechaPago: sugerirFechaPago(fechaFin, tipoPeriodoRef),
       estatus: 'pendiente',
       anio: startOfDay(fechaInicio).getFullYear(),
       notas: trimString(req.body.notas),
@@ -146,6 +150,89 @@ async function createPeriodo(req, res) {
   }
 }
 
+function eachYmdInclusive(inicio, fin) {
+  const days = [];
+  const cur = startOfDay(inicio);
+  const last = startOfDay(fin);
+  while (cur <= last) {
+    days.push(ymdInTimeZone(cur));
+    cur.setDate(cur.getDate() + 1);
+  }
+  return days;
+}
+
+function buildAsistenciaPeriodoFilas(empleadosScope, dailies, fechasYmd) {
+  const byEmp = new Map();
+  for (const d of dailies) {
+    const k = String(d.empleadoId);
+    if (!byEmp.has(k)) byEmp.set(k, new Map());
+    byEmp.get(k).set(ymdInTimeZone(d.fecha), d);
+  }
+
+  return empleadosScope
+    .map((emp) => {
+      const empId = String(emp._id);
+      const dayMap = byEmp.get(empId) || new Map();
+      let diasTrabajados = 0;
+      let faltas = 0;
+      let incompletos = 0;
+      let sinProcesar = 0;
+      let minutosRetardo = 0;
+      let minutosHE = 0;
+
+      const dias = fechasYmd.map((ymd) => {
+        const d = dayMap.get(ymd);
+        if (!d) {
+          sinProcesar += 1;
+          return {
+            ymd,
+            estatus: 'sin_procesar',
+            entrada: null,
+            salida: null,
+            salidaComida: null,
+            regresoComida: null,
+            minutosRetardo: 0,
+            minutosHorasExtra: 0,
+            incidencias: []
+          };
+        }
+        if (d.estatus === 'presente' || d.estatus === 'retardo') diasTrabajados += 1;
+        if (['falta', 'registro_parcial', 'fuera_de_rango'].includes(d.estatus)) faltas += 1;
+        if (d.estatus === 'incompleto') incompletos += 1;
+        minutosRetardo += Number(d.minutosRetardo) || 0;
+        minutosHE += Number(d.minutosHorasExtra) || 0;
+        return {
+          ymd,
+          estatus: d.estatus,
+          entrada: d.entradaReal || null,
+          salida: d.salidaReal || null,
+          salidaComida: d.salidaComida || null,
+          regresoComida: d.regresoComida || null,
+          minutosRetardo: Number(d.minutosRetardo) || 0,
+          minutosHorasExtra: Number(d.minutosHorasExtra) || 0,
+          incidencias: d.incidenciasAutomaticas || []
+        };
+      });
+
+      return {
+        empleadoId: empId,
+        nombre: `${emp.firstName || ''} ${emp.lastName || ''}`.trim() || '—',
+        numEmpleado: emp.numEmpleado || '',
+        resumen: {
+          diasTrabajados,
+          faltas,
+          incompletos,
+          sinProcesar,
+          minutosRetardo,
+          minutosHE,
+          conRegistro: dayMap.size
+        },
+        dias
+      };
+    })
+    .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+}
+
 async function showPeriodo(req, res) {
   const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
   const PayrollPeriod = await getPayrollPeriodModel();
@@ -160,23 +247,32 @@ async function showPeriodo(req, res) {
   }).lean();
   if (!periodo) return res.status(404).send('Período no encontrado');
 
-  const [detalles, empleados] = await Promise.all([
+  const [detalles, empleadosAll, tiposPeriodo] = await Promise.all([
     PayrollDetail.find({ tenantId: req.session.tenantId, periodId: periodo._id })
       .sort({ netoPagar: -1 })
       .lean(),
-    Empleado.find({ tenantId: req.session.tenantId }).lean()
+    Empleado.find({ tenantId: req.session.tenantId }).lean(),
+    listTiposPeriodo(req.session.tenantId, false)
   ]);
 
-  const empMap = new Map(empleados.map((e) => [String(e._id), e]));
+  const empMap = new Map(empleadosAll.map((e) => [String(e._id), e]));
   const inicio = startOfDay(periodo.fechaInicio);
   const fin = endOfDay(periodo.fechaFin);
+  const fechasYmd = eachYmdInclusive(periodo.fechaInicio, periodo.fechaFin);
+
+  const empleadosScope = filterEmpleadosByTipoMotor(
+    empleadosAll.filter((e) => e.estatus === 'activo' && e.activo !== false),
+    tiposPeriodo,
+    periodo.tipo || null,
+    { strict: false }
+  );
+  const scopeIds = empleadosScope.map((e) => e._id);
 
   const dailies = await DailyAttendance.find({
     tenantId: req.session.tenantId,
-    fecha: { $gte: inicio, $lte: fin }
-  })
-    .select('empleadoId estatus fecha')
-    .lean();
+    fecha: { $gte: inicio, $lte: fin },
+    ...(scopeIds.length ? { empleadoId: { $in: scopeIds } } : {})
+  }).lean();
 
   const porEmpleado = new Map();
   for (const d of dailies) {
@@ -188,29 +284,45 @@ async function showPeriodo(req, res) {
     if (['falta', 'registro_parcial', 'fuera_de_rango'].includes(d.estatus)) row.faltas += 1;
   }
 
-  const empleadosActivos = empleados.filter((e) => e.estatus === 'activo' && e.activo !== false);
   const cobertura = {
     registrosDiarios: dailies.length,
     empleadosConAsistencia: porEmpleado.size,
-    empleadosActivos: empleadosActivos.length,
-    empleadosSinAsistencia: Math.max(0, empleadosActivos.length - porEmpleado.size),
+    empleadosActivos: empleadosScope.length,
+    empleadosSinAsistencia: Math.max(0, empleadosScope.length - porEmpleado.size),
     usaAsistencia: periodo.aplicaAsistenciaPrenomina !== false,
-    fechaInicioStr: inicio.toISOString().slice(0, 10),
-    fechaFinStr: startOfDay(periodo.fechaFin).toISOString().slice(0, 10)
+    fechaInicioStr: ymdInTimeZone(inicio),
+    fechaFinStr: ymdInTimeZone(periodo.fechaFin)
   };
 
+  const asistenciaFilas =
+    cobertura.usaAsistencia && empleadosScope.length
+      ? buildAsistenciaPeriodoFilas(empleadosScope, dailies, fechasYmd)
+      : [];
+
+  // Preflight siempre en abierto/borrador (incompletos + jornada); solo cerrado omite
   const preflight =
-    periodo.estatus === 'borrador'
-      ? await validateCodigoExternoForPeriod(periodo, req.session.tenantId)
+    periodo.estatus !== 'cerrado' && periodo.estatus !== 'pendiente'
+      ? await validatePeriodClose(periodo, req.session.tenantId)
       : null;
+
+  let conceptosAjuste = [];
+  if (empresa && periodo.estatus !== 'cerrado') {
+    await ensurePayrollConceptsForTenant(req.session.tenantId, empresa._id);
+    conceptosAjuste = await listPrenominaConceptos(req.session.tenantId, { soloActivos: true });
+  }
 
   res.render('Prenomina/periodo-show', {
     periodo,
     detalles,
     empMap,
     cobertura,
+    asistenciaFilas,
+    fechasYmd,
     preflight,
+    conceptosAjuste,
     estatusLabels: ESTATUS_PERIODO,
+    estatusDiarioLabels: ESTATUS_DIARIO,
+    formatTimeHHMM,
     empresa,
     error: error || null,
     session: req.session
@@ -278,13 +390,20 @@ async function cerrarPeriodo(req, res) {
     res.redirect(`/prenomina-periodos/${req.params.id}`);
   } catch (err) {
     console.error('[prenomina]', err);
-    const msg =
+    let msg =
       err.message === 'PERIOD_NOT_CALCULATED'
         ? 'Calcula la pre-nómina antes de cerrar'
         : err.message === 'PERIOD_CLOSED'
           ? 'El período ya estaba cerrado'
-          : err.message === 'MISSING_CODIGO_EXTERNO'
-            ? `No se puede cerrar: ${(err.sinCodigo || []).length} empleado(s) sin código externo ni número de empleado`
+          : err.message === 'PREFLIGHT_FAILED' || err.message === 'MISSING_CODIGO_EXTERNO'
+            ? `Cierre bloqueado (422): ${(err.bloqueos || [])
+                .map((b) => b.mensaje)
+                .concat(
+                  err.sinCodigo?.length
+                    ? [`${err.sinCodigo.length} empleado(s) sin código externo`]
+                    : []
+                )
+                .join(' · ') || 'preflight fallido'}`
             : err.message === 'PERIOD_NOT_FOUND'
               ? 'Período no encontrado'
               : `Error al cerrar período: ${err.message || 'desconocido'}`;
@@ -321,15 +440,47 @@ async function showComprobante(req, res) {
 async function aplicarAjuste(req, res) {
   try {
     const monto = Number(req.body.monto);
+    const acceptDisclaimerHe =
+      req.body.acceptDisclaimerHe === '1' ||
+      req.body.acceptDisclaimerHe === 'on' ||
+      req.body.acceptDisclaimerHe === true;
+
+    const claveSel = trimString(req.body.conceptoClave).toUpperCase();
+    let conceptoNombre = trimString(req.body.concepto);
+    let tipo = trimString(req.body.tipo);
+    let clave = claveSel || trimString(req.body.clave) || undefined;
+
+    if (claveSel) {
+      const conceptos = await listPrenominaConceptos(req.session.tenantId, { soloActivos: true });
+      const cat = conceptos.find(
+        (c) => String(c.clave || '').toUpperCase() === claveSel || String(c.codigo || '').toUpperCase() === claveSel
+      );
+      if (cat) {
+        conceptoNombre = cat.nombre;
+        tipo = cat.tipo === 'deduccion' ? 'deduccion' : 'percepcion';
+        clave = cat.clave || cat.codigo || claveSel;
+      }
+    }
+
+    if (!conceptoNombre) {
+      req.flash('error', 'Selecciona un concepto del catálogo');
+      return res.redirect(`/prenomina-periodos/${req.params.id}`);
+    }
+
     await applyManualAdjustment(
       req.params.id,
       req.session.tenantId,
       req.params.empleadoId,
       {
-        concepto: trimString(req.body.concepto),
+        concepto: conceptoNombre,
         monto,
-        tipo: trimString(req.body.tipo),
-        nota: trimString(req.body.nota)
+        tipo,
+        nota: trimString(req.body.nota),
+        reclasificarHe: Boolean(req.body.reclasificarHe),
+        aceptarDisclaimerHe: acceptDisclaimerHe,
+        acceptDisclaimerHe,
+        clave,
+        reducirHe: req.body.reducirHe !== '0'
       },
       req.session.userid || ''
     );
@@ -337,7 +488,15 @@ async function aplicarAjuste(req, res) {
     res.redirect(`/prenomina-periodos/${req.params.id}`);
   } catch (err) {
     console.error('[prenomina]', err);
-    req.flash('error', err.message === 'PERIOD_CLOSED' ? 'Período cerrado' : 'Error al aplicar ajuste');
+    if (err.message === 'DISCLAIMER_HE_REQUERIDO') {
+      req.flash(
+        'error',
+        err.disclaimer ||
+          'Debes aceptar el disclaimer legal para reclasificar horas extra a bono/otro concepto.'
+      );
+    } else {
+      req.flash('error', err.message === 'PERIOD_CLOSED' ? 'Período cerrado' : 'Error al aplicar ajuste');
+    }
     res.redirect(`/prenomina-periodos/${req.params.id}`);
   }
 }

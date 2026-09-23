@@ -1,67 +1,236 @@
+<%
+  const t = turno || null;
+%>
 <fieldset class="form-section">
   <legend>Datos del turno</legend>
-  <input name="nombre" placeholder="Nombre del turno" value="<%= turno ? turno.nombre : '' %>" required />
-  <select name="tipo">
-    <% (tiposTurno || []).forEach(function(t) { %>
-    <option value="<%= t.value %>" <%= turno ? (turno.tipo === t.value ? 'selected' : '') : (t.value === 'fijo' ? 'selected' : '') %>><%= t.label %></option>
-    <% }); %>
-  </select>
-  <label class="inline-check"><input type="color" name="color" value="<%= turno ? turno.color : '#2563eb' %>" /> Color en calendario</label>
+
+  <div class="field">
+    <label for="turno-nombre">Nombre</label>
+    <input id="turno-nombre" name="nombre" value="<%= t ? t.nombre : '' %>" required />
+    <p class="field-hint">Cómo se mostrará en listas, calendario y reportes (ej. Matutino, Nocturno A).</p>
+  </div>
+
+  <div class="field">
+    <label for="turno-tipo">Tipo de turno</label>
+    <select id="turno-tipo" name="tipo">
+      <% (tiposTurno || []).forEach(function(opt) { %>
+      <option value="<%= opt.value %>" <%= t ? (t.tipo === opt.value ? 'selected' : '') : (opt.value === 'fijo' ? 'selected' : '') %>><%= opt.label %></option>
+      <% }); %>
+    </select>
+    <p class="field-hint">Clasificación operativa. «Fijo» es el más común para calificación automática con horario de entrada/salida.</p>
+  </div>
+
+  <div class="field">
+    <label for="turno-color">Color en calendario</label>
+    <input id="turno-color" type="color" name="color" value="<%= t ? t.color : '#2563eb' %>" />
+    <p class="field-hint">Punto de color en la lista de turnos y vistas de rotación.</p>
+  </div>
 </fieldset>
 
 <fieldset class="form-section">
   <legend>Horario</legend>
-  <input name="horaEntrada" type="time" value="<%= turno ? turno.horaEntrada : '08:00' %>" required />
-  <input name="horaSalida" type="time" value="<%= turno ? turno.horaSalida : '17:00' %>" required />
-  <input name="horasJornada" type="number" min="0" step="0.5" placeholder="Horas jornada" value="<%= turno ? turno.horasJornada : 8 %>" />
-  <input name="tiempoComidaMin" type="number" min="0" placeholder="Tiempo comida (min)" value="<%= turno ? turno.tiempoComidaMin : 60 %>" />
+
+  <div class="field-row">
+    <div class="field">
+      <label for="turno-hora-entrada">Hora de entrada</label>
+      <input id="turno-hora-entrada" name="horaEntrada" type="time" value="<%= t ? t.horaEntrada : '08:00' %>" required />
+      <p class="field-hint">Hora programada de inicio. A partir de aquí se calcula el retardo (según tolerancia).</p>
+    </div>
+    <div class="field">
+      <label for="turno-hora-salida">Hora de salida</label>
+      <input id="turno-hora-salida" name="horaSalida" type="time" value="<%= t ? t.horaSalida : '17:00' %>" required />
+      <p class="field-hint">Hora programada de fin. El tiempo después de esta hora puede ser horas extra.</p>
+    </div>
+  </div>
+
+  <div class="field-row">
+    <div class="field">
+      <label for="turno-horas-jornada">Horas de jornada</label>
+      <input id="turno-horas-jornada" name="horasJornada" type="number" min="0" step="0.5" value="<%= t ? t.horasJornada : 8 %>" />
+      <p class="field-hint">Duración esperada del día (referencia). Si supera el tope diario del esquema (12 h), no se podrá guardar.</p>
+    </div>
+    <div class="field">
+      <label for="turno-comida-min">Tiempo de comida (minutos)</label>
+      <input id="turno-comida-min" name="tiempoComidaMin" type="number" min="0" value="<%= t ? t.tiempoComidaMin : 60 %>" />
+      <p class="field-hint">Minutos de comida a descontar cuando no se exige checado de comida.</p>
+    </div>
+  </div>
+
   <label class="inline-check">
-    <input type="checkbox" name="comidaChecada" value="1" <%= turno && turno.comidaChecada ? 'checked' : '' %> />
-    Exigir checado de comida (4 marcajes: entrada, salida comida, regreso, salida)
+    <input type="checkbox" name="comidaChecada" value="1" <%= t && t.comidaChecada ? 'checked' : '' %> />
+    Exigir checado de comida
   </label>
-  <p class="muted form-hint">Si no se marca, el tiempo de comida se descuenta automáticamente (2 marcajes: entrada y salida).</p>
+  <p class="field-hint">
+    Activado: se esperan 4 marcajes (entrada, salida a comida, regreso, salida). Si falta alguno → registro incompleto/parcial.
+    Desactivado: solo entrada y salida; el tiempo de comida se descuenta solo.
+  </p>
+</fieldset>
+
+<fieldset class="form-section">
+  <legend>Esquema de jornada (reforma 2027)</legend>
+  <p class="muted form-hint">
+    Topes legales del turno. El valor hora de nómina usa
+    <code>salario semanal ÷ máx. ordinarias</code> (default 46), no un ÷8 fijo.
+  </p>
+
+  <div class="field">
+    <label for="turno-esquema-id">ID del esquema</label>
+    <input id="turno-esquema-id" name="esquemaId" value="<%= t && t.esquemaId ? t.esquemaId : 'JORNADA_DIURNA_2027' %>" />
+    <p class="field-hint">Código interno del esquema (ej. JORNADA_DIURNA_2027). Sirve para reportes y trazabilidad.</p>
+  </div>
+
+  <div class="field-row">
+    <div class="field">
+      <label for="turno-max-ord">Máx. horas ordinarias / semana</label>
+      <input id="turno-max-ord" name="maxHorasOrdinariasSemana" type="number" min="1" step="0.5" value="<%= t && t.maxHorasOrdinariasSemana != null ? t.maxHorasOrdinariasSemana : 46 %>" />
+      <p class="field-hint">Tope de horas ordinarias semanales (Art. reforma 2027: 46). También es el divisor del valor hora.</p>
+    </div>
+    <div class="field">
+      <label for="turno-max-he-sem">Máx. HE dobles / semana</label>
+      <input id="turno-max-he-sem" name="maxHorasExtraDoblesSemana" type="number" min="0" step="0.5" value="<%= t && t.maxHorasExtraDoblesSemana != null ? t.maxHorasExtraDoblesSemana : 9 %>" />
+      <p class="field-hint">Límite semanal de horas extra al 200% antes de pasar a triple u otras reglas.</p>
+    </div>
+  </div>
+
+  <div class="field-row">
+    <div class="field">
+      <label for="turno-max-dia">Máx. horas totales / día</label>
+      <input id="turno-max-dia" name="maxHorasTotalesDia" type="number" min="1" step="0.5" value="<%= t && t.maxHorasTotalesDia != null ? t.maxHorasTotalesDia : 12 %>" />
+      <p class="field-hint">Tope diario jornada + extra (Art. 68: 12 h). Días que lo excedan se marcan en asistencia.</p>
+    </div>
+    <div class="field">
+      <label for="turno-max-he-dia">Máx. HE dobles / día</label>
+      <input id="turno-max-he-dia" name="maxHorasExtraDoblesDia" type="number" min="0" step="0.5" value="<%= t && t.maxHorasExtraDoblesDia != null ? t.maxHorasExtraDoblesDia : 3 %>" />
+      <p class="field-hint">Cuántas horas extra del día se pagan dobles antes de clasificar el resto.</p>
+    </div>
+  </div>
+
+  <div class="field">
+    <label for="turno-base-salario">Base del salario semanal</label>
+    <% const baseSel = t && t.baseSalarioSemanal ? t.baseSalarioSemanal : 'siete'; %>
+    <select id="turno-base-salario" name="baseSalarioSemanal">
+      <option value="siete" <%= baseSel === 'siete' ? 'selected' : '' %>>SD × 7 (recomendado)</option>
+      <option value="dias_laborables" <%= baseSel === 'dias_laborables' ? 'selected' : '' %>>SD × días laborables del turno</option>
+    </select>
+    <p class="field-hint">Cómo se arma el salario semanal para el valor hora: <code>(SD × base) ÷ máx. ordinarias</code>.</p>
+  </div>
+
+  <div class="field">
+    <label for="turno-jornada-cfdi">Tipo de jornada CFDI</label>
+    <% const tiposJ = typeof tiposJornadaCfdi !== 'undefined' && tiposJornadaCfdi ? tiposJornadaCfdi : [
+      { value: '01', label: 'Diurna' }, { value: '02', label: 'Nocturna' }, { value: '03', label: 'Mixta' }
+    ]; %>
+    <% const tj = t && t.tipoJornadaCfdi ? t.tipoJornadaCfdi : '01'; %>
+    <select id="turno-jornada-cfdi" name="tipoJornadaCfdi">
+      <% tiposJ.forEach(function(opt) { %>
+      <option value="<%= opt.value %>" <%= opt.value === tj ? 'selected' : '' %>><%= opt.value %> — <%= opt.label %></option>
+      <% }); %>
+    </select>
+    <p class="field-hint">Catálogo SAT para el recibo de nómina (TipoJornada). No cambia el cálculo de retardo/HE.</p>
+  </div>
 </fieldset>
 
 <fieldset class="form-section">
   <legend>Tolerancias</legend>
-  <input name="toleranciaEntradaMin" type="number" min="0" placeholder="Tolerancia entrada (min)" value="<%= turno ? turno.toleranciaEntradaMin : 10 %>" />
-  <input name="toleranciaSalidaMin" type="number" min="0" placeholder="Tolerancia salida (min)" value="<%= turno ? turno.toleranciaSalidaMin : 5 %>" />
-  <select name="modoTolerancia">
-    <% (modosTolerancia || []).forEach(function(m) { %>
-    <option value="<%= m.value %>" <%= turno ? (turno.modoTolerancia === m.value ? 'selected' : '') : (m.value === 'normal' ? 'selected' : '') %>><%= m.label %></option>
-    <% }); %>
-  </select>
+
+  <div class="field-row">
+    <div class="field">
+      <label for="turno-tol-entrada">Tolerancia de entrada (min)</label>
+      <input id="turno-tol-entrada" name="toleranciaEntradaMin" type="number" min="0" value="<%= t ? t.toleranciaEntradaMin : 10 %>" />
+      <p class="field-hint">Minutos de gracia al llegar. Dentro de este rango no se genera retardo.</p>
+    </div>
+    <div class="field">
+      <label for="turno-tol-salida">Tolerancia de salida (min)</label>
+      <input id="turno-tol-salida" name="toleranciaSalidaMin" type="number" min="0" value="<%= t ? t.toleranciaSalidaMin : 5 %>" />
+      <p class="field-hint">Minutos de gracia al salir antes. Fuera de esto puede marcarse salida anticipada.</p>
+    </div>
+  </div>
+
+  <div class="field">
+    <label for="turno-modo-tol">Modo de tolerancia</label>
+    <select id="turno-modo-tol" name="modoTolerancia">
+      <% (modosTolerancia || []).forEach(function(m) { %>
+      <option value="<%= m.value %>" <%= t ? (t.modoTolerancia === m.value ? 'selected' : '') : (m.value === 'normal' ? 'selected' : '') %>><%= m.label %></option>
+      <% }); %>
+    </select>
+    <p class="field-hint">
+      <strong>Normal:</strong> el retardo cuenta desde la hora de entrada.
+      <strong>Concorte:</strong> el retardo empieza a contar después de agotar la tolerancia.
+    </p>
+  </div>
 </fieldset>
 
 <fieldset class="form-section">
   <legend>Ventana de holgura</legend>
-  <p class="muted form-hint">Rango de búsqueda alrededor de la hora programada para clasificar marcajes (spec V2: 3 h antes y 3 h después por defecto).</p>
-  <input name="holguraAntesMin" type="number" min="0" placeholder="Minutos antes" value="<%= turno ? (turno.holguraAntesMin != null ? turno.holguraAntesMin : 180) : 180 %>" />
-  <input name="holguraDespuesMin" type="number" min="0" placeholder="Minutos después" value="<%= turno ? (turno.holguraDespuesMin != null ? turno.holguraDespuesMin : 180) : 180 %>" />
-  <% if (turno && typeof describeVentana === 'function') { %>
-  <p class="ventana-preview"><strong>Vista previa:</strong> <%= describeVentana(turno) %></p>
+  <p class="muted form-hint">
+    Rango alrededor de la hora programada para asociar una checada a este turno.
+    Si el marcaje cae fuera, puede marcarse como fuera de rango (FR).
+  </p>
+
+  <div class="field-row">
+    <div class="field">
+      <label for="turno-holgura-antes">Minutos antes</label>
+      <input id="turno-holgura-antes" name="holguraAntesMin" type="number" min="0" value="<%= t ? (t.holguraAntesMin != null ? t.holguraAntesMin : 180) : 180 %>" />
+      <p class="field-hint">Ej. 180 = se aceptan checadas hasta 3 h antes de la hora programada.</p>
+    </div>
+    <div class="field">
+      <label for="turno-holgura-despues">Minutos después</label>
+      <input id="turno-holgura-despues" name="holguraDespuesMin" type="number" min="0" value="<%= t ? (t.holguraDespuesMin != null ? t.holguraDespuesMin : 180) : 180 %>" />
+      <p class="field-hint">Ej. 180 = se aceptan checadas hasta 3 h después de la hora programada.</p>
+    </div>
+  </div>
+
+  <% if (t && typeof describeVentana === 'function') { %>
+  <p class="ventana-preview"><strong>Vista previa:</strong> <%= describeVentana(t) %></p>
   <% } %>
 </fieldset>
 
 <fieldset class="form-section">
   <legend>Horas extra — umbrales</legend>
-  <p class="muted form-hint">Minutos de tiempo extra a partir de la salida programada. El motor de calificación los usará en la Fase 3.</p>
-  <input name="inicioHEOrdinariaMin" type="number" min="0" placeholder="Inicio HE ordinaria (min extra)" value="<%= turno ? (turno.inicioHEOrdinariaMin != null ? turno.inicioHEOrdinariaMin : 0) : 0 %>" />
-  <input name="inicioHEDobleMin" type="number" min="0" placeholder="Inicio HE doble (min acumulados, opcional)" value="<%= turno && turno.inicioHEDobleMin != null ? turno.inicioHEDobleMin : '' %>" />
-  <input name="inicioHETripleMin" type="number" min="0" placeholder="Inicio HE triple (min acumulados, opcional)" value="<%= turno && turno.inicioHETripleMin != null ? turno.inicioHETripleMin : '' %>" />
+  <p class="muted form-hint">
+    Minutos de tiempo extra <em>después</em> de la hora de salida. El motor de asistencia los usa para clasificar HE ordinaria / doble / triple.
+  </p>
+
+  <div class="field">
+    <label for="turno-he-ord">Inicio HE ordinaria (min extra)</label>
+    <input id="turno-he-ord" name="inicioHEOrdinariaMin" type="number" min="0" value="<%= t ? (t.inicioHEOrdinariaMin != null ? t.inicioHEOrdinariaMin : 0) : 0 %>" />
+    <p class="field-hint">A partir de cuántos minutos después de la salida empieza a contar HE ordinaria (0 = desde el primer minuto extra).</p>
+  </div>
+
+  <div class="field-row">
+    <div class="field">
+      <label for="turno-he-doble">Inicio HE doble (min acumulados)</label>
+      <input id="turno-he-doble" name="inicioHEDobleMin" type="number" min="0" value="<%= t && t.inicioHEDobleMin != null ? t.inicioHEDobleMin : '' %>" placeholder="Opcional" />
+      <p class="field-hint">Opcional. Minutos acumulados de HE a partir de los cuales pasa a doble. Vacío = usa el esquema del turno.</p>
+    </div>
+    <div class="field">
+      <label for="turno-he-triple">Inicio HE triple (min acumulados)</label>
+      <input id="turno-he-triple" name="inicioHETripleMin" type="number" min="0" value="<%= t && t.inicioHETripleMin != null ? t.inicioHETripleMin : '' %>" placeholder="Opcional" />
+      <p class="field-hint">Opcional. Umbral para HE triple. Vacío = según tope de dobles del esquema.</p>
+    </div>
+  </div>
 </fieldset>
 
 <fieldset class="form-section">
   <legend>Días laborables</legend>
+  <p class="field-hint">Días en los que el colaborador debe trabajar este turno. Los no marcados se califican como descanso (si aplica).</p>
   <div class="checks-grid">
     <% diasSemana.forEach(function(dia) { %>
-    <% const selected = turno ? (turno.diasLaborables || []).includes(dia.value) : [1,2,3,4,5].includes(dia.value); %>
+    <% const selected = t ? (t.diasLaborables || []).includes(dia.value) : [1,2,3,4,5].includes(dia.value); %>
     <label class="inline-check">
       <input type="checkbox" name="dia_<%= dia.value %>" value="1" <%= selected ? 'checked' : '' %> />
-      <%= dia.short %>
+      <%= dia.label %>
     </label>
     <% }); %>
   </div>
-  <label class="inline-check"><input type="checkbox" name="descansaSabado" value="1" <%= !turno || turno.descansaSabado !== false ? 'checked' : '' %> /> Descansa sábado</label>
-  <label class="inline-check"><input type="checkbox" name="descansaDomingo" value="1" <%= !turno || turno.descansaDomingo !== false ? 'checked' : '' %> /> Descansa domingo</label>
+
+  <label class="inline-check">
+    <input type="checkbox" name="descansaSabado" value="1" <%= !t || t.descansaSabado !== false ? 'checked' : '' %> />
+    Descansa sábado
+  </label>
+  <label class="inline-check">
+    <input type="checkbox" name="descansaDomingo" value="1" <%= !t || t.descansaDomingo !== false ? 'checked' : '' %> />
+    Descansa domingo
+  </label>
+  <p class="field-hint">Atajos: si están marcados, sábado/domingo se tratan como descanso aunque no estén en la lista de días.</p>
 </fieldset>

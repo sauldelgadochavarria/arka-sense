@@ -8,9 +8,14 @@ const {
 } = require('./formHelpers');
 const { parseTimeHHMM } = require('./timeHelpers');
 const { HOLGURA_DEFAULT_MIN } = require('../config/asistencia');
+const {
+  ESQUEMA_JORNADA_DEFAULTS,
+  validateTurnoVsEsquema
+} = require('./esquemaJornada');
 
 const TIPOS_TURNO_VALIDOS = ['fijo', 'flexible', 'nocturno', 'remoto', 'por_horas'];
 const MODOS_TOLERANCIA_VALIDOS = ['normal', 'concorte'];
+const BASES_SALARIO_SEMANAL = ['siete', 'dias_laborables'];
 
 function parseDiasLaborables(body) {
   const raw = body.diasLaborables;
@@ -59,6 +64,22 @@ function buildTurnoPayload(body, tenantId, empresaId) {
     comidaChecada,
     noRegistrarComida: !comidaChecada,
     horasJornada: parsePositiveNumber(body.horasJornada) ?? 8,
+    esquemaId: trimString(body.esquemaId) || ESQUEMA_JORNADA_DEFAULTS.esquemaId,
+    maxHorasOrdinariasSemana:
+      parsePositiveNumber(body.maxHorasOrdinariasSemana) ??
+      ESQUEMA_JORNADA_DEFAULTS.maxHorasOrdinariasSemana,
+    maxHorasExtraDoblesSemana:
+      parsePositiveNumber(body.maxHorasExtraDoblesSemana) ??
+      ESQUEMA_JORNADA_DEFAULTS.maxHorasExtraDoblesSemana,
+    maxHorasTotalesDia:
+      parsePositiveNumber(body.maxHorasTotalesDia) ?? ESQUEMA_JORNADA_DEFAULTS.maxHorasTotalesDia,
+    maxHorasExtraDoblesDia:
+      parsePositiveNumber(body.maxHorasExtraDoblesDia) ??
+      ESQUEMA_JORNADA_DEFAULTS.maxHorasExtraDoblesDia,
+    baseSalarioSemanal: BASES_SALARIO_SEMANAL.includes(trimString(body.baseSalarioSemanal))
+      ? trimString(body.baseSalarioSemanal)
+      : ESQUEMA_JORNADA_DEFAULTS.baseSalarioSemanal,
+    tipoJornadaCfdi: trimString(body.tipoJornadaCfdi) || ESQUEMA_JORNADA_DEFAULTS.tipoJornadaCfdi,
     inicioHEOrdinariaMin: parsePositiveNumber(body.inicioHEOrdinariaMin) ?? 0,
     inicioHEDobleMin: parseOptionalPositiveNumber(body.inicioHEDobleMin),
     inicioHETripleMin: parseOptionalPositiveNumber(body.inicioHETripleMin),
@@ -67,6 +88,18 @@ function buildTurnoPayload(body, tenantId, empresaId) {
     color: trimString(body.color) || '#2563eb',
     activo: body.activo !== 'off'
   };
+
+  const check = validateTurnoVsEsquema(payload);
+  if (!check.ok) {
+    const err = new Error(check.errors.join('; ') || 'TURNO_EXCEDE_ESQUEMA');
+    err.code = 'TURNO_EXCEDE_ESQUEMA';
+    err.errors = check.errors;
+    err.warnings = check.warnings;
+    throw err;
+  }
+  payload._esquemaWarnings = check.warnings;
+
+  return payload;
 }
 
 module.exports = { buildTurnoPayload, parseDiasLaborables };

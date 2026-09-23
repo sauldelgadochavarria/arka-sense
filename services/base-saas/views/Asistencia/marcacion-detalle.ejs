@@ -1,0 +1,203 @@
+<%- include('../Partials/layout-top', { title: 'Detalle marcación', session }) %>
+<%- include('partials/flujo-asistencia', { pasoActual: 1, fecha: typeof fecha !== 'undefined' ? fecha : null }) %>
+<%
+  const geo = marcacion.geocerca || {};
+  const ubi = marcacion.ubicacion || {};
+  const bio = marcacion.biometria || {};
+  const dev = marcacion.dispositivo || {};
+  const empLabel = empleado
+    ? (empleado.firstName + ' ' + empleado.lastName + ' (' + empleado.numEmpleado + ')')
+    : String(marcacion.empleadoId);
+  const mapsUrl = (ubi.lat != null && ubi.lng != null)
+    ? ('https://www.openstreetmap.org/?mlat=' + ubi.lat + '&mlon=' + ubi.lng + '#map=17/' + ubi.lat + '/' + ubi.lng)
+    : null;
+  const resultadoLabel = {
+    aceptado: 'Aceptado',
+    aceptado_con_observacion: 'Aceptado con observación',
+    rechazado: 'Rechazado',
+    error: 'Error'
+  };
+%>
+<section class="page-header">
+  <p class="breadcrumb">
+    <a href="/asistencia-marcaciones?fecha=<%= fecha %>">Marcaciones</a> · Detalle
+  </p>
+  <h1>Detalle de marcación</h1>
+  <p class="muted"><%= empLabel %> · <%= fecha %> · <%= marcacion.tipoMarcacion %></p>
+</section>
+
+<div class="toolbar">
+  <a class="btn" href="/asistencia-marcaciones?fecha=<%= fecha %>">← Volver</a>
+  <a class="btn" href="/asistencia-intentos?fecha=<%= fecha %>&amp;empleadoId=<%= marcacion.empleadoId %>">Intentos del empleado</a>
+</div>
+
+<section class="card-block">
+  <h2>Resumen</h2>
+  <dl class="dl-grid">
+    <dt>Hora registrada</dt>
+    <dd><%= formatTimeHHMM(marcacion.timestamp) %><% if (marcacion.origen === 'ajuste') { %> <span class="badge">ajuste</span><% } %></dd>
+    <dt>Hora original</dt>
+    <dd class="muted"><%= formatTimeHHMM(marcacion.timestampOriginal || marcacion.timestamp) %></dd>
+    <dt>Estado</dt>
+    <dd>
+      <span class="badge badge-<%= marcacion.estado === 'anulada' ? 'suspendido' : 'activo' %>">
+        <%= marcacion.estado === 'anulada' ? 'Anulada' : 'Activa' %>
+      </span>
+    </dd>
+    <dt>Método</dt>
+    <dd><%= marcacion.metodo || '—' %></dd>
+    <dt>Asistencia del día</dt>
+    <dd>
+      <% if (daily) { %>
+      <span class="badge badge-<%= daily.estatus %>"><%= (estatusDiarioLabels && estatusDiarioLabels[daily.estatus]) || daily.estatus %></span>
+      <% if (daily.minutosRetardo) { %> · retardo <%= daily.minutosRetardo %> min<% } %>
+      <% if (daily.entradaReal) { %> · entrada <%= formatTimeHHMM(daily.entradaReal) %><% } %>
+      <% if (daily.salidaReal) { %> · salida <%= formatTimeHHMM(daily.salidaReal) %><% } %>
+      <% } else { %><span class="muted">Sin resumen diario</span><% } %>
+    </dd>
+    <dt>Notas</dt>
+    <dd><%= marcacion.notas || '—' %></dd>
+    <% if (marcacion.motivoAjuste) { %>
+    <dt>Motivo ajuste</dt>
+    <dd><%= marcacion.motivoAjuste %></dd>
+    <% } %>
+    <% if (marcacion.motivoAnulacion) { %>
+    <dt>Motivo anulación</dt>
+    <dd><%= marcacion.motivoAnulacion %></dd>
+    <% } %>
+  </dl>
+</section>
+
+<section class="card-block">
+  <h2>Ubicación y geocerca</h2>
+  <% if (ubi.lat == null) { %>
+  <p class="muted">Sin coordenadas (marcación manual o legado).</p>
+  <% } else { %>
+  <dl class="dl-grid">
+    <dt>Coordenadas</dt>
+    <dd>
+      <%= Number(ubi.lat).toFixed(6) %>, <%= Number(ubi.lng).toFixed(6) %>
+      <% if (mapsUrl) { %> · <a href="<%= mapsUrl %>" target="_blank" rel="noopener">Ver mapa</a><% } %>
+    </dd>
+    <dt>Precisión</dt>
+    <dd><%= ubi.accuracyMeters != null ? (ubi.accuracyMeters + ' m') : '—' %></dd>
+    <dt>Fake GPS</dt>
+    <dd><%= ubi.isMocked ? 'Sí (bloqueado)' : 'No' %></dd>
+    <dt>Política</dt>
+    <dd><code><%= geo.politica || '—' %></code></dd>
+    <dt>Resultado geo</dt>
+    <dd>
+      <% if (geo.fueraDeZona) { %>
+      <span class="badge badge-suspendido">Fuera de zona</span>
+      <% } else if (geo.skipped) { %>
+      <span class="muted">Sin validación</span>
+      <% } else { %>
+      <span class="badge badge-activo">Dentro de zona</span>
+      <% } %>
+      <% if (geo.siteNombre) { %> · <%= geo.siteNombre %><% } %>
+    </dd>
+    <dt>Distancia</dt>
+    <dd>
+      <% if (geo.distanceMeters != null) { %>
+      <%= Math.round(geo.distanceMeters) %> m
+      <% if (geo.radioMetros != null) { %> / radio <%= geo.radioMetros %> m<% } %>
+      <% } else { %>—<% } %>
+    </dd>
+    <% if (geo.justificacionFueraZona) { %>
+    <dt>Justificación</dt>
+    <dd><%= geo.justificacionFueraZona %></dd>
+    <% } %>
+  </dl>
+  <% } %>
+</section>
+
+<section class="card-block">
+  <h2>Biometría</h2>
+  <dl class="dl-grid">
+    <dt>Verificada</dt>
+    <dd>
+      <% if (bio.ok === true) { %><span class="badge badge-activo">Sí</span>
+      <% } else if (bio.ok === false) { %><span class="badge badge-suspendido">No</span>
+      <% } else { %><span class="muted">No reportada</span><% } %>
+    </dd>
+    <dt>Score</dt>
+    <dd><%= bio.score != null ? (Number(bio.score) * 100).toFixed(1) + '%' : '—' %></dd>
+    <dt>Challenge</dt>
+    <dd class="muted small"><code><%= bio.challengeId || '—' %></code></dd>
+    <dt>Verificado en</dt>
+    <dd><%= bio.verifiedAt ? formatTimeHHMM(bio.verifiedAt) : '—' %></dd>
+  </dl>
+</section>
+
+<section class="card-block">
+  <h2>Dispositivo</h2>
+  <dl class="dl-grid">
+    <dt>Plataforma</dt><dd><%= dev.plataforma || '—' %></dd>
+    <dt>Modelo</dt><dd><%= dev.modelo || '—' %></dd>
+    <dt>App</dt><dd><%= dev.appVersion || '—' %></dd>
+  </dl>
+</section>
+
+<section class="card-block">
+  <h2>Timeline de intentos (evidencia)</h2>
+  <p class="muted">Bitácora append-only: aceptados, rechazos biométricos/geográficos y observaciones. No se borran.</p>
+  <% if (!intentos || !intentos.length) { %>
+  <p class="muted">Sin intentos vinculados en la ventana de esta marcación.</p>
+  <% } else { %>
+  <table>
+    <thead>
+      <tr>
+        <th>Hora</th>
+        <th>Etapa</th>
+        <th>Resultado</th>
+        <th>Mensaje</th>
+        <th>Evidencia</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% intentos.forEach(function(i) { %>
+      <tr>
+        <td><%= formatTimeHHMM(i.createdAt) %></td>
+        <td><code><%= i.etapa %></code></td>
+        <td>
+          <span class="badge badge-<%= i.resultado === 'rechazado' || i.resultado === 'error' ? 'suspendido' : (i.resultado === 'aceptado_con_observacion' ? 'falta' : 'activo') %>">
+            <%= resultadoLabel[i.resultado] || i.resultado %>
+          </span>
+        </td>
+        <td><%= i.mensaje || i.reasonCode || '—' %></td>
+        <td class="muted small">
+          <% if (i.biometria && i.biometria.distance != null) { %>dist <%= Number(i.biometria.distance).toFixed(3) %><% } %>
+          <% if (i.biometria && i.biometria.score != null) { %> · score <%= (Number(i.biometria.score)*100).toFixed(0) %>%<% } %>
+          <% if (i.geocerca && i.geocerca.distanceMeters != null) { %> · geo <%= Math.round(i.geocerca.distanceMeters) %> m<% } %>
+          <% if (i.geocerca && i.geocerca.fueraDeZona) { %> · fuera zona<% } %>
+        </td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table>
+  <% } %>
+</section>
+
+<% if (bitacora && bitacora.length) { %>
+<section class="card-block">
+  <h2>Bitácora RH del día</h2>
+  <table>
+    <thead>
+      <tr><th>Hora</th><th>Acción</th><th>Usuario</th><th>Motivo</th><th>Detalle</th></tr>
+    </thead>
+    <tbody>
+      <% bitacora.forEach(function(b) { %>
+      <tr>
+        <td><%= formatTimeHHMM(b.createdAt) %></td>
+        <td><code><%= b.accion %></code></td>
+        <td><%= b.userLabel || b.userId || '—' %></td>
+        <td><%= b.motivo || '—' %></td>
+        <td class="muted small"><%= b.mensaje || '—' %></td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table>
+</section>
+<% } %>
+
+<%- include('../Partials/layout-bottom') %>

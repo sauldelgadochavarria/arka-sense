@@ -119,6 +119,8 @@ async function listPendientes(req, res) {
   const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
   const Incidencia = await getIncidenciaModel();
   const Empleado = await getEmpleadoModel();
+  const { startOfDay, endOfDay } = require('../libs/timeHelpers');
+  const { parseOptionalObjectId, trimString } = require('../libs/formHelpers');
 
   let empleadoFilter = {};
   if (!userIsSupervisorOrAdmin(req) && req.session.empleadoId) {
@@ -126,8 +128,32 @@ async function listPendientes(req, res) {
     empleadoFilter = { empleadoId: { $in: equipoIds } };
   }
 
+  const periodoId = parseOptionalObjectId(req.query.periodoId);
+  let periodoNomina = null;
+  let rangoFiltro = null;
+  if (periodoId && empresa) {
+    const getPeriodoNominaModel = require('../models/periodoNomina');
+    const PeriodoNomina = await getPeriodoNominaModel();
+    periodoNomina = await PeriodoNomina.findOne({
+      _id: periodoId,
+      tenantId: req.session.tenantId,
+      empresaId: empresa._id
+    }).lean();
+    if (periodoNomina) {
+      rangoFiltro = {
+        fechaInicio: { $lte: endOfDay(periodoNomina.fechaFin) },
+        fechaFin: { $gte: startOfDay(periodoNomina.fechaInicio) }
+      };
+    }
+  }
+
   const incidencias = empresa
-    ? await Incidencia.find({ tenantId: req.session.tenantId, estatus: 'pendiente', ...empleadoFilter })
+    ? await Incidencia.find({
+        tenantId: req.session.tenantId,
+        estatus: 'pendiente',
+        ...empleadoFilter,
+        ...(rangoFiltro || {})
+      })
         .sort({ fechaInicio: 1 })
         .lean()
     : [];
@@ -137,9 +163,17 @@ async function listPendientes(req, res) {
     : [];
   const empMap = new Map(empleados.map((e) => [String(e._id), `${e.firstName} ${e.lastName}`]));
 
+  const porCodigo = {};
+  for (const i of incidencias) {
+    const k = i.codigo || '?';
+    porCodigo[k] = (porCodigo[k] || 0) + 1;
+  }
+
   res.render('Incidencias/pendientes', {
     incidencias,
     empMap,
+    periodoNomina,
+    porCodigo,
     empresa,
     error: error || null,
     session: req.session
@@ -187,6 +221,15 @@ async function rechazarIncidencia(req, res) {
 }
 
 async function aprobarMasivo(req, res) {
+  return resolverMasivo(req, res, 'aprobada');
+}
+
+async function rechazarMasivo(req, res) {
+  return resolverMasivo(req, res, 'rechazada');
+}
+
+async function resolverMasivo(req, res, estatus) {
+  const esAprobar = estatus === 'aprobada';
   try {
     const ids = Array.isArray(req.body.ids) ? req.body.ids : req.body.ids ? [req.body.ids] : [];
     if (!ids.length) {
@@ -201,22 +244,28 @@ async function aprobarMasivo(req, res) {
       estatus: 'pendiente'
     });
 
+    const notaDefault = esAprobar ? 'Aprobación masiva' : 'Rechazo masivo';
     for (const inc of incidencias) {
-      inc.estatus = 'aprobada';
+      inc.estatus = estatus;
       inc.resueltoPorUserId = req.session.userid || '';
       inc.fechaResolucion = new Date();
-      inc.notasResolucion = trimString(req.body.notasResolucion) || 'Aprobación masiva';
+      inc.notasResolucion = trimString(req.body.notasResolucion) || notaDefault;
       await inc.save();
-      if (inc.codigo === 'VAC') {
+      if (esAprobar && inc.codigo === 'VAC') {
         await recalcularSaldoEmpleado(req.session.tenantId, inc.empleadoId);
       }
     }
 
-    req.flash('success', `${incidencias.length} incidencia(s) aprobadas`);
+    req.flash(
+      'success',
+      esAprobar
+        ? `${incidencias.length} incidencia(s) aprobadas`
+        : `${incidencias.length} incidencia(s) rechazadas`
+    );
     res.redirect('/incidencias/pendientes');
   } catch (err) {
     console.error('[incidencias]', err);
-    req.flash('error', 'Error en aprobación masiva');
+    req.flash('error', esAprobar ? 'Error en aprobación masiva' : 'Error en rechazo masivo');
     res.redirect('/incidencias/pendientes');
   }
 }
@@ -321,6 +370,7 @@ module.exports = {
   aprobarIncidencia,
   rechazarIncidencia,
   aprobarMasivo,
+  rechazarMasivo,
   listTipos,
   createTipo,
   editTipo,

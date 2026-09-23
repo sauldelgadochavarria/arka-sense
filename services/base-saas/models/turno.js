@@ -24,6 +24,20 @@ const turnoSchema = new mongoose.Schema(
     comidaChecada: { type: Boolean, default: false },
     noRegistrarComida: { type: Boolean, default: true },
     horasJornada: { type: Number, default: 8, min: 0 },
+    /** Esquema jornada 2027 (topes LFT / reforma). */
+    esquemaId: { type: String, default: 'JORNADA_DIURNA_2027', trim: true },
+    maxHorasOrdinariasSemana: { type: Number, default: 46, min: 1 },
+    maxHorasExtraDoblesSemana: { type: Number, default: 9, min: 0 },
+    maxHorasTotalesDia: { type: Number, default: 12, min: 1 },
+    maxHorasExtraDoblesDia: { type: Number, default: 3, min: 0 },
+    /** siete | dias_laborables — base del salario semanal para valor hora. */
+    baseSalarioSemanal: {
+      type: String,
+      enum: ['siete', 'dias_laborables'],
+      default: 'siete'
+    },
+    /** Catálogo SAT c_TipoJornada. */
+    tipoJornadaCfdi: { type: String, default: '01', trim: true },
     inicioHEOrdinariaMin: { type: Number, default: 0, min: 0 },
     inicioHEDobleMin: { type: Number, default: null, min: 0 },
     inicioHETripleMin: { type: Number, default: null, min: 0 },

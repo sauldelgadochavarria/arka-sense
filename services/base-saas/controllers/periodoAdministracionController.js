@@ -93,7 +93,8 @@ async function previewApi(req, res) {
       tipoMotor: tipoPeriodoRef.tipoMotor,
       diasPeriodo: tipoPeriodoRef.diasPeriodo,
       fechaInicial,
-      anio
+      anio,
+      tipoPeriodoRef
     });
 
     res.json({

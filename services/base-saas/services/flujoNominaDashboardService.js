@@ -10,6 +10,7 @@ const getPeriodoNominaModel = require('../models/periodoNomina');
 const getPayrollPeriodModel = require('../models/payrollPeriod');
 const getIncidenciaModel = require('../models/incidencia');
 const getTimbradoLoteModel = require('../models/timbradoLote');
+const { startOfDay, endOfDay } = require('../libs/timeHelpers');
 
 function formatRango(inicio, fin) {
   if (!inicio || !fin) return '';
@@ -25,28 +26,52 @@ function labelPeriodoOption(p) {
   return `${p.tipoPeriodo || ''} ${num} ${rango} (${p.estatus})`.replace(/\s+/g, ' ').trim();
 }
 
+function coversDate(p, when = new Date()) {
+  if (!p?.fechaInicio || !p?.fechaFin) return false;
+  const t = when.getTime();
+  return new Date(p.fechaInicio).getTime() <= t && new Date(p.fechaFin).getTime() >= t;
+}
+
+const ESTATUS_ACTIVOS = ['abierto', 'calculando', 'calculado'];
+
 /**
- * Períodos para el selector del flujo (abiertos / en proceso / cerrados recientes).
+ * Períodos para el selector del flujo (activos primero, luego cerrados recientes).
  */
 async function listPeriodosParaFlujo({ tenantId, empresaId, limit = 25 }) {
   if (!tenantId || !empresaId) return [];
   const PeriodoNomina = await getPeriodoNominaModel();
   const rows = await PeriodoNomina.find({ tenantId, empresaId })
     .sort({ fechaFin: -1, numeroPeriodo: -1 })
-    .limit(limit)
+    .limit(Math.max(limit * 2, 40))
     .select(
       'tipoPeriodo numeroPeriodo fechaInicio fechaFin estatus flujoProceso layoutBancario omitirDispersionBancaria'
     )
     .lean();
-  return rows.map((p) => ({
-    id: String(p._id),
-    label: labelPeriodoOption(p),
-    estatus: p.estatus,
-    numeroPeriodo: p.numeroPeriodo,
-    rango: formatRango(p.fechaInicio, p.fechaFin),
-    tipoPeriodo: p.tipoPeriodo,
-    revisionCompletada: Boolean(p.flujoProceso?.revisionCompletada)
-  }));
+
+  const rank = (p) => {
+    const est = String(p.estatus || '').toLowerCase();
+    if (ESTATUS_ACTIVOS.includes(est) && coversDate(p)) return 0;
+    if (ESTATUS_ACTIVOS.includes(est)) return 1;
+    return 2;
+  };
+
+  return rows
+    .sort((a, b) => {
+      const ra = rank(a);
+      const rb = rank(b);
+      if (ra !== rb) return ra - rb;
+      return new Date(b.fechaFin) - new Date(a.fechaFin);
+    })
+    .slice(0, limit)
+    .map((p) => ({
+      id: String(p._id),
+      label: labelPeriodoOption(p),
+      estatus: p.estatus,
+      numeroPeriodo: p.numeroPeriodo,
+      rango: formatRango(p.fechaInicio, p.fechaFin),
+      tipoPeriodo: p.tipoPeriodo,
+      revisionCompletada: Boolean(p.flujoProceso?.revisionCompletada)
+    }));
 }
 
 async function resolverPeriodo({ tenantId, empresaId, periodoId }) {
@@ -55,15 +80,22 @@ async function resolverPeriodo({ tenantId, empresaId, periodoId }) {
     const byId = await PeriodoNomina.findOne({ _id: periodoId, tenantId, empresaId }).lean();
     if (byId) return byId;
   }
-  const periodoActivo = await PeriodoNomina.findOne({
+
+  const activos = await PeriodoNomina.find({
     tenantId,
     empresaId,
-    estatus: { $in: ['abierto', 'calculando', 'calculado'] }
+    estatus: { $in: ESTATUS_ACTIVOS }
   })
     .sort({ fechaFin: -1 })
     .lean();
-  if (periodoActivo) return periodoActivo;
-  return PeriodoNomina.findOne({ tenantId, empresaId }).sort({ fechaFin: -1 }).lean();
+
+  if (activos.length) {
+    const hoy = activos.find((p) => coversDate(p));
+    return hoy || activos[0];
+  }
+
+  // Sin período formal activo: no forzar un cerrado viejo (el flujo cae a pre-nómina / asistencia).
+  return null;
 }
 
 /**
@@ -91,7 +123,7 @@ async function getFlujoNominaActual({
   const PayrollPeriod = await getPayrollPeriodModel();
   const Incidencia = await getIncidenciaModel();
 
-  const [periodo, prenominaAbierta, pendientes, periodos] = await Promise.all([
+  const [periodo, prenominaAbierta, periodos] = await Promise.all([
     resolverPeriodo({ tenantId, empresaId, periodoId }),
     PayrollPeriod.findOne({
       tenantId,
@@ -100,9 +132,23 @@ async function getFlujoNominaActual({
     })
       .sort({ fechaFin: -1 })
       .lean(),
-    Incidencia.countDocuments({ tenantId, estatus: 'pendiente' }),
     listPeriodosParaFlujo({ tenantId, empresaId })
   ]);
+
+  // Incidencias pendientes que cruzan el período de nómina formal (no todo el histórico)
+  let pendientes = 0;
+  let pendientesFilterHref = '/incidencias/pendientes';
+  if (periodo) {
+    pendientes = await Incidencia.countDocuments({
+      tenantId,
+      estatus: 'pendiente',
+      fechaInicio: { $lte: endOfDay(periodo.fechaFin) },
+      fechaFin: { $gte: startOfDay(periodo.fechaInicio) }
+    });
+    pendientesFilterHref = `/incidencias/pendientes?periodoId=${periodo._id}`;
+  } else {
+    pendientes = await Incidencia.countDocuments({ tenantId, estatus: 'pendiente' });
+  }
 
   const LABEL = {
     1: 'Asistencia',
@@ -117,7 +163,7 @@ async function getFlujoNominaActual({
   const HREF = {
     1: '/asistencia-diaria',
     2: '/prenomina-periodos',
-    3: '/incidencias/pendientes',
+    3: pendientesFilterHref,
     4: periodo ? `/nomina/periodos/${periodo._id}` : '/nomina/periodos',
     5: '/nomina/reportes',
     6: periodo ? `/nomina/periodos/${periodo._id}` : '/nomina/periodos',
@@ -175,14 +221,20 @@ async function getFlujoNominaActual({
     if (pendientes > 0) {
       return pack(
         3,
-        `${pendientes} pendiente(s) · período ${num} ${rango} (${est === 'calculando' ? 'calculando' : 'abierto'})`
+        `${pendientes} incidencia(s) del período por autorizar (vacaciones, faltas, HE…) antes del cálculo formal · nómina ${num} ${rango}`,
+        {
+          acciones: [
+            { tipo: 'link', label: 'Ir a bandeja del período', href: pendientesFilterHref },
+            { tipo: 'link', label: 'Ver período nómina', href: `/nomina/periodos/${pid}` }
+          ]
+        }
       );
     }
     return pack(
       4,
       est === 'calculando'
         ? `Calculando nómina ${num} ${rango}`
-        : `Período abierto ${num} ${rango} · listo para calcular`,
+        : `Período de nómina abierto ${num} ${rango} · listo para calcular (pre-nómina ya puede estar cerrada)`,
       {
         acciones: [
           { tipo: 'link', label: 'Ir a calcular', href: `/nomina/periodos/${pid}` }

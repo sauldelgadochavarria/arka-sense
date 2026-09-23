@@ -1,0 +1,96 @@
+<%- include('../Partials/layout-top', { title: 'Asistencia', session }) %>
+<%- include('partials/flujo-asistencia', { pasoActual: 0, fecha: fecha }) %>
+
+<section class="page-header">
+  <h1>Asistencia</h1>
+  <p class="muted">
+    <% if (scope && scope.mode === 'supervisor') { %>
+    Vista de <strong>supervisor</strong>: tu equipo y autorizaciones pendientes.
+    <% } else { %>
+    Centro operativo: captura, calificación, evidencia y topes de jornada.
+    <% } %>
+  </p>
+</section>
+
+<% if (!empresa) { %>
+<p>No hay empresa vinculada a este tenant.</p>
+<% } else { %>
+
+<form method="get" action="/asistencia" class="inline-form" style="margin-bottom:1rem">
+  <label>Fecha
+    <input type="date" name="fecha" value="<%= fecha %>" onchange="this.form.submit()" />
+  </label>
+</form>
+
+<% if (pendientesCount > 0) { %>
+<div class="alert alert-warning">
+  <strong>Tienes <%= pendientesCount %> autorización(es) pendiente(s).</strong>
+  <a class="btn" href="/asistencia-autorizaciones" style="margin-left:.5rem">Revisar ahora</a>
+</div>
+<% } else { %>
+<p class="muted">Sin autorizaciones pendientes<%= scope.mode === 'supervisor' ? ' en tu equipo' : '' %>.</p>
+<% } %>
+
+<div class="summary-cards" style="margin:1rem 0">
+  <% if (scope.mode === 'supervisor') { %>
+  <div class="card"><strong><%= equipoResumen.presentes %></strong> presentes</div>
+  <div class="card"><strong><%= equipoResumen.retardos %></strong> retardos</div>
+  <div class="card"><strong><%= equipoResumen.faltas %></strong> faltas</div>
+  <div class="card"><strong><%= equipoResumen.incompletos %></strong> incompletos</div>
+  <% } else { %>
+  <div class="card"><strong><%= alertasHoy.intentosRechazados %></strong> intentos rechazados</div>
+  <div class="card"><strong><%= alertasHoy.fueraZona %></strong> fuera de zona</div>
+  <div class="card"><strong><%= alertasHoy.excede12 %></strong> días &gt;12 h</div>
+  <div class="card"><strong><%= pendientesCount %></strong> por autorizar</div>
+  <% } %>
+</div>
+
+<section class="card-block">
+  <h2>Hacer ahora</h2>
+  <div class="toolbar" style="flex-wrap:wrap;gap:.5rem">
+    <a class="btn" href="/asistencia-autorizaciones">2b. Autorizar pendientes</a>
+    <a class="btn" href="/asistencia-marcaciones?fecha=<%= fecha %>">1. Marcaciones</a>
+    <a class="btn" href="/asistencia-diaria?fecha=<%= fecha %>">2. Asistencia del día</a>
+    <a class="btn" href="/asistencia-intentos?fecha=<%= fecha %>">3. Intentos / evidencia</a>
+    <a class="btn" href="/asistencia-registro-jornada?desde=<%= fecha %>&amp;hasta=<%= fecha %>">4. Registro de jornada</a>
+  </div>
+</section>
+
+<% if (pendientes && pendientes.length) { %>
+<section class="card-block">
+  <h2>Pendientes recientes</h2>
+  <table>
+    <thead>
+      <tr><th>Fecha</th><th>Colaborador</th><th>Tipo</th><th>Detalle</th><th></th></tr>
+    </thead>
+    <tbody>
+      <% pendientes.slice(0, 8).forEach(function(p) {
+           const ymd = p.fecha ? new Date(p.fecha).toISOString().slice(0, 10) : '—';
+      %>
+      <tr>
+        <td><%= ymd %></td>
+        <td><%= empMap.get(String(p.empleadoId)) || '—' %></td>
+        <td><code><%= p.tipo %></code></td>
+        <td class="muted small">
+          <% if (p.tipo === 'retardo') { %><%= p.minutosRetardo || 0 %> min<% } %>
+          <%= p.motivoSolicitud || '' %>
+        </td>
+        <td><a href="/asistencia-autorizaciones#auth-<%= p._id %>">Decidir</a></td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table>
+</section>
+<% } %>
+
+<section class="card-block">
+  <h2>Configurar</h2>
+  <div class="toolbar">
+    <a class="btn" href="/asistencia-turnos">Turnos / esquema 46-9-12</a>
+    <a class="btn" href="/config-puntos-acceso">Puntos de acceso</a>
+    <a class="btn" href="/dashboard">Continuar a flujo de nómina →</a>
+  </div>
+</section>
+
+<% } %>
+<%- include('../Partials/layout-bottom') %>

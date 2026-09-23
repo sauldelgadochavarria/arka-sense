@@ -52,6 +52,14 @@ function buildNamespacedContext({ empleado, periodo, incidencias, parametros, ex
     salarioDiario: toNum(emp.salarioDiario ?? emp.sueldoDiario),
     sueldoDiario: toNum(emp.salarioDiario ?? emp.sueldoDiario),
     horasJornada: toNum(emp.horasJornada ?? atributos.horasJornada, 8),
+    valorHora: toNum(
+      emp.valorHora ??
+        atributos.valorHora ??
+        (toNum(emp.salarioDiario ?? emp.sueldoDiario) /
+          toNum(emp.horasJornada ?? atributos.horasJornada, 8))
+    ),
+    maxHorasOrdinariasSemana: toNum(emp.maxHorasOrdinariasSemana ?? atributos.maxHorasOrdinariasSemana, 46),
+    tipoJornadaCfdi: String(emp.tipoJornadaCfdi || atributos.tipoJornadaCfdi || '01'),
     antiguedadAnios: toNum(emp.antiguedadAnios),
     sdi: toNum(emp.sdi ?? emp.salarioDiario ?? emp.sueldoDiario),
     sbc: toNum(emp.sbc),
@@ -115,6 +123,7 @@ function buildNamespacedContext({ empleado, periodo, incidencias, parametros, ex
     sueldoDiario: EMPLEADO.salarioDiario,
     salarioDiario: EMPLEADO.salarioDiario,
     horasJornada: EMPLEADO.horasJornada,
+    valorHora: EMPLEADO.valorHora,
     horasExtraDobles: INCIDENCIAS.horasExtraDobles,
     horasExtraTriples: INCIDENCIAS.horasExtraTriples,
     antiguedadAnios: EMPLEADO.antiguedadAnios,

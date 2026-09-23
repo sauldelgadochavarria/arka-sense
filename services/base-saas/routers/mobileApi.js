@@ -21,6 +21,7 @@ const {
 } = require('../services/asistenciaAuditoriaService');
 const { TIPOS_MARCACION, ESTATUS_DIARIO } = require('../config/asistencia');
 const { validatePunchLocation } = require('../services/geofence/geofenceService');
+const { registrarIntento } = require('../services/attendanceAttemptService');
 
 const router = express.Router();
 
@@ -252,9 +253,35 @@ router.post('/asistencia/marcar', requireMobileAuth, async (req, res) => {
       return jsonError(res, 400, 'tipoMarcacion inválido');
     }
     if (tiposHoy.includes(tipoMarcacion)) {
+      await registrarIntento({
+        tenantId: req.mobileAuth.tenantId,
+        empleadoId: req.mobileAuth.empleadoId,
+        userId: req.mobileAuth.userId,
+        etapa: 'punch_duplicate',
+        resultado: 'rechazado',
+        tipoMarcacion,
+        mensaje: `Ya registraste «${tipoMarcacion}» hoy`,
+        reasonCode: 'DUPLICATE_PUNCH',
+        fechaJornada: fecha,
+        ip: req.ip || '',
+        userAgent: req.get('user-agent') || ''
+      });
       return jsonError(res, 409, `Ya registraste «${tipoMarcacion}» hoy`);
     }
     if (tiposHoy.includes('salida')) {
+      await registrarIntento({
+        tenantId: req.mobileAuth.tenantId,
+        empleadoId: req.mobileAuth.empleadoId,
+        userId: req.mobileAuth.userId,
+        etapa: 'punch_duplicate',
+        resultado: 'rechazado',
+        tipoMarcacion,
+        mensaje: 'La jornada de hoy ya está cerrada (salida registrada)',
+        reasonCode: 'DAY_CLOSED',
+        fechaJornada: fecha,
+        ip: req.ip || '',
+        userAgent: req.get('user-agent') || ''
+      });
       return jsonError(res, 409, 'La jornada de hoy ya está cerrada (salida registrada)');
     }
 
@@ -284,6 +311,26 @@ router.post('/asistencia/marcar', requireMobileAuth, async (req, res) => {
       req.body.isMocked === 1 ||
       req.body.isMocked === '1';
 
+    const bioOk =
+      req.body.biometriaOk === true ||
+      req.body.biometriaOk === 'true' ||
+      req.body.biometriaOk === 1 ||
+      req.body.biometriaOk === '1';
+    const bioScore = parseNum(req.body.biometriaScore);
+    const bioChallengeId = String(req.body.biometriaChallengeId || '').trim();
+
+    const dispositivo = {
+      plataforma: String(req.body.plataforma || '').trim().slice(0, 40),
+      modelo: String(req.body.modelo || '').trim().slice(0, 80),
+      appVersion: String(req.body.appVersion || '').trim().slice(0, 40)
+    };
+    const ubicacionPayload = {
+      lat,
+      lng,
+      accuracyMeters: accuracyMeters != null ? accuracyMeters : null,
+      isMocked: Boolean(isMocked)
+    };
+
     const geo = await validatePunchLocation({
       tenantId: req.mobileAuth.tenantId,
       empleado,
@@ -296,6 +343,36 @@ router.post('/asistencia/marcar', requireMobileAuth, async (req, res) => {
     });
 
     if (!geo.allowed) {
+      const etapa = isMocked || /fake|simulad/i.test(String(geo.reason || '')) ? 'punch_fake_gps' : 'geo_check';
+      await registrarIntento({
+        tenantId: req.mobileAuth.tenantId,
+        empleadoId: empleado._id,
+        userId: req.mobileAuth.userId,
+        etapa,
+        resultado: 'rechazado',
+        tipoMarcacion,
+        mensaje: geo.reason || 'Fuera de la geocerca autorizada',
+        reasonCode: isMocked ? 'FAKE_GPS' : 'GEO_BLOCKED',
+        fechaJornada: fecha,
+        biometria: {
+          ok: bioOk || null,
+          score: bioScore,
+          challengeId: bioChallengeId
+        },
+        ubicacion: ubicacionPayload,
+        geocerca: {
+          politica: geo.politica || '',
+          fueraDeZona: true,
+          allowed: false,
+          siteNombre: geo.match?.nombre || '',
+          distanceMeters: geo.distanceMeters ?? null,
+          radioMetros: geo.match?.radioMetros ?? null,
+          skipped: Boolean(geo.skipped)
+        },
+        dispositivo,
+        ip: req.ip || '',
+        userAgent: req.get('user-agent') || ''
+      });
       return res.status(403).json({
         ok: false,
         error: geo.reason || 'Fuera de la geocerca autorizada',
@@ -314,6 +391,8 @@ router.post('/asistencia/marcar', requireMobileAuth, async (req, res) => {
         ? match.id
         : null;
 
+    const resultadoPunch = geo.fueraDeZona ? 'aceptado_con_observacion' : 'aceptado';
+
     const created = await AttendanceRecord.create({
       tenantId: req.mobileAuth.tenantId,
       empleadoId: empleado._id,
@@ -322,6 +401,7 @@ router.post('/asistencia/marcar', requireMobileAuth, async (req, res) => {
       fecha,
       timestamp: ahora,
       timestampOriginal: ahora,
+      servidorRegisteredAt: ahora,
       tipoMarcacion,
       metodo: 'movil',
       registradoPorUserId: req.mobileAuth.userId,
@@ -330,11 +410,8 @@ router.post('/asistencia/marcar', requireMobileAuth, async (req, res) => {
       origen: 'original',
       estado: 'activa',
       ubicacion: {
-        lat,
-        lng,
-        accuracyMeters: accuracyMeters != null ? accuracyMeters : null,
-        capturedAt: ahora,
-        isMocked: Boolean(isMocked)
+        ...ubicacionPayload,
+        capturedAt: ahora
       },
       geocerca: {
         politica: geo.politica || '',
@@ -348,12 +425,56 @@ router.post('/asistencia/marcar', requireMobileAuth, async (req, res) => {
         radioMetros: match?.radioMetros != null ? match.radioMetros : null,
         justificacionFueraZona: geo.justificacionFueraZona || ''
       },
-      dispositivo: {
-        plataforma: String(req.body.plataforma || '').trim().slice(0, 40),
-        modelo: String(req.body.modelo || '').trim().slice(0, 80),
-        appVersion: String(req.body.appVersion || '').trim().slice(0, 40)
+      dispositivo,
+      biometria: {
+        ok: bioOk ? true : bioChallengeId || bioScore != null ? Boolean(bioOk) : null,
+        score: bioScore,
+        challengeId: bioChallengeId,
+        verifiedAt: bioOk || bioChallengeId ? ahora : null
       }
     });
+
+    const intento = await registrarIntento({
+      tenantId: req.mobileAuth.tenantId,
+      empleadoId: empleado._id,
+      userId: req.mobileAuth.userId,
+      etapa: 'punch',
+      resultado: resultadoPunch,
+      tipoMarcacion,
+      mensaje: `Marcación móvil ${tipoMarcacion}${
+        geo.fueraDeZona ? ' (fuera de zona)' : geo.skipped ? '' : ` @ ${match?.nombre || ''}`
+      }`,
+      reasonCode: geo.fueraDeZona ? 'PUNCH_OUT_OF_ZONE' : 'PUNCH_OK',
+      marcacionId: created._id,
+      challengeId: bioChallengeId,
+      fechaJornada: fecha,
+      biometria: {
+        ok: created.biometria?.ok,
+        score: bioScore,
+        challengeId: bioChallengeId
+      },
+      ubicacion: ubicacionPayload,
+      geocerca: {
+        politica: geo.politica || '',
+        fueraDeZona: Boolean(geo.fueraDeZona),
+        allowed: true,
+        siteNombre: match?.nombre || '',
+        distanceMeters: geo.distanceMeters ?? null,
+        radioMetros: match?.radioMetros ?? null,
+        skipped: Boolean(geo.skipped)
+      },
+      dispositivo,
+      ip: req.ip || '',
+      userAgent: req.get('user-agent') || ''
+    });
+
+    if (intento?._id) {
+      await AttendanceRecord.updateOne(
+        { _id: created._id },
+        { $set: { attemptId: intento._id } }
+      );
+      created.attemptId = intento._id;
+    }
 
     await registrarAuditoriaAsistencia({
       tenantId: req.mobileAuth.tenantId,
@@ -368,7 +489,8 @@ router.post('/asistencia/marcar', requireMobileAuth, async (req, res) => {
       mensaje: `Marcación móvil ${tipoMarcacion}${
         geo.fueraDeZona ? ' (fuera de zona)' : geo.skipped ? '' : ` @ ${match?.nombre || ''}`
       }`,
-      despues: snapshotMarcacion(created.toObject ? created.toObject() : created)
+      despues: snapshotMarcacion(created.toObject ? created.toObject() : created),
+      detalle: { attemptId: intento?._id ? String(intento._id) : null }
     });
 
     const daily = await recalculateDailyAttendance(
@@ -385,7 +507,8 @@ router.post('/asistencia/marcar', requireMobileAuth, async (req, res) => {
         timestamp: created.timestamp,
         metodo: created.metodo,
         ubicacion: created.ubicacion,
-        geocerca: created.geocerca
+        geocerca: created.geocerca,
+        biometria: created.biometria
       },
       geocerca: {
         fueraDeZona: Boolean(geo.fueraDeZona),

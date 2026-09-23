@@ -1,0 +1,198 @@
+<%
+  const t = typeof tipo !== 'undefined' && tipo ? tipo : null;
+  const codigoVal =
+    t && t.codigoLegado != null && t.codigoLegado !== ''
+      ? t.codigoLegado
+      : (typeof sugeridoCodigoLegado !== 'undefined' ? sugeridoCodigoLegado : '');
+%>
+<div class="field">
+  <label for="tp-codigo-interno">Código interno <span class="req">*</span></label>
+  <input
+    id="tp-codigo-interno"
+    name="codigoLegado"
+    type="number"
+    min="1"
+    step="1"
+    value="<%= codigoVal %>"
+    required
+    data-ocupados="<%= typeof codigosOcupadosJson !== 'undefined' ? codigosOcupadosJson : '[]' %>"
+    data-actual="<%= t && t.codigoLegado != null ? t.codigoLegado : '' %>"
+  />
+  <p class="field-hint">
+    Identificador <strong>numérico único</strong> de este tipo de período dentro de la empresa
+    (uso interno del sistema). No es el código SAT ni el de integración.
+    Sugerido libre: <strong><%= typeof sugeridoCodigoLegado !== 'undefined' ? sugeridoCodigoLegado : '—' %></strong>.
+  </p>
+  <p id="tp-codigo-interno-error" class="field-error" hidden>Ese código interno ya está asignado a otro tipo de período.</p>
+</div>
+
+<div class="field">
+  <label for="tp-codigo-ext">Código externo</label>
+  <input id="tp-codigo-ext" name="codigoExterno" value="<%= t && t.codigoExterno ? t.codigoExterno : '' %>" placeholder="Opcional" />
+  <p class="field-hint">Clave opcional para sistemas externos (ERP, Fortia, etc.). Puede repetirse o quedar vacío.</p>
+</div>
+
+<div class="field">
+  <label for="tp-nombre">Nombre <span class="req">*</span></label>
+  <input id="tp-nombre" name="nombre" value="<%= t ? t.nombre : '' %>" required placeholder="Ej. QUINCENAL" />
+  <p class="field-hint">Nombre visible en listas y en el flujo de nómina.</p>
+</div>
+
+<div class="field">
+  <label for="tp-motor">Tipo de motor <span class="req">*</span></label>
+  <select id="tp-motor" name="tipoMotor" required>
+    <% (tiposMotor || []).forEach(function(opt) { %>
+    <option value="<%= opt.value %>" <%= t && t.tipoMotor === opt.value ? 'selected' : (!t && opt.value === 'quincenal' ? 'selected' : '') %>><%= opt.label %></option>
+    <% }); %>
+  </select>
+  <p class="field-hint">Define tablas ISR, pro-rata y reglas del motor (semanal, quincenal, mensual…).</p>
+</div>
+
+<div class="field-row">
+  <div class="field">
+    <label for="tp-dias-per">Días del período</label>
+    <input id="tp-dias-per" name="diasPeriodo" type="number" min="1" value="<%= t && t.diasPeriodo != null ? t.diasPeriodo : '' %>" placeholder="Ej. 15" />
+    <p class="field-hint">Días de calendario/pago. Quincenal típico: <strong>15</strong>. Semanal: 7. Mensual: 30.</p>
+  </div>
+  <div class="field">
+    <label for="tp-dias-lab">Días laborables</label>
+    <input id="tp-dias-lab" name="diasLaborables" type="number" min="0" value="<%= t && t.diasLaborables != null ? t.diasLaborables : '' %>" placeholder="Ej. 15" />
+    <p class="field-hint">Días que se consideran laborables/pagados de referencia. Quincenal: suele ser <strong>15</strong>.</p>
+  </div>
+</div>
+
+<div class="field">
+  <label for="tp-leyenda">Leyenda</label>
+  <input id="tp-leyenda" name="leyenda" value="<%= t && t.leyenda ? t.leyenda : '' %>" placeholder="Opcional" />
+  <p class="field-hint">Etiqueta corta en reportes o recibos (ej. QUIN, SIND). Opcional.</p>
+</div>
+
+<div class="field">
+  <label for="tp-sat">Periodicidad SAT</label>
+  <select id="tp-sat" name="periodicidadPagoSat">
+    <option value="">— Periodicidad SAT —</option>
+    <% (periodicidadSat || []).forEach(function(p) { %>
+    <option value="<%= p.value %>" <%= t && Number(t.periodicidadPagoSat) === p.value ? 'selected' : '' %>><%= p.value %> — <%= p.label %></option>
+    <% }); %>
+  </select>
+  <p class="field-hint">Catálogo CFDI Nómina (<code>PeriodicidadPago</code>). Quincenal = <strong>4</strong>. Semanal = 2. Mensual = 5.</p>
+</div>
+
+<fieldset class="form-section">
+  <legend>Calendario y pago</legend>
+  <p class="muted form-hint">
+    El <strong>tipo de motor</strong> elige tablas ISR. Aquí defines <em>cuándo empieza</em> la semana/período
+    y <em>qué día pagan</em>. Ejemplo: semana mar→lun y pago el viernes → inicio=Martes, pago=Viernes.
+  </p>
+
+  <div class="field">
+    <label for="tp-modo-cal">Modo de calendario</label>
+    <% const modosCal = typeof modosCalendario !== 'undefined' && modosCalendario ? modosCalendario : [
+      { value: 'calendario_fijo', label: 'Calendario fijo (1–15, lun–dom…)' },
+      { value: 'por_dias', label: 'Por días consecutivos (ancla + N días)' }
+    ]; %>
+    <% const modoSel = t && t.modoCalendario ? t.modoCalendario : (t && t.diasPeriodo > 0 ? 'por_dias' : 'calendario_fijo'); %>
+    <select id="tp-modo-cal" name="modoCalendario">
+      <% modosCal.forEach(function(m) { %>
+      <option value="<%= m.value %>" <%= m.value === modoSel ? 'selected' : '' %>><%= m.label %></option>
+      <% }); %>
+    </select>
+    <p class="field-hint">
+      <strong>Fijo:</strong> quincenas 1–15/16–fin, semana según día de inicio.
+      <strong>Por días:</strong> usa «Días del período» encadenados desde la fecha ancla (ideal para mar→lun).
+    </p>
+  </div>
+
+  <div class="field-row">
+    <div class="field">
+      <label for="tp-dia-inicio">Día de inicio de semana / período</label>
+      <% const diasOpts = typeof diasSemanaOpts !== 'undefined' && diasSemanaOpts ? diasSemanaOpts : [
+        { value: 0, label: 'Domingo' }, { value: 1, label: 'Lunes' }, { value: 2, label: 'Martes' },
+        { value: 3, label: 'Miércoles' }, { value: 4, label: 'Jueves' }, { value: 5, label: 'Viernes' }, { value: 6, label: 'Sábado' }
+      ]; %>
+      <% const diaIni = t && t.diaInicioSemana != null ? Number(t.diaInicioSemana) : 1; %>
+      <select id="tp-dia-inicio" name="diaInicioSemana">
+        <% diasOpts.forEach(function(d) { %>
+        <option value="<%= d.value %>" <%= Number(d.value) === diaIni ? 'selected' : '' %>><%= d.label %></option>
+        <% }); %>
+      </select>
+      <p class="field-hint">Ancla de semana laboral (tope 46 h / HE) y de períodos semanales. Default: lunes.</p>
+    </div>
+    <div class="field">
+      <label for="tp-dia-pago">Día de pago preferido</label>
+      <% const diaPagoSel = t && t.diaPago != null && t.diaPago !== '' ? Number(t.diaPago) : ''; %>
+      <select id="tp-dia-pago" name="diaPago">
+        <option value="">— Usar fin de período + offset —</option>
+        <% diasOpts.forEach(function(d) { %>
+        <option value="<%= d.value %>" <%= diaPagoSel !== '' && Number(d.value) === diaPagoSel ? 'selected' : '' %>><%= d.label %></option>
+        <% }); %>
+      </select>
+      <p class="field-hint">Solo operativa (dispersión / CFDI). No cambia días pagados ni ISR.</p>
+    </div>
+  </div>
+
+  <div class="field">
+    <label for="tp-offset-pago">Offset días tras el cierre</label>
+    <input id="tp-offset-pago" name="offsetPagoDias" type="number" step="1" value="<%= t && t.offsetPagoDias != null ? t.offsetPagoDias : 0 %>" />
+    <p class="field-hint">Días después de <code>fechaFin</code> antes de buscar el día de pago (ej. 0 = el mismo viernes si el período cierra jueves y pagan viernes).</p>
+  </div>
+</fieldset>
+
+<label class="inline-check">
+  <input type="checkbox" name="esSeptimo" value="1" <%= t && t.esSeptimo ? 'checked' : '' %> />
+  Es séptimo día
+</label>
+<p class="field-hint">Actívalo en semanal sindicalizado (6 laborables + 1 descanso pagado). En quincenal normalmente <strong>no</strong>.</p>
+
+<label class="inline-check">
+  <input type="checkbox" name="aplicaAsistenciaPrenomina" value="1" <%= !t || t.aplicaAsistenciaPrenomina !== false ? 'checked' : '' %> />
+  Aplica asistencia / pre-nómina
+</label>
+<p class="field-hint">Si está activo, los períodos de este tipo toman marcaciones y asistencia diaria.</p>
+
+<label class="inline-check">
+  <input type="checkbox" name="compartirConNomina" value="1" <%= !t || t.compartirConNomina !== false ? 'checked' : '' %> />
+  Compartir con nómina
+</label>
+<p class="field-hint">Permite usar este tipo al crear períodos de nómina formal / CFDI.</p>
+
+<script>
+(function () {
+  var input = document.getElementById('tp-codigo-interno');
+  var err = document.getElementById('tp-codigo-interno-error');
+  if (!input || !err) return;
+  var form = input.closest('form');
+  var ocupados = [];
+  try { ocupados = JSON.parse(input.getAttribute('data-ocupados') || '[]'); } catch (e) { ocupados = []; }
+  var actual = input.getAttribute('data-actual') || '';
+
+  function esDuplicado(val) {
+    if (val === '' || val == null) return false;
+    var n = Number(val);
+    if (!Number.isFinite(n)) return false;
+    if (actual !== '' && Number(actual) === n) return false;
+    return ocupados.indexOf(n) !== -1;
+  }
+
+  function validar() {
+    var dup = esDuplicado(input.value);
+    err.hidden = !dup;
+    input.setCustomValidity(dup ? 'Código interno ya asignado' : '');
+    if (dup) input.classList.add('is-invalid');
+    else input.classList.remove('is-invalid');
+    return !dup;
+  }
+
+  input.addEventListener('input', validar);
+  input.addEventListener('change', validar);
+  if (form) {
+    form.addEventListener('submit', function (ev) {
+      if (!validar()) {
+        ev.preventDefault();
+        input.focus();
+      }
+    });
+  }
+  validar();
+})();
+</script>

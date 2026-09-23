@@ -4,6 +4,9 @@
   <strong><%= new Date(periodo.fechaInicio).toLocaleDateString('es-MX') %></strong>
   al
   <strong><%= new Date(periodo.fechaFin).toLocaleDateString('es-MX') %></strong>
+  <% if (periodo.fechaPago) { %>
+  · Pago: <strong><%= new Date(periodo.fechaPago).toLocaleDateString('es-MX') %></strong>
+  <% } %>
   · Estatus: <span class="badge badge-<%= periodo.estatus === 'cerrado' ? 'baja' : periodo.estatus === 'pendiente' ? 'suspendido' : periodo.estatus === 'borrador' ? 'activo' : 'alta' %>"><%= estatusLabels[periodo.estatus] || periodo.estatus %></span>
   <% if (periodo.numeroPeriodo) { %> · #<%= periodo.numeroPeriodo %> / <%= periodo.anio || '' %><% } %>
 </p>
@@ -26,18 +29,75 @@
 
 <% if (preflight && !preflight.ok) { %>
 <div class="alert alert-warning">
-  <strong>No se puede cerrar el período:</strong> <%= preflight.sinCodigo.length %> empleado(s)
-  afectados (incidencias / retardos / faltas / HE) no tienen identificador de exportación
-  (<em>código externo</em> ni <em>núm. empleado</em>).
+  <strong><%= periodo.estatus === 'borrador' ? 'Cierre bloqueado (preflight 422)' : 'Atención antes de cerrar (preflight)' %></strong>
   <ul>
-    <% preflight.sinCodigo.forEach(function(e) { %>
-    <li><a href="/personal-empleados/<%= e._id %>/edit"><%= e.nombre %></a> (No. <%= e.numEmpleado || '—' %>)</li>
+    <% if (preflight.sinCodigo && preflight.sinCodigo.length) { %>
+    <li><%= preflight.sinCodigo.length %> empleado(s) sin código externo / núm. empleado:
+      <ul>
+        <% preflight.sinCodigo.forEach(function(e) { %>
+        <li><a href="/personal-empleados/<%= e._id %>/edit"><%= e.nombre %></a> (No. <%= e.numEmpleado || '—' %>)</li>
+        <% }); %>
+      </ul>
+    </li>
+    <% } %>
+    <% (preflight.bloqueos || []).forEach(function(b) { %>
+    <li><code><%= b.codigo %></code> — <%= b.mensaje %></li>
     <% }); %>
   </ul>
 </div>
 <% } else if (preflight && preflight.ok && periodo.estatus === 'borrador') { %>
 <p class="muted small">Pre-flight de cierre OK — puedes cerrar el período.</p>
 <% } %>
+<% if (preflight && preflight.advertencias && preflight.advertencias.length) { %>
+<div class="alert alert-warning">
+  <strong>Advertencias (no bloquean el cálculo; pueden bloquear el cierre):</strong>
+  <ul>
+    <% preflight.advertencias.forEach(function(a) { %>
+    <li><code><%= a.codigo %></code> — <%= a.mensaje %>
+      <% if (a.detalle && a.detalle.length && (a.codigo === 'ASIS_INCOMPLETA_EN_CURSO' || a.codigo === 'ASIS_INCOMPLETA')) { %>
+      <ul>
+        <% a.detalle.forEach(function(d) {
+          const ymd = d.fecha ? new Date(d.fecha).toISOString().slice(0, 10) : '';
+        %>
+        <li>
+          <%= d.nombre || '—' %><% if (d.numEmpleado) { %> #<%= d.numEmpleado %><% } %>
+          · <a href="/asistencia-diaria?fecha=<%= ymd %>&amp;periodoId=<%= periodo._id %>"><%= ymd %></a>
+          · <%= (estatusDiarioLabels && estatusDiarioLabels[d.estatus]) || d.estatus %>
+        </li>
+        <% }); %>
+      </ul>
+      <% } %>
+    </li>
+    <% }); %>
+  </ul>
+  <p class="muted small">
+    Tratamiento incompleto:
+    <strong>día en curso</strong> → no paga ni falta (espera salida);
+    <strong>día pasado</strong> → al recalcular cuenta como falta y bloquea el cierre hasta corregir marcación o justificar.
+    · <a href="/asistencia-registro-jornada?desde=<%= cobertura && cobertura.fechaInicioStr %>&amp;hasta=<%= cobertura && cobertura.fechaFinStr %>">registro de jornada</a>
+  </p>
+</div>
+<% } %>
+
+<% if (preflight && preflight.bloqueos) {
+  const asisBloqueo = (preflight.bloqueos || []).find(function(b) { return b.codigo === 'ASIS_INCOMPLETA'; });
+  if (asisBloqueo && asisBloqueo.detalle && asisBloqueo.detalle.length) { %>
+<div class="alert alert-warning">
+  <strong>Asistencia incompleta (bloquea cierre)</strong>
+  <ul>
+    <% asisBloqueo.detalle.forEach(function(d) {
+      const ymd = d.fecha ? new Date(d.fecha).toISOString().slice(0, 10) : '';
+    %>
+    <li>
+      <%= d.nombre || '—' %><% if (d.numEmpleado) { %> #<%= d.numEmpleado %><% } %>
+      · <a href="/asistencia-diaria?fecha=<%= ymd %>&amp;periodoId=<%= periodo._id %>"><%= ymd %></a>
+      · <%= (estatusDiarioLabels && estatusDiarioLabels[d.estatus]) || d.estatus %>
+      — completa checada, justifica o déjalo como falta y recalcula.
+    </li>
+    <% }); %>
+  </ul>
+</div>
+<% } } %>
 
 <% if (typeof cobertura !== 'undefined' && cobertura) { %>
 <section class="panel">
@@ -110,14 +170,131 @@
 </div>
 <% } %>
 
-<h2>Detalle por empleado</h2>
+<% if (typeof cobertura !== 'undefined' && cobertura && cobertura.usaAsistencia) { %>
+<section class="panel" style="margin-top:1.5rem">
+  <h2 class="panel-title">Asistencia del período</h2>
+  <p class="muted small">
+    Vista de checadas / días del rango
+    (<%= cobertura.fechaInicioStr %> → <%= cobertura.fechaFinStr %>,
+    <%= (fechasYmd && fechasYmd.length) || 0 %> día(s)).
+    Revisa <strong>antes</strong> de calcular y vuelve a consultar <strong>después</strong> de reprocesar.
+    Pulsa <strong>+</strong> para ver el detalle día a día.
+  </p>
+
+  <table class="asistencia-periodo-table">
+    <thead>
+      <tr>
+        <th style="width:2rem"></th>
+        <th>Empleado</th>
+        <th>Días trab.</th>
+        <th>Faltas</th>
+        <th>Incomp.</th>
+        <th>Sin proc.</th>
+        <th>Retardo (min)</th>
+        <th>HE (min)</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% if (!asistenciaFilas || !asistenciaFilas.length) { %>
+      <tr><td colspan="8" class="muted">No hay empleados activos en el alcance de este tipo de período.</td></tr>
+      <% } %>
+      <% (asistenciaFilas || []).forEach(function(fila) {
+        const r = fila.resumen;
+        const rowId = 'asist-det-' + fila.empleadoId;
+      %>
+      <tr>
+        <td>
+          <button type="button" class="btn-expand" data-target="<%= rowId %>" aria-expanded="false" title="Ver detalle diario">+</button>
+        </td>
+        <td>
+          <%= fila.nombre %>
+          <% if (fila.numEmpleado) { %><span class="muted small"> #<%= fila.numEmpleado %></span><% } %>
+        </td>
+        <td><%= r.diasTrabajados %></td>
+        <td><%= r.faltas %></td>
+        <td><%= r.incompletos %></td>
+        <td class="<%= r.sinProcesar ? 'warn-text' : '' %>"><%= r.sinProcesar %></td>
+        <td><%= r.minutosRetardo %></td>
+        <td><%= r.minutosHE %></td>
+      </tr>
+      <tr id="<%= rowId %>" class="expand-row" hidden>
+        <td colspan="8">
+          <table class="nested-table" style="margin:.5rem 0 .75rem;width:100%">
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Entrada</th>
+                <th>Salida comida</th>
+                <th>Regreso</th>
+                <th>Salida</th>
+                <th>Retardo</th>
+                <th>HE</th>
+                <th>Estatus</th>
+                <th>Incidencias</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% fila.dias.forEach(function(dia) {
+                const estLabel = dia.estatus === 'sin_procesar'
+                  ? 'Sin procesar'
+                  : ((estatusDiarioLabels && estatusDiarioLabels[dia.estatus]) || dia.estatus);
+                const warnRow = ['falta', 'registro_parcial', 'fuera_de_rango', 'incompleto', 'sin_procesar'].includes(dia.estatus);
+              %>
+              <tr class="<%= warnRow ? 'row-muted' : '' %>">
+                <td>
+                  <a href="/asistencia-diaria?fecha=<%= dia.ymd %>&amp;periodoId=<%= periodo._id %>"><%= dia.ymd %></a>
+                </td>
+                <td><%= dia.entrada && formatTimeHHMM ? formatTimeHHMM(dia.entrada) : '—' %></td>
+                <td><%= dia.salidaComida && formatTimeHHMM ? formatTimeHHMM(dia.salidaComida) : '—' %></td>
+                <td><%= dia.regresoComida && formatTimeHHMM ? formatTimeHHMM(dia.regresoComida) : '—' %></td>
+                <td><%= dia.salida && formatTimeHHMM ? formatTimeHHMM(dia.salida) : '—' %></td>
+                <td><%= dia.minutosRetardo ? dia.minutosRetardo + ' min' : '—' %></td>
+                <td><%= dia.minutosHorasExtra ? dia.minutosHorasExtra + ' min' : '—' %></td>
+                <td><span class="badge badge-<%= dia.estatus %>"><%= estLabel %></span></td>
+                <td class="muted small"><%= dia.incidencias && dia.incidencias.length ? dia.incidencias.join(', ') : '—' %></td>
+              </tr>
+              <% }); %>
+            </tbody>
+          </table>
+        </td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table>
+</section>
+<script>
+(function () {
+  document.querySelectorAll('.btn-expand[data-target]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var row = document.getElementById(btn.getAttribute('data-target'));
+      if (!row) return;
+      var open = row.hasAttribute('hidden');
+      if (open) {
+        row.removeAttribute('hidden');
+        btn.textContent = '−';
+        btn.setAttribute('aria-expanded', 'true');
+      } else {
+        row.setAttribute('hidden', '');
+        btn.textContent = '+';
+        btn.setAttribute('aria-expanded', 'false');
+      }
+    });
+  });
+})();
+</script>
+<% } %>
+
+<h2>Pre-cálculo por empleado<%= detalles.length ? '' : ' (pendiente)' %></h2>
+<% if (!detalles.length) { %>
+<p class="muted">Aún no hay cálculo monetario. Revisa la asistencia arriba, luego usa «Calcular pre-nómina».</p>
+<% } %>
 <table>
   <thead>
     <tr><th>Empleado</th><th>Días trab.</th><th>Faltas</th><th>Retardo (min)</th><th>HE (min)</th><th>Percepciones</th><th>Deducciones</th><th>Neto</th><th></th></tr>
   </thead>
   <tbody>
     <% if (!detalles.length) { %>
-    <tr><td colspan="9">Sin cálculo. Usa «Calcular pre-nómina».</td></tr>
+    <tr><td colspan="9" class="muted">Sin cálculo. Usa «Calcular pre-nómina».</td></tr>
     <% } %>
     <% detalles.forEach(function(d) {
       const emp = empMap.get(String(d.empleadoId));
@@ -142,14 +319,32 @@
     <% if (periodo.estatus !== 'cerrado') { %>
     <tr id="ajuste-<%= d.empleadoId %>">
       <td colspan="9">
-        <form method="post" action="/prenomina-periodos/<%= periodo._id %>/ajuste/<%= d.empleadoId %>" class="inline-form">
-          <input name="concepto" placeholder="Concepto" required />
-          <select name="tipo">
-            <option value="percepcion">Percepción (+)</option>
-            <option value="deduccion">Deducción (−)</option>
-          </select>
+        <form method="post" action="/prenomina-periodos/<%= periodo._id %>/ajuste/<%= d.empleadoId %>" class="form-grid" style="margin-top:.5rem">
+          <label>Concepto (catálogo)
+            <select name="conceptoClave" required>
+              <option value="">— Selecciona —</option>
+              <% (conceptosAjuste || []).forEach(function(c) {
+                const k = (c.clave || c.codigo || '').toUpperCase();
+                if (!k || k === 'P001' || k === 'P002') return;
+              %>
+              <option value="<%= k %>" data-tipo="<%= c.tipo %>">
+                <%= k %> — <%= c.nombre %> (<%= c.tipo === 'deduccion' ? 'deducción' : 'percepción' %>)
+              </option>
+              <% }); %>
+            </select>
+          </label>
+          <input type="hidden" name="tipo" value="percepcion" class="ajuste-tipo-<%= d.empleadoId %>" />
           <input type="number" name="monto" step="0.01" min="0" placeholder="Monto" required />
           <input name="nota" placeholder="Nota / autorización" />
+          <label class="inline-check" style="max-width:42rem">
+            <input type="checkbox" name="reclasificarHe" value="1" />
+            Reclasificar HE (quita P002) → este concepto
+            <span class="muted small">Úsalo cuando no quieras pagar el excedente como horas extra (p. ej. bono), no solo por “exceder” el tope.</span>
+          </label>
+          <label class="inline-check" style="max-width:42rem">
+            <input type="checkbox" name="acceptDisclaimerHe" value="1" />
+            Acepto el disclaimer: modificar la naturaleza fiscal del tiempo extraordinario genera discrepancias en CFDI 4.0, afecta SBC y expone a multas por simulación. La acción es responsabilidad del administrador.
+          </label>
           <button type="submit">Aplicar ajuste</button>
         </form>
       </td>
@@ -158,4 +353,18 @@
     <% }); %>
   </tbody>
 </table>
+<script>
+(function () {
+  document.querySelectorAll('select[name="conceptoClave"]').forEach(function (sel) {
+    sel.addEventListener('change', function () {
+      var opt = sel.options[sel.selectedIndex];
+      var tipo = (opt && opt.getAttribute('data-tipo')) || 'percepcion';
+      var form = sel.closest('form');
+      if (!form) return;
+      var hidden = form.querySelector('input[name="tipo"]');
+      if (hidden) hidden.value = tipo === 'deduccion' ? 'deduccion' : 'percepcion';
+    });
+  });
+})();
+</script>
 <%- include('../Partials/layout-bottom') %>

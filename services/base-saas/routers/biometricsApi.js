@@ -14,6 +14,8 @@ const {
   verifyLivenessAndMatch,
   getEmpleadoBiometria
 } = require('../services/biometrics/biometricsService');
+const { registrarIntento } = require('../services/attendanceAttemptService');
+const { startOfDay } = require('../libs/timeHelpers');
 
 const router = express.Router();
 
@@ -85,6 +87,34 @@ router.post(
         frameAction
       });
 
+      const details = result.details || {};
+      await registrarIntento({
+        tenantId: req.mobileAuth.tenantId,
+        empleadoId: req.mobileAuth.empleadoId,
+        userId: req.mobileAuth.userId,
+        etapa: 'bio_verify',
+        resultado: result.success ? 'aceptado' : 'rechazado',
+        mensaje: result.message || '',
+        reasonCode: result.success ? 'BIO_OK' : 'BIO_FAIL',
+        challengeId,
+        fechaJornada: startOfDay(new Date()),
+        biometria: {
+          ok: Boolean(result.success),
+          score: result.confidenceScore ?? null,
+          distance: details.distance ?? null,
+          threshold: details.threshold ?? null,
+          challengeId,
+          usedFlip: Boolean(details.usedFlip)
+        },
+        detalle: {
+          liveness: details.liveness || null,
+          distanceNeutral: details.distanceNeutral,
+          distanceAction: details.distanceAction
+        },
+        ip: req.ip || '',
+        userAgent: req.get('user-agent') || ''
+      });
+
       const status = result.success ? 200 : 401;
       return res.status(status).json({
         ok: result.success,
@@ -95,6 +125,21 @@ router.post(
       });
     } catch (err) {
       console.error('[biometrics/verify]', err);
+      try {
+        await registrarIntento({
+          tenantId: req.mobileAuth?.tenantId,
+          empleadoId: req.mobileAuth?.empleadoId,
+          userId: req.mobileAuth?.userId,
+          etapa: 'bio_verify',
+          resultado: 'error',
+          mensaje: err.message || 'Error al verificar biometría',
+          reasonCode: 'BIO_ERROR',
+          ip: req.ip || '',
+          userAgent: req.get('user-agent') || ''
+        });
+      } catch (_) {
+        /* ignore */
+      }
       return jsonError(res, 500, err.message || 'Error al verificar biometría');
     }
   }

@@ -34,12 +34,21 @@
 
 <section class="card-block">
   <h2><%= bio.enrolled ? 'Actualizar rostro' : 'Capturar rostro de referencia' %></h2>
-  <p class="muted">Usa la cámara (preferible luz frontal, rostro neutro). La imagen no se guarda en disco; solo el vector facial.</p>
+  <p class="muted">
+    Usa la cámara del <strong>PC del servidor / estación RRHH</strong> (no la de la app).
+    Si tienes 2 webcams, elige la segunda en el listado. Luz frontal, rostro neutro.
+    La imagen no se guarda en disco; solo el vector facial.
+  </p>
 
   <div class="bio-capture">
+    <label for="bioCameraSelect" style="display:block;margin-bottom:6px;">Cámara</label>
+    <select id="bioCameraSelect" style="max-width:100%;margin-bottom:10px;" disabled>
+      <option value="">— Abre la cámara o pulsa «Listar cámaras» —</option>
+    </select>
     <video id="bioVideo" autoplay playsinline muted width="480" height="360" style="max-width:100%;background:#111;border-radius:8px;"></video>
     <canvas id="bioCanvas" width="480" height="360" style="display:none;"></canvas>
     <div class="actions-bar" style="margin-top:12px;">
+      <button type="button" class="btn" id="bioListCams">Listar cámaras</button>
       <button type="button" class="btn" id="bioStartCam">Abrir cámara</button>
       <button type="button" class="btn" id="bioCapture" disabled>Capturar y registrar</button>
       <button type="button" id="bioStopCam" disabled>Cerrar cámara</button>
@@ -55,39 +64,110 @@
   const video = document.getElementById('bioVideo');
   const canvas = document.getElementById('bioCanvas');
   const msg = document.getElementById('bioMsg');
+  const sel = document.getElementById('bioCameraSelect');
+  const btnList = document.getElementById('bioListCams');
   const btnStart = document.getElementById('bioStartCam');
   const btnCap = document.getElementById('bioCapture');
   const btnStop = document.getElementById('bioStopCam');
   let stream = null;
+  const LS_KEY = 'arka.bio.cameraDeviceId';
 
   function setMsg(t, isErr) {
     msg.textContent = t || '';
     msg.style.color = isErr ? '#c0392b' : '';
   }
 
-  async function startCam() {
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
-        audio: false
-      });
-      video.srcObject = stream;
-      btnCap.disabled = false;
-      btnStop.disabled = false;
-      setMsg('Cámara lista. Mira al frente y captura.');
-    } catch (e) {
-      setMsg('No se pudo abrir la cámara: ' + (e.message || e), true);
-    }
-  }
-
-  function stopCam() {
+  function stopTracks() {
     if (stream) {
       stream.getTracks().forEach(function (t) { t.stop(); });
       stream = null;
     }
     video.srcObject = null;
+  }
+
+  async function ensurePermission() {
+    // Sin permiso previo, enumerateDevices oculta labels/ids útiles
+    const tmp = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    tmp.getTracks().forEach(function (t) { t.stop(); });
+  }
+
+  async function refreshCameras() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
+      setMsg('Este navegador no permite listar cámaras.', true);
+      return [];
+    }
+    try {
+      await ensurePermission();
+    } catch (e) {
+      setMsg('Permite el acceso a la cámara en el navegador (candado → Cámara).', true);
+      throw e;
+    }
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const cams = devices.filter(function (d) { return d.kind === 'videoinput'; });
+    const saved = localStorage.getItem(LS_KEY) || '';
+    sel.innerHTML = '';
+    if (!cams.length) {
+      sel.innerHTML = '<option value="">No se detectaron cámaras</option>';
+      sel.disabled = true;
+      setMsg('Conecta la 2.ª webcam USB y vuelve a listar.', true);
+      return cams;
+    }
+    cams.forEach(function (d, i) {
+      const opt = document.createElement('option');
+      opt.value = d.deviceId;
+      opt.textContent = d.label || ('Cámara ' + (i + 1));
+      if (d.deviceId === saved || (!saved && i === Math.min(1, cams.length - 1) && cams.length > 1)) {
+        // Si hay 2+, prefiere la 2.ª la primera vez (suele ser la USB externa)
+        opt.selected = true;
+      }
+      sel.appendChild(opt);
+    });
+    if (!sel.value && cams[0]) sel.value = cams[0].deviceId;
+    sel.disabled = false;
+    setMsg('Cámaras detectadas: ' + cams.length + '. Elige la de Fernando y pulsa Abrir cámara.');
+    return cams;
+  }
+
+  async function startCam() {
+    try {
+      if (!sel.value) {
+        await refreshCameras();
+      }
+      stopTracks();
+      const deviceId = sel.value;
+      const constraints = deviceId
+        ? { video: { deviceId: { exact: deviceId }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false }
+        : { video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false };
+      stream = await navigator.mediaDevices.getUserMedia(constraints);
+      video.srcObject = stream;
+      if (deviceId) localStorage.setItem(LS_KEY, deviceId);
+      const label = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].textContent : 'cámara';
+      btnCap.disabled = false;
+      btnStop.disabled = false;
+      setMsg('Usando: ' + label + '. Mira al frente y captura.');
+    } catch (e) {
+      // Fallback si exact falla (id cambió al reconectar USB)
+      try {
+        stopTracks();
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+          audio: false
+        });
+        video.srcObject = stream;
+        btnCap.disabled = false;
+        btnStop.disabled = false;
+        setMsg('Cámara abierta (fallback). Si no es la correcta, lista y elige otra.', true);
+      } catch (e2) {
+        setMsg('No se pudo abrir la cámara: ' + (e2.message || e.message || e), true);
+      }
+    }
+  }
+
+  function stopCam() {
+    stopTracks();
     btnCap.disabled = true;
     btnStop.disabled = true;
+    setMsg('Cámara cerrada.');
   }
 
   async function captureAndEnroll() {
@@ -129,6 +209,13 @@
     }, 'image/jpeg', 0.92);
   }
 
+  sel.addEventListener('change', function () {
+    if (sel.value) localStorage.setItem(LS_KEY, sel.value);
+    if (stream) startCam();
+  });
+  btnList.addEventListener('click', function () {
+    refreshCameras().catch(function () {});
+  });
   btnStart.addEventListener('click', startCam);
   btnStop.addEventListener('click', stopCam);
   btnCap.addEventListener('click', captureAndEnroll);

@@ -19,6 +19,24 @@ const tipoPeriodoNominaSchema = new mongoose.Schema(
     diasLaborables: { type: Number, default: 0 },
     leyenda: { type: String, trim: true, default: '' },
     periodicidadPagoSat: { type: Number, default: null },
+    /**
+     * Día en que inicia la semana laboral / período semanal (0=dom … 6=sáb).
+     * Default lunes. Impacta tope 46 h y rangos semanales.
+     */
+    diaInicioSemana: { type: Number, default: 1, min: 0, max: 6 },
+    /**
+     * calendario_fijo = resolvePeriodRange clásico (1–15, lun–dom…).
+     * por_dias = N días consecutivos desde ancla (fechaInicial / referencia alineada a diaInicioSemana).
+     */
+    modoCalendario: {
+      type: String,
+      enum: ['calendario_fijo', 'por_dias'],
+      default: 'calendario_fijo'
+    },
+    /** Día preferido de dispersión (0–6). Null = usar fechaFin + offsetPagoDias. */
+    diaPago: { type: Number, default: null, min: 0, max: 6 },
+    /** Días después de fechaFin antes de aplicar diaPago / sugerir fechaPago. */
+    offsetPagoDias: { type: Number, default: 0 },
     aplicaAsistenciaPrenomina: { type: Boolean, default: true },
     compartirConNomina: { type: Boolean, default: true },
     activo: { type: Boolean, default: true },

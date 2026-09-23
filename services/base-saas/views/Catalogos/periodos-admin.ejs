@@ -58,14 +58,14 @@
 <table>
   <thead>
     <tr>
-      <th>#</th><th>Año</th><th>Tipo período</th><th>Tipo nómina</th><th>Inicio</th><th>Fin</th>
+      <th>#</th><th>Año</th><th>Tipo período</th><th>Tipo nómina</th><th>Inicio</th><th>Fin</th><th>Pago</th>
       <th title="Aplica asistencia/pre-nómina (guardado en el período)">Asist.</th>
       <th title="Compartir con nómina (guardado en el período)">Nómina</th><th>Estatus</th><th>Siguiente</th><th></th>
     </tr>
   </thead>
   <tbody>
     <% if (!periodos.length) { %>
-    <tr><td colspan="11" class="muted">Sin períodos. Use «Generar períodos del año».</td></tr>
+    <tr><td colspan="12" class="muted">Sin períodos. Use «Generar períodos del año».</td></tr>
     <% } %>
     <% periodos.forEach(function(p) {
       const tp = p.tipoPeriodoId ? tipoMap.get(String(p.tipoPeriodoId)) : null;
@@ -81,6 +81,7 @@
       <td><%= tn ? tn.label : (p.tipoNomina || 'ordinaria') %></td>
       <td><%= new Date(p.fechaInicio).toLocaleDateString('es-MX') %></td>
       <td><%= new Date(p.fechaFin).toLocaleDateString('es-MX') %></td>
+      <td><%= p.fechaPago ? new Date(p.fechaPago).toLocaleDateString('es-MX') : '—' %></td>
       <td>
         <%- include('../Partials/periodo-flags', { mode: 'asistencia', aplicaAsistencia: aplicaAsist, compartirNomina: compartir }) %>
       </td>

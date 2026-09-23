@@ -36,6 +36,8 @@ const periodoNominaSchema = new mongoose.Schema(
     },
     fechaInicio: { type: Date, required: true, index: true },
     fechaFin: { type: Date, required: true, index: true },
+    /** Fecha sugerida/confirmada de pago / dispersión. */
+    fechaPago: { type: Date, default: null },
     /** Año calendario del período (fechaInicio) — base de la numeración. */
     anio: { type: Number, index: true },
     /**

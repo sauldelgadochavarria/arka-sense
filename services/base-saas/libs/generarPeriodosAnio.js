@@ -2,6 +2,7 @@
 
 const { startOfDay, endOfDay } = require('./timeHelpers');
 const { resolvePeriodRange } = require('./payrollPeriodDates');
+const { normalizeWeekday, startOfWeekOn, addDays } = require('./calendarioPeriodo');
 
 function defaultDiasPorTipo(tipoMotor) {
   const map = {
@@ -14,12 +15,6 @@ function defaultDiasPorTipo(tipoMotor) {
   return map[tipoMotor] || 7;
 }
 
-function addDays(date, n) {
-  const d = new Date(date);
-  d.setDate(d.getDate() + n);
-  return d;
-}
-
 function endOfYear(anio) {
   return endOfDay(new Date(anio, 11, 31));
 }
@@ -30,19 +25,47 @@ function inYear(date, anio) {
 
 /**
  * Genera bloques de período para un año a partir de la fecha inicial del primer período.
- * El primer bloque inicia exactamente en fechaInicial; los siguientes encadenan día a día.
+ * Respeta tipoPeriodoRef.diaInicioSemana / modoCalendario / diasPeriodo cuando se pasa.
+ *
+ * @param {object} opts
+ * @param {string} opts.tipoMotor
+ * @param {number} opts.diasPeriodo
+ * @param {Date|string} opts.fechaInicial
+ * @param {number} opts.anio
+ * @param {object|null} [opts.tipoPeriodoRef]
+ * @param {number} [opts.maxPeriodos]
  */
-function generarBloquesPeriodoAnio({ tipoMotor, diasPeriodo, fechaInicial, anio, maxPeriodos = 60 }) {
+function generarBloquesPeriodoAnio({
+  tipoMotor,
+  diasPeriodo,
+  fechaInicial,
+  anio,
+  tipoPeriodoRef = null,
+  maxPeriodos = 60
+}) {
   const anioNum = Number(anio);
   if (!Number.isFinite(anioNum)) throw new Error('Año inválido');
 
-  const inicio = startOfDay(fechaInicial);
+  const refTipo = tipoPeriodoRef || {
+    tipoMotor,
+    diasPeriodo,
+    diaInicioSemana: 1,
+    modoCalendario: Number(diasPeriodo) > 0 ? 'por_dias' : 'calendario_fijo'
+  };
+
+  let inicio = startOfDay(fechaInicial);
   if (inicio.getFullYear() > anioNum) {
     throw new Error('La fecha inicial no puede ser posterior al año seleccionado');
   }
 
+  const tipoNorm = String(refTipo.tipoMotor || tipoMotor || '').toLowerCase();
+  const weekStartsOn = normalizeWeekday(refTipo.diaInicioSemana, 1);
+  if (tipoNorm === 'semanal') {
+    inicio = startOfWeekOn(inicio, weekStartsOn);
+  }
+
   const finAnio = endOfYear(anioNum);
-  const dias = diasPeriodo > 0 ? diasPeriodo : defaultDiasPorTipo(tipoMotor);
+  const dias = Number(diasPeriodo) > 0 ? Number(diasPeriodo) : defaultDiasPorTipo(tipoNorm);
   const bloques = [];
   let cursor = inicio;
   let numero = 1;
@@ -53,18 +76,18 @@ function generarBloquesPeriodoAnio({ tipoMotor, diasPeriodo, fechaInicial, anio,
 
     if (bloques.length === 0) {
       fechaInicio = startOfDay(cursor);
-      if (diasPeriodo > 0) {
+      if (Number(diasPeriodo) > 0 || refTipo.modoCalendario === 'por_dias') {
         fechaFin = endOfDay(addDays(fechaInicio, dias - 1));
       } else {
-        const r = resolvePeriodRange(tipoMotor, fechaInicio);
+        const r = resolvePeriodRange(tipoNorm, fechaInicio, refTipo);
         fechaInicio = startOfDay(r.fechaInicio);
         fechaFin = endOfDay(r.fechaFin);
       }
-    } else if (diasPeriodo > 0) {
+    } else if (Number(diasPeriodo) > 0 || refTipo.modoCalendario === 'por_dias') {
       fechaInicio = startOfDay(cursor);
       fechaFin = endOfDay(addDays(fechaInicio, dias - 1));
     } else {
-      const r = resolvePeriodRange(tipoMotor, cursor);
+      const r = resolvePeriodRange(tipoNorm, cursor, refTipo);
       fechaInicio = startOfDay(r.fechaInicio);
       fechaFin = endOfDay(r.fechaFin);
     }

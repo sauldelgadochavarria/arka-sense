@@ -35,6 +35,8 @@ const dailyAttendanceSchema = new mongoose.Schema(
     },
     incidenciasAutomaticas: [{ type: String }],
     marcajesFueraDeRango: { type: Boolean, default: false },
+    /** Art. 68: ordinarias programadas + HE del día > tope esquema (default 12 h). */
+    excedeLimiteDiario: { type: Boolean, default: false },
     notas: { type: String, default: '' }
   },
   { timestamps: true, collection: COLLECTION_DAILY_ATTENDANCE }

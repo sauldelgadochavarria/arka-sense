@@ -1,0 +1,82 @@
+<%- include('../Partials/layout-top', { title: 'Intentos de checado', session }) %>
+<%- include('partials/flujo-asistencia', { pasoActual: 1, fecha: typeof fecha !== 'undefined' ? fecha : null }) %>
+<%
+  const resultadoLabel = {
+    aceptado: 'Aceptado',
+    aceptado_con_observacion: 'Aceptado c/ obs.',
+    rechazado: 'Rechazado',
+    error: 'Error'
+  };
+%>
+<section class="page-header">
+  <h1>Intentos de checado</h1>
+  <p class="muted">Evidencia append-only (bio, geo, punch). Incluye rechazos que no generan marcación.</p>
+</section>
+
+<% if (!empresa) { %>
+<p>No hay empresa vinculada a este tenant.</p>
+<% } else { %>
+<div class="toolbar">
+  <form method="get" action="/asistencia-intentos" class="inline-form">
+    <label>Fecha</label>
+    <input type="date" name="fecha" value="<%= fecha %>" />
+    <label>Empleado</label>
+    <select name="empleadoId">
+      <option value="">— Todos —</option>
+      <% empleados.forEach(function(e) { %>
+      <option value="<%= e._id %>" <%= String(e._id) === String(empleadoId) ? 'selected' : '' %>>
+        <%= e.firstName %> <%= e.lastName %> (<%= e.numEmpleado %>)
+      </option>
+      <% }); %>
+    </select>
+    <button type="submit">Filtrar</button>
+  </form>
+  <a class="btn" href="/asistencia-marcaciones?fecha=<%= fecha %>">Marcaciones</a>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th>Hora</th>
+      <th>Empleado</th>
+      <th>Etapa</th>
+      <th>Resultado</th>
+      <th>Tipo</th>
+      <th>Mensaje</th>
+      <th>Evidencia</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <% if (!intentos.length) { %>
+    <tr><td colspan="8" class="muted">Sin intentos para este filtro.</td></tr>
+    <% } %>
+    <% intentos.forEach(function(i) { %>
+    <tr class="<%= i.resultado === 'rechazado' || i.resultado === 'error' ? 'row-muted' : '' %>">
+      <td><%= formatTimeHHMM(i.createdAt) %></td>
+      <td><%= empMap.get(String(i.empleadoId)) || '—' %></td>
+      <td><code><%= i.etapa %></code></td>
+      <td>
+        <span class="badge badge-<%= i.resultado === 'rechazado' || i.resultado === 'error' ? 'suspendido' : (i.resultado === 'aceptado_con_observacion' ? 'falta' : 'activo') %>">
+          <%= resultadoLabel[i.resultado] || i.resultado %>
+        </span>
+      </td>
+      <td><%= i.tipoMarcacion || '—' %></td>
+      <td><%= i.mensaje || i.reasonCode || '—' %></td>
+      <td class="muted small">
+        <% if (i.biometria && i.biometria.distance != null) { %>bio <%= Number(i.biometria.distance).toFixed(3) %><% } %>
+        <% if (i.geocerca && i.geocerca.distanceMeters != null) { %> · <%= Math.round(i.geocerca.distanceMeters) %> m<% } %>
+        <% if (i.geocerca && i.geocerca.fueraDeZona) { %> · fuera<% } %>
+        <% if (i.geocerca && i.geocerca.siteNombre) { %> · <%= i.geocerca.siteNombre %><% } %>
+      </td>
+      <td>
+        <% if (i.marcacionId) { %>
+        <a href="/asistencia-marcaciones/<%= i.marcacionId %>">Detalle</a>
+        <% } else { %>—<% } %>
+      </td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<% } %>
+<%- include('../Partials/layout-bottom') %>

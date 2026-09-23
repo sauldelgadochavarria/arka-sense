@@ -147,6 +147,22 @@ async function validatePeriodoForCalculo(tenantId, periodo) {
         codigo: 'PRENOMINA_ABIERTA',
         mensaje: 'La pre-nómina vinculada aún está abierta; calcula y cierra pre-nómina para mejores insumos'
       });
+    } else {
+      try {
+        const { validateJornadaForPeriod } = require('../payrollPreflightService');
+        const jornada = await validateJornadaForPeriod(pre, tenantId);
+        for (const a of jornada.advertencias || []) {
+          advertencias.push({ ...a, codigo: `JORNADA_${a.codigo}` });
+        }
+        for (const b of jornada.bloqueos || []) {
+          bloqueos.push({ ...b, codigo: `JORNADA_${b.codigo}`, httpStatus: 422 });
+        }
+      } catch (err) {
+        advertencias.push({
+          codigo: 'JORNADA_PREFLIGHT_ERROR',
+          mensaje: `No se pudo validar jornada: ${err.message}`
+        });
+      }
     }
   }
 
@@ -159,6 +175,7 @@ async function validatePeriodoForCalculo(tenantId, periodo) {
     ok: bloqueos.length === 0,
     bloqueos,
     advertencias,
+    httpStatus: bloqueos.length ? 422 : 200,
     resumen: {
       formulas: formulas.length,
       conceptosActivos: conceptosActivos.length,

@@ -1,31 +1,35 @@
 <%- include('../Partials/layout-top', { title: 'Tipos de período', session }) %>
 <h1>Catálogo de tipos de período</h1>
-<p class="muted">Alineado a Fortia (<code>CLA_PERIODO</code>). Compartido entre pre-nómina, asistencia y nómina según flags del tenant.</p>
+<p class="muted">Cada tipo tiene un <strong>código interno único</strong>. El motor ISR y el calendario (día de inicio / pago) se configuran por separado.</p>
 <div class="toolbar">
   <a class="btn btn-primary" href="/prenomina/tipos-periodo/nuevo">+ Nuevo</a>
 </div>
 <% if (!empresa) { %>
 <p>No hay empresa vinculada.</p>
 <% } else { %>
+<%
+  const diaLabel = { 0: 'Dom', 1: 'Lun', 2: 'Mar', 3: 'Mié', 4: 'Jue', 5: 'Vie', 6: 'Sáb' };
+%>
 <table>
   <thead>
     <tr>
-      <th>Legado</th><th>Cód. externo</th><th>Nombre</th><th>Motor</th><th>Días</th><th>Lab.</th><th>Sépt.</th><th>Asist.</th><th>Nómina</th><th>SAT</th><th>Activo</th><th></th>
+      <th>Cód. interno</th><th>Nombre</th><th>Motor</th><th>Días</th>
+      <th>Inicio sem.</th><th>Pago</th><th>Modo</th>
+      <th>Asist.</th><th>Nómina</th><th>Activo</th><th></th>
     </tr>
   </thead>
   <tbody>
     <% tipos.forEach(function(t) { %>
     <tr class="<%= !t.activo ? 'row-muted' : '' %>">
       <td><code><%= t.codigoLegado %></code></td>
-      <td><%= t.codigoExterno || '—' %></td>
       <td><%= t.nombre %><% if (t.leyenda) { %><br /><span class="muted"><%= t.leyenda %></span><% } %></td>
       <td><%= t.tipoMotor %></td>
       <td><%= t.diasPeriodo %></td>
-      <td><%= t.diasLaborables %></td>
-      <td><%= t.esSeptimo ? 'Sí' : 'No' %></td>
+      <td><%= diaLabel[t.diaInicioSemana != null ? t.diaInicioSemana : 1] || 'Lun' %></td>
+      <td><%= t.diaPago != null ? (diaLabel[t.diaPago] || t.diaPago) : '—' %></td>
+      <td class="muted small"><%= t.modoCalendario || 'calendario_fijo' %></td>
       <td><%= t.aplicaAsistenciaPrenomina ? 'Sí' : 'No' %></td>
       <td><%= t.compartirConNomina ? 'Sí' : 'No' %></td>
-      <td><%= t.periodicidadPagoSat != null ? t.periodicidadPagoSat : '—' %></td>
       <td><%= t.activo ? 'Sí' : 'No' %></td>
       <td class="actions">
         <a href="/prenomina/tipos-periodo/<%= t._id %>/edit">Editar</a>

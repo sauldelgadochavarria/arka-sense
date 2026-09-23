@@ -16,7 +16,12 @@ function snapshotMarcacion(doc) {
     origen: doc.origen || 'original',
     notas: doc.notas || '',
     motivoAjuste: doc.motivoAjuste || '',
-    motivoAnulacion: doc.motivoAnulacion || ''
+    motivoAnulacion: doc.motivoAnulacion || '',
+    ubicacion: doc.ubicacion || null,
+    geocerca: doc.geocerca || null,
+    biometria: doc.biometria || null,
+    dispositivo: doc.dispositivo || null,
+    attemptId: doc.attemptId ? String(doc.attemptId) : null
   };
 }
 

@@ -464,6 +464,14 @@ const VARIABLES_CONTEXTO = [
     ejemplo: 8
   },
   {
+    key: 'EMPLEADO.valorHora',
+    label: 'EMPLEADO.valorHora',
+    tipo: 'number',
+    categoria: 'salario',
+    descripcion: 'Valor hora reforma 2027: salario semanal / max. ordinarias del esquema (no ÷8 fijo).',
+    ejemplo: 76.09
+  },
+  {
     key: 'EMPLEADO.tipoEmpleado',
     label: 'EMPLEADO.tipoEmpleado',
     tipo: 'string',

@@ -11,11 +11,14 @@ const {
   listPendientesPorRango,
   vincularAlPeriodo
 } = require('./movimientoAsistenciaNominaService');
-const { validateCodigoExternoForPeriod } = require('./payrollPreflightService');
-const { startOfDay, endOfDay } = require('../libs/timeHelpers');
+const { validatePeriodClose } = require('./payrollPreflightService');
+const { startOfDay, endOfDay, ymdInTimeZone } = require('../libs/timeHelpers');
 const { filterEmpleadosByTipoMotor } = require('../libs/empleadoTipoPeriodo');
 const { listTiposPeriodo } = require('./tipoPeriodoNominaService');
-const { clasificarHorasExtraPeriodo } = require('../libs/horasExtraClasificacion');
+const { clasificarHorasExtraPeriodo, minutosExtraDesdeDaily } = require('../libs/horasExtraClasificacion');
+const { resolveEsquemaJornada, computeValorHora } = require('../libs/esquemaJornada');
+const { normalizeWeekday } = require('../libs/calendarioPeriodo');
+const { getTipoPeriodoById } = require('./tipoPeriodoNominaService');
 
 function roundMoney(n) {
   return Math.round((Number(n) || 0) * 100) / 100;
@@ -38,11 +41,13 @@ function eachDayInRange(inicio, fin, fn) {
   }
 }
 
-function calcularEmpleadoPeriodo(empleado, turno, dailies, incidencias) {
+function calcularEmpleadoPeriodo(empleado, turno, dailies, incidencias, weekStartsOn = 1) {
   const salarioDiario = Number(empleado.salarioDiario) || 0;
+  const esquema = resolveEsquemaJornada(turno);
   const horasJornada = getHorasJornada(turno);
   const minutosJornada = horasJornada * 60;
-  const salarioHora = salarioDiario / horasJornada;
+  /** Valor hora 2027: salario semanal / max ordinarias (no ÷8 fijo). */
+  const salarioHora = computeValorHora(salarioDiario, turno);
 
   let diasTrabajados = 0;
   let minutosRetardo = 0;
@@ -64,23 +69,32 @@ function calcularEmpleadoPeriodo(empleado, turno, dailies, incidencias) {
     if (['falta', 'registro_parcial', 'fuera_de_rango'].includes(day.estatus)) {
       diasFaltaSet.add(dateKey(day.fecha));
     }
+    // Incompleto de días ya cerrados → falta (no pagado). El día en curso se deja fuera:
+    // la checada de salida aún puede llegar.
+    if (day.estatus === 'incompleto') {
+      const dayYmd = ymdInTimeZone(day.fecha);
+      const hoyYmd = ymdInTimeZone(new Date());
+      if (dayYmd < hoyYmd) {
+        diasFaltaSet.add(dateKey(day.fecha));
+      }
+    }
     const minRet = day.minutosRetardo || 0;
     minutosRetardo += minRet;
     if (minRet > 0 || day.estatus === 'retardo') {
       diasConRetardo += 1;
     }
     minutosSalidaAnticipada += day.minutosSalidaAnticipada || 0;
-    const minHeDia =
-      Number(day.minutosHorasExtra) ||
-      (Number(day.minutosHEOrdinaria) || 0) +
-        (Number(day.minutosHEDoble) || 0) +
-        (Number(day.minutosHETriple) || 0);
+    const minHeDia = minutosExtraDesdeDaily(day);
     if (minHeDia > 0) {
-      diasHE.push({ fecha: day.fecha, minutosExtra: minHeDia });
+      diasHE.push({
+        fecha: day.fecha,
+        minutosExtra: minHeDia,
+        minutosOrdinarios: minutosJornada
+      });
     }
   }
 
-  const clasif = clasificarHorasExtraPeriodo(diasHE);
+  const clasif = clasificarHorasExtraPeriodo(diasHE, turno, { weekStartsOn });
   minutosHEOrdinaria = 0;
   minutosHEDoble = clasif.minutosDobles;
   minutosHETriple = clasif.minutosTriples;
@@ -163,6 +177,11 @@ function calcularEmpleadoPeriodo(empleado, turno, dailies, incidencias) {
     minutosHETriple,
     minutosSalidaAnticipada,
     salarioDiario,
+    horasJornada,
+    valorHora: roundMoney(salarioHora),
+    maxHorasOrdinariasSemana: esquema.maxHorasOrdinariasSemana,
+    tipoJornadaCfdi: esquema.tipoJornadaCfdi,
+    excedeLimiteDiario: Boolean(clasif.excedeLimiteDiario),
     percepciones,
     deducciones,
     totalPercepciones,
@@ -247,6 +266,17 @@ async function calculatePayrollPeriod(periodId, tenantId, userId = '') {
   const fin = endOfDay(period.fechaFin);
   const usaAsistencia = period.aplicaAsistenciaPrenomina !== false;
 
+  let weekStartsOnPeriod = 1;
+  if (period.tipoPeriodoId) {
+    const tipoRef = await getTipoPeriodoById(tenantId, period.tipoPeriodoId);
+    weekStartsOnPeriod = normalizeWeekday(tipoRef?.diaInicioSemana, 1);
+  } else {
+    const matchTipo = tiposPeriodo.find((t) => t.tipoMotor === tipoMotor);
+    weekStartsOnPeriod = normalizeWeekday(matchTipo?.diaInicioSemana, 1);
+  }
+
+  const tiposById = new Map(tiposPeriodo.map((t) => [String(t._id), t]));
+
   const movimientos = await listPendientesPorRango(tenantId, inicio, fin, period._id);
   const movPorEmpleado = new Map();
   const movimientoIds = [];
@@ -279,7 +309,15 @@ async function calculatePayrollPeriod(periodId, tenantId, userId = '') {
       empleado.turnoId ? Turno.findById(empleado.turnoId).lean() : null
     ]);
 
-    let calc = calcularEmpleadoPeriodo(empleado, turno, dailies, incidencias);
+    const tipoEmp = empleado.tipoPeriodoId
+      ? tiposById.get(String(empleado.tipoPeriodoId))
+      : null;
+    const weekStartsOn = normalizeWeekday(
+      tipoEmp?.diaInicioSemana != null ? tipoEmp.diaInicioSemana : weekStartsOnPeriod,
+      weekStartsOnPeriod
+    );
+
+    let calc = calcularEmpleadoPeriodo(empleado, turno, dailies, incidencias, weekStartsOn);
     const movsEmp = movPorEmpleado.get(String(empleado._id)) || [];
     if (movsEmp.length) {
       calc = aplicarMovimientosAlCalculo(calc, movsEmp, conceptosMap);
@@ -336,12 +374,42 @@ async function applyManualAdjustment(periodId, tenantId, empleadoId, ajuste, use
 
   const monto = roundMoney(ajuste.monto);
   const tipo = ajuste.tipo === 'deduccion' ? 'deduccion' : 'percepcion';
+  const nombreConcepto = String(ajuste.concepto || 'Ajuste manual').trim();
+  const esReclasificacionHe =
+    Boolean(ajuste.reclasificarHe) ||
+    /bono|gratific/i.test(nombreConcepto) ||
+    String(ajuste.clave || '').toUpperCase() === 'BONO';
+
+  if (esReclasificacionHe && !ajuste.acceptDisclaimerHe) {
+    const err = new Error('DISCLAIMER_HE_REQUERIDO');
+    err.httpStatus = 422;
+    err.disclaimer =
+      'Advertencia: Modificar la naturaleza fiscal del tiempo extraordinario genera discrepancias en el CFDI 4.0, afecta la integración variable del SBC y expone a multas por simulación. La acción es responsabilidad exclusiva del administrador.';
+    throw err;
+  }
+
   const linea = {
-    clave: 'AJM',
-    nombre: ajuste.concepto || 'Ajuste manual',
+    clave: esReclasificacionHe ? String(ajuste.clave || 'BONO').toUpperCase() : 'AJM',
+    nombre: nombreConcepto,
     tipo,
     monto: Math.abs(monto)
   };
+
+  // Si reclasifica HE: quitar/reducir P002 y anotar minutos
+  let heAntes = null;
+  if (esReclasificacionHe && ajuste.reducirHe !== false) {
+    heAntes = {
+      minutosHorasExtra: detail.minutosHorasExtra,
+      minutosHEDoble: detail.minutosHEDoble,
+      minutosHETriple: detail.minutosHETriple,
+      p002: (detail.percepciones || []).find((p) => p.clave === 'P002')
+    };
+    detail.percepciones = (detail.percepciones || []).filter((p) => p.clave !== 'P002');
+    detail.minutosHorasExtra = 0;
+    detail.minutosHEOrdinaria = 0;
+    detail.minutosHEDoble = 0;
+    detail.minutosHETriple = 0;
+  }
 
   if (tipo === 'percepcion') detail.percepciones.push(linea);
   else detail.deducciones.push(linea);
@@ -349,7 +417,11 @@ async function applyManualAdjustment(periodId, tenantId, empleadoId, ajuste, use
   detail.ajustesManuales.push({
     concepto: linea.nombre,
     monto: linea.monto,
-    nota: ajuste.nota || '',
+    nota:
+      (ajuste.nota || '') +
+      (esReclasificacionHe
+        ? ' [RECLASIFICACION_HE_BONO: disclaimer aceptado]'
+        : ''),
     userId,
     fecha: new Date()
   });
@@ -359,6 +431,32 @@ async function applyManualAdjustment(periodId, tenantId, empleadoId, ajuste, use
   detail.netoPagar = roundMoney(detail.totalPercepciones - detail.totalDeducciones);
   detail.estatus = 'ajustado';
   await detail.save();
+
+  if (esReclasificacionHe) {
+    try {
+      const { registrarAuditoriaAsistencia } = require('./asistenciaAuditoriaService');
+      await registrarAuditoriaAsistencia({
+        tenantId,
+        accion: 'RECLASIFICAR_HE_BONO',
+        entidad: 'payroll_detail',
+        entidadId: detail._id,
+        empleadoId,
+        fechaJornada: period.fechaInicio,
+        userId: userId || '',
+        mensaje: `Reclasificación HE → ${linea.nombre}`,
+        motivo: ajuste.nota || 'Disclaimer aceptado',
+        antes: heAntes,
+        despues: {
+          concepto: linea.nombre,
+          monto: linea.monto,
+          minutosHorasExtra: detail.minutosHorasExtra
+        },
+        detalle: { disclaimerAceptado: true, periodId: String(periodId) }
+      });
+    } catch (auditErr) {
+      console.warn('[applyManualAdjustment] auditoría:', auditErr.message);
+    }
+  }
 
   await recalcularTotalesPeriodo(period);
   return detail.toObject();
@@ -383,10 +481,13 @@ async function closePayrollPeriod(periodId, tenantId, userId = '') {
   if (period.estatus === 'cerrado') throw new Error('PERIOD_CLOSED');
   if (period.estatus === 'abierto') throw new Error('PERIOD_NOT_CALCULATED');
 
-  const preflight = await validateCodigoExternoForPeriod(period, tenantId);
+  const preflight = await validatePeriodClose(period, tenantId);
   if (!preflight.ok) {
-    const err = new Error('MISSING_CODIGO_EXTERNO');
+    const err = new Error('PREFLIGHT_FAILED');
+    err.httpStatus = 422;
     err.sinCodigo = preflight.sinCodigo;
+    err.bloqueos = preflight.bloqueos;
+    err.advertencias = preflight.advertencias;
     throw err;
   }
 

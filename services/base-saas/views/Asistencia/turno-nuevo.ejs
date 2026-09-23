@@ -1,0 +1,19 @@
+<%- include('../Partials/layout-top', { title: 'Nuevo turno', session }) %>
+<%- include('partials/flujo-asistencia', { pasoActual: 0, fecha: null }) %>
+<p><a href="/asistencia-turnos">← Volver a turnos</a></p>
+
+<h1>Nuevo turno</h1>
+<p class="muted">Define horario, tolerancias y topes de jornada. Cada campo incluye una ayuda breve debajo.</p>
+
+<% if (!empresa) { %>
+<p>No hay empresa vinculada a este tenant.</p>
+<% } else { %>
+<form method="post" action="/asistencia-turnos" class="form-grid form-wide">
+  <%- include('partials/turno-fields', { turno: null, diasSemana, tiposTurno, modosTolerancia, tiposJornadaCfdi, describeVentana }) %>
+  <div class="toolbar" style="gap:0.5rem">
+    <button type="submit">Crear turno</button>
+    <a class="btn" href="/asistencia-turnos" style="background:transparent;color:inherit;border:1px solid var(--color-border)">Cancelar</a>
+  </div>
+</form>
+<% } %>
+<%- include('../Partials/layout-bottom') %>

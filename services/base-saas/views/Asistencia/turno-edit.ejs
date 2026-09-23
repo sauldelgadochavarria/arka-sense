@@ -1,9 +1,11 @@
 <%- include('../Partials/layout-top', { title: 'Editar turno', session }) %>
+<%- include('partials/flujo-asistencia', { pasoActual: 0, fecha: null }) %>
 <p><a href="/asistencia-turnos">← Volver a turnos</a></p>
 
 <h1>Editar turno</h1>
+<p class="muted">Define horario, tolerancias y topes de jornada. Cada campo incluye una ayuda breve debajo.</p>
 <form method="post" action="/asistencia-turnos/<%= turno._id %>" class="form-grid form-wide">
-  <%- include('partials/turno-fields', { turno, diasSemana, tiposTurno, modosTolerancia, describeVentana }) %>
+  <%- include('partials/turno-fields', { turno, diasSemana, tiposTurno, modosTolerancia, tiposJornadaCfdi, describeVentana }) %>
   <button type="submit">Guardar turno</button>
 </form>
 <%- include('../Partials/layout-bottom') %>

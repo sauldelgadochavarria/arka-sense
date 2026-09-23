@@ -314,6 +314,63 @@ code {
 .stat-card.warn strong { color: var(--color-warning); }
 .stat-card.bad strong { color: var(--color-danger); }
 
+.stat-card.is-filter {
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease;
+}
+.stat-card.is-filter:hover {
+  border-color: var(--color-primary, #0f766e);
+  box-shadow: var(--shadow-md, 0 4px 12px rgba(0,0,0,.08));
+}
+.stat-card.is-filter.is-active {
+  border-color: var(--color-primary, #0f766e);
+  outline: 2px solid color-mix(in srgb, var(--color-primary, #0f766e) 35%, transparent);
+  background: color-mix(in srgb, var(--color-primary, #0f766e) 6%, var(--color-surface, #fff));
+}
+.diaria-filtros {
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 0.65rem;
+}
+.diaria-filtros .stat-card {
+  padding: 0.7rem 0.5rem;
+}
+.diaria-filtros .stat-card strong {
+  font-size: 1.2rem;
+}
+.badge-sin_procesar {
+  background: #fee2e2;
+  color: #991b1b;
+}
+.btn-expand {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  margin: 0;
+  font-size: 1.1rem;
+  line-height: 1;
+  font-weight: 600;
+  border: 1px solid var(--color-border, #cbd5e1);
+  border-radius: 0.35rem;
+  background: var(--color-surface, #fff);
+  color: inherit;
+  cursor: pointer;
+}
+.btn-expand:hover {
+  background: color-mix(in srgb, var(--color-primary, #0f766e) 10%, var(--color-surface, #fff));
+}
+.asistencia-periodo-table .nested-table {
+  font-size: 0.9rem;
+  background: color-mix(in srgb, var(--color-surface, #fff) 92%, #0f172a);
+}
+.muted.small {
+  font-size: 0.78rem;
+}
+
 /* ?? Tablas ??????????????????????????????????????????? */
 .table-wrap {
   overflow-x: auto;
@@ -448,6 +505,103 @@ textarea {
 .form-section legend {
   font-weight: 600;
   padding: 0 6px;
+}
+
+.form-section .field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.form-section .field > label {
+  margin: 0;
+}
+
+.form-section .field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+@media (max-width: 640px) {
+  .form-section .field-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.form-section .field-hint,
+.form-hint {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: var(--color-text-muted);
+  font-weight: 400;
+}
+
+.form-grid .field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.form-grid .field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+@media (max-width: 640px) {
+  .form-grid .field-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.form-grid .field-hint {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: var(--color-text-muted);
+  font-weight: 400;
+}
+
+.form-grid .req {
+  color: var(--color-danger, #b91c1c);
+}
+
+.form-grid .field-error {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--color-danger, #b91c1c);
+  font-weight: 600;
+}
+
+.form-grid input.is-invalid {
+  border-color: var(--color-danger, #b91c1c);
+  box-shadow: 0 0 0 3px rgba(185, 28, 28, 0.12);
+}
+
+td.warn-cell {
+  color: var(--color-warning-text, #92400e);
+  background: color-mix(in srgb, var(--color-warning, #f59e0b) 12%, transparent);
+}
+
+tr.row-highlight td {
+  background: color-mix(in srgb, var(--color-primary, #0f766e) 8%, transparent);
+}
+
+.form-section .ventana-preview {
+  margin: 0;
+  padding: 0.55rem 0.75rem;
+  background: var(--color-bg, #f8fafc);
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+}
+
+.form-section input[type="color"] {
+  width: 3.5rem;
+  height: 2.25rem;
+  padding: 0.15rem;
+  cursor: pointer;
 }
 
 .checks-grid {

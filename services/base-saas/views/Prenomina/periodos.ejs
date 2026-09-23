@@ -30,56 +30,20 @@
   <button type="submit">Filtrar</button>
 </form>
 
-<h2>Pendientes de abrir (<%= pendientes.length %>)</h2>
-<table>
-  <thead>
-    <tr>
-      <th>#</th><th>Tipo</th><th>Inicio</th><th>Fin</th><th>Tipo nómina</th>
-      <th>Asist.</th><th>Nómina</th><th>Estatus</th><th></th>
-    </tr>
-  </thead>
-  <tbody>
-    <% if (!pendientes.length) { %>
-    <tr><td colspan="9" class="muted">No hay pendientes en <%= _anio %>. Genera el año en Catálogos si aún no lo has hecho.</td></tr>
-    <% } %>
-    <% pendientes.forEach(function(p) {
-      const aplicaAsist = p.aplicaAsistenciaPrenomina !== false;
-      const compartir = p.compartirConNomina === true;
-      const ctx = _ctx[String(p._id)] || {};
-    %>
-    <tr>
-      <td><%= p.numeroPeriodo != null ? p.numeroPeriodo : '—' %></td>
-      <td><%= p.tipo %></td>
-      <td><%= new Date(p.fechaInicio).toLocaleDateString('es-MX') %></td>
-      <td><%= new Date(p.fechaFin).toLocaleDateString('es-MX') %></td>
-      <td><%= p.tipoNomina || 'ordinaria' %></td>
-      <td><%- include('../Partials/periodo-flags', { mode: 'asistencia', aplicaAsistencia: aplicaAsist, compartirNomina: compartir }) %></td>
-      <td><%- include('../Partials/periodo-flags', { mode: 'nomina', aplicaAsistencia: aplicaAsist, compartirNomina: compartir }) %></td>
-      <td><span class="badge badge-suspendido"><%= estatusLabels[p.estatus] || p.estatus %></span></td>
-      <td class="actions">
-        <a href="/prenomina-periodos/<%= p._id %>">Ver</a>
-        <% if (ctx.puedeAbrir) { %>
-        <form method="post" action="/prenomina-periodos/<%= p._id %>/abrir" class="inline-form">
-          <button type="submit">Abrir</button>
-        </form>
-        <% } else if (ctx.otroAbierto) { %>
-        <span class="muted small">Cierra el período abierto primero</span>
-        <% } else if (ctx.anterior && ctx.anterior.estatus !== 'cerrado') { %>
-        <span class="muted small">Cierra el período #<%= ctx.anterior.numeroPeriodo %> antes</span>
-        <% } else { %>
-        <a class="btn" href="/catalogos/periodos?anio=<%= p.anio || _anio %>">Ver en catálogo</a>
-        <% } %>
-      </td>
-    </tr>
-    <% }); %>
-  </tbody>
-</table>
+<%
+  function sortByInicioAsc(a, b) { return new Date(a.fechaInicio) - new Date(b.fechaInicio); }
+  function sortByInicioDesc(a, b) { return new Date(b.fechaInicio) - new Date(a.fechaInicio); }
+  activos.sort(sortByInicioDesc);
+  pendientes.sort(sortByInicioAsc);
+  cerrados.sort(sortByInicioDesc);
+%>
 
-<h2>Activos / en cálculo (<%= activos.length %>)</h2>
+<h2>En proceso (<%= activos.length %>)</h2>
+<p class="muted small">Abiertos o en borrador — aquí operas asistencia / pre-cálculo.</p>
 <table>
   <thead>
     <tr>
-      <th>#</th><th>Tipo</th><th>Inicio</th><th>Fin</th><th>Tipo nómina</th>
+      <th>#</th><th>Tipo</th><th>Inicio</th><th>Fin</th><th>Pago</th><th>Tipo nómina</th>
       <th title="Guardado en el período">Asist.</th>
       <th title="Guardado en el período">Nómina</th>
       <th>Estatus</th><th>Empleados</th><th>Neto</th><th></th>
@@ -87,7 +51,7 @@
   </thead>
   <tbody>
     <% if (!activos.length) { %>
-    <tr><td colspan="11" class="muted">Ningún período abierto o en borrador. Abre uno pendiente arriba para pre-calcular.</td></tr>
+    <tr><td colspan="12" class="muted">Ningún período abierto o en borrador. Abre uno pendiente abajo para pre-calcular.</td></tr>
     <% } %>
     <% activos.forEach(function(p) {
       const aplicaAsist = p.aplicaAsistenciaPrenomina !== false;
@@ -98,6 +62,7 @@
       <td><%= p.tipo %></td>
       <td><%= new Date(p.fechaInicio).toLocaleDateString('es-MX') %></td>
       <td><%= new Date(p.fechaFin).toLocaleDateString('es-MX') %></td>
+      <td><%= p.fechaPago ? new Date(p.fechaPago).toLocaleDateString('es-MX') : '—' %></td>
       <td><%= p.tipoNomina || 'ordinaria' %></td>
       <td><%- include('../Partials/periodo-flags', { mode: 'asistencia', aplicaAsistencia: aplicaAsist, compartirNomina: compartir }) %></td>
       <td><%- include('../Partials/periodo-flags', { mode: 'nomina', aplicaAsistencia: aplicaAsist, compartirNomina: compartir }) %></td>
@@ -109,6 +74,54 @@
     <% }); %>
   </tbody>
 </table>
+
+<details <%= pendientes.length && !activos.length ? 'open' : '' %>>
+  <summary><strong>Pendientes de abrir</strong> (<%= pendientes.length %>)</summary>
+  <table>
+    <thead>
+      <tr>
+        <th>#</th><th>Tipo</th><th>Inicio</th><th>Fin</th><th>Pago</th><th>Tipo nómina</th>
+        <th>Asist.</th><th>Nómina</th><th>Estatus</th><th></th>
+      </tr>
+    </thead>
+    <tbody>
+      <% if (!pendientes.length) { %>
+      <tr><td colspan="10" class="muted">No hay pendientes en <%= _anio %>. Genera el año en Catálogos si aún no lo has hecho.</td></tr>
+      <% } %>
+      <% pendientes.forEach(function(p) {
+        const aplicaAsist = p.aplicaAsistenciaPrenomina !== false;
+        const compartir = p.compartirConNomina === true;
+        const ctx = _ctx[String(p._id)] || {};
+      %>
+      <tr>
+        <td><%= p.numeroPeriodo != null ? p.numeroPeriodo : '—' %></td>
+        <td><%= p.tipo %></td>
+        <td><%= new Date(p.fechaInicio).toLocaleDateString('es-MX') %></td>
+        <td><%= new Date(p.fechaFin).toLocaleDateString('es-MX') %></td>
+        <td><%= p.fechaPago ? new Date(p.fechaPago).toLocaleDateString('es-MX') : '—' %></td>
+        <td><%= p.tipoNomina || 'ordinaria' %></td>
+        <td><%- include('../Partials/periodo-flags', { mode: 'asistencia', aplicaAsistencia: aplicaAsist, compartirNomina: compartir }) %></td>
+        <td><%- include('../Partials/periodo-flags', { mode: 'nomina', aplicaAsistencia: aplicaAsist, compartirNomina: compartir }) %></td>
+        <td><span class="badge badge-suspendido"><%= estatusLabels[p.estatus] || p.estatus %></span></td>
+        <td class="actions">
+          <a href="/prenomina-periodos/<%= p._id %>">Ver</a>
+          <% if (ctx.puedeAbrir) { %>
+          <form method="post" action="/prenomina-periodos/<%= p._id %>/abrir" class="inline-form">
+            <button type="submit">Abrir</button>
+          </form>
+          <% } else if (ctx.otroAbierto) { %>
+          <span class="muted small">Cierra el período abierto primero</span>
+          <% } else if (ctx.anterior && ctx.anterior.estatus !== 'cerrado') { %>
+          <span class="muted small">Cierra el período #<%= ctx.anterior.numeroPeriodo %> antes</span>
+          <% } else { %>
+          <a class="btn" href="/catalogos/periodos?anio=<%= p.anio || _anio %>">Ver en catálogo</a>
+          <% } %>
+        </td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table>
+</details>
 
 <% if (cerrados.length) { %>
 <details>

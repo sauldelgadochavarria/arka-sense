@@ -19,6 +19,7 @@ const turnosController = require('../controllers/turnosController');
 const marcacionesController = require('../controllers/marcacionesController');
 const asistenciaDiariaController = require('../controllers/asistenciaDiariaController');
 const registroJornadaController = require('../controllers/registroJornadaController');
+const asistenciaHubController = require('../controllers/asistenciaHubController');
 const incidenciasController = require('../controllers/incidenciasController');
 const vacacionesController = require('../controllers/vacacionesController');
 const portalController = require('../controllers/portalController');
@@ -342,6 +343,7 @@ router.post('/personal/ajuste-anual/lotes/:id/aplicar', ajusteAnualController.po
 router.get('/personal/ajuste-anual/lotes/:id/export', ajusteAnualController.exportCsv);
 
 router.get('/asistencia-turnos', turnosController.listTurnos);
+router.get('/asistencia-turnos/nuevo', turnosController.newTurno);
 router.post('/asistencia-turnos', turnosController.createTurno);
 router.get('/asistencia-turnos/:id/edit', turnosController.editTurno);
 router.post('/asistencia-turnos/:id', turnosController.updateTurno);
@@ -361,7 +363,14 @@ router.get('/asistencia-rotaciones/:id/edit', rotacionesController.editPlantilla
 router.post('/asistencia-rotaciones/:id', rotacionesController.updatePlantilla);
 router.post('/asistencia-rotaciones/:id/toggle', rotacionesController.togglePlantilla);
 
+router.get('/asistencia', asistenciaHubController.showHub);
+router.get('/asistencia-autorizaciones', asistenciaHubController.listAutorizaciones);
+router.post('/asistencia-autorizaciones/cambio-turno', asistenciaHubController.solicitarCambioTurnoAction);
+router.post('/asistencia-autorizaciones/:id/decidir', asistenciaHubController.decidirAction);
+
 router.get('/asistencia-marcaciones', marcacionesController.listMarcaciones);
+router.get('/asistencia-intentos', marcacionesController.listIntentosDia);
+router.get('/asistencia-marcaciones/:id', marcacionesController.showMarcacionDetalle);
 router.post('/asistencia-marcaciones', marcacionesController.createMarcacion);
 router.post('/asistencia-marcaciones/:id/ajustar', marcacionesController.ajustarMarcacion);
 router.post('/asistencia-marcaciones/:id/anular', marcacionesController.anularMarcacion);
@@ -384,6 +393,7 @@ router.post('/incidencias/tipos/:id/toggle', incidenciasController.toggleTipo);
 router.get('/incidencias/vacaciones', vacacionesController.listVacaciones);
 router.post('/incidencias/vacaciones/recalcular', vacacionesController.recalcularVacaciones);
 router.post('/incidencias/aprobar-masivo', incidenciasController.aprobarMasivo);
+router.post('/incidencias/rechazar-masivo', incidenciasController.rechazarMasivo);
 router.post('/incidencias/:id/aprobar', incidenciasController.aprobarIncidencia);
 router.post('/incidencias/:id/rechazar', incidenciasController.rechazarIncidencia);
 

@@ -1,0 +1,91 @@
+<%- include('../Partials/layout-top', { title: 'Autorizaciones de asistencia', session }) %>
+<%- include('partials/flujo-asistencia', { pasoActual: 2, fecha: new Date().toISOString().slice(0, 10) }) %>
+
+<section class="page-header">
+  <h1>Autorizaciones</h1>
+  <p class="muted">
+    Supervisor / RRHH: aprueba retardos, cambios de turno y excepciones.
+    Cada decisión queda en bitácora (evidencia FT/REJL).
+  </p>
+</section>
+
+<% if (!empresa) { %>
+<p>No hay empresa vinculada.</p>
+<% } else { %>
+
+<div class="toolbar">
+  <a class="btn" href="/asistencia">← Hub asistencia</a>
+</div>
+
+<h2>Pendientes (<%= pendientes.length %>)</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Fecha</th>
+      <th>Colaborador</th>
+      <th>Tipo</th>
+      <th>Detalle</th>
+      <th>Motivo</th>
+      <th>Decisión</th>
+    </tr>
+  </thead>
+  <tbody>
+    <% if (!pendientes.length) { %>
+    <tr><td colspan="6" class="muted">No hay pendientes<%= scope.mode === 'supervisor' ? ' en tu equipo' : '' %>.</td></tr>
+    <% } %>
+    <% pendientes.forEach(function(p) {
+         const ymd = p.fecha ? new Date(p.fecha).toISOString().slice(0, 10) : '—';
+    %>
+    <tr id="auth-<%= p._id %>">
+      <td><%= ymd %></td>
+      <td><%= empMap.get(String(p.empleadoId)) || '—' %></td>
+      <td><span class="badge"><%= p.tipo %></span></td>
+      <td class="small">
+        <% if (p.tipo === 'retardo') { %>Retardo <%= p.minutosRetardo || 0 %> min<% } %>
+        <% if (p.tipo === 'fuera_zona') { %>Fuera de geocerca<% } %>
+        <% if (p.tipo === 'cambio_turno') { %>
+          <%= p.esDescansoPropuesto ? 'Descanso' : 'Cambio de turno' %>
+        <% } %>
+      </td>
+      <td class="muted small"><%= p.motivoSolicitud || '—' %></td>
+      <td>
+        <form method="post" action="/asistencia-autorizaciones/<%= p._id %>/decidir" class="form-grid" style="min-width:220px">
+          <input name="motivoDecision" placeholder="Motivo / comentario" required />
+          <div style="display:flex;gap:.4rem">
+            <button type="submit" name="decision" value="aprobar">Aprobar</button>
+            <button type="submit" name="decision" value="rechazar" class="btn-danger">Rechazar</button>
+          </div>
+        </form>
+      </td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+
+<section class="card-block" style="margin-top:1.5rem">
+  <h2>Solicitar cambio / excepción de turno</h2>
+  <p class="muted">Queda pendiente hasta que un supervisor o RRHH lo apruebe (genera override de turno).</p>
+  <form method="post" action="/asistencia-autorizaciones/cambio-turno" class="form-grid form-wide">
+    <select name="empleadoId" required>
+      <option value="">— Colaborador —</option>
+      <% equipo.forEach(function(e) { %>
+      <option value="<%= e._id %>"><%= e.firstName %> <%= e.lastName %> (<%= e.numEmpleado %>)</option>
+      <% }); %>
+    </select>
+    <input type="date" name="fecha" required value="<%= new Date().toISOString().slice(0,10) %>" />
+    <select name="turnoPropuestoId">
+      <option value="">— Turno propuesto —</option>
+      <% turnos.forEach(function(t) { %>
+      <option value="<%= t._id %>"><%= t.nombre %></option>
+      <% }); %>
+    </select>
+    <label class="inline-check">
+      <input type="checkbox" name="esDescanso" value="1" /> Marcar como descanso
+    </label>
+    <input name="motivo" placeholder="Motivo de la excepción" required />
+    <button type="submit">Enviar a autorización</button>
+  </form>
+</section>
+
+<% } %>
+<%- include('../Partials/layout-bottom') %>

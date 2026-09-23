@@ -14,10 +14,12 @@
       n: 1,
       titulo: 'Asistencia',
       desc: 'Marcaciones, turnos y asistencia del día',
-      href: '/asistencia-diaria',
+      href: '/asistencia',
       links: [
+        { label: 'Inicio', href: '/asistencia' },
         { label: 'Del día', href: '/asistencia-diaria' },
-        { label: 'Marcaciones', href: '/asistencia-marcaciones' }
+        { label: 'Marcaciones', href: '/asistencia-marcaciones' },
+        { label: 'Autorizar', href: '/asistencia-autorizaciones' }
       ]
     },
     {
@@ -33,7 +35,7 @@
     {
       n: 3,
       titulo: 'Incidencias',
-      desc: 'Aprobar faltas, vacaciones y extras',
+      desc: 'Autorizar faltas, vacaciones y HE antes del cálculo formal',
       href: '/incidencias/pendientes',
       links: [
         { label: 'Pendientes', href: '/incidencias/pendientes' },

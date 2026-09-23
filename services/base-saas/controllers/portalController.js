@@ -28,14 +28,20 @@ async function portalHome(req, res) {
 async function portalAsistencia(req, res) {
   const empleado = req.empleado;
   const mes = trimString(req.query.mes) || new Date().toISOString().slice(0, 7);
+  const diaSel = trimString(req.query.dia) || '';
   const [year, month] = mes.split('-').map(Number);
   const desde = new Date(year, month - 1, 1);
   const hasta = endOfDay(new Date(year, month, 0));
 
   const DailyAttendance = await getDailyAttendanceModel();
   const Turno = await getTurnoModel();
+  const getAttendanceRecordModel = require('../models/attendanceRecord');
+  const getAsistenciaAutorizacionModel = require('../models/asistenciaAutorizacion');
+  const AttendanceRecord = await getAttendanceRecordModel();
+  const AsistenciaAutorizacion = await getAsistenciaAutorizacionModel();
+  const { TIPOS_MARCACION, METODOS_REGISTRO } = require('../config/asistencia');
 
-  const [resumenes, turno, asignacionRotacion] = await Promise.all([
+  const [resumenes, turno, asignacionRotacion, marcaciones, autorizaciones] = await Promise.all([
     DailyAttendance.find({
       tenantId: req.session.tenantId,
       empleadoId: empleado._id,
@@ -44,7 +50,22 @@ async function portalAsistencia(req, res) {
       .sort({ fecha: 1 })
       .lean(),
     empleado.turnoId ? Turno.findById(empleado.turnoId).lean() : null,
-    getAsignacionActiva(req.session.tenantId, empleado._id)
+    getAsignacionActiva(req.session.tenantId, empleado._id),
+    AttendanceRecord.find({
+      tenantId: req.session.tenantId,
+      empleadoId: empleado._id,
+      fecha: { $gte: desde, $lte: hasta },
+      $or: [{ estado: 'activa' }, { estado: { $exists: false } }, { estado: null }]
+    })
+      .sort({ timestamp: 1 })
+      .lean(),
+    AsistenciaAutorizacion.find({
+      tenantId: req.session.tenantId,
+      empleadoId: empleado._id,
+      fecha: { $gte: desde, $lte: hasta }
+    })
+      .sort({ fecha: -1, createdAt: -1 })
+      .lean()
   ]);
 
   let rotacionLabel = null;
@@ -56,12 +77,84 @@ async function portalAsistencia(req, res) {
     }
   }
 
+  const authByFecha = new Map();
+  for (const a of autorizaciones) {
+    const k = startOfDay(a.fecha).toISOString().slice(0, 10);
+    if (!authByFecha.has(k)) authByFecha.set(k, []);
+    authByFecha.get(k).push(a);
+  }
+
+  const marcByFecha = new Map();
+  for (const m of marcaciones) {
+    const k = startOfDay(m.fecha).toISOString().slice(0, 10);
+    if (!marcByFecha.has(k)) marcByFecha.set(k, []);
+    marcByFecha.get(k).push(m);
+  }
+
+  const comidaChecada = Boolean(turno?.comidaChecada);
+  const mostrarComida =
+    comidaChecada || resumenes.some((r) => r.salidaComida || r.regresoComida);
+
+  const tipoMarcacionLabel = Object.fromEntries(TIPOS_MARCACION.map((t) => [t.value, t.label]));
+  const metodoLabel = Object.fromEntries(METODOS_REGISTRO.map((t) => [t.value, t.label]));
+  const authEstadoLabel = {
+    pendiente: 'Pendiente',
+    aprobada: 'Aprobada',
+    rechazada: 'Rechazada',
+    cancelada: 'Cancelada'
+  };
+  const authTipoLabel = {
+    retardo: 'Retardo',
+    cambio_turno: 'Cambio de turno',
+    fuera_zona: 'Fuera de zona',
+    horas_extra: 'Horas extra',
+    otro: 'Otro'
+  };
+
+  let diaDetalle = null;
+  if (diaSel) {
+    const diaDate = startOfDay(parseDate(diaSel) || new Date(`${diaSel}T12:00`));
+    const ymd = diaDate.toISOString().slice(0, 10);
+    diaDetalle = {
+      ymd,
+      label: diaDate.toLocaleDateString('es-MX', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      }),
+      resumen: resumenes.find((r) => startOfDay(r.fecha).toISOString().slice(0, 10) === ymd) || null,
+      marcaciones: marcByFecha.get(ymd) || [],
+      autorizaciones: authByFecha.get(ymd) || []
+    };
+  }
+
+  const stats = {
+    presentes: resumenes.filter((r) => r.estatus === 'presente').length,
+    retardos: resumenes.filter((r) => r.estatus === 'retardo').length,
+    faltas: resumenes.filter((r) => r.estatus === 'falta').length,
+    authPendientes: autorizaciones.filter((a) => a.estado === 'pendiente').length,
+    authDecididas: autorizaciones.filter((a) => a.estado === 'aprobada' || a.estado === 'rechazada')
+      .length
+  };
+
   res.render('Portal/asistencia', {
     empleado,
     resumenes,
     turno,
     rotacionLabel,
     mes,
+    diaSel,
+    diaDetalle,
+    authByFecha,
+    mostrarComida,
+    comidaChecada,
+    autorizaciones,
+    stats,
+    tipoMarcacionLabel,
+    metodoLabel,
+    authEstadoLabel,
+    authTipoLabel,
     formatTimeHHMM,
     estatusLabels: ESTATUS_DIARIO,
     session: req.session

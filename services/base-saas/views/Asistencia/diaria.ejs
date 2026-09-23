@@ -1,43 +1,157 @@
 <%- include('../Partials/layout-top', { title: 'Asistencia diaria', session }) %>
+<%- include('partials/flujo-asistencia', { pasoActual: 2, fecha: fecha }) %>
 <h1>Asistencia del día</h1>
 <% if (!empresa) { %>
 <p>No hay empresa vinculada a este tenant.</p>
 <% } else { %>
-<div class="toolbar">
-  <form method="get" action="/asistencia-diaria" class="inline-form">
-    <label>Fecha</label>
-    <input type="date" name="fecha" value="<%= fecha %>" onchange="this.form.submit()" />
+<%
+  const filtro = typeof estatusFiltro !== 'undefined' ? estatusFiltro : '';
+  const depId = typeof departamentoId !== 'undefined' ? departamentoId : '';
+  const tipId = typeof tipoPeriodoId !== 'undefined' ? tipoPeriodoId : '';
+  const perId = typeof periodoId !== 'undefined' ? periodoId : '';
+  function qsExtra() {
+    let s = '';
+    if (depId) s += '&departamentoId=' + encodeURIComponent(depId);
+    if (tipId) s += '&tipoPeriodoId=' + encodeURIComponent(tipId);
+    if (perId) s += '&periodoId=' + encodeURIComponent(perId);
+    return s;
+  }
+  function filtroHref(key) {
+    const base = '/asistencia-diaria?fecha=' + fecha + qsExtra();
+    return key ? base + '&estatus=' + key : base;
+  }
+  function cardClass(key, tone) {
+    let c = 'stat-card is-filter';
+    if (tone) c += ' ' + tone;
+    if (filtro === key || (!filtro && key === '')) c += ' is-active';
+    return c;
+  }
+  const colSpan = 3 + ((typeof mostrarComida !== 'undefined' && mostrarComida) ? 2 : 0) + 8;
+%>
+<div class="toolbar" style="flex-wrap:wrap;gap:.75rem;align-items:flex-end">
+  <form method="get" action="/asistencia-diaria" class="inline-form form-grid" style="max-width:none;display:flex;flex-wrap:wrap;gap:.5rem;align-items:flex-end">
+    <label>Período
+      <select name="periodoId">
+        <option value="">— Todos / sin período —</option>
+        <% (periodos || []).forEach(function(p) { %>
+        <option value="<%= p._id %>" <%= String(p._id) === perId ? 'selected' : '' %>>
+          <%= typeof labelPeriodo === 'function' ? labelPeriodo(p) : (p.tipo + ' #' + (p.numeroPeriodo || '—')) %>
+        </option>
+        <% }); %>
+      </select>
+    </label>
+    <label>Fecha
+      <input type="date" name="fecha" value="<%= fecha %>"
+        <% if (periodoSel) { %>
+        min="<%= new Date(periodoSel.fechaInicio).toISOString().slice(0,10) %>"
+        max="<%= new Date(periodoSel.fechaFin).toISOString().slice(0,10) %>"
+        <% } %>
+      />
+    </label>
+    <label>Departamento
+      <select name="departamentoId">
+        <option value="">— Todos —</option>
+        <% (departamentos || []).forEach(function(d) { %>
+        <option value="<%= d._id %>" <%= String(d._id) === depId ? 'selected' : '' %>><%= d.nombre %></option>
+        <% }); %>
+      </select>
+    </label>
+    <label>Tipo de período
+      <select name="tipoPeriodoId">
+        <option value="">— Todos —</option>
+        <% (tiposPeriodo || []).forEach(function(t) { %>
+        <option value="<%= t._id %>" <%= String(t._id) === tipId ? 'selected' : '' %>><%= t.nombre %> (<%= t.tipoMotor %>)</option>
+        <% }); %>
+      </select>
+    </label>
+    <% if (filtro) { %><input type="hidden" name="estatus" value="<%= filtro %>" /><% } %>
+    <button type="submit">Filtrar</button>
+    <% if (depId || tipId || perId || filtro) { %>
+    <a class="btn" href="/asistencia-diaria?fecha=<%= fecha %>" style="background:transparent;color:inherit;border:1px solid var(--color-border)">Limpiar</a>
+    <% } %>
   </form>
-  <form method="post" action="/asistencia-diaria/reprocesar?fecha=<%= fecha %>" class="inline-form">
+  <form method="post" action="/asistencia-diaria/reprocesar?fecha=<%= fecha %><%= qsExtra() %>" class="inline-form">
     <button type="submit">Reprocesar día</button>
   </form>
-  <a class="btn" href="/asistencia-marcaciones?fecha=<%= fecha %>">Registrar marcación</a>
-  <a class="btn" href="/incidencias/pendientes">Pendientes RP/FR</a>
+  <a class="btn" href="/asistencia-marcaciones?fecha=<%= fecha %>">Marcaciones / corregir</a>
+  <a class="btn" href="/asistencia-marcaciones?fecha=<%= fecha %>&amp;nueva=1#captura">+ Registrar</a>
+  <a class="btn" href="/asistencia-autorizaciones">Autorizar</a>
 </div>
+
+<% if (periodoSel) { %>
+<p class="muted">
+  Alcance: <strong><%= periodoLabel %></strong>
+  (<%= new Date(periodoSel.fechaInicio).toLocaleDateString('es-MX') %> –
+  <%= new Date(periodoSel.fechaFin).toLocaleDateString('es-MX') %>)
+  · estatus período: <%= periodoSel.estatus %>
+  <% if (fechaAjustadaPorPeriodo) { %>
+  · <em>la fecha se ajustó para quedar dentro del período</em>
+  <% } %>
+</p>
+<% } %>
 
 <p class="muted">
-  El resumen del día se arma desde las marcaciones (entrada/salida).
-  <strong>Incompleto</strong> = hay checadas pero falta la pareja (p. ej. solo entrada).
-  <strong>Registro parcial / fuera de rango</strong> generan incidencias en
-  <a href="/incidencias/pendientes">Pendientes RP/FR</a>.
+  Resumen desde marcaciones. Usa departamento y tipo de período para acotar equipos grandes.
   Solo <strong>presente</strong> o <strong>retardo</strong> cuentan como día trabajado en pre-nómina.
+  <% if (typeof mostrarComida !== 'undefined' && mostrarComida) { %>
+  Hay turnos con <strong>comida checada</strong>: se muestran salida/regreso de comida.
+  <% } %>
 </p>
 
-  <div class="stat-card ok"><strong><%= stats.presentes %></strong><span>Presentes</span></div>
-  <div class="stat-card warn"><strong><%= stats.retardos %></strong><span>Retardos</span></div>
-  <div class="stat-card bad"><strong><%= stats.faltas %></strong><span>Faltas</span></div>
-  <div class="stat-card"><strong><%= stats.incompletos %></strong><span>Incompletos</span></div>
-  <div class="stat-card warn"><strong><%= stats.registroParcial %></strong><span>Reg. parcial</span></div>
-  <div class="stat-card warn"><strong><%= stats.fueraDeRango %></strong><span>Fuera de rango</span></div>
-  <div class="stat-card"><strong><%= stats.descanso %></strong><span>Descanso</span></div>
+<div class="summary-cards diaria-filtros" role="group" aria-label="Filtrar por estatus">
+  <a class="<%= cardClass('', '') %>" href="<%= filtroHref('') %>">
+    <strong><%= stats.total %></strong><span>Todos</span>
+  </a>
+  <a class="<%= cardClass('presente', 'ok') %>" href="<%= filtroHref('presente') %>">
+    <strong><%= stats.presentes %></strong><span>Presentes</span>
+  </a>
+  <a class="<%= cardClass('retardo', 'warn') %>" href="<%= filtroHref('retardo') %>">
+    <strong><%= stats.retardos %></strong><span>Retardos</span>
+  </a>
+  <a class="<%= cardClass('falta', 'bad') %>" href="<%= filtroHref('falta') %>">
+    <strong><%= stats.faltas %></strong><span>Faltas</span>
+  </a>
+  <a class="<%= cardClass('incompleto', '') %>" href="<%= filtroHref('incompleto') %>">
+    <strong><%= stats.incompletos %></strong><span>Incompletos</span>
+  </a>
+  <a class="<%= cardClass('registro_parcial', 'warn') %>" href="<%= filtroHref('registro_parcial') %>">
+    <strong><%= stats.registroParcial %></strong><span>Reg. parcial</span>
+  </a>
+  <a class="<%= cardClass('fuera_de_rango', 'warn') %>" href="<%= filtroHref('fuera_de_rango') %>">
+    <strong><%= stats.fueraDeRango %></strong><span>Fuera de rango</span>
+  </a>
+  <a class="<%= cardClass('descanso', '') %>" href="<%= filtroHref('descanso') %>">
+    <strong><%= stats.descanso %></strong><span>Descanso</span>
+  </a>
+  <a class="<%= cardClass('sin_procesar', 'bad') %>" href="<%= filtroHref('sin_procesar') %>">
+    <strong><%= stats.sinProcesar %></strong><span>Sin procesar</span>
+  </a>
 </div>
+
+<% if (filtro || depId || tipId || perId) { %>
+<p class="muted">
+  Mostrando <strong><%= filas.length %></strong> de <strong><%= stats.total %></strong> en el alcance
+  <% if (perId) { %> · período filtrado<% } %>
+  <% if (depId) { %> · depto filtrado<% } %>
+  <% if (tipId) { %> · tipo período filtrado<% } %>
+  <% if (filtro) { %> · estatus: <strong><%= filtro === 'sin_procesar' ? 'Sin procesar' : (estatusLabels[filtro] || filtro) %></strong><% } %>
+  · <a href="/asistencia-diaria?fecha=<%= fecha %>">Quitar filtros</a>
+</p>
+<% } %>
 
 <table>
   <thead>
     <tr>
       <th>Empleado</th>
+      <th>Departamento</th>
+      <th>Tipo período</th>
+      <% if (perId) { %><th>Período</th><% } %>
       <th>Turno</th>
       <th>Entrada</th>
+      <% if (typeof mostrarComida !== 'undefined' && mostrarComida) { %>
+      <th>Salida comida</th>
+      <th>Regreso comida</th>
+      <% } %>
       <th>Salida</th>
       <th>Retardo</th>
       <th>HE</th>
@@ -46,16 +160,57 @@
     </tr>
   </thead>
   <tbody>
+    <% const span = colSpan + (perId ? 1 : 0); %>
+    <% if (!filas.length) { %>
+    <tr><td colspan="<%= span %>" class="muted">Nadie con estos filtros en la fecha.</td></tr>
+    <% } %>
     <% filas.forEach(function(fila) { %>
     <% const r = fila.resumen; %>
-    <tr class="<%= r && (r.estatus === 'falta' || r.estatus === 'registro_parcial' || r.estatus === 'fuera_de_rango') ? 'row-muted' : '' %>">
-      <td><%= fila.empleado.firstName %> <%= fila.empleado.lastName %></td>
-      <td><%= fila.empleado.turnoId ? (turnoMap.get(String(fila.empleado.turnoId)) || '—') : '—' %></td>
+    <% const est = r ? r.estatus : 'sin_procesar'; %>
+    <tr class="<%= (!r || est === 'falta' || est === 'registro_parcial' || est === 'fuera_de_rango' || est === 'sin_procesar' || est === 'incompleto') ? 'row-muted' : '' %>">
+      <td>
+        <%= fila.empleado.firstName %> <%= fila.empleado.lastName %>
+        <% if (fila.empleado.numEmpleado) { %>
+        <br><span class="muted small">#<%= fila.empleado.numEmpleado %></span>
+        <% } %>
+        <% if (!fila.empleado.turnoId) { %>
+        <br><span class="muted small">Sin turno asignado</span>
+        <% } else if ((fila.empleado.tipoRegistro || 'ninguno') === 'ninguno') { %>
+        <br><span class="muted small">Registro: sin calificación auto</span>
+        <% } %>
+      </td>
+      <td><%= fila.departamentoNombre || '—' %></td>
+      <td><%= fila.tipoPeriodoNombre || '—' %></td>
+      <% if (perId) { %><td class="muted small"><%= fila.periodoNombre || '—' %></td><% } %>
+      <td>
+        <%= fila.empleado.turnoId ? (turnoMap.get(String(fila.empleado.turnoId)) || '—') : '—' %>
+        <% if (fila.comidaChecada) { %>
+        <br><span class="muted small" title="El turno exige 4 marcajes">4 checadas</span>
+        <% } %>
+      </td>
       <td><%= r && r.entradaReal ? formatTimeHHMM(r.entradaReal) : '—' %></td>
+      <% if (typeof mostrarComida !== 'undefined' && mostrarComida) { %>
+      <td class="<%= fila.comidaChecada && r && !r.salidaComida ? 'warn-cell' : '' %>">
+        <%= r && r.salidaComida ? formatTimeHHMM(r.salidaComida) : (fila.comidaChecada ? '—' : 'n/a') %>
+      </td>
+      <td class="<%= fila.comidaChecada && r && !r.regresoComida ? 'warn-cell' : '' %>">
+        <%= r && r.regresoComida ? formatTimeHHMM(r.regresoComida) : (fila.comidaChecada ? '—' : 'n/a') %>
+      </td>
+      <% } %>
       <td><%= r && r.salidaReal ? formatTimeHHMM(r.salidaReal) : '—' %></td>
       <td><%= r && r.minutosRetardo ? r.minutosRetardo + ' min' : '—' %></td>
       <td><%= r && r.minutosHorasExtra ? r.minutosHorasExtra + ' min' : '—' %></td>
-      <td><span class="badge badge-<%= r ? r.estatus : 'falta' %>"><%= r ? (estatusLabels[r.estatus] || r.estatus) : 'Sin procesar' %></span></td>
+      <td>
+        <% if (r) { %>
+        <span class="badge badge-<%= r.estatus %>"><%= estatusLabels[r.estatus] || r.estatus %></span>
+        <% } else { %>
+        <span class="badge badge-sin_procesar" title="No hay daily_attendance para este día. Reprocesar o asignar turno.">Sin procesar</span>
+        <% } %>
+        <% if (est === 'incompleto' || est === 'registro_parcial' || est === 'fuera_de_rango' || (r && r.excedeLimiteDiario)) { %>
+        <br>
+        <a class="muted small" href="/asistencia-marcaciones?fecha=<%= fecha %>&amp;empleadoId=<%= fila.empleado._id %>&amp;nueva=1#captura">Corregir marcaciones</a>
+        <% } %>
+      </td>
       <td><%= r && r.incidenciasAutomaticas && r.incidenciasAutomaticas.length ? r.incidenciasAutomaticas.join(', ') : '—' %></td>
     </tr>
     <% }); %>

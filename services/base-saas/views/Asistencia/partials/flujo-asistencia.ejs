@@ -1,0 +1,29 @@
+<%
+  const paso = typeof pasoActual !== 'undefined' ? Number(pasoActual) : 0;
+  const fechaQ = typeof fecha !== 'undefined' && fecha ? fecha : new Date().toISOString().slice(0, 10);
+  const pasos = [
+    { n: 1, titulo: 'Captura', href: '/asistencia-marcaciones?fecha=' + fechaQ, desc: 'Marcaciones' },
+    { n: 2, titulo: 'Calificación', href: '/asistencia-diaria?fecha=' + fechaQ, desc: 'Del día' },
+    { n: 2.5, titulo: 'Autorizar', href: '/asistencia-autorizaciones', desc: 'Supervisor', key: 2 },
+    { n: 3, titulo: 'Evidencia', href: '/asistencia-intentos?fecha=' + fechaQ, desc: 'Intentos' },
+    { n: 4, titulo: 'Jornada', href: '/asistencia-registro-jornada', desc: 'Topes 46h/12h' }
+  ];
+%>
+<nav class="flujo-asistencia" aria-label="Flujo de asistencia" style="margin:0 0 1.25rem;padding:.75rem 1rem;border:1px solid #e5e7eb;border-radius:8px;background:#fafafa">
+  <div style="display:flex;flex-wrap:wrap;gap:.5rem 1rem;align-items:center;margin-bottom:.5rem">
+    <strong><a href="/asistencia">Asistencia</a></strong>
+    <span class="muted small">Te guía paso a paso</span>
+  </div>
+  <ol style="display:flex;flex-wrap:wrap;gap:.5rem;list-style:none;margin:0;padding:0">
+    <% pasos.forEach(function(p) {
+         const active = (p.key != null ? p.key : p.n) === paso || p.n === paso;
+    %>
+    <li>
+      <a href="<%= p.href %>"
+         style="display:inline-block;padding:.35rem .7rem;border-radius:999px;text-decoration:none;font-size:.9rem;<%= active ? 'background:#0f766e;color:#fff' : 'background:#fff;border:1px solid #d1d5db;color:#374151' %>">
+        <span style="opacity:.8"><%= p.n === 2.5 ? '2b' : p.n %>.</span> <%= p.titulo %>
+      </a>
+    </li>
+    <% }); %>
+  </ol>
+</nav>

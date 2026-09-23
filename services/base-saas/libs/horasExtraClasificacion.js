@@ -1,20 +1,36 @@
 'use strict';
 
-/** LFT art. 66–68: máx. 3 h extra/día y 9 h/semana al doble; excedente al triple. */
+const { resolveEsquemaJornada } = require('./esquemaJornada');
+
+/** Defaults LFT art. 66–68 (sobrescribibles por esquema de jornada). */
 const MAX_DOBLES_POR_DIA_MIN = 3 * 60;
 const MAX_DOBLES_POR_SEMANA_MIN = 9 * 60;
+const MAX_TOTALES_DIA_MIN = 12 * 60;
 
 function toFiniteMin(n) {
   const v = Number(n);
   return Number.isFinite(v) && v > 0 ? v : 0;
 }
 
+function limitsFromEsquema(esquemaOrTurno = null) {
+  const e = resolveEsquemaJornada(esquemaOrTurno);
+  return {
+    maxDoblesDiaMin: Math.round((e.maxHorasExtraDoblesDia || 3) * 60),
+    maxDoblesSemanaMin: Math.round((e.maxHorasExtraDoblesSemana || 9) * 60),
+    maxTotalesDiaMin: Math.round((e.maxHorasTotalesDia || 12) * 60)
+  };
+}
+
 /**
- * Semana ISO (lunes–domingo) como clave estable para el tope de 9 h.
- * Evita desfase UTC al parsear strings `YYYY-MM-DD`.
+ * Clave de semana laboral.
  * @param {Date|string|number} fecha
+ * @param {{ weekStartsOn?: number }} [opts] weekStartsOn 0=dom … 6=sáb (default 1=lunes → ISO-like)
  */
-function weekKey(fecha) {
+function weekKey(fecha, opts = {}) {
+  const weekStartsOn = Number.isFinite(Number(opts.weekStartsOn))
+    ? ((Math.trunc(Number(opts.weekStartsOn)) % 7) + 7) % 7
+    : 1;
+
   let y;
   let m;
   let day;
@@ -29,69 +45,124 @@ function weekKey(fecha) {
     m = d.getMonth();
     day = d.getDate();
   }
-  const utc = new Date(Date.UTC(y, m, day));
-  const dow = utc.getUTCDay() || 7;
-  utc.setUTCDate(utc.getUTCDate() + 4 - dow);
-  const yearStart = new Date(Date.UTC(utc.getUTCFullYear(), 0, 1));
-  const week = Math.ceil(((utc - yearStart) / 86400000 + 1) / 7);
-  return `${utc.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
+
+  // Lunes (1): conservar ISO week
+  if (weekStartsOn === 1) {
+    const utc = new Date(Date.UTC(y, m, day));
+    const dow = utc.getUTCDay() || 7;
+    utc.setUTCDate(utc.getUTCDate() + 4 - dow);
+    const yearStart = new Date(Date.UTC(utc.getUTCFullYear(), 0, 1));
+    const week = Math.ceil(((utc - yearStart) / 86400000 + 1) / 7);
+    return `${utc.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
+  }
+
+  // Semana anclada a weekStartsOn: clave = fecha del inicio de esa semana
+  const local = new Date(y, m, day);
+  const dow = local.getDay();
+  const diff = (dow - weekStartsOn + 7) % 7;
+  local.setDate(local.getDate() - diff);
+  const ys = local.getFullYear();
+  const ms = String(local.getMonth() + 1).padStart(2, '0');
+  const ds = String(local.getDate()).padStart(2, '0');
+  return `${ys}-S${ms}${ds}`;
 }
 
-/** Primeras 3 h del día → dobles; excedente → triples. */
-function clasificarMinutosDia(minutosExtra) {
+/**
+ * Primeras N h del día → dobles; excedente → triples.
+ * @param {number} minutosExtra
+ * @param {object|null} esquemaOrTurno
+ */
+function clasificarMinutosDia(minutosExtra, esquemaOrTurno = null) {
+  const { maxDoblesDiaMin } = limitsFromEsquema(esquemaOrTurno);
   const m = toFiniteMin(minutosExtra);
   return {
-    minutosDobles: Math.min(m, MAX_DOBLES_POR_DIA_MIN),
-    minutosTriples: Math.max(0, m - MAX_DOBLES_POR_DIA_MIN)
+    minutosDobles: Math.min(m, maxDoblesDiaMin),
+    minutosTriples: Math.max(0, m - maxDoblesDiaMin)
   };
 }
 
 /**
- * Clasifica HE del período con tope diario (3 h) y semanal (9 h).
- * @param {Array<{ fecha: Date|string, minutosExtra: number }>} dias
+ * Clasifica HE del período con tope diario y semanal del esquema.
+ * @param {Array<{ fecha: Date|string, minutosExtra: number, minutosOrdinarios?: number }>} dias
+ * @param {object|null} esquemaOrTurno
+ * @param {{ weekStartsOn?: number }} [opts]
  */
-function clasificarHorasExtraPeriodo(dias = []) {
+function clasificarHorasExtraPeriodo(dias = [], esquemaOrTurno = null, opts = {}) {
+  const { maxDoblesSemanaMin, maxTotalesDiaMin } = limitsFromEsquema(esquemaOrTurno);
   const weekDoblesUsados = new Map();
   let minutosDobles = 0;
   let minutosTriples = 0;
+  let diasExcedeLimiteDiario = 0;
+  const weekOpts = { weekStartsOn: opts.weekStartsOn };
 
   const sorted = [...dias].sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
   for (const day of sorted) {
-    const { minutosDobles: dDia, minutosTriples: tDia } = clasificarMinutosDia(day.minutosExtra);
+    const { minutosDobles: dDia, minutosTriples: tDia } = clasificarMinutosDia(
+      day.minutosExtra,
+      esquemaOrTurno
+    );
     minutosTriples += tDia;
 
-    const wk = weekKey(day.fecha);
+    const wk = weekKey(day.fecha, weekOpts);
     const usados = weekDoblesUsados.get(wk) || 0;
-    const cupo = Math.max(0, MAX_DOBLES_POR_SEMANA_MIN - usados);
+    const cupo = Math.max(0, maxDoblesSemanaMin - usados);
     const doblesOk = Math.min(dDia, cupo);
     minutosDobles += doblesOk;
     minutosTriples += dDia - doblesOk;
     weekDoblesUsados.set(wk, usados + doblesOk);
+
+    const ordinariosMin = toFiniteMin(day.minutosOrdinarios);
+    const totalDiaMin = ordinariosMin + toFiniteMin(day.minutosExtra);
+    if (ordinariosMin > 0 && totalDiaMin > maxTotalesDiaMin) {
+      diasExcedeLimiteDiario += 1;
+    }
   }
 
   return {
     minutosDobles,
     minutosTriples,
     horasExtraDobles: minutosDobles / 60,
-    horasExtraTriples: minutosTriples / 60
+    horasExtraTriples: minutosTriples / 60,
+    diasExcedeLimiteDiario,
+    excedeLimiteDiario: diasExcedeLimiteDiario > 0
   };
 }
 
 /**
- * Fallback sin desglose diario: solo tope semanal de 9 h (compat).
- * @param {number} totalHoras
+ * Extrae minutos HE crudos desde un daily_attendance (una sola fuente).
+ * Prefiere minutosHorasExtra; si falta, suma cubetas (legado).
  */
-function repartirHorasExtraTotal(totalHoras) {
+function minutosExtraDesdeDaily(day = {}) {
+  const raw = Number(day.minutosHorasExtra);
+  if (Number.isFinite(raw) && raw > 0) return raw;
+  return (
+    (Number(day.minutosHEOrdinaria) || 0) +
+    (Number(day.minutosHEDoble) || 0) +
+    (Number(day.minutosHETriple) || 0)
+  );
+}
+
+/**
+ * Fallback sin desglose diario: solo tope semanal de dobles (compat).
+ * @param {number} totalHoras
+ * @param {object|null} esquemaOrTurno
+ */
+function repartirHorasExtraTotal(totalHoras, esquemaOrTurno = null) {
+  const { maxDoblesSemanaMin } = limitsFromEsquema(esquemaOrTurno);
+  const maxDoblesH = maxDoblesSemanaMin / 60;
   const h = toFiniteMin(totalHoras);
-  if (h <= 9) return { horasExtraDobles: h, horasExtraTriples: 0 };
-  return { horasExtraDobles: 9, horasExtraTriples: h - 9 };
+  if (h <= maxDoblesH) return { horasExtraDobles: h, horasExtraTriples: 0 };
+  return { horasExtraDobles: maxDoblesH, horasExtraTriples: h - maxDoblesH };
 }
 
 module.exports = {
   MAX_DOBLES_POR_DIA_MIN,
   MAX_DOBLES_POR_SEMANA_MIN,
+  MAX_TOTALES_DIA_MIN,
+  limitsFromEsquema,
   weekKey,
   clasificarMinutosDia,
   clasificarHorasExtraPeriodo,
+  minutosExtraDesdeDaily,
   repartirHorasExtraTotal
 };

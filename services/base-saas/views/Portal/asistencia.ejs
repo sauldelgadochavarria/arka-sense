@@ -1,39 +1,194 @@
 <%- include('partials/layout-top', { title: 'Mi asistencia', session }) %>
-<h1>Mi asistencia</h1>
-<form method="get" class="toolbar inline-form">
-  <label>Mes</label>
-  <input type="month" name="mes" value="<%= mes %>" onchange="this.form.submit()" />
+<%
+  const ymdOf = function(d) {
+    return new Date(d).toISOString().slice(0, 10);
+  };
+%>
+<section class="page-header">
+  <h1>Mi asistencia</h1>
+  <p class="muted">
+    Tu ficha del mes: checadas, estatus del día y lo que tu supervisor aprobó o rechazó.
+  </p>
+</section>
+
+<form method="get" action="/portal/asistencia" class="toolbar inline-form">
+  <label>Mes
+    <input type="month" name="mes" value="<%= mes %>" onchange="this.form.submit()" />
+  </label>
 </form>
 
 <% if (rotacionLabel) { %>
 <p class="muted">Rotación asignada: <strong><%= rotacionLabel %></strong> — el turno efectivo puede variar por día.</p>
 <% } else if (turno) { %>
-<p class="muted">Turno asignado: <strong><%= turno.nombre %></strong> (<%= turno.horaEntrada %> – <%= turno.horaSalida %>)</p>
+<p class="muted">
+  Turno: <strong><%= turno.nombre %></strong> (<%= turno.horaEntrada %> – <%= turno.horaSalida %>)
+  <% if (comidaChecada) { %> · exige <strong>4 checadas</strong> (entrada, comida, regreso, salida)<% } %>
+</p>
 <% } else { %>
 <p class="muted">Sin turno asignado. Contacta a RRHH.</p>
 <% } %>
 
+<div class="summary-cards" style="margin:1rem 0">
+  <div class="stat-card ok"><strong><%= stats.presentes %></strong><span>Presentes</span></div>
+  <div class="stat-card warn"><strong><%= stats.retardos %></strong><span>Retardos</span></div>
+  <div class="stat-card bad"><strong><%= stats.faltas %></strong><span>Faltas</span></div>
+  <div class="stat-card"><strong><%= stats.authDecididas %></strong><span>Autorizaciones resueltas</span></div>
+  <% if (stats.authPendientes) { %>
+  <div class="stat-card warn"><strong><%= stats.authPendientes %></strong><span>Pendientes de supervisor</span></div>
+  <% } %>
+</div>
+
+<h2>Resumen del mes</h2>
 <table>
   <thead>
-    <tr><th>Fecha</th><th>Entrada</th><th>Salida</th><th>Retardo</th><th>HE</th><th>Estatus</th><th></th></tr>
+    <tr>
+      <th>Fecha</th>
+      <th>Entrada</th>
+      <% if (mostrarComida) { %>
+      <th>Salida comida</th>
+      <th>Regreso</th>
+      <% } %>
+      <th>Salida</th>
+      <th>Retardo</th>
+      <th>HE</th>
+      <th>Estatus</th>
+      <th>Autorización</th>
+      <th></th>
+    </tr>
   </thead>
   <tbody>
-    <% if (!resumenes.length) { %><tr><td colspan="7" class="muted">Sin registros en este mes.</td></tr><% } %>
-    <% resumenes.forEach(function(r) { %>
-    <tr>
+    <% if (!resumenes.length) { %>
+    <tr><td colspan="<%= mostrarComida ? 10 : 8 %>" class="muted">Sin registros en este mes.</td></tr>
+    <% } %>
+    <% resumenes.forEach(function(r) {
+         const ymd = ymdOf(r.fecha);
+         const auths = authByFecha.get(ymd) || [];
+         const authPrincipal = auths[0] || null;
+    %>
+    <tr class="<%= diaSel === ymd ? 'row-highlight' : '' %>">
       <td><%= new Date(r.fecha).toLocaleDateString('es-MX') %></td>
       <td><%= r.entradaReal ? formatTimeHHMM(r.entradaReal) : '—' %></td>
+      <% if (mostrarComida) { %>
+      <td><%= r.salidaComida ? formatTimeHHMM(r.salidaComida) : '—' %></td>
+      <td><%= r.regresoComida ? formatTimeHHMM(r.regresoComida) : '—' %></td>
+      <% } %>
       <td><%= r.salidaReal ? formatTimeHHMM(r.salidaReal) : '—' %></td>
       <td><%= r.minutosRetardo ? r.minutosRetardo + ' min' : '—' %></td>
       <td><%= r.minutosHorasExtra ? r.minutosHorasExtra + ' min' : '—' %></td>
-      <td><%= estatusLabels[r.estatus] || r.estatus %><% if (r.notas && r.notas.indexOf('Rotación') === 0) { %><br><span class="muted" style="font-size:0.8em"><%= r.notas %></span><% } %></td>
       <td>
+        <span class="badge badge-<%= r.estatus %>"><%= estatusLabels[r.estatus] || r.estatus %></span>
+        <% if (r.notas && r.notas.indexOf('Rotación') === 0) { %>
+        <br><span class="muted small"><%= r.notas %></span>
+        <% } else if (r.notas && r.notas.indexOf('Retardo autorizado') === 0) { %>
+        <br><span class="muted small"><%= r.notas %></span>
+        <% } %>
+      </td>
+      <td>
+        <% if (authPrincipal) { %>
+        <span class="badge badge-<%= authPrincipal.estado === 'aprobada' ? 'presente' : (authPrincipal.estado === 'rechazada' ? 'falta' : 'retardo') %>">
+          <%= authTipoLabel[authPrincipal.tipo] || authPrincipal.tipo %> · <%= authEstadoLabel[authPrincipal.estado] || authPrincipal.estado %>
+        </span>
+        <% if (auths.length > 1) { %><span class="muted small"> +<%= auths.length - 1 %></span><% } %>
+        <% } else { %>—<% } %>
+      </td>
+      <td class="actions">
+        <a href="/portal/asistencia?mes=<%= mes %>&amp;dia=<%= ymd %>#dia-detalle">Ver checadas</a>
         <% if (r.estatus === 'fuera_de_rango' || (r.incidenciasAutomaticas || []).includes('FR')) { %>
-        <a href="/portal/solicitudes/nueva?fecha=<%= new Date(r.fecha).toISOString().slice(0,10) %>&tipo=FR">Justificar</a>
+        · <a href="/portal/solicitudes/nueva?fecha=<%= ymd %>&amp;tipo=FR">Justificar</a>
         <% } %>
       </td>
     </tr>
     <% }); %>
   </tbody>
 </table>
+
+<% if (diaDetalle) { %>
+<section id="dia-detalle" class="card-block" style="margin-top:1.5rem">
+  <h2>Detalle · <%= diaDetalle.label %></h2>
+  <p class="muted"><a href="/portal/asistencia?mes=<%= mes %>">← Volver al mes</a></p>
+
+  <% if (diaDetalle.resumen) { %>
+  <p>
+    Estatus:
+    <span class="badge badge-<%= diaDetalle.resumen.estatus %>">
+      <%= estatusLabels[diaDetalle.resumen.estatus] || diaDetalle.resumen.estatus %>
+    </span>
+    <% if (diaDetalle.resumen.notas) { %>
+    · <span class="muted"><%= diaDetalle.resumen.notas %></span>
+    <% } %>
+  </p>
+  <% } else { %>
+  <p class="muted">No hay resumen diario para este día (aún no se reprocesó o no hubo checadas).</p>
+  <% } %>
+
+  <h3>Checadas</h3>
+  <table>
+    <thead>
+      <tr><th>Hora</th><th>Tipo</th><th>Método</th><th>Estado</th></tr>
+    </thead>
+    <tbody>
+      <% if (!diaDetalle.marcaciones.length) { %>
+      <tr><td colspan="4" class="muted">Sin marcaciones este día.</td></tr>
+      <% } %>
+      <% diaDetalle.marcaciones.forEach(function(m) { %>
+      <tr>
+        <td><%= formatTimeHHMM(m.timestamp) %></td>
+        <td><%= tipoMarcacionLabel[m.tipoMarcacion] || m.tipoMarcacion %></td>
+        <td><%= metodoLabel[m.metodo] || m.metodo || '—' %></td>
+        <td><%= m.estado || 'activa' %></td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table>
+
+  <h3>Autorizaciones de este día</h3>
+  <table>
+    <thead>
+      <tr><th>Tipo</th><th>Estado</th><th>Solicitud</th><th>Decisión</th></tr>
+    </thead>
+    <tbody>
+      <% if (!diaDetalle.autorizaciones.length) { %>
+      <tr><td colspan="4" class="muted">Sin autorizaciones este día.</td></tr>
+      <% } %>
+      <% diaDetalle.autorizaciones.forEach(function(a) { %>
+      <tr>
+        <td><%= authTipoLabel[a.tipo] || a.tipo %><% if (a.tipo === 'retardo' && a.minutosRetardo) { %> (<%= a.minutosRetardo %> min)<% } %></td>
+        <td><span class="badge badge-<%= a.estado === 'aprobada' ? 'presente' : (a.estado === 'rechazada' ? 'falta' : 'retardo') %>"><%= authEstadoLabel[a.estado] || a.estado %></span></td>
+        <td class="muted small"><%= a.motivoSolicitud || '—' %></td>
+        <td class="muted small"><%= a.motivoDecision || '—' %></td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table>
+</section>
+<% } %>
+
+<% if (autorizaciones && autorizaciones.length) { %>
+<section class="card-block" style="margin-top:1.5rem">
+  <h2>Autorizaciones del mes</h2>
+  <p class="muted">Lo que tu supervisor o RRHH revisó (retardos, cambios de turno, etc.).</p>
+  <table>
+    <thead>
+      <tr><th>Fecha</th><th>Tipo</th><th>Estado</th><th>Detalle</th><th>Decisión</th></tr>
+    </thead>
+    <tbody>
+      <% autorizaciones.forEach(function(a) {
+           const ymd = ymdOf(a.fecha);
+      %>
+      <tr>
+        <td><a href="/portal/asistencia?mes=<%= mes %>&amp;dia=<%= ymd %>#dia-detalle"><%= new Date(a.fecha).toLocaleDateString('es-MX') %></a></td>
+        <td><%= authTipoLabel[a.tipo] || a.tipo %></td>
+        <td><span class="badge badge-<%= a.estado === 'aprobada' ? 'presente' : (a.estado === 'rechazada' ? 'falta' : 'retardo') %>"><%= authEstadoLabel[a.estado] || a.estado %></span></td>
+        <td class="muted small">
+          <% if (a.tipo === 'retardo') { %><%= a.minutosRetardo || 0 %> min · <% } %>
+          <%= a.motivoSolicitud || '—' %>
+        </td>
+        <td class="muted small"><%= a.motivoDecision || '—' %></td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table>
+</section>
+<% } %>
+
 <%- include('partials/layout-bottom') %>

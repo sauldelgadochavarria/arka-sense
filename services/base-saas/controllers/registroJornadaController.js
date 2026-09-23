@@ -99,6 +99,7 @@ async function showRegistroJornada(req, res) {
     },
     filas: result.filas,
     semanas: result.semanas,
+    resumenTopes: result.resumenTopes || { alertas46: 0, alertas12: 0, sinTurno: 0 },
     bitacora,
     estatusDiarioLabels: ESTATUS_DIARIO,
     fmtMin,

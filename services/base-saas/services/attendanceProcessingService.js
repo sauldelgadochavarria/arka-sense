@@ -9,6 +9,7 @@ const { shouldQualifyAttendance } = require('../libs/empleadoHelpers');
 const { syncAutomaticIncidencias } = require('./incidenciasAutoSync');
 const { resolveTurnoVigente } = require('./turnoResolverService');
 const { clasificarMinutosDia } = require('../libs/horasExtraClasificacion');
+const { resolveEsquemaJornada } = require('../libs/esquemaJornada');
 
 function isDiaLaborable(turno, fecha) {
   const day = new Date(fecha).getDay();
@@ -54,7 +55,7 @@ function splitHorasExtra(minutosExtraTotal, turno) {
     return { minutosHEOrdinaria: 0, minutosHEDoble: 0, minutosHETriple: 0, minutosHorasExtra: 0 };
   }
 
-  const { minutosDobles, minutosTriples } = clasificarMinutosDia(extra);
+  const { minutosDobles, minutosTriples } = clasificarMinutosDia(extra, turno);
   return {
     minutosHEOrdinaria: 0,
     minutosHEDoble: minutosDobles,
@@ -88,6 +89,7 @@ function computeUnqualifiedDaily(fecha, turno, records, empleado) {
     estatus,
     incidenciasAutomaticas: [],
     marcajesFueraDeRango: false,
+    excedeLimiteDiario: false,
     notas: `Sin calificación automática (tipo registro: ${empleado.tipoRegistro || 'ninguno'})`
   };
 }
@@ -103,6 +105,10 @@ function computeDailyMetrics(turno, fechaInput, records, empleado) {
   const regresoComida = pickLatest(records, 'regreso_comida');
   const salida = pickLatest(records, 'salida');
 
+  const countTipo = (tipo) => records.filter((r) => r.tipoMarcacion === tipo).length;
+  const multiEntrada = countTipo('entrada') > 1;
+  const multiSalida = countTipo('salida') > 1;
+
   const entradaProgramada = applyTimeToDate(fecha, turno.horaEntrada);
   const salidaProgramada = applyTimeToDate(fecha, turno.horaSalida);
   const holguraAntes = turno.holguraAntesMin ?? 180;
@@ -117,6 +123,9 @@ function computeDailyMetrics(turno, fechaInput, records, empleado) {
   let minutosHETriple = 0;
   let incidencias = [];
   let marcajesFueraDeRango = false;
+
+  if (multiEntrada) incidencias.push('MULT_ENT');
+  if (multiSalida) incidencias.push('MULT_SAL');
 
   const entradaEnHolgura =
     entrada?.timestamp &&
@@ -194,6 +203,23 @@ function computeDailyMetrics(turno, fechaInput, records, empleado) {
     estatus = minutosRetardo > 0 ? 'retardo' : 'presente';
   }
 
+  const esquema = resolveEsquemaJornada(turno);
+  const ordinariosProgMin = Math.round((esquema.horasJornada || 8) * 60);
+  const excedeLimiteDiario =
+    ordinariosProgMin + minutosHorasExtra > Math.round(esquema.maxHorasTotalesDia * 60);
+
+  const notasMulti = [];
+  if (multiSalida) {
+    notasMulti.push(
+      `Varias salidas activas (${countTipo('salida')}): se usa la última (${salida ? new Date(salida.timestamp).toISOString().slice(11, 16) : '—'}). Anula las demás si no aplican.`
+    );
+  }
+  if (multiEntrada) {
+    notasMulti.push(
+      `Varias entradas activas (${countTipo('entrada')}): se usa la última. Anula duplicados si no aplican.`
+    );
+  }
+
   return {
     entradaProgramada,
     salidaProgramada,
@@ -209,7 +235,9 @@ function computeDailyMetrics(turno, fechaInput, records, empleado) {
     minutosHETriple,
     estatus,
     incidenciasAutomaticas: [...new Set(incidencias)],
-    marcajesFueraDeRango
+    marcajesFueraDeRango,
+    excedeLimiteDiario,
+    ...(notasMulti.length ? { notas: notasMulti.join(' ') } : {})
   };
 }
 
@@ -284,7 +312,8 @@ async function recalculateDailyAttendance(tenantId, empleadoId, fechaInput) {
 
   const metrics = computeDailyMetrics(turno, fecha, records, empleado);
   if (resolved.origen === 'rotacion' && plantilla) {
-    metrics.notas = `Rotación: ${plantilla.nombre}${asignacion?.fechaAncla ? ` (ancla ${new Date(asignacion.fechaAncla).toLocaleDateString('es-MX')})` : ''}`;
+    const rotNota = `Rotación: ${plantilla.nombre}${asignacion?.fechaAncla ? ` (ancla ${new Date(asignacion.fechaAncla).toLocaleDateString('es-MX')})` : ''}`;
+    metrics.notas = metrics.notas ? `${rotNota} · ${metrics.notas}` : rotNota;
   }
 
   const daily = await DailyAttendance.findOneAndUpdate(
@@ -307,6 +336,13 @@ async function recalculateDailyAttendance(tenantId, empleadoId, fechaInput) {
   );
 
   await syncAutomaticIncidencias(tenantId, empleado.empresaId, empleadoId, fecha, daily);
+
+  try {
+    const { syncRetardoDesdeDaily } = require('./asistenciaAutorizacionService');
+    await syncRetardoDesdeDaily(tenantId, empleado, daily);
+  } catch (err) {
+    console.warn('[asistencia] syncRetardoDesdeDaily:', err.message);
+  }
 
   return daily;
 }

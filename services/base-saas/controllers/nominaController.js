@@ -184,6 +184,7 @@ async function createPeriodo(req, res) {
     const tipoNomina = trimString(req.body.tipoNomina) || 'ordinaria';
     const ref = parseDate(req.body.fechaReferencia) || new Date();
     let { fechaInicio, fechaFin } = resolvePeriodRange(tipoPeriodo, ref);
+    let fechaPago = null;
 
     await ensureNominaConceptsForTenant(tenantId, empresa._id);
 
@@ -210,6 +211,12 @@ async function createPeriodo(req, res) {
       // Alinear fechas con la pre-nómina vinculada (fuente de asistencia)
       fechaInicio = startOfDay(prePeriodo.fechaInicio);
       fechaFin = endOfDay(prePeriodo.fechaFin);
+      fechaPago = prePeriodo.fechaPago ? startOfDay(prePeriodo.fechaPago) : null;
+    }
+
+    if (!fechaPago) {
+      const { sugerirFechaPago } = require('../libs/calendarioPeriodo');
+      fechaPago = sugerirFechaPago(fechaFin, null);
     }
 
     const PeriodoNomina = await getPeriodoNominaModel();
@@ -248,6 +255,7 @@ async function createPeriodo(req, res) {
       tipoNomina,
       fechaInicio: startOfDay(fechaInicio),
       fechaFin: endOfDay(fechaFin),
+      fechaPago: fechaPago ? startOfDay(fechaPago) : null,
       anio,
       numeroPeriodo,
       diasPeriodo: diasCalendarioInclusive(fechaInicio, fechaFin),

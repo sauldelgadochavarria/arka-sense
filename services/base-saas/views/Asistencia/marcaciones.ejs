@@ -1,29 +1,43 @@
 <%- include('../Partials/layout-top', { title: 'Marcaciones', session }) %>
-<h1>Registro de marcaciones</h1>
+<%- include('partials/flujo-asistencia', { pasoActual: 1, fecha: fecha }) %>
+<h1>Marcaciones del día</h1>
 <% if (!empresa) { %>
 <p>No hay empresa vinculada a este tenant.</p>
-<% } else { %>
-<div class="toolbar">
-  <form method="get" action="/asistencia-marcaciones" class="inline-form">
-    <label>Fecha</label>
-    <input type="date" name="fecha" value="<%= fecha %>" onchange="this.form.submit()" />
+<% } else {
+  const empF = typeof empleadoFiltro !== 'undefined' ? empleadoFiltro : '';
+  const tipoSel = (typeof tipoPrefill !== 'undefined' && tipoPrefill) ? tipoPrefill : (empF ? 'salida' : 'entrada');
+  const openCaptura = (typeof mostrarCaptura !== 'undefined' && mostrarCaptura) || !!empF;
+%>
+<div class="toolbar" style="flex-wrap:wrap;gap:.5rem;align-items:flex-end">
+  <form method="get" action="/asistencia-marcaciones" class="inline-form form-grid" style="max-width:none;display:flex;flex-wrap:wrap;gap:.5rem;align-items:flex-end">
+    <label>Fecha
+      <input type="date" name="fecha" value="<%= fecha %>" />
+    </label>
+    <label>Empleado
+      <select name="empleadoId">
+        <option value="">— Todos —</option>
+        <% empleados.forEach(function(e) { %>
+        <option value="<%= e._id %>" <%= String(e._id) === String(empF) ? 'selected' : '' %>>
+          <%= e.firstName %> <%= e.lastName %> (<%= e.numEmpleado %>)
+        </option>
+        <% }); %>
+      </select>
+    </label>
     <% if (verAnuladas) { %><input type="hidden" name="anuladas" value="1" /><% } %>
+    <button type="submit">Filtrar</button>
   </form>
-  <a class="btn" href="/asistencia-diaria?fecha=<%= fecha %>">Ver asistencia del día</a>
-  <a class="btn" href="/asistencia-registro-jornada?desde=<%= fecha %>&amp;hasta=<%= fecha %>">Registro de jornada</a>
-  <form method="post" action="/asistencia-diaria/reprocesar?fecha=<%= fecha %>" class="inline-form">
-    <button type="submit">Reprocesar día → asistencia</button>
-  </form>
+  <a class="btn" href="/asistencia-diaria?fecha=<%= fecha %>">Asistencia del día</a>
+  <a class="btn" href="/asistencia-marcaciones?fecha=<%= fecha %>&amp;nueva=1#captura">+ Nueva marcación</a>
   <% if (verAnuladas) { %>
-  <a class="btn" href="/asistencia-marcaciones?fecha=<%= fecha %>">Ocultar anuladas</a>
+  <a class="btn" href="/asistencia-marcaciones?fecha=<%= fecha %><%= empF ? '&empleadoId=' + empF : '' %>">Ocultar anuladas</a>
   <% } else { %>
-  <a class="btn" href="/asistencia-marcaciones?fecha=<%= fecha %>&amp;anuladas=1">Ver anuladas</a>
+  <a class="btn" href="/asistencia-marcaciones?fecha=<%= fecha %>&amp;anuladas=1<%= empF ? '&empleadoId=' + empF : '' %>">Ver anuladas</a>
   <% } %>
 </div>
 
 <p class="muted">
-  Flujo: <strong>marcación</strong> → resumen diario → pre-nómina.
-  Las marcaciones <strong>no se borran</strong>: se <em>anulan</em> o <em>ajustan</em> con motivo (bitácora REJL).
+  Corrige checadas aquí (ajustar hora/tipo o anular). Para detectar incompletos usa
+  <a href="/asistencia-diaria?fecha=<%= fecha %>&amp;estatus=incompleto">asistencia del día → Incompletos</a>.
 </p>
 
 <table>
@@ -34,25 +48,36 @@
       <th>Empleado</th>
       <th>Tipo</th>
       <th>Estado</th>
-      <th>Asistencia del día</th>
-      <th>Notas</th>
+      <th>Resumen día</th>
+      <th>Rastro</th>
       <th>Acciones</th>
     </tr>
   </thead>
   <tbody>
     <% if (!marcaciones.length) { %>
-    <tr><td colspan="8" class="muted">Sin marcaciones para esta fecha.</td></tr>
+    <tr><td colspan="8" class="muted">Sin marcaciones para este filtro. <a href="#captura">Registrar una</a>.</td></tr>
     <% } %>
     <% marcaciones.forEach(function(m) {
-         const daily = (typeof dailyMap !== 'undefined' && dailyMap) ? dailyMap.get(String(m.empleadoId)) : null;
+         const daily = dailyMap.get(String(m.empleadoId));
          const estLabel = daily
            ? ((estatusDiarioLabels && estatusDiarioLabels[daily.estatus]) || daily.estatus)
            : 'Sin resumen';
          const anulada = m.estado === 'anulada';
          const tsOrig = m.timestampOriginal || m.timestamp;
+         const dupKey = String(m.empleadoId) + '|' + m.tipoMarcacion;
+         const dupCount = (!anulada && dupKeyCount) ? (dupKeyCount.get(dupKey) || 0) : 0;
+         const esUltimaUsada = daily && !anulada && m.tipoMarcacion === 'salida' && daily.salidaReal
+           && new Date(daily.salidaReal).getTime() === new Date(m.timestamp).getTime();
+         const esUltimaEntrada = daily && !anulada && m.tipoMarcacion === 'entrada' && daily.entradaReal
+           && new Date(daily.entradaReal).getTime() === new Date(m.timestamp).getTime();
     %>
     <tr class="<%= anulada ? 'row-muted' : '' %>">
-      <td><%= formatTimeHHMM(m.timestamp) %><% if (m.origen === 'ajuste') { %> <span class="badge">ajuste</span><% } %></td>
+      <td>
+        <a href="/asistencia-marcaciones/<%= m._id %>"><%= formatTimeHHMM(m.timestamp) %></a>
+        <% if (m.origen === 'ajuste') { %> <span class="badge">ajuste</span><% } %>
+        <% if (esUltimaUsada || esUltimaEntrada) { %> <span class="badge badge-activo" title="Esta es la checada que usa el resumen del día">en uso</span><% } %>
+        <% if (dupCount > 1) { %> <span class="badge badge-suspendido" title="Hay varias del mismo tipo; el día usa la última">×<%= dupCount %></span><% } %>
+      </td>
       <td class="muted small"><%= formatTimeHHMM(tsOrig) %></td>
       <td><%= empMap.get(String(m.empleadoId)) || '—' %></td>
       <td><%= m.tipoMarcacion %></td>
@@ -63,13 +88,22 @@
       </td>
       <td>
         <span class="badge badge-<%= daily ? daily.estatus : 'falta' %>"><%= estLabel %></span>
+        <% if (daily && daily.excedeLimiteDiario) { %>
+        <span class="badge badge-suspendido" title="Art. 68">&gt;12 h</span>
+        <% } %>
       </td>
-      <td><%= m.notas || '—' %></td>
+      <td class="muted small">
+        <% if (m.motivoAjuste) { %>Ajuste: <%= m.motivoAjuste %><% } %>
+        <% if (m.motivoAnulacion) { %><%= m.motivoAjuste ? ' · ' : '' %>Anulación: <%= m.motivoAnulacion %><% } %>
+        <% if (!m.motivoAjuste && !m.motivoAnulacion) { %><%= m.notas || '—' %><% } %>
+      </td>
       <td>
+        <a href="/asistencia-marcaciones/<%= m._id %>">Detalle / bitácora</a>
         <% if (!anulada) { %>
-        <details>
-          <summary>Ajustar / anular</summary>
-          <form method="post" action="/asistencia-marcaciones/<%= m._id %>/ajustar?fecha=<%= fecha %>" class="form-grid" style="margin-top:0.5rem;min-width:220px">
+        ·
+        <details style="display:inline-block;vertical-align:top">
+          <summary style="cursor:pointer">Ajustar / anular</summary>
+          <form method="post" action="/asistencia-marcaciones/<%= m._id %>/ajustar?fecha=<%= fecha %>" class="form-grid" style="margin-top:0.5rem;min-width:240px">
             <input type="datetime-local" name="timestamp" value="<%= fecha %>T<%= formatTimeHHMM(m.timestamp) %>" required />
             <select name="tipoMarcacion" required>
               <% tiposMarcacion.forEach(function(t) { %>
@@ -85,8 +119,6 @@
             <button type="submit" class="btn-danger">Anular</button>
           </form>
         </details>
-        <% } else { %>
-        <span class="muted small"><%= m.motivoAnulacion || 'Anulada' %></span>
         <% } %>
       </td>
     </tr>
@@ -94,31 +126,8 @@
   </tbody>
 </table>
 
-<h2>Registrar marcación manual</h2>
-<form method="post" action="/asistencia-marcaciones" class="form-grid form-wide">
-  <select name="empleadoId" required>
-    <option value="">— Empleado —</option>
-    <% empleados.forEach(function(e) { %>
-    <option value="<%= e._id %>"><%= e.firstName %> <%= e.lastName %> (<%= e.numEmpleado %>)</option>
-    <% }); %>
-  </select>
-  <select name="tipoMarcacion" required>
-    <% tiposMarcacion.forEach(function(t) { %>
-    <option value="<%= t.value %>"><%= t.label %></option>
-    <% }); %>
-  </select>
-  <input type="datetime-local" name="timestamp" required value="<%= fecha %>T08:00" />
-  <select name="metodo">
-    <% metodosRegistro.forEach(function(m) { %>
-    <option value="<%= m.value %>" <%= m.value === 'manual' ? 'selected' : '' %>><%= m.label %></option>
-    <% }); %>
-  </select>
-  <input name="notas" placeholder="Notas / justificación (opcional)" />
-  <button type="submit">Registrar marcación</button>
-</form>
-
 <% if (bitacora && bitacora.length) { %>
-<h2>Bitácora del día</h2>
+<h2>Bitácora del día<%= empF ? ' (empleado filtrado)' : '' %></h2>
 <table>
   <thead>
     <tr><th>Hora</th><th>Acción</th><th>Usuario</th><th>Motivo</th><th>Detalle</th></tr>
@@ -130,11 +139,63 @@
       <td><code><%= b.accion %></code></td>
       <td><%= b.userLabel || b.userId || '—' %></td>
       <td><%= b.motivo || '—' %></td>
-      <td class="muted small"><%= b.mensaje || '—' %></td>
+      <td class="muted small">
+        <%= b.mensaje || '—' %>
+        <% if (b.detalle && b.detalle.horaAntes && b.detalle.horaDespues) { %>
+        · <%= formatTimeHHMM(b.detalle.horaAntes) %> → <%= formatTimeHHMM(b.detalle.horaDespues) %>
+        <% } else if (b.antes && b.despues && b.antes.timestamp && b.despues.timestamp) { %>
+        · <%= formatTimeHHMM(b.antes.timestamp) %> → <%= formatTimeHHMM(b.despues.timestamp) %>
+        <% } %>
+      </td>
     </tr>
     <% }); %>
   </tbody>
 </table>
 <% } %>
+
+<details id="captura" <%= openCaptura ? 'open' : '' %>>
+  <summary><strong>Registrar marcación manual</strong></summary>
+  <form method="post" action="/asistencia-marcaciones" class="form-grid form-wide" style="margin-top:.75rem">
+    <label>Empleado
+      <select name="empleadoId" required>
+        <option value="">— Empleado —</option>
+        <% empleados.forEach(function(e) { %>
+        <option value="<%= e._id %>" <%= String(e._id) === String(empleadoPrefill || '') ? 'selected' : '' %>>
+          <%= e.firstName %> <%= e.lastName %> (<%= e.numEmpleado %>)
+        </option>
+        <% }); %>
+      </select>
+    </label>
+    <label>Tipo
+      <select name="tipoMarcacion" required>
+        <% tiposMarcacion.forEach(function(t) { %>
+        <option value="<%= t.value %>" <%= t.value === tipoSel ? 'selected' : '' %>><%= t.label %></option>
+        <% }); %>
+      </select>
+    </label>
+    <label class="inline-check" style="grid-column:1/-1">
+      <input type="checkbox" name="usarHoraServidor" value="1" checked />
+      Usar hora del servidor (recomendado)
+    </label>
+    <label>Hora (si no usas servidor)
+      <input type="datetime-local" name="timestamp" value="<%= fecha %>T17:00" />
+    </label>
+    <label>Motivo hora distinta
+      <input name="motivoHoraManual" placeholder="Obligatorio si desmarcas hora del servidor" />
+    </label>
+    <label>Método
+      <select name="metodo">
+        <% metodosRegistro.forEach(function(m) { %>
+        <option value="<%= m.value %>" <%= m.value === 'manual' ? 'selected' : '' %>><%= m.label %></option>
+        <% }); %>
+      </select>
+    </label>
+    <label>Notas
+      <input name="notas" placeholder="Notas / justificación (opcional)" />
+    </label>
+    <button type="submit">Registrar marcación</button>
+  </form>
+  <p class="muted small">Usa la <strong>fecha del día incompleto</strong> (no el día siguiente). Luego revisa asistencia del día.</p>
+</details>
 <% } %>
 <%- include('../Partials/layout-bottom') %>

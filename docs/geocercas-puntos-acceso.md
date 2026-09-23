@@ -26,6 +26,8 @@ Cada punto: código, nombre, lat/lng, radio (80–150 m sugerido), `location` Ge
 
 Sin geocercas configuradas: no bloquea (`skipped: true`).
 
+Evidencia de intentos (aceptados y rechazados): ver [`docs/evidencia-checado-asistencia.md`](./evidencia-checado-asistencia.md).
+
 ## Marcación API
 
 `POST /api/v1/asistencia/marcar` valida y persiste:
