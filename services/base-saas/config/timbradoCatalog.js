@@ -6,31 +6,76 @@ const { PLANTILLA_PDF_CFDI } = require('./reciboPdfPlantillaCfdi');
 
 const PAC_PROVEEDORES = ['SW Sapien', 'Otro'];
 
+/** RFC / razón social emisor de prueba SAT (empresa). */
 const PAC_SW_DEFAULTS = {
   proveedor: 'SW Sapien',
   ambiente: '1',
-  formato: 'JSON',
+  formato: 'XML',
   urlAuth: 'https://services.sw.com.mx/v2/security/authenticate',
-  urlTimbrado: 'https://services.sw.com.mx/v3/cfdi33/issue/json/v4',
-  urlTimbradoXml: 'https://services.sw.com.mx/cfdi33/issue/v4',
+  urlTimbrado: 'https://services.sw.com.mx/v4/cfdi33/issue/json/v4',
+  urlTimbradoXml: 'https://services.sw.com.mx/v4/cfdi33/issue/v4',
   urlCancelacion: 'https://services.sw.com.mx/cfdi33/cancel/csd',
   urlConsulta: 'https://services.sw.com.mx/cfdi33/status',
   timeout: 30,
   reintentos: 3,
   serieDefault: 'TST',
   rfcSatTest: 'IIA040805DZ4',
-  nombreSatTest: 'INDUSTRIA ILUMINADORA DE ALMACENES',
+  // Nombre SAT de prueba (con typo oficial "INDISTRIA", no "INDUSTRIA") — CFDI40139.
+  nombreSatTest: 'INDISTRIA ILUMINADORA DE ALMACENES',
+  codigoPostalSatTest: '62661',
+  /** Registro patronal IMSS de pruebas (emisor / complemento nómina). */
+  registroPatronalTest: 'Y671234510R',
+  /** Receptor (trabajador) de pruebas SAT — persona física, RFC 13 (NOM8). */
+  usarReceptorPrueba: false,
+  rfcReceptorTest: 'XOJI740919U48',
+  nombreReceptorTest: 'INGRID XODAR JIMENEZ',
+  regimenReceptorTest: '605',
+  cpReceptorTest: '76028',
+  nssReceptorTest: '12345678901',
+  curpReceptorTest: 'XEXX010101HNEXXXA4',
+  tipoContratoReceptorTest: '01',
+  tipoRegimenReceptorTest: '02',
   templateIngreso: '129',
   templateEgreso: '131',
   templatePago: '110',
   templateTraslado: '158'
 };
 
+/** Defaults receptor asalariado de pruebas (SAT / PAC sandbox) — RFC 13 (NOM8). */
+const RECEPTOR_PRUEBA_DEFAULTS = {
+  rfc: 'XOJI740919U48',
+  nombre: 'INGRID XODAR JIMENEZ',
+  regimenFiscal: '605',
+  codigoPostal: '76028',
+  nss: '12345678901',
+  curp: 'XEXX010101HNEXXXA4',
+  tipoContrato: '01',
+  tipoRegimen: '02'
+};
+
+/** Catálogo de receptores de prueba coherentes (RFC 13 + nombre + CP). Ref. ejemplos SW Nómina 1.2. */
+const RECEPTORES_PRUEBA_SAT = {
+  XOJI740919U48: {
+    rfc: 'XOJI740919U48',
+    nombre: 'INGRID XODAR JIMENEZ',
+    regimenFiscal: '605',
+    codigoPostal: '76028',
+    curp: 'XEXX010101HNEXXXA4'
+  },
+  CACX7605101P8: {
+    rfc: 'CACX7605101P8',
+    nombre: 'XOCHILT CASAS CHAVEZ',
+    regimenFiscal: '605',
+    codigoPostal: '36257',
+    curp: 'XEXX010101HNEXXXA4'
+  }
+};
+
 /** URLs ambiente de pruebas SW (credenciales distintas a producción). */
 const PAC_SW_TEST_URLS = {
   urlAuth: 'https://services.test.sw.com.mx/v2/security/authenticate',
-  urlTimbrado: 'https://services.test.sw.com.mx/v3/cfdi33/issue/json/v4',
-  urlTimbradoXml: 'https://services.test.sw.com.mx/cfdi33/issue/v4',
+  urlTimbrado: 'https://services.test.sw.com.mx/v4/cfdi33/issue/json/v4',
+  urlTimbradoXml: 'https://services.test.sw.com.mx/v4/cfdi33/issue/v4',
   urlCancelacion: 'https://services.test.sw.com.mx/cfdi33/cancel/csd',
   urlConsulta: 'https://services.test.sw.com.mx/cfdi33/status'
 };
@@ -134,6 +179,8 @@ module.exports = {
   PAC_PROVEEDORES,
   PAC_SW_DEFAULTS,
   PAC_SW_TEST_URLS,
+  RECEPTOR_PRUEBA_DEFAULTS,
+  RECEPTORES_PRUEBA_SAT,
   RECIBO_PDF_VARIABLES,
   PLANTILLA_PDF_EJEMPLO,
   pacAmbienteEsPrueba,

@@ -248,6 +248,30 @@
       <label>Cuenta contable
         <input name="cuentaContable" value="<%= concepto.cuentaContable || '' %>" />
       </label>
+      <%
+        const dp = concepto.descuentoProgramado || {};
+      %>
+      <fieldset class="props-fieldset" style="grid-column:1/-1">
+        <legend>Descuento programado</legend>
+        <div class="form-row-3">
+          <label class="checkbox-row">
+            <input type="checkbox" name="dpPermite" value="1" <%= dp.permite ? 'checked' : '' %> />
+            Permite descuento programado
+          </label>
+          <label class="checkbox-row">
+            <input type="checkbox" name="dpPermiteSaldo" value="1" <%= dp.permiteSaldo ? 'checked' : '' %> />
+            Permite saldo
+          </label>
+          <label class="checkbox-row">
+            <input type="checkbox" name="dpPermiteParcial" value="1" <%= dp.permiteParcial ? 'checked' : '' %> />
+            Permite aplicación parcial
+          </label>
+        </div>
+        <label>Tipo interno (clasificación admin)
+          <input name="dpTipoInterno" value="<%= dp.tipoInterno || '' %>" placeholder="ej. prestamo_caja" />
+        </label>
+        <p class="muted small">La clave SAT / TipoDeduccion sigue en el bloque fiscal; no se mezcla con esta clasificación.</p>
+      </fieldset>
     </fieldset>
 
     <fieldset class="props-fieldset">

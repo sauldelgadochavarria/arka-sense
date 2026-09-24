@@ -1,0 +1,106 @@
+<%- include('../../Partials/layout-top', { title: 'Descuento programado', session }) %>
+<div class="page-header">
+  <h1>Descuento · <%= doc.conceptoCodigo %></h1>
+  <p class="page-subtitle">
+    <%= empleado ? (empleado.numEmpleado + ' ' + (empleado.firstName || '') + ' ' + (empleado.lastName || '')) : doc.empleadoId %>
+    · <%= concepto ? concepto.nombre : '' %>
+  </p>
+</div>
+<p><a href="/nomina/descuentos-programados">← Volver al listado</a>
+  · <a href="/ayuda/descuentos-programados-nomina">Ayuda con ejemplos</a></p>
+
+<div class="card-grid" style="grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); margin-bottom: 1rem;">
+  <div><span class="muted">Estatus</span><br><strong><%= doc.estatus %></strong></div>
+  <div><span class="muted">Saldo pendiente</span><br><strong>$<%= money(doc.saldoPendiente) %></strong></div>
+  <div><span class="muted">Importe/periodo</span><br>$<%= money(doc.importePorPeriodo) %></div>
+  <div><span class="muted">Monto original</span><br>$<%= money(doc.montoOriginal) %></div>
+  <div><span class="muted">Pagos</span><br><%= doc.pagosAplicados %><%= doc.numeroPagos != null ? ' / ' + doc.numeroPagos : '' %></div>
+  <div><span class="muted">Modalidad</span><br><%= doc.modalidad %></div>
+</div>
+
+<p class="muted">
+  Vigencia: <%= doc.fechaInicio ? new Date(doc.fechaInicio).toLocaleDateString('es-MX') : '—' %>
+  → <%= doc.fechaTermino ? new Date(doc.fechaTermino).toLocaleDateString('es-MX') : 'sin término' %>
+</p>
+<% if (doc.observaciones) { %><p><%= doc.observaciones %></p><% } %>
+
+<% if (canEdit) { %>
+<div class="toolbar" style="margin:1rem 0">
+  <% if (doc.estatus === 'activo') { %>
+  <form method="post" action="/nomina/descuentos-programados/<%= doc._id %>/suspender" style="display:inline">
+    <button class="btn" type="submit">Suspender</button>
+  </form>
+  <% } %>
+  <% if (doc.estatus === 'suspendido') { %>
+  <form method="post" action="/nomina/descuentos-programados/<%= doc._id %>/reactivar" style="display:inline">
+    <button class="btn btn-primary" type="submit">Reactivar</button>
+  </form>
+  <% } %>
+  <% if (doc.estatus !== 'cancelado') { %>
+  <form method="post" action="/nomina/descuentos-programados/<%= doc._id %>/cancelar" style="display:inline" onsubmit="return confirm('¿Cancelar? No se eliminará el historial.');">
+    <button class="btn" type="submit">Cancelar descuento</button>
+  </form>
+  <% } %>
+</div>
+
+<form method="post" action="/nomina/descuentos-programados/<%= doc._id %>/ajuste-saldo" class="form-grid" style="max-width:28rem">
+  <fieldset class="props-fieldset">
+    <legend>Ajuste de saldo</legend>
+    <label>Nuevo saldo pendiente
+      <input type="number" name="saldoPendiente" step="0.01" min="0" value="<%= doc.saldoPendiente %>" required />
+    </label>
+    <label>Motivo
+      <input type="text" name="mensaje" placeholder="Motivo del ajuste" />
+    </label>
+    <button type="submit" class="btn">Aplicar ajuste</button>
+  </fieldset>
+</form>
+<% } %>
+
+<h3>Historial de movimientos</h3>
+<% if (!(movimientos || []).length) { %>
+<p class="muted">Sin movimientos aún.</p>
+<% } else { %>
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>Fecha</th>
+      <th># Nómina</th>
+      <th>Tipo</th>
+      <th>Solicitado</th>
+      <th>Aplicado</th>
+      <th>Saldo ant.</th>
+      <th>Saldo post.</th>
+      <th>Usuario</th>
+      <th>Mensaje</th>
+    </tr>
+  </thead>
+  <tbody>
+    <% movimientos.forEach(function(m) { %>
+    <tr>
+      <td><%= m.createdAt ? new Date(m.createdAt).toLocaleString('es-MX') : '' %></td>
+      <td>
+        <% 
+          var numNom = (m.numeroNomina != null) ? m.numeroNomina : m.numeroPeriodo;
+        %>
+        <% if (m.periodoId && numNom != null) { %>
+        <a href="/nomina/periodos/<%= m.periodoId %>" title="<%= m.periodoLabel || ('Nómina #' + numNom) %>">#<%= numNom %></a>
+        <% } else if (numNom != null) { %>
+        #<%= numNom %>
+        <% } else { %>
+        <span class="muted">—</span>
+        <% } %>
+      </td>
+      <td><%= m.tipo %></td>
+      <td><%= m.importeSolicitado != null ? '$' + money(m.importeSolicitado) : '—' %></td>
+      <td><%= m.importeAplicado != null ? '$' + money(m.importeAplicado) : '—' %></td>
+      <td><%= m.saldoAnterior != null ? '$' + money(m.saldoAnterior) : '—' %></td>
+      <td><%= m.saldoPosterior != null ? '$' + money(m.saldoPosterior) : '—' %></td>
+      <td><%= m.usuarioLabel || m.usuarioId || '' %></td>
+      <td><%= m.mensaje || '' %></td>
+    </tr>
+    <% }) %>
+  </tbody>
+</table>
+<% } %>
+<%- include('../../Partials/layout-bottom') %>

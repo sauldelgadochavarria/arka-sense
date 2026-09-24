@@ -1,0 +1,81 @@
+<%- include('../../Partials/layout-top', { title: 'Config descuentos programados', session }) %>
+<div class="page-header">
+  <h1>Configuración · Descuentos programados</h1>
+  <p class="page-subtitle">
+    Activa el módulo y los conceptos por subsidiaria. Sin esta configuración, el cálculo no aplica descuentos programados.
+  </p>
+</div>
+<p><a href="/nomina/descuentos-programados">← Volver</a>
+  · <a href="/ayuda/descuentos-programados-nomina">Ayuda con ejemplos</a></p>
+
+<%- include('./_ayuda') %>
+
+<form method="get" class="toolbar">
+  <label>Subsidiaria
+    <select name="subsidiariaId" onchange="this.form.submit()">
+      <option value="">Empresa (default)</option>
+      <% (subsidiarias || []).forEach(function(s) { %>
+      <option value="<%= s._id %>" <%= String(subsidiariaId) === String(s._id) ? 'selected' : '' %>><%= s.codigo %> — <%= s.nombre %></option>
+      <% }) %>
+    </select>
+  </label>
+</form>
+
+<form method="post" action="/nomina/descuentos-programados/config" class="form-grid">
+  <input type="hidden" name="subsidiariaId" value="<%= subsidiariaId || '' %>" />
+
+  <label class="checkbox-row">
+    <input type="checkbox" name="moduloActivo" value="1" <%= config.moduloActivo ? 'checked' : '' %> />
+    Módulo de descuentos programados activo
+  </label>
+
+  <%
+    const _activosCfg = (conceptos || []).filter(function(c) { return c.cfg && c.cfg.activo; }).length;
+  %>
+  <% if (config.moduloActivo && !_activosCfg) { %>
+  <p class="alert">
+    El módulo está <strong>activo</strong> pero no marcaste ningún concepto en la tabla.
+    Marca al menos los que quieras (ej. D340, D450) y guarda; si la lista queda vacía,
+    el cálculo usará todos los del catálogo con «permite descuento programado».
+  </p>
+  <% } %>
+
+  <label>Notas
+    <textarea name="notas" rows="2"><%= config.notas || '' %></textarea>
+  </label>
+
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Activo</th>
+        <th>Código</th>
+        <th>Nombre</th>
+        <th>TipoDeduccion (SAT)</th>
+        <th>Genera saldo</th>
+        <th>Auto</th>
+        <th>Parcial</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% (conceptos || []).forEach(function(c) { %>
+      <tr>
+        <td>
+          <input type="hidden" name="conceptoCodigo" value="<%= c.codigo %>" />
+          <input type="checkbox" name="activo_<%= c.codigo %>" value="1" <%= c.cfg.activo ? 'checked' : '' %> />
+        </td>
+        <td><%= c.codigo %></td>
+        <td><%= c.nombre %></td>
+        <td><%= (c.sat && c.sat.clave) || c.claveSAT || '—' %></td>
+        <td><input type="checkbox" name="generaSaldo_<%= c.codigo %>" value="1" <%= c.cfg.generaSaldo ? 'checked' : '' %> /></td>
+        <td><input type="checkbox" name="aplicaAutomatico_<%= c.codigo %>" value="1" <%= c.cfg.aplicaAutomatico !== false ? 'checked' : '' %> /></td>
+        <td><input type="checkbox" name="permiteParcial_<%= c.codigo %>" value="1" <%= c.cfg.permiteParcial !== false ? 'checked' : '' %> /></td>
+      </tr>
+      <% }) %>
+    </tbody>
+  </table>
+
+  <div class="toolbar">
+    <button type="submit" class="btn btn-primary">Guardar configuración</button>
+  </div>
+</form>
+<%- include('../../Partials/layout-bottom') %>

@@ -63,6 +63,16 @@ const conceptoNominaSchema = new mongoose.Schema(
     dependientes: { type: [String], default: [] },
     cuentaContable: { type: String, trim: true, default: '' },
     activo: { type: Boolean, default: true },
+    /**
+     * Flags de descuento programado (capa administrativa).
+     * sat.clave sigue siendo TipoDeduccion fiscal para CFDI (puede diferir de codigo).
+     */
+    descuentoProgramado: {
+      permite: { type: Boolean, default: false },
+      permiteSaldo: { type: Boolean, default: false },
+      permiteParcial: { type: Boolean, default: false },
+      tipoInterno: { type: String, trim: true, default: '' }
+    },
     metadata: { type: mongoose.Schema.Types.Mixed, default: {} }
   },
   { timestamps: true, collection: COLLECTION_NOMINA_CONCEPTOS }

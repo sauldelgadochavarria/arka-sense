@@ -1,0 +1,367 @@
+<%- include('../../Partials/layout-top', { title: 'Nuevo descuento programado', session }) %>
+<div class="page-header">
+  <h1>Nuevo descuento programado</h1>
+</div>
+<p><a href="/nomina/descuentos-programados">← Volver</a>
+  · <a href="/ayuda/descuentos-programados-nomina">Ayuda</a></p>
+
+<%- include('./_ayuda') %>
+
+<% if (!(conceptos || []).length) { %>
+<p class="alert">
+  No hay conceptos con flag «permite descuento programado». Márcalos en
+  <a href="/nomina/descuentos-programados/config">configuración</a> (activar concepto) o en el catálogo de conceptos.
+</p>
+<% } else { %>
+<form method="post" action="/nomina/descuentos-programados" class="form-grid props-form" id="form-descuento-nuevo">
+  <label>Empleado
+    <select name="empleadoId" required>
+      <option value="">— Seleccionar —</option>
+      <% empleados.forEach(function(e) { %>
+      <option value="<%= e._id %>"><%= e.numEmpleado %> — <%= e.firstName %> <%= e.lastName %></option>
+      <% }) %>
+    </select>
+  </label>
+
+  <label>Concepto
+    <select name="conceptoCodigo" required id="conceptoCodigo">
+      <% conceptos.forEach(function(c) { %>
+      <option
+        value="<%= c.codigo %>"
+        data-permite-saldo="<%= c.descuentoProgramado && c.descuentoProgramado.permiteSaldo ? '1' : '0' %>"
+        data-permite-parcial="<%= c.descuentoProgramado && c.descuentoProgramado.permiteParcial ? '1' : '0' %>"
+      ><%= c.codigo %> — <%= c.nombre %></option>
+      <% }) %>
+    </select>
+  </label>
+
+  <label>Subsidiaria (opcional)
+    <select name="subsidiariaId">
+      <option value="">Del empleado / default</option>
+      <% (subsidiarias || []).forEach(function(s) { %>
+      <option value="<%= s._id %>"><%= s.codigo %> — <%= s.nombre %></option>
+      <% }) %>
+    </select>
+  </label>
+
+  <div class="form-row-2">
+    <label>Fecha inicio
+      <input type="date" name="fechaInicio" value="<%= hoy %>" required />
+    </label>
+    <label>Fecha término
+      <input type="date" name="fechaTermino" />
+      <span class="form-hint">Vacío = sin fecha de término (sigue hasta liquidar o cancelar).</span>
+    </label>
+  </div>
+
+  <div class="form-row-3">
+    <label>Modalidad
+      <select name="modalidad" id="modalidad">
+        <option value="monto_fijo">Monto fijo por periodo</option>
+        <option value="porcentaje">Porcentaje</option>
+        <option value="liquidacion">Liquidación (todo el saldo)</option>
+        <option value="monto_variable">Monto variable</option>
+      </select>
+      <span class="form-hint" id="hint-modalidad"></span>
+    </label>
+    <label>Periodicidad
+      <select name="periodicidad">
+        <% periodicidades.forEach(function(p) { %>
+        <option value="<%= p %>" <%= p === 'cada_periodo' ? 'selected' : '' %>><%= p %></option>
+        <% }) %>
+      </select>
+    </label>
+    <label data-field="numeroPagos">Núm. pagos (opcional)
+      <input type="number" name="numeroPagos" id="numeroPagos" min="1" step="1" />
+      <span class="form-hint">Si lo capturas con el monto total, te sugerimos la cuota.</span>
+    </label>
+  </div>
+
+  <div class="form-row-3">
+    <label data-field="montoOriginal">Monto original / total
+      <input type="number" name="montoOriginal" id="montoOriginal" step="0.01" min="0" value="" placeholder="0.00" />
+    </label>
+    <label data-field="saldoPendiente">Saldo pendiente
+      <input type="number" name="saldoPendiente" id="saldoPendiente" step="0.01" min="0" placeholder="= monto original" />
+      <span class="form-hint">Vacío = se toma el monto original como saldo inicial.</span>
+    </label>
+    <label data-field="importePorPeriodo">Importe por periodo
+      <input type="number" name="importePorPeriodo" id="importePorPeriodo" step="0.01" min="0" value="" placeholder="0.00" />
+    </label>
+  </div>
+
+  <div class="form-row-2" data-field="porcentaje-group">
+    <label data-field="porcentaje">Porcentaje
+      <input type="number" name="porcentaje" id="porcentaje" step="0.01" min="0" value="" placeholder="ej. 5" />
+      <span class="form-hint">Ejemplo: 5 = 5% del sueldo sujeto a descuento.</span>
+    </label>
+    <label data-field="basePorcentaje">Base del porcentaje
+      <select name="basePorcentaje" id="basePorcentaje">
+        <option value="sueldo_periodo">Sueldo del periodo</option>
+        <option value="percepciones_gravadas">Percepciones gravadas</option>
+        <option value="neto_provisional">Neto provisional</option>
+      </select>
+    </label>
+  </div>
+
+  <label data-field="importeVariable">Importe variable (esta nómina / captura manual)
+    <input type="number" name="importeVariable" id="importeVariable" step="0.01" min="0" placeholder="0.00" />
+    <span class="form-hint">Si lo dejas vacío, el cálculo no aplicará nada hasta que captures un importe.</span>
+  </label>
+
+  <div id="tips-descuento" class="help-panel" style="margin:0.25rem 0 1rem;padding:0.85rem 1rem;border:1px solid #c5d4e8;border-radius:8px;background:#eef4fb;grid-column:1/-1">
+    <strong style="display:block;margin-bottom:0.35rem">Tips</strong>
+    <ul id="tips-list" style="margin:0;padding-left:1.2rem;line-height:1.45"></ul>
+  </div>
+
+  <label>Observaciones
+    <textarea name="observaciones" rows="2"></textarea>
+  </label>
+
+  <div class="toolbar">
+    <button type="submit" class="btn btn-primary">Registrar</button>
+  </div>
+</form>
+
+<script>
+(function () {
+  var form = document.getElementById('form-descuento-nuevo');
+  if (!form) return;
+
+  var modalidad = document.getElementById('modalidad');
+  var montoOriginal = document.getElementById('montoOriginal');
+  var saldoPendiente = document.getElementById('saldoPendiente');
+  var importePorPeriodo = document.getElementById('importePorPeriodo');
+  var numeroPagos = document.getElementById('numeroPagos');
+  var porcentaje = document.getElementById('porcentaje');
+  var basePorcentaje = document.getElementById('basePorcentaje');
+  var importeVariable = document.getElementById('importeVariable');
+  var concepto = document.getElementById('conceptoCodigo');
+  var hintModalidad = document.getElementById('hint-modalidad');
+  var tipsList = document.getElementById('tips-list');
+
+  var MODALIDAD_HELP = {
+    monto_fijo: 'Se descuenta un importe fijo cada periodo (ej. $566.40 por quincena) hasta agotar el saldo.',
+    porcentaje: 'Se calcula un % sobre la base elegida en cada nómina. El monto original sirve como tope/saldo si el concepto genera saldo.',
+    liquidacion: 'En la próxima nómina intenta aplicar TODO el saldo pendiente (sujeto a neto disponible y parcial).',
+    monto_variable: 'El importe lo defines tú (campo variable). Si está vacío, no se aplica automáticamente.'
+  };
+
+  /** Campos activos por modalidad */
+  var FIELDS = {
+    monto_fijo: ['montoOriginal', 'saldoPendiente', 'importePorPeriodo', 'numeroPagos'],
+    porcentaje: ['montoOriginal', 'saldoPendiente', 'porcentaje', 'basePorcentaje', 'porcentaje-group', 'numeroPagos'],
+    liquidacion: ['montoOriginal', 'saldoPendiente'],
+    monto_variable: ['montoOriginal', 'saldoPendiente', 'importeVariable', 'numeroPagos']
+  };
+
+  var ALL_TOGGLE = [
+    'montoOriginal',
+    'saldoPendiente',
+    'importePorPeriodo',
+    'numeroPagos',
+    'porcentaje',
+    'basePorcentaje',
+    'porcentaje-group',
+    'importeVariable'
+  ];
+
+  function money(n) {
+    if (!isFinite(n)) return '—';
+    return n.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  function num(el) {
+    if (!el || el.value === '' || el.value == null) return null;
+    var v = Number(el.value);
+    return isFinite(v) ? v : null;
+  }
+
+  function setEnabled(fieldKey, on) {
+    var nodes = form.querySelectorAll('[data-field="' + fieldKey + '"]');
+    nodes.forEach(function (wrap) {
+      wrap.style.opacity = on ? '' : '0.45';
+      wrap.style.pointerEvents = on ? '' : 'none';
+      wrap.querySelectorAll('input, select, textarea').forEach(function (inp) {
+        inp.disabled = !on;
+        if (!on && (inp.type === 'number' || inp.tagName === 'INPUT')) {
+          // no borrar al deshabilitar: el submit no envía disabled; limpiamos valor visual solo en opcional
+        }
+      });
+    });
+  }
+
+  function applyModalidad() {
+    var m = modalidad.value || 'monto_fijo';
+    var active = FIELDS[m] || FIELDS.monto_fijo;
+    ALL_TOGGLE.forEach(function (k) {
+      setEnabled(k, active.indexOf(k) !== -1);
+    });
+    if (hintModalidad) hintModalidad.textContent = MODALIDAD_HELP[m] || '';
+    // Valores por defecto al cambiar
+    if (m === 'monto_fijo') {
+      if (importePorPeriodo && importePorPeriodo.disabled === false && !importePorPeriodo.value) {
+        /* tip sugiere */
+      }
+    }
+    if (m !== 'porcentaje' && porcentaje) porcentaje.value = '';
+    if (m !== 'monto_variable' && importeVariable) importeVariable.value = '';
+    if (m !== 'monto_fijo' && m !== 'monto_variable' && m !== 'porcentaje') {
+      /* liquidacion: cuota no aplica */
+      if (importePorPeriodo) importePorPeriodo.value = '';
+    }
+    updateTips();
+  }
+
+  function conceptoFlags() {
+    var opt = concepto && concepto.options[concepto.selectedIndex];
+    return {
+      saldo: opt && opt.getAttribute('data-permite-saldo') === '1',
+      parcial: opt && opt.getAttribute('data-permite-parcial') === '1'
+    };
+  }
+
+  function updateTips() {
+    var tips = [];
+    var m = modalidad.value || 'monto_fijo';
+    var flags = conceptoFlags();
+    var total = num(montoOriginal);
+    var saldo = num(saldoPendiente);
+    var cuota = num(importePorPeriodo);
+    var pagos = num(numeroPagos);
+    var pct = num(porcentaje);
+    var variable = num(importeVariable);
+    var efectivoSaldo = saldo != null ? saldo : total;
+
+    tips.push(MODALIDAD_HELP[m]);
+
+    if (flags.saldo) {
+      tips.push('Este concepto <strong>genera saldo</strong>: el historial te dirá cuánto debe el empleado.');
+    } else {
+      tips.push('Este concepto <strong>no genera saldo</strong> (típico en ahorro a la vista periódico). El monto original es referencial.');
+    }
+    if (flags.parcial) {
+      tips.push('Permite <strong>aplicación parcial</strong>: si el neto no alcanza, descuenta lo posible y deja el resto pendiente.');
+    } else {
+      tips.push('No permite parcial: si no hay neto suficiente para la cuota completa, <strong>no se aplica</strong> en ese periodo.');
+    }
+
+    if (m === 'monto_fijo') {
+      if (total != null && total > 0 && pagos != null && pagos > 0) {
+        var sugerida = Math.round((total / pagos) * 100) / 100;
+        tips.push(
+          'Con total <strong>$' +
+            money(total) +
+            '</strong> en <strong>' +
+            pagos +
+            '</strong> pagos → cuota sugerida <strong>$' +
+            money(sugerida) +
+            '</strong>.' +
+            (cuota == null || Math.abs(cuota - sugerida) > 0.009
+              ? ' <button type="button" class="btn" id="btn-aplicar-cuota" data-cuota="' +
+                sugerida +
+                '" style="margin-left:0.35rem;padding:0.15rem 0.5rem;font-size:0.85rem">Usar esta cuota</button>'
+              : ' (ya coincide con tu importe por periodo).')
+        );
+      } else if (total != null && total > 0 && cuota != null && cuota > 0) {
+        var nEst = Math.ceil(total / cuota);
+        tips.push(
+          'Con cuota <strong>$' +
+            money(cuota) +
+            '</strong> sobre <strong>$' +
+            money(total) +
+            '</strong> ≈ <strong>' +
+            nEst +
+            '</strong> periodos (si siempre se aplica completo).'
+        );
+      } else if (total != null && total > 0) {
+        tips.push(
+          'Capturaste total <strong>$' +
+            money(total) +
+            '</strong>. Indica <em>importe por periodo</em> (ej. 566.40) o <em>núm. pagos</em> para estimar la cuota.'
+        );
+      } else {
+        tips.push('Ejemplo: préstamo de $5,664.00 a $566.40 por quincena → 10 pagos.');
+      }
+    }
+
+    if (m === 'porcentaje') {
+      if (pct != null && pct > 0) {
+        tips.push(
+          'Se descontará <strong>' +
+            pct +
+            '%</strong> de la base «' +
+            (basePorcentaje.options[basePorcentaje.selectedIndex].text || basePorcentaje.value) +
+            '» en cada periodo.'
+        );
+        if (efectivoSaldo != null && efectivoSaldo > 0 && flags.saldo) {
+          tips.push(
+            'Saldo tope <strong>$' +
+              money(efectivoSaldo) +
+              '</strong>: cuando se agote, el descuento quedará liquidado aunque el % siga configurado.'
+          );
+        }
+      } else {
+        tips.push('Captura el porcentaje (ej. 5). El importe por periodo no se usa en esta modalidad.');
+      }
+    }
+
+    if (m === 'liquidacion') {
+      if (efectivoSaldo != null && efectivoSaldo > 0) {
+        tips.push(
+          'En el próximo cálculo intentará aplicar <strong>$' +
+            money(efectivoSaldo) +
+            '</strong> de una sola vez' +
+            (flags.parcial ? ' (o lo que alcance el neto, dejando el resto).' : '.')
+        );
+      } else {
+        tips.push('Captura el monto/saldo a liquidar. No necesitas cuota ni porcentaje.');
+      }
+    }
+
+    if (m === 'monto_variable') {
+      if (variable != null && variable > 0) {
+        tips.push('Importe variable listo: <strong>$' + money(variable) + '</strong> se usará en el cálculo (mientras no lo cambies).');
+      } else {
+        tips.push('Sin importe variable el motor aplicará $0. Úsalo cuando el monto se define en el proceso de nómina.');
+      }
+    }
+
+    if (saldo != null && total != null && saldo > total + 0.009) {
+      tips.push('⚠️ El saldo pendiente es mayor que el monto original; revisa si es intencional (ajuste).');
+    }
+
+    tipsList.innerHTML = tips
+      .filter(Boolean)
+      .map(function (t) {
+        return '<li style="margin-bottom:0.35rem">' + t + '</li>';
+      })
+      .join('');
+
+    var btn = document.getElementById('btn-aplicar-cuota');
+    if (btn) {
+      btn.addEventListener('click', function () {
+        var c = Number(btn.getAttribute('data-cuota'));
+        if (isFinite(c)) {
+          importePorPeriodo.disabled = false;
+          importePorPeriodo.value = c.toFixed(2);
+          updateTips();
+        }
+      });
+    }
+  }
+
+  modalidad.addEventListener('change', applyModalidad);
+  [montoOriginal, saldoPendiente, importePorPeriodo, numeroPagos, porcentaje, basePorcentaje, importeVariable, concepto].forEach(
+    function (el) {
+      if (!el) return;
+      el.addEventListener('input', updateTips);
+      el.addEventListener('change', updateTips);
+    }
+  );
+
+  applyModalidad();
+})();
+</script>
+<% } %>
+<%- include('../../Partials/layout-bottom') %>

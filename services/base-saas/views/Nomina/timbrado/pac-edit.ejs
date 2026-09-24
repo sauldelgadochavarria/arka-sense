@@ -111,13 +111,76 @@
   </fieldset>
 
   <fieldset class="form-section">
-    <legend>Datos prueba SAT</legend>
-    <label>RFC test
-      <input name="rfcSatTest" value="<%= P.rfcSatTest || '' %>" />
+    <legend>Datos de prueba SAT</legend>
+    <p class="muted small" style="grid-column:1/-1">
+      En <strong>ambiente 0 (prueba)</strong> el emisor del CFDI puede sustituirse con el RFC de empresa de prueba.
+      El receptor de pruebas (trabajador) es independiente: útil para timbrar sin RFCs reales de empleados.
+    </p>
+    <h4 style="grid-column:1/-1;margin:0.5rem 0 0">Emisor (empresa) de prueba</h4>
+    <label>RFC emisor test
+      <input name="rfcSatTest" value="<%= P.rfcSatTest || '' %>" placeholder="IIA040805DZ4" />
     </label>
-    <label>Nombre SAT test
-      <input name="nombreSatTest" value="<%= P.nombreSatTest || '' %>" style="min-width:24rem" />
+    <label>Nombre / razón social emisor test
+      <input name="nombreSatTest" value="<%= P.nombreSatTest || '' %>" style="min-width:24rem" placeholder="INDISTRIA ILUMINADORA DE ALMACENES" />
     </label>
+    <label>Código postal emisor test (LugarExpedicion)
+      <input name="codigoPostalSatTest" value="<%= P.codigoPostalSatTest || '62661' %>" maxlength="5" placeholder="62661" />
+    </label>
+    <p class="muted small" style="grid-column:1/-1">
+      Para <code>IIA040805DZ4</code> el nombre oficial SAT es <code>INDISTRIA ILUMINADORA DE ALMACENES</code>
+      (con typo «INDISTRIA», no «INDUSTRIA») y CP <code>62661</code>. Si no, el PAC responde CFDI40139.
+    </p>
+    <label>Registro patronal de prueba
+      <input name="registroPatronalTest" value="<%= P.registroPatronalTest || 'Y671234510R' %>" maxlength="11" placeholder="Y671234510R" />
+    </label>
+    <p class="muted small" style="grid-column:1/-1">
+      En ambiente <strong>0 (prueba)</strong> se usa en el complemento nómina (<code>RegistroPatronal</code>)
+      en lugar del de la empresa/empleado. Ejemplo: <code>Y671234510R</code>.
+    </p>
+
+    <h4 style="grid-column:1/-1;margin:1rem 0 0">Receptor (trabajador) de prueba</h4>
+    <label class="checkbox" style="grid-column:1/-1">
+      <input type="checkbox" name="usarReceptorPrueba" value="1" id="usar-receptor-prueba" <%= P.usarReceptorPrueba ? 'checked' : '' %> />
+      Usar RFC receptor de pruebas en el timbrado
+    </label>
+    <p class="muted small" style="grid-column:1/-1">
+      Si está activo, el CFDI y el recibo llevan identidad de prueba del trabajador
+      (RFC, nombre, CURP, NSS, contrato, régimen),
+      pero conservan el <strong>número de empleado</strong> y todo el cálculo (percepciones, deducciones, neto).
+    </p>
+    <label>RFC receptor test
+      <input name="rfcReceptorTest" id="rfc-receptor-test" value="<%= P.rfcReceptorTest || 'XOJI740919U48' %>" maxlength="13" />
+    </label>
+    <label>Nombre receptor test
+      <input name="nombreReceptorTest" id="nombre-receptor-test" value="<%= P.nombreReceptorTest || 'INGRID XODAR JIMENEZ' %>" style="min-width:24rem" />
+    </label>
+    <label>Régimen fiscal receptor (c_RegimenFiscal)
+      <input name="regimenReceptorTest" id="regimen-receptor-test" value="<%= P.regimenReceptorTest || '605' %>" maxlength="3" placeholder="605" />
+    </label>
+    <label>Código postal receptor
+      <input name="cpReceptorTest" id="cp-receptor-test" value="<%= P.cpReceptorTest || '76028' %>" maxlength="5" />
+    </label>
+    <label>NSS (NumSeguridadSocial, 11 dígitos)
+      <input name="nssReceptorTest" id="nss-receptor-test" value="<%= P.nssReceptorTest || '12345678901' %>" maxlength="11" />
+    </label>
+    <label>CURP (18 caracteres)
+      <input name="curpReceptorTest" id="curp-receptor-test" value="<%= P.curpReceptorTest || 'XEXX010101HNEXXXA4' %>" maxlength="18" style="min-width:18rem;text-transform:uppercase" />
+    </label>
+    <label>TipoContrato (c_TipoContrato)
+      <input name="tipoContratoReceptorTest" id="tipo-contrato-receptor-test" value="<%= P.tipoContratoReceptorTest || '01' %>" maxlength="2" placeholder="01" />
+    </label>
+    <label>TipoRegimen (c_TipoRegimen)
+      <input name="tipoRegimenReceptorTest" id="tipo-regimen-receptor-test" value="<%= P.tipoRegimenReceptorTest || '02' %>" maxlength="2" placeholder="02" />
+    </label>
+    <p class="muted small" style="grid-column:1/-1">
+      Defaults sandbox (persona física, <strong>RFC 13 — NOM8</strong>):
+      <code>XOJI740919U48</code> · <code>INGRID XODAR JIMENEZ</code> · CP <code>76028</code> ·
+      CURP <code>XEXX010101HNEXXXA4</code>. Alternativa SW: <code>CACX7605101P8</code> / CP <code>36257</code>.
+      No uses RFC de 12 (persona moral) ni mezcles RFC real con CP de prueba.
+    </p>
+    <p style="grid-column:1/-1">
+      <button type="button" class="btn" id="btn-receptor-default">Restaurar receptor de pruebas SAT</button>
+    </p>
     <label>Notas
       <textarea name="notas" rows="2"><%= P.notas || '' %></textarea>
     </label>
@@ -167,6 +230,28 @@
   }
   amb.addEventListener('change', aplicarAmbiente);
   aplicarAmbiente();
+
+  var btnDef = document.getElementById('btn-receptor-default');
+  if (btnDef) {
+    btnDef.addEventListener('click', function () {
+      var map = {
+        'rfc-receptor-test': 'XOJI740919U48',
+        'nombre-receptor-test': 'INGRID XODAR JIMENEZ',
+        'regimen-receptor-test': '605',
+        'cp-receptor-test': '76028',
+        'nss-receptor-test': '12345678901',
+        'curp-receptor-test': 'XEXX010101HNEXXXA4',
+        'tipo-contrato-receptor-test': '01',
+        'tipo-regimen-receptor-test': '02'
+      };
+      Object.keys(map).forEach(function (id) {
+        var el = document.getElementById(id);
+        if (el) el.value = map[id];
+      });
+      var chk = document.getElementById('usar-receptor-prueba');
+      if (chk) chk.checked = true;
+    });
+  }
 })();
 </script>
 <%- include('../../Partials/layout-bottom') %>

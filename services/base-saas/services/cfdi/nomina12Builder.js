@@ -28,6 +28,7 @@ const {
   importeConcepto,
   gravadoConcepto,
   exentoConcepto,
+  isValidClabe,
   TIPO_CONTRATO_SAT
 } = require('./nomina12Helpers');
 
@@ -36,10 +37,11 @@ const SCHEMA_CFDI =
 const SCHEMA_NOMINA =
   'http://www.sat.gob.mx/nomina12 http://www.sat.gob.mx/sitio_internet/cfd/nomina/nomina12.xsd';
 
-function mapConceptosNomina(conceptos = [], catalogoMeta = {}) {
+function mapConceptosNomina(conceptos = [], catalogoMeta = {}, opts = {}) {
   const percepciones = [];
   const deducciones = [];
   const otrosPagos = [];
+  const insumos = opts.insumosResumen || opts.recibo?.insumosResumen || {};
 
   for (const c of conceptos || []) {
     const code = String(c.conceptoCodigo || c.codigo || '').toUpperCase();
@@ -47,7 +49,16 @@ function mapConceptosNomina(conceptos = [], catalogoMeta = {}) {
     const kind = clasificarConcepto(c, meta);
     if (kind === 'skip') continue;
     const importe = importeConcepto(c);
-    if (!(importe !== 0 || gravadoConcepto(c) || exentoConcepto(c))) continue;
+    const gravado = gravadoConcepto(c);
+    const exento = exentoConcepto(c);
+    // CFDI no admite importes negativos en deducciones (p.ej. ISR_DIFERENCIA).
+    if (kind === 'deduccion' && !(importe > 0)) continue;
+    // Otro pago 002 (subsidio) sí puede ir en 0 — lo exige NOM105 en nómina ordinaria.
+    if (kind === 'otro_pago' && !(importe > 0)) {
+      const claveSatTmp = String(claveSatDe(c, meta) || '').padStart(3, '0');
+      if (claveSatTmp !== '002') continue;
+    }
+    if (kind === 'percepcion' && !(importe !== 0 || gravado || exento)) continue;
 
     const claveSat = claveSatDe(c, meta);
     const claveInt = claveInternaDe(c, meta, claveSat);
@@ -61,24 +72,168 @@ function mapConceptosNomina(conceptos = [], catalogoMeta = {}) {
         Importe: money(importe)
       });
     } else if (kind === 'otro_pago') {
-      otrosPagos.push({
-        TipoOtroPago: claveSat,
+      const row = {
+        TipoOtroPago: satCode(claveSat, '002'),
         Clave: claveInt,
         Concepto: nombre,
         Importe: money(importe)
-      });
+      };
+      if (String(row.TipoOtroPago).padStart(3, '0') === '002') {
+        row.SubsidioAlEmpleo = {
+          SubsidioCausado: money(resolveSubsidioCausado(c, opts.recibo, conceptos))
+        };
+      }
+      otrosPagos.push(row);
     } else {
-      percepciones.push({
+      // Preferir gravado/exento; si vienen en 0 pero hay importe, todo gravado.
+      let g = gravado;
+      let e = exento;
+      if (!(g || e) && importe) {
+        g = money(importe);
+        e = 0;
+      }
+      const perc = {
         TipoPercepcion: claveSat,
         Clave: claveInt,
         Concepto: nombre,
-        ImporteGravado: gravadoConcepto(c),
-        ImporteExento: exentoConcepto(c)
-      });
+        ImporteGravado: money(g),
+        ImporteExento: money(e)
+      };
+      // NOM84: TipoPercepcion 019 exige elemento(s) HorasExtra.
+      if (String(claveSat).padStart(3, '0') === '019') {
+        perc.HorasExtra = buildHorasExtraForPercepcion(c, {
+          importePagado: money(g + e),
+          insumos
+        });
+      }
+      percepciones.push(perc);
     }
   }
 
   return { percepciones, deducciones, otrosPagos };
+}
+
+function tipOtroPago(v) {
+  return String(satCode(v, '', 3) || '').padStart(3, '0');
+}
+
+/** Subsidio causado: concepto SUBSIDIO_CAUSADO, variables del 002, o el propio importe entregado. */
+function resolveSubsidioCausado(c002 = null, recibo = {}, conceptos = []) {
+  if (recibo?.subsidioCausado != null && Number(recibo.subsidioCausado) >= 0) {
+    return money(recibo.subsidioCausado);
+  }
+  for (const c of conceptos || []) {
+    const code = String(c.conceptoCodigo || c.codigo || '').toUpperCase();
+    if (code === 'SUBSIDIO_CAUSADO') return money(importeConcepto(c));
+  }
+  const vars = c002?.variablesUsadas || {};
+  if (vars.SUBSIDIO_CAUSADO != null) return money(vars.SUBSIDIO_CAUSADO);
+  if (vars.subsidioCausado != null) return money(vars.subsidioCausado);
+  if (c002) return money(importeConcepto(c002));
+  return 0;
+}
+
+/**
+ * NOM105: en nómina ordinaria (TipoNomina=O) debe existir OtroPago TipoOtroPago=002
+ * (Subsidio para el empleo), con nodo SubsidioAlEmpleo. No puede coexistir con 007/008.
+ */
+function ensureSubsidioEmpleoOtroPago(mapped, { tipoNomina = 'O', conceptos = [], recibo = {} } = {}) {
+  if (String(tipoNomina).toUpperCase() !== 'O') return mapped;
+
+  // 002 no coexiste con 007/008 en ordinaria
+  mapped.otrosPagos = (mapped.otrosPagos || []).filter((o) => {
+    const t = tipOtroPago(o.TipoOtroPago);
+    return t !== '007' && t !== '008';
+  });
+
+  let row002 = mapped.otrosPagos.find((o) => tipOtroPago(o.TipoOtroPago) === '002');
+  let importe = row002 ? money(row002.Importe) : 0;
+  if (!row002) {
+    for (const c of conceptos || []) {
+      const code = String(c.conceptoCodigo || c.codigo || '').toUpperCase();
+      if (code === 'SUBSIDIO_EMPLEO' || code === 'OTRO_PAGO_SUBSIDIO') {
+        importe = money(importeConcepto(c));
+        break;
+      }
+    }
+    if (recibo?.subsidioEmpleo != null) importe = money(recibo.subsidioEmpleo);
+  }
+
+  const subsidioCausado = resolveSubsidioCausado(row002, recibo, conceptos);
+
+  if (!row002) {
+    row002 = {
+      TipoOtroPago: '002',
+      Clave: '00200',
+      Concepto: 'Subsidio para el empleo',
+      Importe: importe,
+      SubsidioAlEmpleo: { SubsidioCausado: subsidioCausado }
+    };
+    mapped.otrosPagos.unshift(row002);
+  } else {
+    row002.TipoOtroPago = '002';
+    row002.Importe = money(row002.Importe);
+    row002.SubsidioAlEmpleo = {
+      SubsidioCausado: money(
+        row002.SubsidioAlEmpleo?.SubsidioCausado ?? subsidioCausado
+      )
+    };
+  }
+  return mapped;
+}
+
+/**
+ * Nodo nomina12:HorasExtra (obligatorio si TipoPercepcion=019).
+ * TipoHoras: 01 dobles, 02 triples, 03 sencillas.
+ */
+function buildHorasExtraForPercepcion(c = {}, { importePagado = 0, insumos = {} } = {}) {
+  const code = String(c.conceptoCodigo || c.codigo || '').toUpperCase();
+  const vars = c.variablesUsadas || {};
+  const inc = vars.INCIDENCIAS || vars.incidencias || {};
+  const emp = vars.EMPLEADO || vars.empleado || {};
+
+  let tipoHoras = '01';
+  if (/TRIPLE/.test(code)) tipoHoras = '02';
+  else if (/SENCIL/.test(code)) tipoHoras = '03';
+  else if (/DOBLE/.test(code) || /HORAS_EXTRA/.test(code)) tipoHoras = '01';
+
+  let horas = Number(
+    c.horasExtra ??
+      c.horas ??
+      (tipoHoras === '02'
+        ? inc.horasExtraTriples ?? insumos.horasExtraTriples
+        : tipoHoras === '03'
+          ? inc.horasExtraSencillas ?? insumos.horasExtraSencillas
+          : inc.horasExtraDobles ?? insumos.horasExtraDobles) ??
+      0
+  );
+  if (!(horas > 0) && importePagado > 0) {
+    const horasJornada = Number(emp.horasJornada || emp.atributos?.horasJornada || 8) || 8;
+    const sd = Number(emp.salarioDiario || emp.sueldoDiario || insumos.sueldoDiario || 0);
+    const valorHora = sd > 0 && horasJornada > 0 ? sd / horasJornada : 0;
+    const factor = tipoHoras === '02' ? 3 : tipoHoras === '03' ? 1 : 2;
+    if (valorHora > 0 && factor > 0) {
+      horas = importePagado / (valorHora * factor);
+    }
+  }
+  // XSD nómina12: HorasExtra y Dias son xs:int (no decimales).
+  horas = Math.max(1, Math.round(Number(horas) || 0));
+
+  let dias = Number(c.diasHorasExtra ?? c.dias ?? inc.diasHorasExtra ?? insumos.diasHorasExtra ?? 0);
+  if (!(dias > 0)) {
+    // Estimación conservadora: al menos 1 día; tope 3 h dobles/día típico
+    dias = Math.max(1, Math.min(7, Math.ceil(horas / 3)));
+  }
+  dias = Math.max(1, Math.round(dias));
+
+  return [
+    {
+      Dias: dias,
+      TipoHoras: tipoHoras,
+      HorasExtra: horas,
+      ImportePagado: money(importePagado)
+    }
+  ];
 }
 
 function totalesPercepciones(percepciones) {
@@ -129,7 +284,12 @@ function buildNomina12Context({
   const emp = empleado || {};
   const dom = emp.domicilio || {};
   const banco = emp.datosBancarios || {};
-  const mapped = mapConceptosNomina(conceptos, catalogoMeta);
+  const mapped = mapConceptosNomina(conceptos, catalogoMeta, { recibo, insumosResumen: recibo.insumosResumen });
+  ensureSubsidioEmpleoOtroPago(mapped, {
+    tipoNomina: tipoNominaCfdi(periodo),
+    conceptos,
+    recibo
+  });
 
   const sepData =
     separacionIndemnizacion && separacionIndemnizacion.aplica !== false
@@ -147,19 +307,13 @@ function buildNomina12Context({
     mapped.otrosPagos.reduce((s, o) => s + money(o.Importe), 0)
   );
 
-  const totalPercepciones = money(
-    recibo.totalPercepciones != null
-      ? recibo.totalPercepciones
-      : tPerc.TotalSueldos + totalOtros
-  );
-  const totalDeducciones = money(
-    recibo.totalDeducciones != null
-      ? recibo.totalDeducciones
-      : tDed.TotalOtrasDeducciones + tDed.TotalImpuestosRetenidos
-  );
+  // Totales del complemento = suma de líneas CFDI (no informativos / no patronales).
+  // Evita descuadre SubTotal/Descuento vs detalle y errores PAC (CFDI40999).
+  const totalPercepciones = money(tPerc.TotalSueldos);
+  const totalDeducciones = money(tDed.TotalOtrasDeducciones + tDed.TotalImpuestosRetenidos);
   const subTotal = totalPercepciones;
   const descuento = totalDeducciones;
-  const total = money(recibo.netoPagar != null ? recibo.netoPagar : subTotal - descuento);
+  const total = money(subTotal - descuento + totalOtros);
 
   const fechaPago = periodo.fechaPago || periodo.fechaFin || fechaEmision;
   const fechaIni = periodo.fechaInicio || fechaPago;
@@ -175,13 +329,13 @@ function buildNomina12Context({
     NumSeguridadSocial: String(emp.nss || emp.imss || '00000000000').trim(),
     FechaInicioRelLaboral: ymd(emp.fechaIngreso),
     Antigüedad: emp.antiguedad || antiguedadSat(emp.fechaIngreso, fechaFin),
-    TipoContrato: TIPO_CONTRATO_SAT[String(emp.tipoContrato || '').toLowerCase()] || satCode(emp.tipoContrato, '01'),
-    TipoJornada: satCode(emp.tipoJornada, '01'),
-    TipoRegimen: satCode(emp.tipoRegimen, '02'),
+    TipoContrato: TIPO_CONTRATO_SAT[String(emp.tipoContrato || '').toLowerCase()] || satCode(emp.tipoContrato, '01', 2),
+    TipoJornada: satCode(emp.tipoJornada, '01', 2),
+    TipoRegimen: satCode(emp.tipoRegimen, '02', 2),
     NumEmpleado: String(emp.numEmpleado || recibo.numEmpleado || ''),
     Departamento: String(emp.departamento || emp.departamentoNombre || '').slice(0, 100),
     Puesto: String(emp.puesto || emp.puestoNombre || '').slice(0, 100),
-    RiesgoPuesto: satCode(emp.riesgoPuesto, '1'),
+    RiesgoPuesto: satCode(emp.riesgoPuesto, '1', 1),
     PeriodicidadPago: periodicidadSat(periodo, emp),
     ClaveEntFed: String(emp.entidadFederativa || dom.entidad || emp.entidadNacimiento || 'JAL')
       .slice(0, 3)
@@ -189,9 +343,20 @@ function buildNomina12Context({
   };
 
   const cuenta = String(banco.cuenta || banco.clabe || emp.cuenta || '').replace(/\D/g, '');
-  if (cuenta) nominaReceptor.CuentaBancaria = cuenta.slice(0, 18);
-  const bancoCod = String(banco.bancoCodigo || emp.bancoCodigo || '').replace(/\D/g, '');
-  if (bancoCod) nominaReceptor.Banco = bancoCod.padStart(3, '0').slice(0, 3);
+  if (cuenta.length === 18) {
+    // NOM63: CLABE 18 → sin atributo Banco. NOM64: dígito verificador válido.
+    if (isValidClabe(cuenta)) {
+      nominaReceptor.CuentaBancaria = cuenta;
+    } else {
+      console.warn(
+        `[cfdi] CLABE inválida (NOM64) para emp=${nominaReceptor.NumEmpleado}: se omite CuentaBancaria`
+      );
+    }
+  } else if (cuenta.length >= 10 && cuenta.length <= 18) {
+    nominaReceptor.CuentaBancaria = cuenta.slice(0, 18);
+    const bancoCod = String(banco.bancoCodigo || emp.bancoCodigo || '').replace(/\D/g, '');
+    if (bancoCod) nominaReceptor.Banco = bancoCod.padStart(3, '0').slice(0, 3);
+  }
 
   const sdi = money(emp.sdi || emp.sueldoIntegrado || emp.salarioDiario || 0);
   if (sdi > 0) {
@@ -212,7 +377,7 @@ function buildNomina12Context({
     TotalPercepciones: moneyStr(totalPercepciones),
     TotalDeducciones: moneyStr(totalDeducciones)
   };
-  if (totalOtros > 0) nominaAttrs.TotalOtrosPagos = moneyStr(totalOtros);
+  if (mapped.otrosPagos.length) nominaAttrs.TotalOtrosPagos = moneyStr(totalOtros);
   if (sepData?.aplica) {
     nominaAttrs.TotalSeparacionIndemnizacion = moneyStr(
       sepData.TotalSeparacionIndemnizacion || sepData.TotalPagado
@@ -224,7 +389,7 @@ function buildNomina12Context({
       Version: '4.0',
       Serie: String(serie || ''),
       Folio: String(folio || ''),
-      Fecha: cfdiFecha(fechaEmision),
+      Fecha: cfdiFecha(fechaEmision || new Date()),
       SubTotal: moneyStr(subTotal),
       Descuento: moneyStr(descuento),
       Moneda: 'MXN',
@@ -298,13 +463,24 @@ function toCfdiJson(ctx) {
       TotalSueldos: moneyStr(ctx.nomina.totalesPercepciones.TotalSueldos),
       TotalGravado: moneyStr(ctx.nomina.totalesPercepciones.TotalGravado),
       TotalExento: moneyStr(ctx.nomina.totalesPercepciones.TotalExento),
-      Percepcion: ctx.nomina.percepciones.map((p) => ({
-        TipoPercepcion: p.TipoPercepcion,
-        Clave: p.Clave,
-        Concepto: p.Concepto,
-        ImporteGravado: moneyStr(p.ImporteGravado),
-        ImporteExento: moneyStr(p.ImporteExento)
-      }))
+      Percepcion: ctx.nomina.percepciones.map((p) => {
+        const row = {
+          TipoPercepcion: p.TipoPercepcion,
+          Clave: p.Clave,
+          Concepto: p.Concepto,
+          ImporteGravado: moneyStr(p.ImporteGravado),
+          ImporteExento: moneyStr(p.ImporteExento)
+        };
+        if (Array.isArray(p.HorasExtra) && p.HorasExtra.length) {
+          row.HorasExtra = p.HorasExtra.map((h) => ({
+            Dias: Math.max(1, Math.round(Number(h.Dias) || 1)),
+            TipoHoras: String(h.TipoHoras || '01').padStart(2, '0').slice(-2),
+            HorasExtra: Math.max(1, Math.round(Number(h.HorasExtra) || 0)),
+            ImportePagado: moneyStr(h.ImportePagado)
+          }));
+        }
+        return row;
+      })
     };
     if (ctx.nomina.separacion) {
       nominaNode.Percepciones.SeparacionIndemnizacion = {
@@ -333,12 +509,20 @@ function toCfdiJson(ctx) {
 
   if (ctx.nomina.otrosPagos.length) {
     nominaNode.OtrosPagos = {
-      OtroPago: ctx.nomina.otrosPagos.map((o) => ({
-        TipoOtroPago: o.TipoOtroPago,
-        Clave: o.Clave,
-        Concepto: o.Concepto,
-        Importe: moneyStr(o.Importe)
-      }))
+      OtroPago: ctx.nomina.otrosPagos.map((o) => {
+        const row = {
+          TipoOtroPago: o.TipoOtroPago,
+          Clave: o.Clave,
+          Concepto: o.Concepto,
+          Importe: moneyStr(o.Importe)
+        };
+        if (tipOtroPago(o.TipoOtroPago) === '002') {
+          row.SubsidioAlEmpleo = {
+            SubsidioCausado: moneyStr(o.SubsidioAlEmpleo?.SubsidioCausado ?? 0)
+          };
+        }
+        return row;
+      })
     };
   }
 
@@ -366,12 +550,23 @@ function toCfdiXml(ctx, { incluirTfdSimulado = false, uuidSimulado = '' } = {}) 
   const sepXml = ctx.nomina.separacion ? buildSeparacionIndemnizacionXml(ctx.nomina.separacion) : '';
 
   let percInner = ctx.nomina.percepciones
-    .map(
-      (p) =>
+    .map((p) => {
+      const open =
         `<nomina12:Percepcion TipoPercepcion="${escXml(p.TipoPercepcion)}" Clave="${escXml(p.Clave)}"` +
         ` Concepto="${escXml(p.Concepto)}" ImporteGravado="${moneyStr(p.ImporteGravado)}"` +
-        ` ImporteExento="${moneyStr(p.ImporteExento)}"/>`
-    )
+        ` ImporteExento="${moneyStr(p.ImporteExento)}"`;
+      if (Array.isArray(p.HorasExtra) && p.HorasExtra.length) {
+        const heXml = p.HorasExtra.map(
+          (h) =>
+            `<nomina12:HorasExtra Dias="${Math.max(1, Math.round(Number(h.Dias) || 1))}"` +
+            ` TipoHoras="${escXml(String(h.TipoHoras || '01').padStart(2, '0').slice(-2))}"` +
+            ` HorasExtra="${Math.max(1, Math.round(Number(h.HorasExtra) || 0))}"` +
+            ` ImportePagado="${moneyStr(h.ImportePagado)}"/>`
+        ).join('\n          ');
+        return `${open}>\n          ${heXml}\n        </nomina12:Percepcion>`;
+      }
+      return `${open}/>`;
+    })
     .join('\n        ');
 
   if (ctx.nomina.separacion && !percInner.includes('SeparacionIndemnizacion')) {
@@ -412,11 +607,16 @@ function toCfdiXml(ctx, { incluirTfdSimulado = false, uuidSimulado = '' } = {}) 
   const otrosBlock = ctx.nomina.otrosPagos.length
     ? `<nomina12:OtrosPagos>
         ${ctx.nomina.otrosPagos
-          .map(
-            (o) =>
+          .map((o) => {
+            const open =
               `<nomina12:OtroPago TipoOtroPago="${escXml(o.TipoOtroPago)}" Clave="${escXml(o.Clave)}"` +
-              ` Concepto="${escXml(o.Concepto)}" Importe="${moneyStr(o.Importe)}"/>`
-          )
+              ` Concepto="${escXml(o.Concepto)}" Importe="${moneyStr(o.Importe)}"`;
+            if (tipOtroPago(o.TipoOtroPago) === '002') {
+              const sc = moneyStr(o.SubsidioAlEmpleo?.SubsidioCausado ?? 0);
+              return `${open}>\n          <nomina12:SubsidioAlEmpleo SubsidioCausado="${sc}"/>\n        </nomina12:OtroPago>`;
+            }
+            return `${open}/>`;
+          })
           .join('\n        ')}
       </nomina12:OtrosPagos>`
     : '';

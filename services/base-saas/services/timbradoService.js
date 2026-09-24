@@ -93,13 +93,21 @@ function catalogMapsFromRows(catalogRows) {
   const catalogoMeta = {};
   for (const c of catalogRows || []) {
     const code = String(c.codigo).toUpperCase();
-    catalogoNombres[code] = c.nombre;
+    catalogoNombres[code] = c.nombre || catalogoNombres[code];
+    const prev = catalogoMeta[code] || {};
     catalogoMeta[code] = {
-      nombre: c.nombre,
-      tipo: c.tipo || c.sat?.tipo || '',
-      satTipo: c.sat?.tipo || '',
-      naturaleza: c.naturaleza || c.fiscal?.naturaleza || '',
-      claveSAT: (c.sat && c.sat.clave) || c.claveSAT || ''
+      nombre: c.nombre || prev.nombre,
+      tipo: c.tipo || c.sat?.tipo || prev.tipo || '',
+      satTipo: c.sat?.tipo || prev.satTipo || '',
+      naturaleza: c.naturaleza || c.fiscal?.naturaleza || prev.naturaleza || '',
+      claveSAT: (c.sat && c.sat.clave) || c.claveSAT || prev.claveSAT || '',
+      informativo: Boolean(
+        c.metadata?.informativo ||
+          prev.informativo ||
+          c.naturaleza === 'informativo' ||
+          c.fiscal?.naturaleza === 'informativo'
+      ),
+      metadata: c.metadata || prev.metadata || {}
     };
   }
   // Conceptos de finiquito viven en config (no siempre en concept_catalog).
@@ -126,20 +134,154 @@ function catalogMapsFromRows(catalogRows) {
 }
 
 /**
- * En ambiente de prueba (PAC ambiente=0) usa RFC/razón social de Config PAC.
+ * Registro patronal de pruebas (PAC ambiente=0).
+ * Si el PAC no tiene el campo (docs antiguos), usa el default del catálogo.
+ */
+function registroPatronalPruebaDePac(pac) {
+  const { PAC_SW_DEFAULTS } = require('../config/timbradoCatalog');
+  const raw = String(pac?.registroPatronalTest || PAC_SW_DEFAULTS.registroPatronalTest || 'Y671234510R')
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, '')
+    .slice(0, 11);
+  return raw || 'Y671234510R';
+}
+
+/**
+ * En ambiente de prueba (PAC ambiente=0) usa RFC/razón social / registro patronal de prueba.
+ * Nombres CSD SAT son literales (p.ej. IIA040805DZ4 → "INDISTRIA…" con typo oficial).
  */
 function empresaParaCfdi(empresa, pac) {
   const base = { ...(empresa || {}) };
   if (!pacAmbienteEsPrueba(pac?.ambiente)) return base;
-  const rfcTest = String(pac.rfcSatTest || '').trim().toUpperCase();
-  const nombreTest = String(pac.nombreSatTest || '').trim();
+
+  const { PAC_SW_DEFAULTS } = require('../config/timbradoCatalog');
+  const def = PAC_SW_DEFAULTS || {};
+  const rfcTest = String(pac.rfcSatTest || def.rfcSatTest || '')
+    .trim()
+    .toUpperCase();
+  let nombreTest = String(pac.nombreSatTest || def.nombreSatTest || '').trim();
+  const cpTest = String(pac.codigoPostalSatTest || def.codigoPostalSatTest || '')
+    .replace(/\D/g, '')
+    .slice(0, 5);
+  const rpTest = registroPatronalPruebaDePac(pac);
+
+  // Corrección CFDI40139: typo oficial SAT "INDISTRIA" (no "INDUSTRIA").
+  if (rfcTest === 'IIA040805DZ4') {
+    if (!nombreTest || /INDUSTRIA ILUMINADORA/i.test(nombreTest)) {
+      nombreTest = 'INDISTRIA ILUMINADORA DE ALMACENES';
+    }
+  }
+
   if (rfcTest) {
     base.rfc = rfcTest;
     if (nombreTest) base.razonSocial = nombreTest;
   }
-  if (!base.codigoPostal && !base.cp) {
-    base.codigoPostal = '26015';
+  if (rpTest) {
+    base.registroPatronal = rpTest;
   }
+  const cp = cpTest || (rfcTest === 'IIA040805DZ4' ? '62661' : '') || '26015';
+  base.codigoPostal = cp;
+  base.cp = cp;
+  return base;
+}
+
+/**
+ * Sustituye identidad fiscal del trabajador por el receptor de pruebas del PAC.
+ * Conserva NumEmpleado y el resto del cálculo (percepciones/deducciones/SDI).
+ * En ambiente de prueba también fuerza el registro patronal de prueba del PAC.
+ */
+function empleadoParaCfdi(empleado, pac) {
+  const base = { ...(empleado || {}) };
+
+  if (pacAmbienteEsPrueba(pac?.ambiente)) {
+    base.registroPatronal = registroPatronalPruebaDePac(pac);
+  }
+
+  if (!pac?.usarReceptorPrueba) return base;
+
+  const { RECEPTOR_PRUEBA_DEFAULTS, RECEPTORES_PRUEBA_SAT } = require('../config/timbradoCatalog');
+  const def = RECEPTOR_PRUEBA_DEFAULTS || {};
+  const catalog = RECEPTORES_PRUEBA_SAT || {};
+
+  let rfc = String(pac.rfcReceptorTest || def.rfc || '')
+    .trim()
+    .toUpperCase();
+  // NOM8: receptor de nómina debe ser persona física (RFC longitud 13).
+  if (rfc.length !== 13) {
+    console.warn(
+      `[timbrado] receptor prueba RFC="${rfc}" len=${rfc.length} no es PF (13). Usando ${def.rfc}`
+    );
+    rfc = String(def.rfc || 'XOJI740919U48').toUpperCase();
+  }
+
+  const known = catalog[rfc] || (rfc === String(def.rfc || '').toUpperCase() ? def : null);
+  const nombre = String(
+    (known && known.nombre) || pac.nombreReceptorTest || def.nombre || ''
+  ).trim();
+  const regimen = String(
+    (known && known.regimenFiscal) || pac.regimenReceptorTest || def.regimenFiscal || '605'
+  )
+    .trim()
+    .replace(/\D/g, '')
+    .padStart(3, '0')
+    .slice(-3);
+  const cp = String(
+    (known && known.codigoPostal) || pac.cpReceptorTest || def.codigoPostal || '76028'
+  )
+    .replace(/\D/g, '')
+    .slice(0, 5)
+    .padStart(5, '0');
+  const nss = String(pac.nssReceptorTest || def.nss || '12345678901')
+    .replace(/\D/g, '')
+    .slice(0, 11)
+    .padStart(11, '0');
+  const curp = String(
+    (known && known.curp) || pac.curpReceptorTest || def.curp || 'XEXX010101HNEXXXA4'
+  )
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, '')
+    .slice(0, 18);
+  const tipoContrato = String(pac.tipoContratoReceptorTest || def.tipoContrato || '01')
+    .replace(/\D/g, '')
+    .padStart(2, '0')
+    .slice(-2);
+  const tipoRegimen = String(pac.tipoRegimenReceptorTest || def.tipoRegimen || '02')
+    .replace(/\D/g, '')
+    .padStart(2, '0')
+    .slice(-2);
+
+  if (!known) {
+    console.warn(
+      `[timbrado] receptor prueba RFC=${rfc} CP=${cp}: si no coincide con Constancia SAT → CFDI40147/40145. ` +
+        `Sandbox recomendado: ${def.rfc} / ${def.nombre} / CP ${def.codigoPostal}`
+    );
+  }
+
+  if (rfc) base.rfc = rfc;
+  if (nombre) {
+    base.nombre = nombre;
+    base.firstName = nombre;
+    base.lastName = '';
+  }
+  if (regimen) base.regimenFiscal = regimen;
+  if (cp) {
+    base.codigoPostal = cp;
+    if (!base.domicilio || typeof base.domicilio !== 'object') {
+      base.domicilio = { ...(base.domicilio || {}), codigoPostal: cp };
+    } else {
+      base.domicilio = { ...base.domicilio, codigoPostal: cp };
+    }
+  }
+  if (nss) {
+    base.nss = nss;
+    base.imss = nss;
+  }
+  if (curp) base.curp = curp;
+  if (tipoContrato) base.tipoContrato = tipoContrato;
+  if (tipoRegimen) base.tipoRegimen = tipoRegimen;
+  // numEmpleado, sdi, depto, puesto y montos del recibo se conservan
   return base;
 }
 
@@ -418,7 +560,22 @@ async function procesarLote({ tenantId, empresaId, empresa, loteId, recibosByKey
   }
 
   const catalogRows = await Catalog.find({}).select('codigo nombre tipo naturaleza claveSAT sat fiscal').lean();
-  const { catalogoNombres, catalogoMeta } = catalogMapsFromRows(catalogRows);
+  // Complementar con conceptos de nómina (naturaleza informativo, flags) — fuente de verdad del motor
+  let nominaConceptos = [];
+  try {
+    const getConceptoNominaModel = require('../models/conceptoNomina');
+    const ConceptoNomina = await getConceptoNominaModel();
+    nominaConceptos = await ConceptoNomina.find({ tenantId })
+      .select('codigo nombre tipo naturaleza claveSAT sat fiscal metadata')
+      .lean();
+  } catch (_) {
+    /* ignore */
+  }
+  const { catalogoNombres, catalogoMeta } = catalogMapsFromRows([
+    ...catalogRows,
+    ...nominaConceptos
+  ]);
+
 
   let timbrados = 0;
   let errores = 0;
@@ -446,10 +603,11 @@ async function procesarLote({ tenantId, empresaId, empresa, loteId, recibosByKey
       let cfdiPayload = null;
       const sepData = src ? await resolverSeparacionIndemnizacion(tenantId, src) : { aplica: false };
       const empresaCfdi = empresaParaCfdi(empresa, pac);
+      const empleadoCfdi = empleadoParaCfdi(src?.empleadoSnap || {}, pac);
 
       cfdiPayload = buildCfdiNominaPayload({
         empresa: empresaCfdi,
-        empleado: src?.empleadoSnap || {},
+        empleado: empleadoCfdi,
         periodo: { ...periodo, ...(src?.periodoSnap || {}) },
         recibo: src || { netoPagar: item.netoPagar, nombre: item.nombre, numEmpleado: item.numEmpleado },
         conceptos: src?.conceptos || [],
@@ -472,9 +630,9 @@ async function procesarLote({ tenantId, empresaId, empresa, loteId, recibosByKey
           `[timbrado] emp=${item.numEmpleado} formato=${formatoStamp} url=${urlStamp}`
         );
         console.log(
-          `[timbrado] emisor.Rfc="${cfdiPayload?.json?.Emisor?.Rfc || ''}" ` +
-            `receptor.Rfc="${cfdiPayload?.json?.Receptor?.Rfc || ''}" ` +
-            `empresa.rfc="${empresa?.rfc || ''}"`
+          `[timbrado] Fecha CFDI=${cfdiPayload?.json?.Fecha || cfdiPayload?.ctx?.comprobante?.Fecha || ''} ` +
+            `emisor.Rfc="${cfdiPayload?.json?.Emisor?.Rfc || ''}" ` +
+            `receptor.Rfc="${cfdiPayload?.json?.Receptor?.Rfc || ''}"`
         );
         if (formatoStamp === 'XML') {
           console.log('[timbrado] XML a enviar:\n', cfdiPayload.xml);
@@ -485,13 +643,24 @@ async function procesarLote({ tenantId, empresaId, empresa, loteId, recibosByKey
         const stamp = await timbrarCfdiSw({
           formato: formatoStamp,
           urlTimbrado: urlStamp,
+          urlTimbradoXml: pac.urlTimbradoXml || '',
           token,
           jsonPayload: cfdiPayload.json,
           xmlPayload: cfdiPayload.xml,
           timeoutMs: (pac.timeout || 30) * 1000
         });
         uuid = stamp.uuid;
-        xmlRaw = stamp.xml || cfdiPayload.xml;
+        // Preferir XML timbrado del PAC (data.cfdi). No usar el XML local sin TFD si el PAC sí devolvió cfdi.
+        xmlRaw = stamp.xml || '';
+        if (!xmlRaw) {
+          console.warn(
+            `[timbrado] PAC uuid=${uuid} sin data.cfdi; se usará XML local (sin garantizar TFD embebido)`
+          );
+          xmlRaw = cfdiPayload.xml;
+        }
+        console.log(
+          `[timbrado] OK uuid=${uuid} xmlLen=${String(xmlRaw || '').length} fecha=${stamp.fechaTimbrado || ''}`
+        );
         if (stamp.fechaTimbrado) {
           const ft = new Date(stamp.fechaTimbrado);
           if (!Number.isNaN(ft.getTime())) item.fechaTimbrado = ft;
@@ -524,11 +693,11 @@ async function procesarLote({ tenantId, empresaId, empresa, loteId, recibosByKey
       let pdfHtml = '';
       if (plantilla && src) {
         const ctx = buildReciboPdfContext({
-          empresa,
+          empresa: empresaCfdi,
           empleado: {
-            ...src.empleadoSnap,
-            numEmpleado: item.numEmpleado,
-            nombre: item.nombre
+            ...empleadoCfdi,
+            numEmpleado: item.numEmpleado || empleadoCfdi.numEmpleado,
+            nombre: empleadoCfdi.nombre || item.nombre
           },
           periodo: { ...periodo, ...(src.periodoSnap || {}) },
           recibo: src,

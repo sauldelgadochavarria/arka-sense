@@ -1,0 +1,79 @@
+<%- include('../../Partials/layout-top', { title: 'Descuentos programados', session }) %>
+<div class="page-header">
+  <h1>Descuentos programados</h1>
+  <p class="page-subtitle">
+    Administración de descuentos por trabajador con saldo, vigencia y aplicación automática en el cálculo de nómina.
+    El CFDI solo refleja lo que el motor determina.
+  </p>
+</div>
+
+<div class="toolbar">
+  <% if (canEdit) { %>
+  <a class="btn btn-primary" href="/nomina/descuentos-programados/nuevo">+ Nuevo descuento</a>
+  <a class="btn" href="/nomina/descuentos-programados/config">Configuración por subsidiaria</a>
+  <% } %>
+  <a class="btn" href="/nomina">Nómina</a>
+  <a class="btn" href="/ayuda/descuentos-programados-nomina">Ayuda</a>
+</div>
+
+<%- include('./_ayuda') %>
+
+<% if (configEmpresa && configEmpresa.moduloActivo) { %>
+<p class="muted">Módulo activo (config empresa). Conceptos habilitados en catálogo: <%= (conceptos || []).length %><% if (!(configEmpresa.conceptos || []).length) { %> · <span class="alert" style="display:inline;padding:0.15rem 0.4rem">Lista de config vacía → se usan todos los del catálogo con flag «permite»</span><% } else { %> · en config: <%= configEmpresa.conceptos.length %><% } %>.</p>
+<% } else { %>
+<p class="alert">El módulo está deshabilitado para la empresa. Actívalo en <a href="/nomina/descuentos-programados/config">configuración</a> y marca los conceptos (D340, D450…) para que se apliquen en el cálculo.</p>
+<% } %>
+
+<form method="get" class="toolbar" style="gap:0.5rem;flex-wrap:wrap">
+  <label>Estatus
+    <select name="estatus">
+      <option value="">Todos</option>
+      <% ['activo','suspendido','cancelado','liquidado'].forEach(function(e) { %>
+      <option value="<%= e %>" <%= filtros.estatus === e ? 'selected' : '' %>><%= e %></option>
+      <% }) %>
+    </select>
+  </label>
+  <label>Concepto
+    <select name="concepto">
+      <option value="">Todos</option>
+      <% (conceptos || []).forEach(function(c) { %>
+      <option value="<%= c.codigo %>" <%= filtros.conceptoCodigo === c.codigo ? 'selected' : '' %>><%= c.codigo %> — <%= c.nombre %></option>
+      <% }) %>
+    </select>
+  </label>
+  <button type="submit" class="btn">Filtrar</button>
+</form>
+
+<% if (!(items || []).length) { %>
+<p class="muted">No hay descuentos programados con esos filtros.</p>
+<% } else { %>
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>Empleado</th>
+      <th>Concepto</th>
+      <th>Modalidad</th>
+      <th>Importe/periodo</th>
+      <th>Saldo</th>
+      <th>Pagos</th>
+      <th>Estatus</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <% items.forEach(function(d) { %>
+    <tr>
+      <td><%= d.empleadoLabel %></td>
+      <td><%= d.conceptoCodigo %></td>
+      <td><%= d.modalidad %></td>
+      <td>$<%= money(d.importePorPeriodo) %></td>
+      <td>$<%= money(d.saldoPendiente) %></td>
+      <td><%= d.pagosAplicados %><%= d.numeroPagos != null ? ' / ' + d.numeroPagos : '' %></td>
+      <td><%= d.estatus %></td>
+      <td><a href="/nomina/descuentos-programados/<%= d._id %>">Ver</a></td>
+    </tr>
+    <% }) %>
+  </tbody>
+</table>
+<% } %>
+<%- include('../../Partials/layout-bottom') %>

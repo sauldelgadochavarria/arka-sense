@@ -815,6 +815,14 @@ async function seedNominaMenus(Menu, adminRoleId) {
     orden: 374,
     requiredFeatureKeys: ['nomina']
   });
+  await upsertMenuNode(Menu, {
+    ...common,
+    menuPrincipal: 'Descuentos programados',
+    rutaApp: '/nomina/descuentos-programados',
+    parentId: calculoId,
+    orden: 375,
+    requiredFeatureKeys: ['nomina']
+  });
 
   const timbradoId = await upsertMenuNode(Menu, {
     ...common,

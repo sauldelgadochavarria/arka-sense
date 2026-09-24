@@ -24,6 +24,14 @@ const SECCIONES_NOMINA = [
     estado: 'activo'
   },
   {
+    slug: 'descuentos-programados',
+    titulo: 'Descuentos programados',
+    descripcion:
+      'Conceptos, saldos y aplicación automática configurable por subsidiaria (antes del CFDI).',
+    ruta: '/nomina/descuentos-programados',
+    estado: 'activo'
+  },
+  {
     slug: 'configuracion',
     titulo: 'Configuración',
     descripcion: 'Tablas ISR, parámetros UMA, salario mínimo y catálogo SAT.',

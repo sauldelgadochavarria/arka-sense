@@ -1,0 +1,27 @@
+<details class="help-panel" open style="margin:1rem 0;padding:0.85rem 1rem;border:1px solid #d5deea;border-radius:8px;background:#f4f7fb">
+  <summary style="cursor:pointer;font-weight:600">Cómo funciona (con ejemplos)</summary>
+  <div class="muted" style="margin-top:0.75rem;line-height:1.45">
+    <p style="margin:0 0 0.5rem">
+      El CFDI <strong>solo refleja</strong> lo que el motor ya determinó.
+      Flujo: <em>config subsidiaria → descuentos del trabajador → cálculo (saldo/reglas) → movimientos → CFDI</em>.
+    </p>
+    <ol style="margin:0 0 0.75rem;padding-left:1.25rem">
+      <li><strong>Activa</strong> el módulo y los conceptos en Configuración.</li>
+      <li><strong>Registra</strong> el descuento por empleado (importe, saldo, vigencia).</li>
+      <li>Al <strong>calcular el período</strong>, se aplica y se guarda historial.</li>
+    </ol>
+    <p style="margin:0 0 0.35rem"><strong>Ejemplo · préstamo quincenal</strong></p>
+    <ul style="margin:0 0 0.75rem;padding-left:1.25rem">
+      <li>Concepto <code>D450</code> · TipoDeducción SAT <code>004</code></li>
+      <li>Saldo \$5,664 · cuota \$566.40 por quincena → cada nómina baja el saldo.</li>
+    </ul>
+    <p style="margin:0 0 0.35rem"><strong>Ejemplo · parcial</strong></p>
+    <ul style="margin:0 0 0.75rem;padding-left:1.25rem">
+      <li>Programado \$566.40, neto disponible \$400 → aplica \$400, deja saldo \$166.40.</li>
+    </ul>
+    <p style="margin:0">
+      Guía completa:
+      <a href="/ayuda/descuentos-programados-nomina">Ayuda · Descuentos programados</a>
+    </p>
+  </div>
+</details>

@@ -14,6 +14,9 @@ const SAT_CLAVE_FALLBACK = {
   DED_FONDO_AHORRO: '004',
   PREMIO_ASISTENCIA: '010',
   HORAS_EXTRA: '019',
+  HORAS_EXTRA_DOBLES: '019',
+  HORAS_EXTRA_TRIPLES: '019',
+  HORAS_EXTRA_SENCILLAS: '019',
   AGUINALDO: '002',
   PRIMA_VACACIONAL: '021',
   VACACIONES: '001',
@@ -89,18 +92,55 @@ function ymd(d) {
   return x.toISOString().slice(0, 10);
 }
 
-/** Fecha CFDI 4.0 sin zona (local MX aproximada vía ISO slice). */
+/** Fecha-hora CFDI 4.0 en zona América/México_City (sin offset), p.ej. 2026-09-23T19:49:51 */
 function cfdiFecha(d) {
-  const x = d instanceof Date ? d : new Date();
-  return x.toISOString().slice(0, 19);
+  const x = d instanceof Date ? d : d ? new Date(d) : new Date();
+  const safe = Number.isNaN(x.getTime()) ? new Date() : x;
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Mexico_City',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23'
+  }).formatToParts(safe);
+  const get = (type) => parts.find((p) => p.type === type)?.value || '00';
+  return `${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}:${get('second')}`;
 }
 
-function satCode(v, fallback = '') {
-  const s = String(v || '').trim();
-  const m = s.match(/^(\d{2,3})/);
-  if (m) return m[1].padStart(3, '0').slice(-3);
-  if (/^\d{2,3}$/.test(s)) return s.padStart(3, '0').slice(-3);
-  return fallback;
+/**
+ * Dígito verificador CLABE (NOM64).
+ * @returns {boolean}
+ */
+function isValidClabe(clabe) {
+  const d = String(clabe || '').replace(/\D/g, '');
+  if (d.length !== 18 || !/^\d{18}$/.test(d)) return false;
+  const weights = [3, 7, 1];
+  let sum = 0;
+  for (let i = 0; i < 17; i += 1) {
+    sum += (Number(d[i]) * weights[i % 3]) % 10;
+  }
+  const expected = (10 - (sum % 10)) % 10;
+  return Number(d[17]) === expected;
+}
+
+/**
+ * Normaliza clave numérica SAT.
+ * @param {string|number} v
+ * @param {string} fallback
+ * @param {number} [len=3] longitud (RégimenFiscal=3; TipoContrato/TipoRegimen/TipoJornada=2)
+ */
+function satCode(v, fallback = '', len = 3) {
+  const width = Number(len) > 0 ? Number(len) : 3;
+  const digits = String(v || '')
+    .trim()
+    .replace(/\D/g, '');
+  if (digits) return digits.padStart(width, '0').slice(-width);
+  const fb = String(fallback || '').replace(/\D/g, '');
+  if (fb) return fb.padStart(width, '0').slice(-width);
+  return fallback || '';
 }
 
 function escXml(s) {
@@ -148,15 +188,56 @@ function periodicidadSat(periodo = {}, empleado = {}) {
   return '04';
 }
 
+/** Conceptos que nunca van al complemento CFDI Nómina 1.2 (informativos / acumuladores / motor). */
+const CFDI_SKIP_CODIGOS = new Set([
+  'ISR_SAT',
+  'ISR_PROYECTADO',
+  'ISR_AJUSTADO',
+  'ISR_DIFERENCIA',
+  'IMSS_PATRONAL',
+  'NETO_PAGAR',
+  'PERCEPCIONES_TOTALES',
+  'DEDUCCIONES_TOTALES',
+  'PERCEPCIONES_GRAVADAS',
+  'PERCEPCIONES_EXENTAS',
+  'BASE_ISR',
+  'BASE_IMSS'
+]);
+
+function esCodigoCfdiSkip(code) {
+  const c = String(code || '').toUpperCase();
+  if (!c) return false;
+  if (CFDI_SKIP_CODIGOS.has(c)) return true;
+  // Líneas del motor ISR dual (cualquier ISR_* excepto el ISR fiscal del recibo)
+  if (c.startsWith('ISR_') && c !== 'ISR') return true;
+  // Cuotas / aportaciones patronales (no restan del trabajador)
+  if (c.includes('PATRONAL')) return true;
+  return false;
+}
+
 function clasificarConcepto(c, meta = {}) {
   const code = String(c.conceptoCodigo || c.codigo || '').toUpperCase();
-  if (['ISR_SAT', 'NETO_PAGAR', 'PERCEPCIONES_TOTALES', 'DEDUCCIONES_TOTALES'].includes(code)) {
+  if (esCodigoCfdiSkip(code)) return 'skip';
+
+  const nat = String(
+    c.naturaleza ||
+      c.fiscal?.naturaleza ||
+      meta.naturaleza ||
+      meta.fiscal?.naturaleza ||
+      ''
+  ).toLowerCase();
+  if (
+    nat === 'informativo' ||
+    c.metadata?.informativo === true ||
+    meta.informativo === true ||
+    meta.metadata?.informativo === true
+  ) {
     return 'skip';
   }
-  const tipo = String(c.tipo || meta.tipo || '').toLowerCase();
-  const nat = String(meta.naturaleza || '').toLowerCase();
-  if (tipo.includes('deduc') || nat === 'deduccion' || c.tipo === 'deduccion') return 'deduccion';
-  if (tipo.includes('otro') || nat === 'otro_pago') return 'otro_pago';
+
+  const tipo = String(c.tipo || meta.tipo || meta.satTipo || '').toLowerCase();
+  if (tipo.includes('deduc') || c.tipo === 'deduccion') return 'deduccion';
+  if (tipo.includes('otro') || nat === 'otro_pago' || c.tipo === 'otro_pago') return 'otro_pago';
   return 'percepcion';
 }
 
@@ -212,9 +293,12 @@ function exentoConcepto(c) {
 function urlTimbradoParaFormato(urlTimbrado, formato) {
   const url = String(urlTimbrado || '').trim();
   if (String(formato).toUpperCase() !== 'XML') return url;
-  // JSON jsontoxml (v3) → emisión XML multipart (sin prefijo v3)
+  // JSON → XML multipart (docs SW: /v4/cfdi33/issue/v4)
   if (url.includes('/v3/cfdi33/issue/json/')) {
-    return url.replace('/v3/cfdi33/issue/json/', '/cfdi33/issue/');
+    return url.replace('/v3/cfdi33/issue/json/', '/v4/cfdi33/issue/');
+  }
+  if (url.includes('/v4/cfdi33/issue/json/')) {
+    return url.replace('/v4/cfdi33/issue/json/', '/v4/cfdi33/issue/');
   }
   if (url.includes('/issue/json/')) return url.replace('/issue/json/', '/issue/');
   if (url.includes('/json/v4')) return url.replace('/json/v4', '/v4');
@@ -236,11 +320,14 @@ module.exports = {
   tipoNominaCfdi,
   periodicidadSat,
   clasificarConcepto,
+  esCodigoCfdiSkip,
+  CFDI_SKIP_CODIGOS,
   claveSatDe,
   claveInternaDe,
   nombreConceptoDe,
   importeConcepto,
   gravadoConcepto,
   exentoConcepto,
+  isValidClabe,
   urlTimbradoParaFormato
 };

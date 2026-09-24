@@ -81,6 +81,7 @@ Las fórmulas de fondo deben estar vigentes en la fecha de inicio del período.
 Si el período es anterior a la vigencia, el motor **no** las aplica (síntoma: check en empleado pero sin líneas en el recibo).
 `
   },
+  require('./seed-ayuda-descuentos-programados').ARTICULO,
   {
     slug: 'conceptos-nomina-basicos',
     titulo: 'Conceptos básicos de nómina',

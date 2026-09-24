@@ -1263,6 +1263,18 @@ async function saveConceptoPropsAction(req, res) {
         codigoExterno: req.body.codigoExterno,
         cuentaContable: req.body.cuentaContable,
         clavePrenomina: req.body.clavePrenomina,
+        descuentoProgramado: {
+          permite: req.body.dpPermite === 'on' || req.body.dpPermite === '1' || req.body.dpPermite === true,
+          permiteSaldo:
+            req.body.dpPermiteSaldo === 'on' ||
+            req.body.dpPermiteSaldo === '1' ||
+            req.body.dpPermiteSaldo === true,
+          permiteParcial:
+            req.body.dpPermiteParcial === 'on' ||
+            req.body.dpPermiteParcial === '1' ||
+            req.body.dpPermiteParcial === true,
+          tipoInterno: req.body.dpTipoInterno || ''
+        },
         aplicaTiposEmpleado,
         aplicaTiposPeriodo,
         aplicaTipoNomina,

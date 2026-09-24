@@ -77,6 +77,36 @@ function pacFromBody(body, tenantId, empresaId) {
     templateTraslado: trimString(body.templateTraslado),
     rfcSatTest: trimUpper(body.rfcSatTest),
     nombreSatTest: trimString(body.nombreSatTest),
+    codigoPostalSatTest: String(trimString(body.codigoPostalSatTest) || '62661')
+      .replace(/\D/g, '')
+      .slice(0, 5)
+      .padStart(5, '0'),
+    registroPatronalTest: trimUpper(body.registroPatronalTest)
+      .replace(/\s+/g, '')
+      .slice(0, 11) || 'Y671234510R',
+    usarReceptorPrueba: parseCheckbox(body, 'usarReceptorPrueba'),
+    rfcReceptorTest: trimUpper(body.rfcReceptorTest) || 'XOJI740919U48',
+    nombreReceptorTest: trimString(body.nombreReceptorTest) || 'INGRID XODAR JIMENEZ',
+    regimenReceptorTest: trimString(body.regimenReceptorTest) || '605',
+    cpReceptorTest: String(trimString(body.cpReceptorTest) || '76028')
+      .replace(/\D/g, '')
+      .slice(0, 5)
+      .padStart(5, '0'),
+    nssReceptorTest: String(trimString(body.nssReceptorTest) || '12345678901')
+      .replace(/\D/g, '')
+      .slice(0, 11)
+      .padStart(11, '0'),
+    curpReceptorTest: trimUpper(body.curpReceptorTest)
+      .replace(/\s+/g, '')
+      .slice(0, 18) || 'XEXX010101HNEXXXA4',
+    tipoContratoReceptorTest: String(trimString(body.tipoContratoReceptorTest) || '01')
+      .replace(/\D/g, '')
+      .padStart(2, '0')
+      .slice(-2),
+    tipoRegimenReceptorTest: String(trimString(body.tipoRegimenReceptorTest) || '02')
+      .replace(/\D/g, '')
+      .padStart(2, '0')
+      .slice(-2),
     notas: trimString(body.notas),
     modoReal: parseCheckbox(body, 'modoReal')
   };

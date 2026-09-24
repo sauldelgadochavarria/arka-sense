@@ -55,9 +55,27 @@ const pacConfigSchema = new mongoose.Schema(
     templateEgreso: { type: String, trim: true, default: '' },
     templatePago: { type: String, trim: true, default: '' },
     templateTraslado: { type: String, trim: true, default: '' },
-    /** Datos de prueba SAT */
+    /** Datos de prueba SAT — emisor (empresa) */
     rfcSatTest: { type: String, trim: true, uppercase: true, default: '' },
     nombreSatTest: { type: String, trim: true, default: '' },
+    /** CP del emisor de prueba (LugarExpedicion). IIA040805DZ4 → 62661. */
+    codigoPostalSatTest: { type: String, trim: true, default: '62661' },
+    /** Registro patronal IMSS de pruebas (se usa en ambiente PAC=0). */
+    registroPatronalTest: { type: String, trim: true, uppercase: true, default: 'Y671234510R' },
+    /**
+     * Receptor (trabajador) de pruebas.
+     * Si usarReceptorPrueba=true, el CFDI/recibo usa RFC/nombre/régimen/CP de prueba
+     * pero conserva NumEmpleado y el resto del cálculo de nómina.
+     */
+    usarReceptorPrueba: { type: Boolean, default: false },
+    rfcReceptorTest: { type: String, trim: true, uppercase: true, default: 'XOJI740919U48' },
+    nombreReceptorTest: { type: String, trim: true, default: 'INGRID XODAR JIMENEZ' },
+    regimenReceptorTest: { type: String, trim: true, default: '605' },
+    cpReceptorTest: { type: String, trim: true, default: '76028' },
+    nssReceptorTest: { type: String, trim: true, default: '12345678901' },
+    curpReceptorTest: { type: String, trim: true, uppercase: true, default: 'XEXX010101HNEXXXA4' },
+    tipoContratoReceptorTest: { type: String, trim: true, default: '01' },
+    tipoRegimenReceptorTest: { type: String, trim: true, default: '02' },
     notas: { type: String, trim: true, default: '' },
     totalTimbrados: { type: Number, default: 0, min: 0 },
     ultimaFechaUso: { type: Date, default: null },

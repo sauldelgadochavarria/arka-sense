@@ -1247,6 +1247,15 @@ async function actualizarConcepto(tenantId, codigo, data, { empresaId = null, sy
   }
   if (data.codigoExterno !== undefined) patch.codigoExterno = String(data.codigoExterno || '').trim();
   if (data.cuentaContable !== undefined) patch.cuentaContable = String(data.cuentaContable || '').trim();
+  if (data.descuentoProgramado != null && typeof data.descuentoProgramado === 'object') {
+    const dp = data.descuentoProgramado;
+    patch.descuentoProgramado = {
+      permite: Boolean(dp.permite),
+      permiteSaldo: Boolean(dp.permiteSaldo),
+      permiteParcial: Boolean(dp.permiteParcial),
+      tipoInterno: String(dp.tipoInterno || '').trim()
+    };
+  }
   if (data.clavePrenomina !== undefined) {
     patch.clavePrenomina = String(data.clavePrenomina || '').trim().toUpperCase();
   }

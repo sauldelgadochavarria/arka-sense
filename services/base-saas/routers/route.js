@@ -229,6 +229,7 @@ const envioCorreoController = require('../controllers/envioCorreoController');
 const correoConfigController = require('../controllers/correoConfigController');
 const gestionDocumentalController = require('../controllers/gestionDocumentalController');
 const finiquitoController = require('../controllers/finiquitoController');
+const descuentoProgramadoController = require('../controllers/descuentoProgramadoController');
 const uploadDocumentoMem = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 25 * 1024 * 1024 }
@@ -265,6 +266,29 @@ router.post('/nomina/finiquitos/:id/recalcular', finiquitoController.recalcularA
 router.post('/nomina/finiquitos/:id/eliminar', finiquitoController.eliminarAction);
 router.post('/nomina/finiquitos/:id/emitir-periodo', finiquitoController.emitirPeriodo);
 router.get('/nomina/finiquitos/:id', finiquitoController.show);
+
+router.get('/nomina/descuentos-programados', descuentoProgramadoController.index);
+router.get('/nomina/descuentos-programados/config', descuentoProgramadoController.configForm);
+router.post('/nomina/descuentos-programados/config', descuentoProgramadoController.saveConfig);
+router.get('/nomina/descuentos-programados/nuevo', descuentoProgramadoController.nuevoForm);
+router.post('/nomina/descuentos-programados', descuentoProgramadoController.create);
+router.get('/nomina/descuentos-programados/:id', descuentoProgramadoController.show);
+router.post(
+  '/nomina/descuentos-programados/:id/suspender',
+  descuentoProgramadoController.suspender
+);
+router.post(
+  '/nomina/descuentos-programados/:id/reactivar',
+  descuentoProgramadoController.reactivar
+);
+router.post(
+  '/nomina/descuentos-programados/:id/cancelar',
+  descuentoProgramadoController.cancelar
+);
+router.post(
+  '/nomina/descuentos-programados/:id/ajuste-saldo',
+  descuentoProgramadoController.ajusteSaldo
+);
 
 router.get('/nomina/sua', suaExportController.index);
 router.get('/nomina/sua/descargar', suaExportController.download);

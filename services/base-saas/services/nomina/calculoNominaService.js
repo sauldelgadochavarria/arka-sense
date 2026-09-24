@@ -46,6 +46,7 @@ const {
   sincronizarAcumuladoresDesdeConfig
 } = require('./fiscalDesgloseService');
 const { diasCalendarioInclusive } = require('../../libs/timeHelpers');
+const descuentoProgramadoService = require('./descuentoProgramadoService');
 
 function calcularAntiguedadAnios(fechaIngreso, fechaReferencia) {
   if (!fechaIngreso) return 0;
@@ -102,6 +103,13 @@ async function obtenerFormulasVigentes(tenantId, periodo, fechaRef = null) {
 }
 
 async function limpiarCalculoPeriodo(tenantId, periodoId) {
+  // Revertir saldos de descuentos programados aplicados en este período antes de borrar recibos
+  try {
+    await descuentoProgramadoService.revertirAplicacionesPeriodo(tenantId, periodoId);
+  } catch (err) {
+    console.warn('[descuentoProgramado] revertir:', err.message);
+  }
+
   const ReciboNomina = await getReciboNominaModel();
   const ConceptoAplicado = await getConceptoAplicadoModel();
   const recibos = await ReciboNomina.find({ tenantId, periodoId }).select('_id').lean();
@@ -512,6 +520,27 @@ async function calcularReciboEmpleado(
     };
   }
 
+  // Descuentos programados (config subsidiaria → saldo/reglas → líneas). CFDI solo refleja el resultado.
+  let pendientesDescuentos = [];
+  try {
+    const empresaId = periodo.empresaId || empleado.empresaId;
+    const { pendientesConfirmacion } =
+      await descuentoProgramadoService.calcularAplicacionesParaEmpleado({
+        tenantId: periodo.tenantId,
+        empresaId,
+        subsidiariaId: empleado.subsidiariaId || periodo.subsidiariaId || null,
+        empleado,
+        periodo,
+        detalle,
+        contexto,
+        conceptosByCodigo,
+        informativos
+      });
+    pendientesDescuentos = pendientesConfirmacion || [];
+  } catch (err) {
+    console.warn('[descuentoProgramado] calcular:', empleado.numEmpleado || empleado._id, err.message);
+  }
+
   // Totales y acumuladores desde config de conceptos (tipo + naturaleza), no fórmulas hardcodeadas
   const totales = calcularTotalesDesdeConfig(detalle, informativos);
   sincronizarAcumuladoresDesdeConfig(detalle, contexto, { bases, totales });
@@ -577,6 +606,19 @@ async function calcularReciboEmpleado(
       versionFormula: d.versionFormula || 1
     }))
   );
+
+  if (pendientesDescuentos.length) {
+    try {
+      await descuentoProgramadoService.confirmarAplicaciones(pendientesDescuentos, {
+        tenantId: periodo.tenantId,
+        periodoId: periodo._id,
+        reciboId: recibo._id,
+        usuario: { userId: 'sistema', userLabel: 'Cálculo de nómina' }
+      });
+    } catch (err) {
+      console.warn('[descuentoProgramado] confirmar:', err.message);
+    }
+  }
 
   return recibo;
 }
