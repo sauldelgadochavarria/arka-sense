@@ -158,9 +158,10 @@ async function seedAyudaMenus(Menu) {
   const catId = await upsertMenuNode(Menu, {
     menuPrincipal: 'Ayuda',
     esCategoria: true,
-    orden: 95,
+    orden: 92,
     activo: true,
     requiredFeatureKeys: ['core'],
+    modulePackage: 'nucleo',
     roles: []
   });
 

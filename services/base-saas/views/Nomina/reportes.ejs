@@ -119,7 +119,7 @@
     <tr>
       <% (r.columns || []).forEach(function(c) { %>
       <td class="<%= c.type === 'money' || c.type === 'number' ? 'num' : '' %>">
-        <% if (c.type === 'money') { %>$<%= formatMoney(row[c.key]) %><% } else { %><%= row[c.key] != null ? row[c.key] : '' %><% } %>
+        <% if (c.type === 'money') { %>$<%= formatMoney(row[c.key]) %><% } else if (c.type === 'link' && row[c.key]) { %><a href="<%= row[c.key] %>"><%= c.linkLabel || 'Ver' %></a><% } else { %><%= row[c.key] != null ? row[c.key] : '' %><% } %>
       </td>
       <% }); %>
     </tr>

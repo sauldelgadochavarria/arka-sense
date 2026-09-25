@@ -3,6 +3,13 @@
   const ff = (typeof featureFlags !== 'undefined' && featureFlags) ? featureFlags : {};
   const hasNomina = !!ff.nomina;
   const hasGestDoc = !!ff.gestion_documental;
+  const hasPersonal = ff.personal !== false;
+  const hasAsistencia = !!ff.asistencia;
+  const hasIncidencias = !!ff.incidencias;
+  const hasPrenomina = !!ff.prenomina;
+  const hasIntegraciones = !!ff.integraciones;
+  const hasReportes = !!ff.reportes;
+  const hasConfig = !!ff.config_admin;
 %>
 
 <div class="page-header">
@@ -61,7 +68,7 @@
 <section class="dashboard-kpis dash-section">
   <div class="section-header">
     <h2>Indicadores del día</h2>
-    <a href="/reportes/kpis">Ver dashboard completo →</a>
+    <% if (hasReportes) { %><a href="/reportes/kpis">Ver dashboard completo →</a><% } %>
   </div>
   <div class="stats-grid">
     <div class="stat-card ok"><strong><%= kpis.asistenciaHoy.pct %>%</strong><span>Asistencia hoy</span></div>
@@ -80,9 +87,10 @@
 <section class="dash-section">
   <div class="section-header">
     <h2>Accesos directos y catálogos</h2>
-    <span class="muted small">Configuración y consultas frecuentes</span>
+    <span class="muted small">Según módulos activos en tu licencia</span>
   </div>
   <div class="card-grid">
+    <% if (hasPersonal) { %>
     <div class="module-card">
       <h3><a href="/personal-empleados">Personal</a></h3>
       <p>Empleados, departamentos, puestos y empresa.</p>
@@ -93,7 +101,9 @@
         <li><a href="/config-empresa/cargas">Cargas iniciales</a></li>
       </ul>
     </div>
+    <% } %>
 
+    <% if (hasAsistencia) { %>
     <div class="module-card">
       <h3><a href="/asistencia-diaria">Asistencia</a></h3>
       <p>Turnos, marcaciones y resumen diario.</p>
@@ -103,7 +113,9 @@
         <li><a href="/asistencia-diaria">Asistencia del día</a></li>
       </ul>
     </div>
+    <% } %>
 
+    <% if (hasIncidencias) { %>
     <div class="module-card">
       <h3><a href="/incidencias">Incidencias</a></h3>
       <p>Solicitudes, vacaciones y portal empleado.</p>
@@ -113,7 +125,9 @@
         <li><a href="/portal">Portal empleado</a></li>
       </ul>
     </div>
+    <% } %>
 
+    <% if (hasPrenomina) { %>
     <div class="module-card">
       <h3><a href="/prenomina-periodos">Pre-nómina</a></h3>
       <p>Períodos, cálculo y conceptos (asistencia).</p>
@@ -122,6 +136,7 @@
         <li><a href="/prenomina-conceptos">Conceptos</a></li>
       </ul>
     </div>
+    <% } %>
 
     <% if (hasNomina) { %>
     <div class="module-card">
@@ -161,16 +176,18 @@
     </div>
     <% } %>
 
+    <% if (hasIntegraciones) { %>
     <div class="module-card">
       <h3><a href="/integraciones/perfiles">Integraciones</a></h3>
-      <p>Exportación, ABC y dispositivos.</p>
+      <p>Perfiles y bitácora de conexiones.</p>
       <ul>
-        <li><a href="/integraciones/exportacion">Exportar pre-nómina</a></li>
-        <li><a href="/integraciones/abc">Sync ABC</a></li>
-        <li><a href="/integraciones/dispositivos">Dispositivos</a></li>
+        <li><a href="/integraciones/perfiles">Perfiles</a></li>
+        <li><a href="/integraciones/logs">Logs</a></li>
       </ul>
     </div>
+    <% } %>
 
+    <% if (hasReportes) { %>
     <div class="module-card">
       <h3><a href="/reportes">Reportes</a></h3>
       <p>KPIs, consultas operativas y exportación.</p>
@@ -179,7 +196,9 @@
         <li><a href="/reportes">Centro de reportes</a></li>
       </ul>
     </div>
+    <% } %>
 
+    <% if (hasConfig) { %>
     <div class="module-card">
       <h3><a href="/config-users">Configuración</a></h3>
       <p>Usuarios, roles y subsidiarias.</p>
@@ -189,6 +208,7 @@
         <li><a href="/config-subsidiarias">Subsidiarias</a></li>
       </ul>
     </div>
+    <% } %>
   </div>
 </section>
 

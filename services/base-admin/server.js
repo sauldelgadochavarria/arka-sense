@@ -21,7 +21,9 @@ const {
   FEATURE_FLAG_KEYS,
   normalizeIncomingFeatureFlags,
   parseFeatureFlagsFromForm,
-  mergeFeatureFlagsForDisplay
+  mergeFeatureFlagsForDisplay,
+  featureFlagsGroupedByPackage,
+  defaultFeatureFlagsForNewTenant
 } = require('./lib/featureFlagsCatalog');
 
 const app = express();
@@ -61,7 +63,11 @@ app.get('/admin/tenants', adminAccessControl, async (_req, res) => {
 });
 
 app.get('/admin/tenants/new', adminAccessControl, (_req, res) => {
-  res.render('tenants/new', { featureFlags: FEATURE_FLAG_KEYS });
+  res.render('tenants/new', {
+    featureFlags: FEATURE_FLAG_KEYS,
+    featurePackages: featureFlagsGroupedByPackage(),
+    defaultFlags: defaultFeatureFlagsForNewTenant()
+  });
 });
 
 app.post('/admin/tenants', adminAccessControl, async (req, res) => {
@@ -70,7 +76,7 @@ app.post('/admin/tenants', adminAccessControl, async (req, res) => {
   if (!slug) slug = crypto.randomUUID().replace(/-/g, '').slice(0, 10);
   const tenantId = crypto.randomUUID();
 
-  const featureFlags = normalizeIncomingFeatureFlags(req.body.featureFlags || req.body);
+  const fromForm = normalizeIncomingFeatureFlags(req.body.featureFlags || req.body);
 
   await Tenant.create({
     tenantId,
@@ -78,17 +84,10 @@ app.post('/admin/tenants', adminAccessControl, async (req, res) => {
     displayName: displayName || slug,
     status: 'pending',
     featureFlags: {
+      ...defaultFeatureFlagsForNewTenant(),
+      ...fromForm,
       core: true,
-      config_admin: true,
-      personal: true,
-      asistencia: true,
-      incidencias: true,
-      prenomina: true,
-      nomina: false,
-      gestion_documental: false,
-      integraciones: true,
-      reportes: true,
-      ...featureFlags
+      config_admin: true
     }
   });
 
@@ -99,7 +98,14 @@ app.get('/admin/tenants/:tenantId', adminAccessControl, async (req, res) => {
   const tenant = await Tenant.findOne({ tenantId: req.params.tenantId }).lean();
   if (!tenant) return res.status(404).send('Tenant no encontrado');
   const flags = mergeFeatureFlagsForDisplay(tenant.featureFlags);
-  res.render('tenants/show', { tenant, flags, featureFlags: FEATURE_FLAG_KEYS, tenantLoginUrl, message: req.query.msg });
+  res.render('tenants/show', {
+    tenant,
+    flags,
+    featureFlags: FEATURE_FLAG_KEYS,
+    featurePackages: featureFlagsGroupedByPackage(),
+    tenantLoginUrl,
+    message: req.query.msg
+  });
 });
 
 app.post('/admin/tenants/:tenantId/activate', adminAccessControl, async (req, res) => {

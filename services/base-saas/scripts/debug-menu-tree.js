@@ -32,8 +32,9 @@ async function main() {
   const roots = await Menu.find({ activo: true, parentId: null }).sort({ orden: 1 }).lean();
   console.log('Raíces activas en BD:', roots.map((r) => `${r.menuPrincipal} (${r.orden})`).join(', '));
 
-  const tree = await MenuService.getMenuTree([], { featureFlags: ALL_FLAGS });
-  console.log('\nÁrbol filtrado (todos los features ON):');
+  const result = await MenuService.getMenuTree([], { featureFlags: ALL_FLAGS, moduleView: 'ambos' });
+  const tree = result.tree || result;
+  console.log('\nÁrbol filtrado (todos los features ON, vista ambos):');
   printTree(tree);
 
   const active = await Menu.find({ activo: true }).lean();

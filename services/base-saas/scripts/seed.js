@@ -9,6 +9,7 @@ const dbConfig = require('../config/db');
 const menuSchema = require('../models/menuSchemaDefinition');
 const { COLLECTION_ROLES } = require('../config/constants');
 const { seedAyudaMenus } = require('./seed-ayuda-conocimiento');
+const { reorganizeMenuPackages } = require('./reorganizeMenuPackages');
 
 const ROLES = [
   {
@@ -130,6 +131,7 @@ async function seedMenus(conn, adminRoleId) {
     await seedReportesMenus(Menu, adminRoleId);
     await seedAyudaMenus(Menu);
     await cleanupLegacyCatalogMenus(Menu);
+    await reorganizeMenuPackages(Menu, adminRoleId);
     await syncOperationalMenuRoles(Menu, adminRoleId);
     return;
   }
@@ -137,9 +139,10 @@ async function seedMenus(conn, adminRoleId) {
   const configCat = await Menu.create({
     menuPrincipal: 'Configuración',
     esCategoria: true,
-    orden: 100,
+    orden: 90,
     activo: true,
     requiredFeatureKeys: ['config_admin'],
+    modulePackage: 'nucleo',
     roles: adminRoleId ? [adminRoleId] : []
   });
 
@@ -161,24 +164,22 @@ async function seedMenus(conn, adminRoleId) {
   await seedReportesMenus(Menu, adminRoleId);
   await seedAyudaMenus(Menu);
   await cleanupLegacyCatalogMenus(Menu);
+  await reorganizeMenuPackages(Menu, adminRoleId);
   await syncOperationalMenuRoles(Menu, adminRoleId);
   console.log('✓ Menús sembrados');
 }
 
 async function seedReportesMenus(Menu, adminRoleId) {
   void adminRoleId;
-  const catId = await upsertMenuNode(Menu, {
+  // Reportes de asistencia/pre-nómina viven bajo Pre-nómina → Reportes
+  await upsertMenuNode(Menu, {
     menuPrincipal: 'Reportes',
     esCategoria: true,
-    orden: 20,
-    activo: true,
+    orden: 999,
+    activo: false,
     requiredFeatureKeys: ['reportes'],
     roles: []
   });
-
-  const common = { activo: true, requiredFeatureKeys: ['reportes'], roles: [] };
-  await upsertMenuNode(Menu, { ...common, menuPrincipal: 'Dashboard KPIs', rutaApp: '/reportes/kpis', parentId: catId, orden: 21 });
-  await upsertMenuNode(Menu, { ...common, menuPrincipal: 'Centro de reportes', rutaApp: '/reportes', parentId: catId, orden: 22 });
 }
 
 async function seedIncidenciasMenus(Menu, adminRoleId) {
@@ -186,9 +187,10 @@ async function seedIncidenciasMenus(Menu, adminRoleId) {
   const catId = await upsertMenuNode(Menu, {
     menuPrincipal: 'Incidencias',
     esCategoria: true,
-    orden: 35,
+    orden: 22,
     activo: true,
     requiredFeatureKeys: ['incidencias'],
+    modulePackage: 'asistencia_prenomina',
     roles: []
   });
 
@@ -197,14 +199,14 @@ async function seedIncidenciasMenus(Menu, adminRoleId) {
     { menuPrincipal: 'Pendientes', rutaApp: '/incidencias/pendientes', orden: 37, requiredFeatureKeys: ['incidencias'] },
     { menuPrincipal: 'Vacaciones', rutaApp: '/incidencias/vacaciones', orden: 38, requiredFeatureKeys: ['incidencias'] },
     { menuPrincipal: 'Tipos de incidencia', rutaApp: '/incidencias/tipos', orden: 39, requiredFeatureKeys: ['incidencias'] },
-    { menuPrincipal: 'Portal empleado', rutaApp: '/portal', orden: 40, requiredFeatureKeys: ['core'] }
+    { menuPrincipal: 'Portal empleado', rutaApp: '/portal', orden: 40, requiredFeatureKeys: ['core'], activo: false }
   ];
 
   for (const item of items) {
     await upsertMenuNode(Menu, {
       ...item,
       parentId: catId,
-      activo: true,
+      activo: item.activo !== false,
       roles: []
     });
   }
@@ -217,16 +219,25 @@ async function seedAsistenciaMenus(Menu, adminRoleId) {
     asistenciaCat = await Menu.create({
       menuPrincipal: 'Asistencia',
       esCategoria: true,
-      orden: 40,
+      orden: 20,
       activo: true,
       requiredFeatureKeys: ['asistencia'],
+      modulePackage: 'asistencia_prenomina',
       roles: []
     });
     console.log('✓ Categoría Asistencia creada');
   } else {
     await Menu.updateOne(
       { _id: asistenciaCat._id },
-      { $set: { activo: true, requiredFeatureKeys: ['asistencia'], roles: [], orden: 40 } }
+      {
+        $set: {
+          activo: true,
+          requiredFeatureKeys: ['asistencia'],
+          modulePackage: 'asistencia_prenomina',
+          roles: [],
+          orden: 20
+        }
+      }
     );
   }
 
@@ -290,24 +301,30 @@ async function seedIntegracionesMenus(Menu, adminRoleId) {
   const catId = await upsertMenuNode(Menu, {
     menuPrincipal: 'Integraciones',
     esCategoria: true,
-    orden: 25,
+    orden: 91,
     activo: true,
     requiredFeatureKeys: ['integraciones'],
+    modulePackage: 'nucleo',
     roles: []
   });
 
   const items = [
-    { menuPrincipal: 'Perfiles', rutaApp: '/integraciones/perfiles', orden: 26 },
-    { menuPrincipal: 'Exportar pre-nómina', rutaApp: '/integraciones/exportacion', orden: 27 },
-    { menuPrincipal: 'Sync ABC', rutaApp: '/integraciones/abc', orden: 28 },
-    { menuPrincipal: 'Logs', rutaApp: '/integraciones/logs', orden: 29 },
-    { menuPrincipal: 'Dispositivos', rutaApp: '/integraciones/dispositivos', orden: 30 },
-    { menuPrincipal: 'Grupos dispositivos', rutaApp: '/integraciones/grupos-dispositivos', orden: 31 }
+    { menuPrincipal: 'Perfiles', rutaApp: '/integraciones/perfiles', orden: 10, activo: true },
+    { menuPrincipal: 'Logs', rutaApp: '/integraciones/logs', orden: 11, activo: true },
+    { menuPrincipal: 'Exportar pre-nómina', rutaApp: '/integraciones/exportacion', orden: 27, activo: false },
+    { menuPrincipal: 'Sync ABC', rutaApp: '/integraciones/abc', orden: 28, activo: false },
+    { menuPrincipal: 'Dispositivos', rutaApp: '/integraciones/dispositivos', orden: 30, activo: false },
+    { menuPrincipal: 'Grupos dispositivos', rutaApp: '/integraciones/grupos-dispositivos', orden: 31, activo: false }
   ];
 
-  const common = { activo: true, requiredFeatureKeys: ['integraciones'], roles: [] };
+  const common = { requiredFeatureKeys: ['integraciones'], roles: [] };
   for (const item of items) {
-    await upsertMenuNode(Menu, { ...common, ...item, parentId: catId });
+    await upsertMenuNode(Menu, {
+      ...common,
+      ...item,
+      parentId: catId,
+      activo: item.activo !== false
+    });
   }
 }
 
@@ -366,43 +383,16 @@ const CATALOGOS_COMPARTIDOS = [
 ];
 
 async function seedCatalogosOrganizacionales(Menu) {
+  // Contenido absorbido por Personal / Pre-nómina (reorganizeMenuPackages).
   const catId = await upsertMenuNode(Menu, {
     menuPrincipal: 'Catálogos organizacionales',
     esCategoria: true,
-    orden: 27,
-    activo: true,
+    orden: 998,
+    activo: false,
     requiredFeatureKeysAny: CATALOGOS_ORG_FEATURES,
     roles: []
   });
-
-  const common = {
-    activo: true,
-    requiredFeatureKeysAny: CATALOGOS_ORG_FEATURES,
-    roles: []
-  };
-
-  await seedCatalogosCompartidosFlat(Menu, catId, common, 271);
-  await upsertMenuNode(Menu, {
-    ...common,
-    menuPrincipal: 'Empleados',
-    rutaApp: '/personal-empleados',
-    parentId: catId,
-    orden: 274
-  });
-  await upsertMenuNode(Menu, {
-    ...common,
-    menuPrincipal: 'Períodos',
-    rutaApp: '/catalogos/periodos',
-    parentId: catId,
-    orden: 275
-  });
-  await upsertMenuNode(Menu, {
-    ...common,
-    menuPrincipal: 'Generar períodos',
-    rutaApp: '/catalogos/periodos/generar',
-    parentId: catId,
-    orden: 276
-  });
+  void catId;
 }
 
 /** Enlace directo a la lista; "Nuevo" vive en el botón de la pantalla (máx. 3 niveles en sidebar). */
@@ -599,9 +589,10 @@ async function seedPrenominaMenus(Menu, adminRoleId) {
   const catId = await upsertMenuNode(Menu, {
     menuPrincipal: 'Pre-nómina',
     esCategoria: true,
-    orden: 30,
+    orden: 21,
     activo: true,
     requiredFeatureKeys: ['prenomina'],
+    modulePackage: 'asistencia_prenomina',
     roles: []
   });
 
@@ -698,9 +689,10 @@ async function seedNominaMenus(Menu, adminRoleId) {
   const catId = await upsertMenuNode(Menu, {
     menuPrincipal: 'Nómina',
     esCategoria: true,
-    orden: 33,
+    orden: 30,
     activo: true,
     requiredFeatureKeys: ['nomina'],
+    modulePackage: 'nomina',
     roles: []
   });
 
@@ -720,11 +712,16 @@ async function seedNominaMenus(Menu, adminRoleId) {
 
   const configuracionesId = await upsertMenuNode(Menu, {
     ...common,
-    menuPrincipal: 'Configuraciones',
+    menuPrincipal: 'Configuración de nómina',
     esCategoria: true,
     parentId: catId,
     orden: 35
   });
+  // Compat: desactivar nombre legacy
+  await Menu.updateMany(
+    { parentId: catId, menuPrincipal: 'Configuraciones', esCategoria: true },
+    { $set: { activo: false } }
+  );
   await upsertMenuNode(Menu, {
     ...common,
     menuPrincipal: 'Configuración fiscal',
@@ -755,7 +752,8 @@ async function seedNominaMenus(Menu, adminRoleId) {
     rutaApp: '/config-sistema/enums',
     parentId: configuracionesId,
     orden: 355,
-    requiredFeatureKeys: ['nomina']
+    requiredFeatureKeys: ['nomina'],
+    activo: false
   });
   await Menu.updateMany(
     { rutaApp: '/nomina/placeholder/plantilla' },
@@ -799,7 +797,7 @@ async function seedNominaMenus(Menu, adminRoleId) {
     orden: 37
   });
   await upsertMenuNode(Menu, { ...common, menuPrincipal: 'Períodos y cálculo', rutaApp: '/nomina/periodos', parentId: calculoId, orden: 371 });
-  await upsertMenuNode(Menu, { ...common, menuPrincipal: 'Cierre', rutaApp: '/nomina/periodos', parentId: calculoId, orden: 372 });
+  await upsertMenuNode(Menu, { ...common, menuPrincipal: 'Cierre', rutaApp: '/nomina/periodos', parentId: calculoId, orden: 372, activo: false });
   await upsertMenuNode(Menu, {
     ...common,
     menuPrincipal: 'Pago-dispersión',
@@ -951,13 +949,17 @@ async function seedNominaMenus(Menu, adminRoleId) {
 
   await deactivateLegacyMenus(Menu, catId, [
     'Inicio nómina',
+    'Configuración de nómina',
     'Configuraciones',
     'Reportes',
     'Cálculo',
     'Timbrado',
+    'Cumplimiento',
     'Gestión documental',
     'Catálogos',
-    'APIs'
+    'APIs',
+    'Exportación SUA',
+    'Confronta Nómina–SUA–IDSE'
   ]);
 }
 
@@ -966,25 +968,27 @@ async function seedPersonalMenus(Menu, adminRoleId) {
   const personalCatId = await upsertMenuNode(Menu, {
     menuPrincipal: 'Personal',
     esCategoria: true,
-    orden: 50,
+    orden: 10,
     activo: true,
     requiredFeatureKeys: ['personal'],
+    modulePackage: 'nucleo',
     roles: []
   });
 
   const personalItems = [
-    { menuPrincipal: 'Tipos mov. laboral', rutaApp: '/personal/tipos-movimiento-laboral', orden: 52 },
-    { menuPrincipal: 'Puestos', rutaApp: '/personal-puestos', orden: 54 },
-    { menuPrincipal: 'Empresa', rutaApp: '/config-empresa', orden: 55 },
-    { menuPrincipal: 'Cargas iniciales', rutaApp: '/config-empresa/cargas', orden: 56 },
-    { menuPrincipal: 'Créditos / saldos (próx.)', rutaApp: '/config-empresa/cargas/creditos-saldos', orden: 57 }
+    { menuPrincipal: 'Tipos mov. laboral', rutaApp: '/personal/tipos-movimiento-laboral', orden: 15 },
+    { menuPrincipal: 'Puestos', rutaApp: '/personal-puestos', orden: 12 },
+    { menuPrincipal: 'Empresa', rutaApp: '/config-empresa', orden: 13 },
+    { menuPrincipal: 'Cargas iniciales', rutaApp: '/config-empresa/cargas', orden: 14 },
+    { menuPrincipal: 'Ajuste anual de sueldos', rutaApp: '/personal/ajuste-anual', orden: 16 },
+    { menuPrincipal: 'Créditos / saldos (próx.)', rutaApp: '/config-empresa/cargas/creditos-saldos', orden: 99, activo: false }
   ];
 
   for (const item of personalItems) {
     await upsertMenuNode(Menu, {
       ...item,
       parentId: personalCatId,
-      activo: true,
+      activo: item.activo !== false,
       requiredFeatureKeys: ['personal'],
       roles: []
     });
@@ -996,7 +1000,7 @@ async function seedPersonalMenus(Menu, adminRoleId) {
       menuPrincipal: { $in: ['Empleados', 'Departamentos'] },
       rutaApp: { $in: ['/personal-empleados', '/personal-departamentos'] }
     },
-    { $set: { activo: false } }
+    { $set: { activo: true } }
   );
 }
 
@@ -1005,7 +1009,7 @@ async function seedPersonalMenus(Menu, adminRoleId) {
  * Solo Configuración (usuarios/roles/subsidiarias) exige rol Admin.
  */
 async function syncOperationalMenuRoles(Menu, adminRoleId) {
-  const configAdminRoutes = ['/config-users', '/config-roles', '/config-subsidiarias', '/config-puntos-acceso'];
+  const configAdminRoutes = ['/config-users', '/config-roles', '/config-subsidiarias'];
 
   await Menu.updateMany({ activo: true }, { $set: { roles: [] } });
 

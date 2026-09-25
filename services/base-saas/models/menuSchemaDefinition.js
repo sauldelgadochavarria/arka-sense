@@ -14,7 +14,16 @@ const menuSchema = new mongoose.Schema(
     traduccion: { es: String, en: String },
     requiredFeatureKeys: [{ type: String }],
     /** Si tiene valores, basta con que el tenant tenga al menos uno (OR). */
-    requiredFeatureKeysAny: [{ type: String }]
+    requiredFeatureKeysAny: [{ type: String }],
+    /**
+     * Paquete de navegación (raíces): nucleo | asistencia_prenomina | nomina.
+     * Usado por el selector de módulo del sidebar.
+     */
+    modulePackage: {
+      type: String,
+      enum: ['nucleo', 'asistencia_prenomina', 'nomina'],
+      required: false
+    }
   },
   { collection: 'mainmenu' }
 );

@@ -1,10 +1,16 @@
 const getMenuModel = require('../models/menu');
 const { tenantHasFeature, tenantHasAnyFeature } = require('../libs/tenantFeatureFlags');
+const {
+  availableMenuPackages,
+  resolveMenuModuleView,
+  rootVisibleForModuleView
+} = require('../libs/menuPackages');
 
 class MenuService {
   static async getMenuTree(userRoleIds = [], options = {}) {
     const Menu = await getMenuModel();
     const featureFlags = options.featureFlags || {};
+    const moduleView = resolveMenuModuleView(options.moduleView, featureFlags);
     const roleSet = new Set((userRoleIds || []).map(String));
 
     const allMenus = await Menu.find({ activo: true }).sort({ orden: 1, menuPrincipal: 1 }).lean();
@@ -40,7 +46,13 @@ class MenuService {
     }
     roots.sort((a, b) => (a.orden || 0) - (b.orden || 0) || a.menuPrincipal.localeCompare(b.menuPrincipal));
 
-    return roots;
+    const visibleRoots = roots.filter((r) => rootVisibleForModuleView(r, moduleView));
+
+    return {
+      tree: visibleRoots,
+      moduleView,
+      availablePackages: availableMenuPackages(featureFlags)
+    };
   }
 }
 

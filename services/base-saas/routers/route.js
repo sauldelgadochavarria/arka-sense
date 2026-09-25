@@ -1,6 +1,8 @@
 const express = require('express');
 const { isUserAllowed } = require('../middleware/authMiddleware');
 const loadMenus = require('../middleware/menuMiddleware');
+const syncSessionFeatureFlags = require('../middleware/syncSessionFeatureFlags');
+const enforceFeatureFlags = require('../middleware/enforceFeatureFlags');
 const usersController = require('../controllers/usersController');
 const rolesController = require('../controllers/rolesController');
 const subsidiariasController = require('../controllers/subsidiariasController');
@@ -41,7 +43,7 @@ const { getDashboardKpis } = require('../services/dashboardKpiService');
 const { tableroCumplimiento } = require('../services/gestionDocumentalService');
 const { getFlujoNominaActual, confirmarRevisionPeriodo, omitirDispersionPeriodo } = require('../services/flujoNominaDashboardService');
 const { parseOptionalObjectId } = require('../libs/formHelpers');
-const { tenantHasFeature } = require('../libs/tenantFeatureFlags');
+const { tenantHasFeature, tenantHasAnyFeature } = require('../libs/tenantFeatureFlags');
 const { requireEmpresaForTenant } = require('../libs/tenantScope');
 const { requirePortalEmpleado } = require('../middleware/requirePortalEmpleado');
 const { requireAdminAccess } = require('../middleware/requireAdminAccess');
@@ -49,7 +51,19 @@ const { requireReportesAccess } = require('../middleware/requireReportesAccess')
 
 const router = express.Router();
 
-router.use(isUserAllowed, loadMenus);
+router.use(isUserAllowed, syncSessionFeatureFlags, enforceFeatureFlags, loadMenus);
+
+router.post('/preferencias/modulo', (req, res) => {
+  const view = String(req.body.view || req.query.view || 'ambos').trim();
+  req.session.menuModuleView = view;
+  const ref = req.get('Referer') || '/dashboard';
+  try {
+    const u = new URL(ref, 'http://local');
+    return res.redirect(u.pathname + u.search);
+  } catch {
+    return res.redirect('/dashboard');
+  }
+});
 
 router.get('/portal', requirePortalEmpleado, portalController.portalHome);
 router.get('/portal/asistencia', requirePortalEmpleado, portalController.portalAsistencia);
@@ -62,9 +76,22 @@ router.use(requireAdminAccess);
 
 router.get(['/', '/dashboard', '/inicio', '/nomina/flujo'], async (req, res) => {
   const { empresa } = await requireEmpresaForTenant(req.session.tenantId);
-  const kpis = empresa ? await getDashboardKpis(req.session.tenantId) : null;
   const featureFlags = req.tenant?.featureFlags || req.session?.featureFlags || {};
   const hasNomina = tenantHasFeature(featureFlags, 'nomina');
+  const hasAsistenciaPkg = tenantHasAnyFeature(featureFlags, [
+    'asistencia',
+    'prenomina',
+    'incidencias',
+    'reportes'
+  ]);
+  const showFlujo = tenantHasAnyFeature(featureFlags, [
+    'asistencia',
+    'prenomina',
+    'incidencias',
+    'nomina'
+  ]);
+  const showKpis = hasAsistenciaPkg || tenantHasFeature(featureFlags, 'reportes');
+  const kpis = empresa && showKpis ? await getDashboardKpis(req.session.tenantId) : null;
   const periodoId = parseOptionalObjectId(req.query.periodoId);
   let cumplimiento = null;
   let flujoNomina = null;
@@ -81,7 +108,7 @@ router.get(['/', '/dashboard', '/inicio', '/nomina/flujo'], async (req, res) => 
       console.warn('[dashboard cumplimiento]', err.message);
     }
   }
-  if (empresa) {
+  if (empresa && showFlujo) {
     try {
       flujoNomina = await getFlujoNominaActual({
         tenantId: req.session.tenantId,
@@ -320,6 +347,7 @@ router.get('/nomina/recibos-pdf/:id/preview', timbradoController.previewPlantill
 router.get('/nomina/timbrado', timbradoController.wizardTimbrado);
 router.post('/nomina/timbrado/generar', timbradoController.generarTimbrado);
 router.get('/nomina/timbrado/lotes/:id', timbradoController.showLote);
+router.post('/nomina/timbrado/lotes/:id/descargar-masivo', timbradoController.descargarMasivoLote);
 router.get('/nomina/timbrado/archivos/:id/descargar', timbradoController.descargarCfdiArchivo);
 
 router.get('/nomina/envio-correo', envioCorreoController.wizard);

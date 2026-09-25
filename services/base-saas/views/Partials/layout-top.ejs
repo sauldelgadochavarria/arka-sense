@@ -10,6 +10,22 @@
 <body class="app-shell">
   <header class="topbar<%= typeof portalMode !== 'undefined' && portalMode ? ' portal-bar' : '' %>">
     <div class="brand"><a href="/dashboard">Arka-Presence</a></div>
+    <%
+      const _menuPkgs = typeof menuPackages !== 'undefined' ? menuPackages : [];
+      const _menuView = typeof menuModuleView !== 'undefined' ? menuModuleView : 'ambos';
+      const _productPkgs = _menuPkgs.filter(function(p) { return p.id !== 'nucleo'; });
+      const _showModuleSwitch = _productPkgs.length > 1;
+    %>
+    <% if (_showModuleSwitch) { %>
+    <nav class="module-switch" aria-label="Módulo activo">
+      <form method="post" action="/preferencias/modulo" class="module-switch-form">
+        <button type="submit" name="view" value="ambos" class="module-chip<%= _menuView === 'ambos' ? ' is-active' : '' %>">Ambos</button>
+        <% _productPkgs.forEach(function(p) { %>
+        <button type="submit" name="view" value="<%= p.id %>" class="module-chip<%= _menuView === p.id ? ' is-active' : '' %>" title="<%= p.description || '' %>"><%= p.label %></button>
+        <% }); %>
+      </form>
+    </nav>
+    <% } %>
     <div class="topbar-meta">
       <% if (typeof session !== 'undefined' && session) { %>
         <a class="topbar-help" href="/ayuda" title="Centro de ayuda">Ayuda</a>

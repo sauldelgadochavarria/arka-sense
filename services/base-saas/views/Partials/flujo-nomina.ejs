@@ -1,12 +1,21 @@
 <%
   const flujo = (typeof flujoNomina !== 'undefined' && flujoNomina) ? flujoNomina : null;
+  const ff = (typeof featureFlags !== 'undefined' && featureFlags) ? featureFlags : {};
+  const hasNomina = !!ff.nomina;
+  const hasAsistencia = !!ff.asistencia;
+  const hasPrenomina = !!ff.prenomina;
+  const hasIncidencias = !!ff.incidencias;
+  const hasReportes = !!ff.reportes;
+  const showFlujo = hasAsistencia || hasPrenomina || hasIncidencias || hasNomina;
+%>
+<% if (showFlujo) { %>
+<%
   const pasoActual = flujo && flujo.pasoActual ? Number(flujo.pasoActual) : 0;
   const pasosDone = new Set((flujo && flujo.pasosCompletados) || []);
   const cicloCompleto = !!(flujo && flujo.cicloCompleto);
   const periodosOpts = (flujo && flujo.periodos) || [];
   const periodoSel = flujo && flujo.periodo ? flujo.periodo.id : '';
   const acciones = (flujo && flujo.acciones) || [];
-  const hasNomina = typeof featureFlags !== 'undefined' && featureFlags && featureFlags.nomina;
   const basePath = (typeof flujoBasePath !== 'undefined' && flujoBasePath) ? flujoBasePath : '/dashboard';
 
   const flujoPasos = [
@@ -15,6 +24,7 @@
       titulo: 'Asistencia',
       desc: 'Marcaciones, turnos y asistencia del día',
       href: '/asistencia',
+      requireFeature: 'asistencia',
       links: [
         { label: 'Inicio', href: '/asistencia' },
         { label: 'Del día', href: '/asistencia-diaria' },
@@ -27,6 +37,7 @@
       titulo: 'Pre-nómina',
       desc: 'Períodos y conceptos de asistencia',
       href: '/prenomina-periodos',
+      requireFeature: 'prenomina',
       links: [
         { label: 'Períodos', href: '/prenomina-periodos' },
         { label: 'Conceptos', href: '/prenomina-conceptos' }
@@ -37,6 +48,7 @@
       titulo: 'Incidencias',
       desc: 'Autorizar faltas, vacaciones y HE antes del cálculo formal',
       href: '/incidencias/pendientes',
+      requireFeature: 'incidencias',
       links: [
         { label: 'Pendientes', href: '/incidencias/pendientes' },
         { label: 'Vacaciones', href: '/incidencias/vacaciones' }
@@ -57,10 +69,11 @@
       n: 5,
       titulo: 'Revisión',
       desc: 'Reportes y validación del período',
-      href: hasNomina ? '/nomina/reportes' : '/reportes',
+      href: hasNomina ? '/nomina/reportes' : (hasReportes ? '/reportes' : '#'),
+      requireFeature: hasNomina ? 'nomina' : 'reportes',
       links: [
         { label: 'Reportes nómina', href: '/nomina/reportes', requireNomina: true },
-        { label: 'KPIs', href: '/reportes/kpis' }
+        { label: 'KPIs', href: '/reportes/kpis', requireFeature: 'reportes' }
       ]
     },
     {
@@ -98,6 +111,12 @@
     }
   ];
 
+  function pasoLocked(paso) {
+    if (paso.requireNomina && !hasNomina) return true;
+    if (paso.requireFeature && !ff[paso.requireFeature]) return true;
+    return false;
+  }
+
   if (flujo && flujo.href) {
     flujoPasos.forEach(function (p) {
       if (p.n === pasoActual) p.href = flujo.href;
@@ -108,7 +127,7 @@
 <section class="dash-flow">
   <div class="section-header flow-header-row">
     <div>
-      <h2>Flujo del proceso de nómina</h2>
+      <h2>Flujo del ciclo de nómina</h2>
       <span class="muted small">Del registro de asistencia al CFDI</span>
     </div>
     <% if (periodosOpts.length) { %>
@@ -161,7 +180,7 @@
 
   <ol class="flow-track">
     <% flujoPasos.forEach(function(paso, idx) {
-      const locked = paso.requireNomina && !hasNomina;
+      const locked = pasoLocked(paso);
       const isCurrent = !locked && pasoActual === paso.n;
       const isDone = !locked && (pasosDone.has(paso.n) || (cicloCompleto && paso.n <= 8));
       let cls = 'flow-step';
@@ -169,6 +188,11 @@
       if (isCurrent && !cicloCompleto) cls += ' is-current';
       if (isDone && !isCurrent) cls += ' is-done';
       if (cicloCompleto && isCurrent) cls += ' is-done is-current';
+      let lockMsg = 'Módulo no activo en la licencia';
+      if (paso.requireNomina && !hasNomina) lockMsg = 'Activa el módulo Nómina';
+      else if (paso.requireFeature === 'asistencia' || paso.requireFeature === 'prenomina' || paso.requireFeature === 'incidencias') {
+        lockMsg = 'Activa Asistencia-Prenómina';
+      }
     %>
     <li class="<%= cls %>">
       <% if (idx > 0) { %><span class="flow-arrow" aria-hidden="true">→</span><% } %>
@@ -181,15 +205,17 @@
         <span class="flow-links">
           <% paso.links.forEach(function(l) {
             if (l.requireNomina && !hasNomina) return;
+            if (l.requireFeature && !ff[l.requireFeature]) return;
           %>
           <span class="flow-link" data-href="<%= l.href %>"><%= l.label %></span>
           <% }); %>
         </span>
         <% } else if (locked) { %>
-        <span class="flow-desc muted">Activa el módulo Nómina</span>
+        <span class="flow-desc muted"><%= lockMsg %></span>
         <% } %>
       </a>
     </li>
     <% }); %>
   </ol>
 </section>
+<% } %>

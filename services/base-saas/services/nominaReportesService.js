@@ -17,6 +17,7 @@ const getConceptCatalogModel = require('../models/conceptCatalog');
 const META_CONCEPTOS = new Set([
   'PERCEPCIONES_GRAVADAS',
   'PERCEPCIONES_EXENTAS',
+  'PERCEPCIONES_TOTALES',
   'BASE_ISR',
   'BASE_IMSS',
   'DEDUCCIONES_TOTALES',
@@ -31,19 +32,30 @@ function money(n) {
 
 function isImssCodigo(codigo) {
   const c = String(codigo || '').toUpperCase();
-  return c === 'IMSS_OBRERO' || (c.includes('IMSS') && !c.includes('PATRONAL'));
+  return c === 'IMSS_OBRERO' || c === 'IMSS_RCV' || (c.includes('IMSS') && !c.includes('PATRONAL'));
 }
 
+/** Solo el ISR fiscal del recibo (no ISR_SAT / proyección / diferencia). */
 function isIsrCodigo(codigo) {
-  const c = String(codigo || '').toUpperCase();
-  return c === 'ISR' || c.startsWith('ISR_');
+  return String(codigo || '').toUpperCase() === 'ISR';
 }
 
 function isVisibleConcepto(codigo) {
   const c = String(codigo || '').toUpperCase();
   if (!c || META_CONCEPTOS.has(c)) return false;
   if (c === 'IMSS_PATRONAL') return false;
+  if (c.startsWith('ISR_')) return false;
   return true;
+}
+
+function esTipoPercepcion(tipo) {
+  const t = String(tipo || '').toLowerCase();
+  return t === 'percepcion' || t.includes('perc');
+}
+
+function esTipoDeduccion(tipo) {
+  const t = String(tipo || '').toLowerCase();
+  return t === 'deduccion' || t === 'deducción' || t.includes('deduc');
 }
 
 function empNombre(emp) {
@@ -263,28 +275,34 @@ function enrichTotales(p, catByCodigo) {
   let isr = 0;
   let otrosDescuentos = 0;
 
+  const bases = p.basesFiscales || {};
+  const hasBases =
+    bases.PERCEPCIONES_GRAVADAS != null || bases.PERCEPCIONES_EXENTAS != null;
+  if (hasBases) {
+    // Fuente de verdad del motor (evita sumar meta / deducciones / NETO_PAGAR).
+    gravado = money(bases.PERCEPCIONES_GRAVADAS);
+    exento = money(bases.PERCEPCIONES_EXENTAS);
+  }
+
   for (const c of p.conceptos || []) {
     const codigo = String(c.conceptoCodigo || '').toUpperCase();
+    if (!isVisibleConcepto(codigo)) continue;
     const importe = money(c.importe);
-    gravado += money(c.gravado);
-    exento += money(c.exento);
-
     const tipo = String(c.tipo || catByCodigo.get(codigo)?.tipo || '').toLowerCase();
-    if (tipo === 'deduccion' || tipo === 'deducción') {
+
+    if (!hasBases && esTipoPercepcion(tipo)) {
+      gravado += money(c.gravado);
+      exento += money(c.exento);
+    }
+
+    if (esTipoDeduccion(tipo)) {
       if (isImssCodigo(codigo)) imss += importe;
       else if (isIsrCodigo(codigo)) isr += importe;
-      else if (isVisibleConcepto(codigo)) otrosDescuentos += importe;
+      else otrosDescuentos += importe;
     }
   }
 
-  if (!gravado && p.basesFiscales?.PERCEPCIONES_GRAVADAS != null) {
-    gravado = money(p.basesFiscales.PERCEPCIONES_GRAVADAS);
-  }
-  if (!exento && p.basesFiscales?.PERCEPCIONES_EXENTAS != null) {
-    exento = money(p.basesFiscales.PERCEPCIONES_EXENTAS);
-  }
-
-  // Si no clasificamos bien, deriva otros = deducciones − imss − isr
+  // Si no hubo líneas de “otros” clasificadas, deriva el remanente.
   if (otrosDescuentos === 0 && p.totalDeducciones) {
     const resto = money(p.totalDeducciones - imss - isr);
     if (resto > 0) otrosDescuentos = resto;
@@ -327,8 +345,10 @@ function buildTotales(periodo, fuente, rows) {
     { key: 'gravado', label: 'Gravado', type: 'money' },
     { key: 'exento', label: 'Exento', type: 'money' },
     { key: 'imss', label: 'IMSS', type: 'money' },
+    { key: 'isr', label: 'ISR', type: 'money' },
     { key: 'otrosDescuentos', label: 'Otros descuentos', type: 'money' },
-    { key: 'netoPagar', label: 'Neto', type: 'money' }
+    { key: 'netoPagar', label: 'Neto', type: 'money' },
+    { key: 'detalleUrl', label: 'Cálculo', type: 'link', linkLabel: 'Ver detalle' }
   ];
   const totals = sumRows(sorted, [
     'totalPercepciones',
@@ -336,6 +356,7 @@ function buildTotales(periodo, fuente, rows) {
     'gravado',
     'exento',
     'imss',
+    'isr',
     'otrosDescuentos',
     'netoPagar'
   ]);
@@ -354,8 +375,12 @@ function buildTotales(periodo, fuente, rows) {
       gravado: r.gravado,
       exento: r.exento,
       imss: r.imss,
+      isr: r.isr,
       otrosDescuentos: r.otrosDescuentos,
-      netoPagar: r.netoPagar
+      netoPagar: r.netoPagar,
+      detalleUrl: r.reciboId
+        ? `/nomina/periodos/${periodo._id}/recibos/${r.reciboId}`
+        : ''
     })),
     summary: {
       empleados: sorted.length,
@@ -464,6 +489,7 @@ function buildResumen(periodo, fuente, rows, agrupar) {
         gravado: 0,
         exento: 0,
         imss: 0,
+        isr: 0,
         otrosDescuentos: 0,
         netoPagar: 0
       });
@@ -475,6 +501,7 @@ function buildResumen(periodo, fuente, rows, agrupar) {
     g.gravado = money(g.gravado + r.gravado);
     g.exento = money(g.exento + r.exento);
     g.imss = money(g.imss + r.imss);
+    g.isr = money((g.isr || 0) + (r.isr || 0));
     g.otrosDescuentos = money(g.otrosDescuentos + r.otrosDescuentos);
     g.netoPagar = money(g.netoPagar + r.netoPagar);
   }
@@ -488,6 +515,7 @@ function buildResumen(periodo, fuente, rows, agrupar) {
     { key: 'gravado', label: 'Gravado', type: 'money' },
     { key: 'exento', label: 'Exento', type: 'money' },
     { key: 'imss', label: 'IMSS', type: 'money' },
+    { key: 'isr', label: 'ISR', type: 'money' },
     { key: 'otrosDescuentos', label: 'Otros descuentos', type: 'money' },
     { key: 'netoPagar', label: 'Neto', type: 'money' }
   ];
@@ -498,6 +526,7 @@ function buildResumen(periodo, fuente, rows, agrupar) {
     'gravado',
     'exento',
     'imss',
+    'isr',
     'otrosDescuentos',
     'netoPagar'
   ]);
@@ -531,6 +560,7 @@ function toCsv(result) {
         .map((c) => {
           const v = row[c.key];
           if (c.type === 'money') return escape(Number(v || 0).toFixed(2));
+          if (c.type === 'link') return escape(v || '');
           return escape(v);
         })
         .join(',')

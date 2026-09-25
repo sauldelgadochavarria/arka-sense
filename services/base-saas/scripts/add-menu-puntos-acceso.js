@@ -1,6 +1,6 @@
 'use strict';
 /**
- * Menú Configuración → Puntos de acceso
+ * Menú Asistencia → Puntos de acceso
  *   node scripts/add-menu-puntos-acceso.js
  */
 const path = require('path');
@@ -15,35 +15,45 @@ const menuSchema = require('../models/menuSchemaDefinition');
     .asPromise();
   const Menu = conn.model('Menu', menuSchema, 'mainmenu');
 
-  const configCat = await Menu.findOne({
-    menuPrincipal: 'Configuración',
+  const asistenciaCat = await Menu.findOne({
+    menuPrincipal: 'Asistencia',
     esCategoria: true,
     activo: true
   }).lean();
-  if (!configCat) throw new Error('No se encontró categoría Configuración');
+  if (!asistenciaCat) throw new Error('No se encontró categoría Asistencia');
 
-  const filter = { menuPrincipal: 'Puntos de acceso', parentId: configCat._id };
-  const payload = {
+  // Quitar de Configuración si estaba ahí
+  await Menu.updateMany(
+    { menuPrincipal: 'Puntos de acceso', rutaApp: '/config-puntos-acceso' },
+    {
+      $set: {
+        parentId: asistenciaCat._id,
+        orden: 49,
+        activo: true,
+        requiredFeatureKeys: ['asistencia'],
+        roles: []
+      }
+    }
+  );
+
+  const existing = await Menu.findOne({
     menuPrincipal: 'Puntos de acceso',
-    rutaApp: '/config-puntos-acceso',
-    parentId: configCat._id,
-    orden: 104,
-    esCategoria: false,
-    activo: true,
-    requiredFeatureKeys: ['config_admin'],
-    roles: []
-  };
-
-  const existing = await Menu.findOne(filter).lean();
-  if (existing) {
-    await Menu.updateOne({ _id: existing._id }, { $set: payload });
-    console.log('✓ actualizado', String(existing._id));
-  } else {
-    const created = await Menu.create(payload);
-    console.log('✓ creado', String(created._id));
+    parentId: asistenciaCat._id
+  }).lean();
+  if (!existing) {
+    await Menu.create({
+      menuPrincipal: 'Puntos de acceso',
+      rutaApp: '/config-puntos-acceso',
+      parentId: asistenciaCat._id,
+      orden: 49,
+      esCategoria: false,
+      activo: true,
+      requiredFeatureKeys: ['asistencia'],
+      roles: []
+    });
   }
 
-  console.log('menú: Configuración → Puntos de acceso → /config-puntos-acceso');
+  console.log('menú: Asistencia → Puntos de acceso → /config-puntos-acceso');
   await conn.close();
 })().catch((e) => {
   console.error(e);

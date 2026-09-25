@@ -1,5 +1,5 @@
 <%- include('../../Partials/layout-top', { title: 'Lote de timbrado', session }) %>
-<% const L = lote || {}; const T = L.totales || {}; %>
+<% const L = lote || {}; const T = L.totales || {}; const F = filtros || { departamentos: [], entidades: [] }; %>
 <div class="page-header">
   <h1>Lote de timbrado</h1>
   <p class="page-subtitle">Estatus: <strong><%= L.estatus %></strong> · Modo: <%= L.modo %> · Serie: <%= L.serie || '—' %></p>
@@ -19,46 +19,196 @@
   <% if (L.errorMensaje) { %><p class="alert"><%= L.errorMensaje %></p><% } %>
 </div>
 
-<table class="data-table">
+<form id="form-descarga-masiva" method="post" action="/nomina/timbrado/lotes/<%= L._id %>/descargar-masivo" class="filter-form form-grid" style="margin-bottom:1rem">
+  <label>Departamento
+    <select id="filtro-depto">
+      <option value="">Todos</option>
+      <% (F.departamentos || []).forEach(function(d) { %>
+      <option value="<%= d.id %>"><%= d.nombre %></option>
+      <% }); %>
+    </select>
+  </label>
+  <label>Entidad federativa
+    <select id="filtro-entidad">
+      <option value="">Todas</option>
+      <% (F.entidades || []).forEach(function(e) { %>
+      <option value="<%= e.value %>"><%= e.label %></option>
+      <% }); %>
+    </select>
+  </label>
+  <label class="checkbox" style="align-self:end">
+    <input type="checkbox" name="incluirXml" id="incluir-xml" value="1" checked /> Incluir XML
+  </label>
+  <label class="checkbox" style="align-self:end">
+    <input type="checkbox" name="incluirPdf" id="incluir-pdf" value="1" checked /> Incluir PDF
+  </label>
+  <div style="align-self:end;display:flex;gap:0.5rem;flex-wrap:wrap">
+    <button type="button" class="btn" id="btn-sel-visibles">Seleccionar visibles</button>
+    <button type="button" class="btn" id="btn-limpiar-sel">Limpiar</button>
+    <button type="submit" class="btn btn-primary" id="btn-descargar">Descargar ZIP</button>
+  </div>
+  <p class="muted small" style="grid-column:1/-1;margin:0" id="sel-count">0 seleccionados</p>
+</form>
+
+<div class="table-scroll">
+<table class="data-table" id="tabla-lote">
   <thead>
     <tr>
-      <th>Empleado</th><th>Nombre</th><th>Neto</th><th>Estatus</th><th>UUID</th><th>Serie-Folio</th><th>Error</th><th>Archivos</th>
+      <th><input type="checkbox" id="check-all" title="Seleccionar todos los visibles" /></th>
+      <th>Empleado</th>
+      <th>Nombre</th>
+      <th>Departamento</th>
+      <th>Entidad</th>
+      <th>Neto</th>
+      <th>Estatus</th>
+      <th>UUID</th>
+      <th>Serie-Folio</th>
+      <th>Error</th>
+      <th>Archivos</th>
     </tr>
   </thead>
   <tbody>
     <% (L.items || []).forEach(function(it) { %>
-    <tr>
+    <%
+      const hasXml = !!it.archivoXmlId;
+      const hasPdf = !!it.archivoPdfId;
+      const canDl = hasXml || hasPdf;
+    %>
+    <tr
+      data-depto="<%= it.departamentoId || '' %>"
+      data-entidad="<%= it.entidadFederativa || '' %>"
+      data-has-xml="<%= hasXml ? '1' : '0' %>"
+      data-has-pdf="<%= hasPdf ? '1' : '0' %>"
+      class="lote-row"
+    >
+      <td>
+        <% if (canDl) { %>
+        <input type="checkbox" class="row-check" name="itemIds" value="<%= it._id %>" form="form-descarga-masiva" />
+        <% } else { %>
+        <span class="muted">—</span>
+        <% } %>
+      </td>
       <td><%= it.numEmpleado %></td>
       <td><%= it.nombre %></td>
+      <td><%= it.departamentoNombre || '—' %></td>
+      <td><%= it.entidadLabel || it.entidadFederativa || '—' %></td>
       <td class="num">$<%= Number(it.netoPagar || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></td>
       <td><%= it.estatus %><% if (it.estatus === 'omitido' && it.errorMensaje) { %><br /><span class="muted small"><%= it.errorMensaje %></span><% } %></td>
       <td><code class="small"><%= it.uuid || '—' %></code></td>
       <td><%= (it.serie || '') + (it.folio ? ('-' + it.folio) : '') %></td>
       <td class="muted"><%= it.estatus !== 'omitido' ? (it.errorMensaje || '') : '' %></td>
       <td>
-        <% if (it.archivoXmlId) { %>
+        <% if (hasXml) { %>
         <a href="/nomina/timbrado/archivos/<%= it.archivoXmlId %>/descargar">XML</a>
         <% } %>
-        <% if (it.archivoPdfId) { %>
-        <%= it.archivoXmlId ? ' · ' : '' %>
+        <% if (hasPdf) { %>
+        <%= hasXml ? ' · ' : '' %>
         <a href="/nomina/timbrado/archivos/<%= it.archivoPdfId %>/descargar">PDF</a>
         <% } %>
         <% if (it.historicoId || it.reciboId) { %>
-        <%= (it.archivoXmlId || it.archivoPdfId) ? ' · ' : '' %>
+        <%= (hasXml || hasPdf) ? ' · ' : '' %>
         <% if (it.historicoId) { %>
         <a href="/nomina/recibos-pdf/html?historicoId=<%= it.historicoId %>" target="_blank">Ver</a>
         <% } else if (it.reciboId) { %>
         <a href="/nomina/recibos-pdf/html?reciboId=<%= it.reciboId %>" target="_blank">Ver</a>
         <% } %>
         <% } %>
-        <% if (!it.archivoXmlId && !it.archivoPdfId && !it.historicoId && !it.reciboId) { %>—<% } %>
+        <% if (!hasXml && !hasPdf && !it.historicoId && !it.reciboId) { %>—<% } %>
       </td>
     </tr>
     <% }); %>
   </tbody>
 </table>
+</div>
 <p class="muted small">
   XML y PDF/HTML se guardan en Mongo (<code>nomina_cfdi_archivos</code>), fuera del histórico.
   El “PDF” actual es HTML de la plantilla (imprimir → Guardar como PDF); binario nativo pendiente.
+  La descarga masiva genera un ZIP con carpetas <code>xml/</code> y/o <code>pdf/</code>.
 </p>
+
+<script>
+(function () {
+  var filtroDepto = document.getElementById('filtro-depto');
+  var filtroEntidad = document.getElementById('filtro-entidad');
+  var checkAll = document.getElementById('check-all');
+  var selCount = document.getElementById('sel-count');
+  var form = document.getElementById('form-descarga-masiva');
+  var rows = Array.prototype.slice.call(document.querySelectorAll('#tabla-lote tbody tr.lote-row'));
+
+  function visibleRows() {
+    return rows.filter(function (tr) { return tr.style.display !== 'none'; });
+  }
+
+  function applyFilters() {
+    var depto = filtroDepto ? filtroDepto.value : '';
+    var entidad = filtroEntidad ? filtroEntidad.value : '';
+    rows.forEach(function (tr) {
+      var okDepto = !depto || tr.getAttribute('data-depto') === depto;
+      var okEnt = !entidad || tr.getAttribute('data-entidad') === entidad;
+      tr.style.display = okDepto && okEnt ? '' : 'none';
+      if (!(okDepto && okEnt)) {
+        var cb = tr.querySelector('.row-check');
+        if (cb) cb.checked = false;
+      }
+    });
+    if (checkAll) checkAll.checked = false;
+    updateCount();
+  }
+
+  function updateCount() {
+    var n = document.querySelectorAll('.row-check:checked').length;
+    if (selCount) selCount.textContent = n + ' seleccionado' + (n === 1 ? '' : 's');
+  }
+
+  if (filtroDepto) filtroDepto.addEventListener('change', applyFilters);
+  if (filtroEntidad) filtroEntidad.addEventListener('change', applyFilters);
+
+  if (checkAll) {
+    checkAll.addEventListener('change', function () {
+      visibleRows().forEach(function (tr) {
+        var cb = tr.querySelector('.row-check');
+        if (cb) cb.checked = checkAll.checked;
+      });
+      updateCount();
+    });
+  }
+
+  document.getElementById('btn-sel-visibles')?.addEventListener('click', function () {
+    visibleRows().forEach(function (tr) {
+      var cb = tr.querySelector('.row-check');
+      if (cb) cb.checked = true;
+    });
+    updateCount();
+  });
+
+  document.getElementById('btn-limpiar-sel')?.addEventListener('click', function () {
+    document.querySelectorAll('.row-check').forEach(function (cb) { cb.checked = false; });
+    if (checkAll) checkAll.checked = false;
+    updateCount();
+  });
+
+  document.querySelectorAll('.row-check').forEach(function (cb) {
+    cb.addEventListener('change', updateCount);
+  });
+
+  if (form) {
+    form.addEventListener('submit', function (ev) {
+      var n = document.querySelectorAll('.row-check:checked').length;
+      var xml = document.getElementById('incluir-xml')?.checked;
+      var pdf = document.getElementById('incluir-pdf')?.checked;
+      if (!n) {
+        ev.preventDefault();
+        alert('Selecciona al menos un recibo con archivos.');
+        return;
+      }
+      if (!xml && !pdf) {
+        ev.preventDefault();
+        alert('Marca Incluir XML y/o Incluir PDF.');
+      }
+    });
+  }
+
+  updateCount();
+})();
+</script>
 <%- include('../../Partials/layout-bottom') %>

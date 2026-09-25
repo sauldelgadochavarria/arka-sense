@@ -4,33 +4,96 @@
   <meta charset="UTF-8" />
   <title>Nuevo tenant</title>
   <style>
-    body { font-family: system-ui, sans-serif; margin: 2rem; max-width: 600px; }
+    body { font-family: system-ui, sans-serif; margin: 2rem; max-width: 640px; }
     label { display: block; margin-top: 1rem; font-weight: 600; }
     input[type=text], input[type=email] { width: 100%; padding: 8px; }
     button { margin-top: 1.5rem; padding: 10px 16px; background: #2563eb; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
+    .pkg {
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 0.9rem 1rem;
+      margin: 0.85rem 0;
+      background: #fafafa;
+    }
+    .pkg h3 { margin: 0 0 0.2rem; font-size: 1rem; }
+    .pkg .desc { color: #6b7280; font-size: 0.85rem; margin: 0 0 0.6rem; }
+    .pkg-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.4rem; }
+    .pkg-actions button {
+      margin-top: 0;
+      padding: 4px 10px;
+      font-size: 0.85rem;
+      border: 1px solid #d1d5db;
+      border-radius: 4px;
+      background: #fff;
+      color: #111;
+      cursor: pointer;
+    }
+    .flag-row { font-weight: normal; margin-top: 0.35rem; }
+    .hint { color: #6b7280; font-size: 0.9rem; }
   </style>
 </head>
 <body>
   <h1>Nuevo tenant</h1>
-  <form method="post" action="/admin/tenants">
+  <form method="post" action="/admin/tenants" id="form-flags">
     <label>Nombre para mostrar</label>
     <input type="text" name="displayName" required placeholder="Mi Empresa SA" />
 
     <label>Slug (opcional)</label>
     <input type="text" name="slug" placeholder="mi-empresa" />
 
-    <fieldset style="margin-top:1.5rem">
-      <legend>Módulos (feature flags)</legend>
-      <% featureFlags.forEach(function(f) { %>
-      <label style="font-weight:normal">
-        <input type="checkbox" name="featureFlags[<%= f.key %>]" value="true" <%= f.key === 'core' || f.key === 'config_admin' ? 'checked' : '' %> />
+    <h2 style="margin-top:1.75rem;font-size:1.1rem">Licencia / módulos</h2>
+    <p class="hint">Default comercial: Núcleo + Asistencia-Prenómina. Activa Nómina si el cliente la contrató.</p>
+
+    <% (featurePackages || []).forEach(function(pkg) { %>
+    <div class="pkg" data-package="<%= pkg.id %>">
+      <h3><%= pkg.label %><% if (pkg.alwaysOn) { %> <small>(siempre ON)</small><% } %></h3>
+      <p class="desc"><%= pkg.description %></p>
+      <% if (!pkg.alwaysOn) { %>
+      <div class="pkg-actions">
+        <button type="button" class="btn-pkg-on" data-pkg="<%= pkg.id %>">Activar paquete</button>
+        <button type="button" class="btn-pkg-off" data-pkg="<%= pkg.id %>">Desactivar paquete</button>
+      </div>
+      <% } %>
+      <% (pkg.flags || []).forEach(function(f) {
+        const checked = f.locked || !!(defaultFlags && defaultFlags[f.key]);
+      %>
+      <label class="flag-row">
+        <input
+          type="checkbox"
+          name="featureFlags[<%= f.key %>]"
+          value="true"
+          data-pkg="<%= pkg.id %>"
+          <%= checked ? 'checked' : '' %>
+          <%= f.locked ? 'disabled' : '' %>
+        />
         <%= f.label %>
-      </label><br/>
+      </label>
+      <% if (f.locked) { %>
+      <input type="hidden" name="featureFlags[<%= f.key %>]" value="true" />
+      <% } %>
       <% }); %>
-    </fieldset>
+    </div>
+    <% }); %>
 
     <button type="submit">Crear</button>
   </form>
   <p><a href="/admin/tenants">← Volver</a></p>
+
+  <script>
+  (function () {
+    function setPackage(pkgId, on) {
+      document.querySelectorAll('input[type=checkbox][data-pkg="' + pkgId + '"]').forEach(function (cb) {
+        if (cb.disabled) return;
+        cb.checked = !!on;
+      });
+    }
+    document.querySelectorAll('.btn-pkg-on').forEach(function (btn) {
+      btn.addEventListener('click', function () { setPackage(btn.getAttribute('data-pkg'), true); });
+    });
+    document.querySelectorAll('.btn-pkg-off').forEach(function (btn) {
+      btn.addEventListener('click', function () { setPackage(btn.getAttribute('data-pkg'), false); });
+    });
+  })();
+  </script>
 </body>
 </html>

@@ -31,6 +31,9 @@ const { PLANTILLA_PDF_CFDI } = require('../config/reciboPdfPlantillaCfdi');
 const { crearYProcesarLote } = require('../services/timbradoService');
 const { authenticateSw } = require('../services/pacClientService');
 const { obtenerCfdiArchivoParaDescarga } = require('../services/cfdiArchivoService');
+const { buildZipStore } = require('../libs/zipStore');
+const getDepartamentoModel = require('../models/departamento');
+const { ENTIDADES_FEDERATIVAS } = require('../config/empleadoCatalogos');
 const {
   renderPlantillaHtml,
   buildReciboPdfContext,
@@ -660,6 +663,73 @@ async function generarTimbrado(req, res) {
   }
 }
 
+async function enrichLoteItems(tenantId, items = []) {
+  const empIds = [...new Set(items.map((it) => it.empleadoId).filter(Boolean).map(String))];
+  if (!empIds.length) {
+    return items.map((it) => ({
+      ...it,
+      departamentoId: null,
+      departamentoNombre: '',
+      entidadFederativa: '',
+      entidadLabel: ''
+    }));
+  }
+
+  const Empleado = await getEmpleadoModel();
+  const Departamento = await getDepartamentoModel();
+  const empleados = await Empleado.find({ tenantId, _id: { $in: empIds } })
+    .select('departamentoId domicilio entidadNacimiento entidadFederativa')
+    .lean();
+  const empById = new Map(empleados.map((e) => [String(e._id), e]));
+  const deptoIds = [...new Set(empleados.map((e) => e.departamentoId).filter(Boolean).map(String))];
+  const deptos = deptoIds.length
+    ? await Departamento.find({ _id: { $in: deptoIds } }).select('nombre').lean()
+    : [];
+  const deptoById = new Map(deptos.map((d) => [String(d._id), d]));
+  const entLabel = new Map(ENTIDADES_FEDERATIVAS.map((e) => [e.value, e.label]));
+
+  return items.map((it) => {
+    const emp = empById.get(String(it.empleadoId)) || {};
+    const departamentoId = emp.departamentoId || null;
+    const departamentoNombre = departamentoId
+      ? deptoById.get(String(departamentoId))?.nombre || ''
+      : '';
+    const entidadFederativa = String(
+      emp.entidadFederativa || emp.domicilio?.entidad || emp.entidadNacimiento || ''
+    )
+      .trim()
+      .toUpperCase();
+    return {
+      ...it,
+      departamentoId,
+      departamentoNombre,
+      entidadFederativa,
+      entidadLabel: entLabel.get(entidadFederativa) || entidadFederativa
+    };
+  });
+}
+
+function uniqueFilterOptions(items) {
+  const deptos = new Map();
+  const entidades = new Map();
+  for (const it of items) {
+    if (it.departamentoId) {
+      deptos.set(String(it.departamentoId), it.departamentoNombre || 'Sin nombre');
+    }
+    if (it.entidadFederativa) {
+      entidades.set(it.entidadFederativa, it.entidadLabel || it.entidadFederativa);
+    }
+  }
+  return {
+    departamentos: [...deptos.entries()]
+      .map(([id, nombre]) => ({ id, nombre }))
+      .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es')),
+    entidades: [...entidades.entries()]
+      .map(([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label, 'es'))
+  };
+}
+
 async function showLote(req, res) {
   const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
   const Lote = await getTimbradoLoteModel();
@@ -669,11 +739,16 @@ async function showLote(req, res) {
     empresaId: empresa?._id
   }).lean();
   if (!lote) return res.status(404).send('Lote no encontrado');
+
+  const items = await enrichLoteItems(req.session.tenantId, lote.items || []);
+  const filtros = uniqueFilterOptions(items);
+
   res.render('Nomina/timbrado/lote-show', {
     session: req.session,
     empresa,
     error,
-    lote
+    lote: { ...lote, items },
+    filtros
   });
 }
 
@@ -691,6 +766,89 @@ async function descargarCfdiArchivo(req, res) {
   res.setHeader('Content-Disposition', `attachment; filename="${nombre.replace(/"/g, '')}"`);
   res.setHeader('Content-Length', buf.length);
   return res.send(buf);
+}
+
+/**
+ * Descarga masiva XML y/o PDF de ítems seleccionados del lote (ZIP).
+ * body: { itemIds: string|string[], incluirXml?: '1', incluirPdf?: '1' }
+ */
+async function descargarMasivoLote(req, res) {
+  const { empresa } = await requireEmpresaForTenant(req.session.tenantId);
+  const Lote = await getTimbradoLoteModel();
+  const lote = await Lote.findOne({
+    _id: req.params.id,
+    tenantId: req.session.tenantId,
+    empresaId: empresa?._id
+  }).lean();
+  if (!lote) return res.status(404).send('Lote no encontrado');
+
+  const rawIds = req.body.itemIds;
+  const idList = Array.isArray(rawIds) ? rawIds : rawIds ? [rawIds] : [];
+  const selected = new Set(idList.map(String).filter(Boolean));
+  if (!selected.size) {
+    return res.status(400).send('Selecciona al menos un recibo');
+  }
+
+  const incluirXml = req.body.incluirXml === '1' || req.body.incluirXml === 'on' || req.body.incluirXml === true;
+  const incluirPdf = req.body.incluirPdf === '1' || req.body.incluirPdf === 'on' || req.body.incluirPdf === true;
+  if (!incluirXml && !incluirPdf) {
+    return res.status(400).send('Elige XML y/o PDF');
+  }
+
+  const items = (lote.items || []).filter((it) => selected.has(String(it._id)));
+  if (!items.length) return res.status(400).send('Ningún ítem válido en la selección');
+
+  const entries = [];
+  const usedNames = new Set();
+  const safeName = (base) => {
+    let name = String(base || 'archivo').replace(/[^\w.\-]+/g, '_');
+    if (!usedNames.has(name)) {
+      usedNames.add(name);
+      return name;
+    }
+    let i = 2;
+    while (usedNames.has(`${name}_${i}`)) i += 1;
+    const alt = `${name}_${i}`;
+    usedNames.add(alt);
+    return alt;
+  };
+
+  for (const it of items) {
+    const prefix = `${it.numEmpleado || 'emp'}_${String(it.uuid || it._id).slice(0, 8)}`;
+    if (incluirXml && it.archivoXmlId) {
+      const doc = await obtenerCfdiArchivoParaDescarga(req.session.tenantId, it.archivoXmlId);
+      if (doc?.contenido) {
+        const buf = Buffer.isBuffer(doc.contenido)
+          ? doc.contenido
+          : Buffer.from(doc.contenido.buffer || doc.contenido);
+        const fname = safeName(doc.nombreArchivo || `${prefix}.xml`);
+        entries.push({ name: `xml/${fname}`, data: buf });
+      }
+    }
+    if (incluirPdf && it.archivoPdfId) {
+      const doc = await obtenerCfdiArchivoParaDescarga(req.session.tenantId, it.archivoPdfId);
+      if (doc?.contenido) {
+        const buf = Buffer.isBuffer(doc.contenido)
+          ? doc.contenido
+          : Buffer.from(doc.contenido.buffer || doc.contenido);
+        const ext = (doc.nombreArchivo || '').endsWith('.html') ? 'html' : 'pdf';
+        const fname = safeName(doc.nombreArchivo || `${prefix}.${ext}`);
+        entries.push({ name: `pdf/${fname}`, data: buf });
+      }
+    }
+  }
+
+  if (!entries.length) {
+    return res.status(404).send('No hay archivos descargables para la selección');
+  }
+
+  const zip = buildZipStore(entries);
+  const stamp = new Date().toISOString().slice(0, 10);
+  const filename = `timbrado_lote_${String(lote._id).slice(-6)}_${stamp}.zip`;
+  res.setHeader('Content-Type', 'application/zip');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.setHeader('Content-Length', zip.length);
+  return res.send(zip);
 }
 
 async function reciboPdfHtml(req, res) {
@@ -794,5 +952,6 @@ module.exports = {
   generarTimbrado,
   showLote,
   descargarCfdiArchivo,
+  descargarMasivoLote,
   reciboPdfHtml
 };

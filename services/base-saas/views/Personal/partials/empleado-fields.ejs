@@ -329,7 +329,7 @@
     <p class="hint muted">Además de la geocerca de la sucursal y las asignaciones temporales. <a href="/config-puntos-acceso" target="_blank">Administrar catálogo</a></p>
     <% const puntosSel = empleado && Array.isArray(empleado.puntoAccesoIds) ? empleado.puntoAccesoIds.map(String) : []; %>
     <% if (!(puntosAcceso || []).length) { %>
-    <p class="muted">No hay puntos activos. Crea alguno en Configuración → Puntos de acceso.</p>
+    <p class="muted">No hay puntos activos. Crea alguno en Asistencia → Puntos de acceso.</p>
     <% } %>
     <% (puntosAcceso || []).forEach(function(p) { %>
     <label>
