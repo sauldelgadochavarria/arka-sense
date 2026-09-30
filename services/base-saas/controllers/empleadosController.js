@@ -131,21 +131,23 @@ async function loadEmpleadoCatalogs(tenantId, empresa) {
   const getTablaPrestacionesModel = require('../models/tablaPrestaciones');
   const TablaPrestaciones = await getTablaPrestacionesModel();
   const CentroCosto = await getCentroCostoModel();
+  const empresaScope = { tenantId, empresaId: empresa._id };
   const [empleados, departamentos, puestos, subsidiarias, turnos, gruposDispositivos, puntosAcceso, plantillas, tiposPeriodo, tablasPrestaciones, centrosCosto] =
     await Promise.all([
-    Empleado.find({ tenantId }).sort({ lastName: 1, firstName: 1 }).lean(),
-    Departamento.find({ tenantId, activo: true }).sort({ nombre: 1 }).lean(),
-    Puesto.find({ tenantId, activo: true }).sort({ nombre: 1 }).lean(),
+    Empleado.find(empresaScope).sort({ lastName: 1, firstName: 1 }).lean(),
+    Departamento.find({ ...empresaScope, activo: true }).sort({ nombre: 1 }).lean(),
+    Puesto.find({ ...empresaScope, activo: true }).sort({ nombre: 1 }).lean(),
     Subsidiaria.find({ empresaId: empresa._id, activo: true }).sort({ nombre: 1 }).lean(),
     Turno.find({ tenantId, activo: true }).sort({ nombre: 1 }).lean(),
     GrupoDispositivos.find({ tenantId, activo: true }).sort({ nombre: 1 }).lean(),
     PuntoAcceso.find({ tenantId, activo: true }).sort({ nombre: 1 }).lean(),
     loadPlantillasActivas(tenantId),
-    listTiposPeriodo(tenantId, true),
-    TablaPrestaciones.find({ tenantId, empresaId: empresa._id, activo: true })
+    listTiposPeriodo(tenantId, true, empresa._id),
+    // Prestaciones: catálogo global del tenant (compartido entre empresas)
+    TablaPrestaciones.find({ tenantId, activo: true })
       .sort({ ambito: 1, nombre: 1 })
       .lean(),
-    CentroCosto.find({ tenantId, empresaId: empresa._id, activo: true }).sort({ codigo: 1 }).lean()
+    CentroCosto.find({ ...empresaScope, activo: true }).sort({ codigo: 1 }).lean()
   ]);
 
   const supervisores = empleados.filter((e) => e.estatus === 'activo');
@@ -185,12 +187,12 @@ async function loadCatalogMaps(tenantId, empresaId) {
   const Turno = await getTurnoModel();
 
   const [departamentos, puestos, subsidiarias, empleados, turnos, tiposPeriodo] = await Promise.all([
-    Departamento.find({ tenantId }).lean(),
-    Puesto.find({ tenantId }).lean(),
+    Departamento.find(empresaId ? { tenantId, empresaId } : { tenantId }).lean(),
+    Puesto.find(empresaId ? { tenantId, empresaId } : { tenantId }).lean(),
     empresaId ? Subsidiaria.find({ empresaId }).lean() : [],
-    Empleado.find({ tenantId }).lean(),
+    Empleado.find(empresaId ? { tenantId, empresaId } : { tenantId }).lean(),
     Turno.find({ tenantId }).lean(),
-    listTiposPeriodo(tenantId, false)
+    listTiposPeriodo(tenantId, false, empresaId || null)
   ]);
 
   const maps = buildLookupMaps(departamentos, puestos, subsidiarias, empleados);
@@ -205,12 +207,21 @@ async function loadCatalogMaps(tenantId, empresaId) {
 }
 
 async function listEmpleados(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const estatus = String(req.query.estatus || 'activo').trim();
   const Empleado = await getEmpleadoModel();
   const catalogs = await loadEmpleadoCatalogs(req.session.tenantId, empresa);
 
   let filter = { tenantId: req.session.tenantId };
+  if (empresa) filter.empresaId = empresa._id;
+  const subId = req.session?.subsidiariaActiva?._id;
+  if (subId) {
+    filter.$or = [
+      { subsidiariaId: subId },
+      { subsidiariaId: null },
+      { subsidiariaId: { $exists: false } }
+    ];
+  }
   if (estatus !== 'todos') filter.estatus = estatus;
 
   const empleados = empresa
@@ -249,7 +260,7 @@ async function listEmpleados(req, res) {
 
 async function createEmpleado(req, res) {
   try {
-    const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+    const { empresa, error } = await requireEmpresaForTenant(req);
     if (error) {
       req.flash('error', error);
       return res.redirect('/personal-empleados');
@@ -280,7 +291,7 @@ async function createEmpleado(req, res) {
 }
 
 async function showEmpleado(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const Empleado = await getEmpleadoModel();
   const empleado = await findOneByTenant(Empleado, req.session.tenantId, req.params.id);
   if (!empleado) return res.status(404).send('Empleado no encontrado');
@@ -377,7 +388,7 @@ async function showEmpleado(req, res) {
 }
 
 async function editEmpleado(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const Empleado = await getEmpleadoModel();
   const empleado = await findOneByTenant(Empleado, req.session.tenantId, req.params.id);
   if (!empleado) return res.status(404).send('Empleado no encontrado');
@@ -414,7 +425,7 @@ async function editEmpleado(req, res) {
 
 async function updateEmpleado(req, res) {
   try {
-    const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+    const { empresa, error } = await requireEmpresaForTenant(req);
     if (error) {
       req.flash('error', error);
       return res.redirect('/personal-empleados');
@@ -467,7 +478,7 @@ async function bajaEmpleado(req, res) {
     const empleado = await findOneDocByTenant(Empleado, req.session.tenantId, req.params.id);
     if (!empleado) return res.status(404).send('Empleado no encontrado');
 
-    const { empresa } = await requireEmpresaForTenant(req.session.tenantId);
+    const { empresa } = await requireEmpresaForTenant(req);
     const antes = empleado.toObject();
     empleado.estatus = 'baja';
     empleado.activo = false;
@@ -496,7 +507,7 @@ async function reactivarEmpleado(req, res) {
     const empleado = await findOneDocByTenant(Empleado, req.session.tenantId, req.params.id);
     if (!empleado) return res.status(404).send('Empleado no encontrado');
 
-    const { empresa } = await requireEmpresaForTenant(req.session.tenantId);
+    const { empresa } = await requireEmpresaForTenant(req);
     const antes = empleado.toObject();
     empleado.estatus = 'activo';
     empleado.activo = true;
@@ -521,7 +532,7 @@ async function reactivarEmpleado(req, res) {
 
 async function calcularSdiAction(req, res) {
   try {
-    const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+    const { empresa, error } = await requireEmpresaForTenant(req);
     if (error || !empresa) {
       return res.status(400).json({ error: error || 'Sin empresa' });
     }

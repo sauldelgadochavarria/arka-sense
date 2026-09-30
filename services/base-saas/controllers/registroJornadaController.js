@@ -36,7 +36,7 @@ function fmtMin(m) {
 }
 
 async function showRegistroJornada(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const defaults = defaultRange();
   const desdeStr = trimString(req.query.desde) || defaults.desde;
   const hastaStr = trimString(req.query.hasta) || defaults.hasta;

@@ -9,7 +9,7 @@ const {
 const { trimString, parseOptionalObjectId, parseObjectIdArray } = require('../libs/formHelpers');
 
 async function listGrupos(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const GrupoDispositivos = await getGrupoDispositivosModel();
   const BiometricDevice = await getBiometricDeviceModel();
   const Subsidiaria = await getSubsidiariaModel();
@@ -39,7 +39,7 @@ async function listGrupos(req, res) {
 
 async function createGrupo(req, res) {
   try {
-    const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+    const { empresa, error } = await requireEmpresaForTenant(req);
     if (error) {
       req.flash('error', error);
       return res.redirect('/integraciones/grupos-dispositivos');
@@ -66,7 +66,7 @@ async function createGrupo(req, res) {
 }
 
 async function editGrupo(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const GrupoDispositivos = await getGrupoDispositivosModel();
   const BiometricDevice = await getBiometricDeviceModel();
   const Subsidiaria = await getSubsidiariaModel();

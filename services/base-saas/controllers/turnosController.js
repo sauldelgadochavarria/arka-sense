@@ -30,7 +30,7 @@ function flashTurnoError(req, err, fallback) {
   req.flash('error', fallback);
 }
 async function listTurnos(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const Turno = await getTurnoModel();
   const turnos = empresa
     ? await Turno.find({ tenantId: req.session.tenantId }).sort({ nombre: 1 }).lean()
@@ -65,13 +65,13 @@ function turnoFormLocals(empresa, error, req) {
 }
 
 async function newTurno(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   res.render('Asistencia/turno-nuevo', turnoFormLocals(empresa, error, req));
 }
 
 async function createTurno(req, res) {
   try {
-    const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+    const { empresa, error } = await requireEmpresaForTenant(req);
     if (error) {
       req.flash('error', error);
       return res.redirect('/asistencia-turnos/nuevo');
@@ -94,7 +94,7 @@ async function createTurno(req, res) {
 }
 
 async function editTurno(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const Turno = await getTurnoModel();
   const turno = await findOneByTenant(Turno, req.session.tenantId, req.params.id);
   if (!turno) return res.status(404).send('Turno no encontrado');
@@ -114,7 +114,7 @@ async function editTurno(req, res) {
 
 async function updateTurno(req, res) {
   try {
-    const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+    const { empresa, error } = await requireEmpresaForTenant(req);
     if (error) {
       req.flash('error', error);
       return res.redirect('/asistencia-turnos');

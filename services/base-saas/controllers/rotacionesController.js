@@ -34,7 +34,7 @@ async function loadTurnosMap(tenantId) {
 }
 
 async function listRotaciones(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const PlantillaRotacion = await getPlantillaRotacionModel();
   const AsignacionRotacion = await getAsignacionRotacionModel();
   const { turnoMap } = await loadTurnosMap(req.session.tenantId);
@@ -64,7 +64,7 @@ async function listRotaciones(req, res) {
 
 async function createPlantilla(req, res) {
   try {
-    const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+    const { empresa, error } = await requireEmpresaForTenant(req);
     if (error) {
       req.flash('error', error);
       return res.redirect('/asistencia-rotaciones');
@@ -101,7 +101,7 @@ async function createPlantilla(req, res) {
 }
 
 async function editPlantilla(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const PlantillaRotacion = await getPlantillaRotacionModel();
   const plantilla = await findOneByTenant(PlantillaRotacion, req.session.tenantId, req.params.id);
   if (!plantilla) return res.status(404).send('Plantilla no encontrada');
@@ -129,7 +129,7 @@ async function editPlantilla(req, res) {
 
 async function updatePlantilla(req, res) {
   try {
-    const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+    const { empresa, error } = await requireEmpresaForTenant(req);
     if (error) {
       req.flash('error', error);
       return res.redirect('/asistencia-rotaciones');
@@ -170,7 +170,7 @@ async function togglePlantilla(req, res) {
 }
 
 async function listAsignaciones(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const PlantillaRotacion = await getPlantillaRotacionModel();
   const AsignacionRotacion = await getAsignacionRotacionModel();
   const Empleado = await getEmpleadoModel();
@@ -207,7 +207,7 @@ async function listAsignaciones(req, res) {
 
 async function createAsignacion(req, res) {
   try {
-    const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+    const { empresa, error } = await requireEmpresaForTenant(req);
     if (error) {
       req.flash('error', error);
       return res.redirect('/asistencia-rotaciones/asignaciones');
@@ -234,7 +234,7 @@ async function createAsignacion(req, res) {
 
 async function createAsignacionMasiva(req, res) {
   try {
-    const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+    const { empresa, error } = await requireEmpresaForTenant(req);
     if (error) {
       req.flash('error', error);
       return res.redirect('/asistencia-rotaciones/asignaciones');
@@ -282,7 +282,7 @@ async function toggleAsignacion(req, res) {
 }
 
 async function listCambios(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const OverrideTurno = await getOverrideTurnoModel();
   const Empleado = await getEmpleadoModel();
   const { turnos, turnoMap } = await loadTurnosMap(req.session.tenantId);
@@ -320,7 +320,7 @@ async function listCambios(req, res) {
 
 async function createCambio(req, res) {
   try {
-    const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+    const { empresa, error } = await requireEmpresaForTenant(req);
     if (error) {
       req.flash('error', error);
       return res.redirect('/asistencia-rotaciones/cambios');
@@ -381,7 +381,7 @@ async function toggleCambio(req, res) {
 }
 
 async function showMatriz(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const fechaStr = defaultFechaQuery(req);
   const fechaInicio = startOfDay(new Date(`${fechaStr}T12:00:00`));
   const diasVista = Math.min(28, Math.max(7, Number(req.query.dias) || 14));

@@ -30,8 +30,68 @@
       <% if (typeof session !== 'undefined' && session) { %>
         <a class="topbar-help" href="/ayuda" title="Centro de ayuda">Ayuda</a>
         <span><%= session.user %></span>
-        <% if (session.subsidiariaActiva) { %>
-        <span class="subsidiaria-tag"><%= session.subsidiariaActiva.codigo %></span>
+        <%
+          const _empresas = typeof empresasDisponibles !== 'undefined' ? empresasDisponibles : [];
+          const _subs = typeof subsidiariasDisponibles !== 'undefined' ? subsidiariasDisponibles : [];
+          const _empAct = (typeof empresaActiva !== 'undefined' && empresaActiva)
+            ? empresaActiva
+            : (session.empresaActiva || null);
+          const _subAct = session.subsidiariaActiva || null;
+          const _empLabel = _empAct
+            ? (_empAct.nombreComercial || _empAct.razonSocial || 'Empresa')
+            : 'Sin empresa';
+          const _showCtx = _empresas.length > 0 || _subs.length > 0 || _empAct || _subAct;
+        %>
+        <% if (_showCtx) { %>
+        <details class="ctx-switch">
+          <summary class="subsidiaria-tag ctx-switch-summary" title="Cambiar empresa / subsidiaria">
+            <span class="ctx-switch-emp"><%= _empLabel %></span>
+            <% if (_subAct) { %>
+            <span class="ctx-switch-sub">· <%= _subAct.codigo %></span>
+            <% } %>
+          </summary>
+          <div class="ctx-switch-menu">
+            <% if (_empresas.length > 1) { %>
+            <div class="ctx-switch-group">
+              <div class="ctx-switch-label">Empresa</div>
+              <% _empresas.forEach(function(e) {
+                const isActive = _empAct && String(_empAct._id) === String(e._id);
+              %>
+              <% if (isActive) { %>
+              <div class="ctx-switch-item is-active"><%= e.nombreComercial || e.razonSocial %><% if (e.rfc) { %> <code><%= e.rfc %></code><% } %></div>
+              <% } else { %>
+              <form method="post" action="/cambiar-empresa/<%= e._id %>" class="ctx-switch-form">
+                <button type="submit" class="ctx-switch-item"><%= e.nombreComercial || e.razonSocial %><% if (e.rfc) { %> <code><%= e.rfc %></code><% } %></button>
+              </form>
+              <% } %>
+              <% }); %>
+            </div>
+            <% } else if (_empAct) { %>
+            <div class="ctx-switch-group">
+              <div class="ctx-switch-label">Empresa</div>
+              <div class="ctx-switch-item is-active"><%= _empLabel %><% if (_empAct.rfc) { %> <code><%= _empAct.rfc %></code><% } %></div>
+            </div>
+            <% } %>
+            <% if (_subs.length) { %>
+            <div class="ctx-switch-group">
+              <div class="ctx-switch-label">Subsidiaria / sucursal</div>
+              <% _subs.forEach(function(s) {
+                const isActive = _subAct && String(_subAct._id) === String(s._id);
+              %>
+              <% if (isActive) { %>
+              <div class="ctx-switch-item is-active"><strong><%= s.codigo %></strong> — <%= s.nombre %></div>
+              <% } else { %>
+              <form method="post" action="/cambiar-subsidiaria/<%= s._id %>" class="ctx-switch-form">
+                <button type="submit" class="ctx-switch-item"><strong><%= s.codigo %></strong> — <%= s.nombre %></button>
+              </form>
+              <% } %>
+              <% }); %>
+            </div>
+            <% } %>
+            <a class="ctx-switch-link" href="/config-subsidiarias">Administrar subsidiarias</a>
+            <a class="ctx-switch-link" href="/config-empresa">Datos de empresa</a>
+          </div>
+        </details>
         <% } %>
         <a href="/logout">Salir</a>
       <% } %>

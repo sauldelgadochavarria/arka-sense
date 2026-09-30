@@ -136,7 +136,7 @@ function viewLocals(extra) {
 }
 
 async function wizard(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const catalogs = await loadCatalogs(req.session.tenantId, empresa);
   const lotes = empresa ? await listLotes(req.session.tenantId, empresa._id) : [];
   const input = parseInput(req.body || {}, req.method === 'POST');
@@ -169,7 +169,7 @@ async function wizard(req, res) {
 }
 
 async function guardar(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   if (error || !empresa) return flashRedirect(req, res, '/personal/ajuste-anual', 'error', error || 'Sin empresa');
   if (!canManage(req.session)) {
     return flashRedirect(req, res, '/personal/ajuste-anual', 'error', 'Sin permiso para guardar el lote');
@@ -191,7 +191,7 @@ async function guardar(req, res) {
 }
 
 async function showLote(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   if (!empresa) {
     return res.render('Personal/ajuste-anual-lote', viewLocals({
       session: req.session,
@@ -215,7 +215,7 @@ async function showLote(req, res) {
 }
 
 async function postAutorizar(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   if (error || !empresa) return flashRedirect(req, res, '/personal/ajuste-anual', 'error', error || 'Sin empresa');
   if (!canManage(req.session)) {
     return flashRedirect(req, res, `/personal/ajuste-anual/lotes/${req.params.id}`, 'error', 'Sin permiso');
@@ -237,7 +237,7 @@ async function postAutorizar(req, res) {
 }
 
 async function postRechazar(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   if (error || !empresa) return flashRedirect(req, res, '/personal/ajuste-anual', 'error', error || 'Sin empresa');
   try {
     await rechazarLote({
@@ -254,7 +254,7 @@ async function postRechazar(req, res) {
 }
 
 async function postAplicar(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   if (error || !empresa) return flashRedirect(req, res, '/personal/ajuste-anual', 'error', error || 'Sin empresa');
   if (!canManage(req.session)) {
     return flashRedirect(req, res, `/personal/ajuste-anual/lotes/${req.params.id}`, 'error', 'Sin permiso');
@@ -280,7 +280,7 @@ async function postAplicar(req, res) {
 }
 
 async function exportCsv(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   if (error || !empresa) return res.status(400).send(error || 'Sin empresa');
   const lote = await getLote(req.session.tenantId, empresa._id, req.params.id);
   if (!lote) return res.status(404).send('Lote no encontrado');

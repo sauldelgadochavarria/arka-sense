@@ -16,7 +16,7 @@ function defaultFechaQuery(req) {
 }
 
 async function listIncidencias(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const estatus = trimString(req.query.estatus) || 'todos';
   const fechaDesde = parseDate(req.query.fechaDesde) || startOfDay(new Date());
   const fechaHasta = parseDate(req.query.fechaHasta) || endOfDay(new Date());
@@ -59,7 +59,7 @@ async function listIncidencias(req, res) {
 
 async function createIncidencia(req, res) {
   try {
-    const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+    const { empresa, error } = await requireEmpresaForTenant(req);
     if (error) {
       req.flash('error', error);
       return res.redirect('/incidencias');
@@ -116,7 +116,7 @@ async function createIncidencia(req, res) {
 }
 
 async function listPendientes(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const Incidencia = await getIncidenciaModel();
   const Empleado = await getEmpleadoModel();
   const { startOfDay, endOfDay } = require('../libs/timeHelpers');
@@ -271,7 +271,7 @@ async function resolverMasivo(req, res, estatus) {
 }
 
 async function listTipos(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const tipos = empresa ? await listAllTiposForTenant(req.session.tenantId, empresa._id) : [];
   res.render('Incidencias/tipos', { tipos, empresa, error: error || null, session: req.session });
 }
@@ -292,7 +292,7 @@ function buildTipoPayload(body, tenantId, empresaId) {
 
 async function createTipo(req, res) {
   try {
-    const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+    const { empresa, error } = await requireEmpresaForTenant(req);
     if (error) {
       req.flash('error', error);
       return res.redirect('/incidencias/tipos');
@@ -316,7 +316,7 @@ async function createTipo(req, res) {
 }
 
 async function editTipo(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const TipoIncidencia = await getTipoIncidenciaModel();
   const tipo = await findOneByTenant(TipoIncidencia, req.session.tenantId, req.params.id);
   if (!tipo) return res.status(404).send('Tipo no encontrado');
@@ -326,7 +326,7 @@ async function editTipo(req, res) {
 
 async function updateTipo(req, res) {
   try {
-    const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+    const { empresa, error } = await requireEmpresaForTenant(req);
     if (error) {
       req.flash('error', error);
       return res.redirect('/incidencias/tipos');

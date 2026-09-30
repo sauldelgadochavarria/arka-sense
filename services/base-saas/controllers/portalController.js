@@ -182,7 +182,7 @@ async function portalSolicitudes(req, res) {
 }
 
 async function portalNuevaSolicitud(req, res) {
-  const { empresa } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa } = await requireEmpresaForTenant(req);
   const tipos = empresa
     ? (await ensureTiposIncidenciaForTenant(req.session.tenantId, empresa._id)).filter(
         (t) => !t.esAutomatica && (t.requiereAprobacion || t.clave === 'FR')

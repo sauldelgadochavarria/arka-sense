@@ -23,10 +23,12 @@ const {
 } = require('../config/periodosNomina');
 
 async function list(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   if (empresa) await ensureTiposPeriodoForTenant(req.session.tenantId, empresa._id);
 
   const filtros = {
+    empresaId: empresa ? empresa._id : undefined,
+    subsidiariaId: req.session.subsidiariaActiva?._id || undefined,
     tipoPeriodoId: trimString(req.query.tipoPeriodoId) || undefined,
     anio: req.query.anio ? Number(req.query.anio) : undefined,
     estatus: trimString(req.query.estatus) || undefined,
@@ -35,7 +37,7 @@ async function list(req, res) {
 
   const [periodos, tiposPeriodo] = await Promise.all([
     empresa ? listarPeriodos(req.session.tenantId, filtros) : [],
-    empresa ? listTiposPeriodo(req.session.tenantId, true) : []
+    empresa ? listTiposPeriodo(req.session.tenantId, true, empresa._id) : []
   ]);
 
   const tipoMap = new Map(tiposPeriodo.map((t) => [String(t._id), t]));
@@ -65,9 +67,9 @@ async function list(req, res) {
 }
 
 async function generarForm(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   if (empresa) await ensureTiposPeriodoForTenant(req.session.tenantId, empresa._id);
-  const tiposPeriodo = empresa ? await listTiposPeriodo(req.session.tenantId, true) : [];
+  const tiposPeriodo = empresa ? await listTiposPeriodo(req.session.tenantId, true, empresa._id) : [];
 
   res.render('Catalogos/periodos-generar', {
     tiposPeriodo,
@@ -118,7 +120,7 @@ async function previewApi(req, res) {
 
 async function generar(req, res) {
   try {
-    const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+    const { empresa, error } = await requireEmpresaForTenant(req);
     if (error) {
       req.flash('error', error);
       return res.redirect('/catalogos/periodos/generar');
@@ -143,7 +145,8 @@ async function generar(req, res) {
       anio,
       fechaInicial,
       tipoNomina: trimString(req.body.tipoNomina) || 'ordinaria',
-      notas: trimString(req.body.notas)
+      notas: trimString(req.body.notas),
+      subsidiariaId: req.session.subsidiariaActiva?._id || null
     });
 
     req.flash(

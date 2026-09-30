@@ -117,7 +117,7 @@ const periodoNominaSchema = new mongoose.Schema(
 
 periodoNominaSchema.index({ tenantId: 1, fechaInicio: 1, fechaFin: 1, tipoNomina: 1 });
 periodoNominaSchema.index(
-  { tenantId: 1, anio: 1, tipoPeriodo: 1, numeroPeriodo: 1 },
+  { tenantId: 1, empresaId: 1, anio: 1, tipoPeriodo: 1, tipoNomina: 1, numeroPeriodo: 1 },
   { unique: true, partialFilterExpression: { numeroPeriodo: { $type: 'number' } } }
 );
 

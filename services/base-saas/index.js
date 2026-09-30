@@ -64,6 +64,12 @@ app.listen(PORT, () => {
   console.log(`[arka-presence-saas] http://localhost:${PORT}`);
   const { iniciarWorkerNomina } = require('./services/nomina/nominaCalculoJobService');
   iniciarWorkerNomina();
+  try {
+    const { iniciarWorkerCfdiMasivo } = require('./services/cargas/cfdiNominaMasivoService');
+    iniciarWorkerCfdiMasivo();
+  } catch (err) {
+    console.warn('[cfdi-masivo] worker no iniciado:', err.message);
+  }
   // Precarga opcional del motor facial (no bloquea el boot si falla)
   setImmediate(() => {
     try {

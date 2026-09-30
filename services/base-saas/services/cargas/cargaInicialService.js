@@ -7,6 +7,8 @@ const empleadosH = require('./handlers/empleados');
 const historialH = require('./handlers/historialLaboral');
 const acumuladosH = require('./handlers/acumulados');
 const historicoH = require('./handlers/historicoRecibos');
+const { aplicarJobCfdi } = require('./cfdiNominaImportService');
+const { encolarApplyMasivo } = require('./cfdiNominaMasivoService');
 
 const MAX_CSV_CHARS = 1_500_000;
 const MAX_ERRORES_UI = 80;
@@ -114,8 +116,24 @@ async function crearYValidar({
   return doc;
 }
 
-async function aplicarJob(tenantId, jobId, { userId = '', userLabel = '' } = {}) {
+async function aplicarJob(tenantId, jobId, { userId = '', userLabel = '', opcionesOverride = null } = {}) {
   const Job = await getCargaInicialJobModel();
+  const jobMeta = await Job.findOne({ _id: jobId, tenantId }).select('tipo').lean();
+  if (jobMeta?.tipo === 'cfdi_nomina_zip') {
+    return aplicarJobCfdi(tenantId, jobId, {
+      userId,
+      userLabel,
+      opcionesOverride
+    });
+  }
+  if (jobMeta?.tipo === 'cfdi_nomina_zip_masivo') {
+    return encolarApplyMasivo(tenantId, jobId, {
+      userId,
+      userLabel,
+      opcionesOverride
+    });
+  }
+
   const job = await Job.findOne({ _id: jobId, tenantId });
   if (!job) throw new Error('Job no encontrado');
   if (!['validado', 'parcial'].includes(job.estatus) && job.estatus !== 'ok') {

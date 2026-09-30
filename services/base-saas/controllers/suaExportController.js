@@ -73,7 +73,7 @@ async function runExport(tenantId, empresa, filters) {
 }
 
 async function index(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const filters = parseOpts(req.query);
   let result = null;
   let genError = null;
@@ -99,7 +99,7 @@ async function index(req, res) {
 }
 
 async function download(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   if (error || !empresa) {
     req.flash('error', error || 'Sin empresa');
     return res.redirect('/nomina/sua');

@@ -1,6 +1,8 @@
 const express = require('express');
+const multer = require('multer');
 const { isUserAllowed } = require('../middleware/authMiddleware');
 const loadMenus = require('../middleware/menuMiddleware');
+const syncEmpresaContext = require('../middleware/syncEmpresaContext');
 const syncSessionFeatureFlags = require('../middleware/syncSessionFeatureFlags');
 const enforceFeatureFlags = require('../middleware/enforceFeatureFlags');
 const usersController = require('../controllers/usersController');
@@ -51,7 +53,7 @@ const { requireReportesAccess } = require('../middleware/requireReportesAccess')
 
 const router = express.Router();
 
-router.use(isUserAllowed, syncSessionFeatureFlags, enforceFeatureFlags, loadMenus);
+router.use(isUserAllowed, syncSessionFeatureFlags, enforceFeatureFlags, syncEmpresaContext, loadMenus);
 
 router.post('/preferencias/modulo', (req, res) => {
   const view = String(req.body.view || req.query.view || 'ambos').trim();
@@ -75,7 +77,7 @@ router.get('/portal/vacaciones', requirePortalEmpleado, portalController.portalV
 router.use(requireAdminAccess);
 
 router.get(['/', '/dashboard', '/inicio', '/nomina/flujo'], async (req, res) => {
-  const { empresa } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa } = await requireEmpresaForTenant(req);
   const featureFlags = req.tenant?.featureFlags || req.session?.featureFlags || {};
   const hasNomina = tenantHasFeature(featureFlags, 'nomina');
   const hasAsistenciaPkg = tenantHasAnyFeature(featureFlags, [
@@ -133,7 +135,7 @@ router.get(['/', '/dashboard', '/inicio', '/nomina/flujo'], async (req, res) => 
 });
 
 router.post('/nomina/flujo/periodos/:id/confirmar-revision', async (req, res) => {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const returnTo = String(req.body.returnTo || `/dashboard?periodoId=${req.params.id}`).trim();
   if (error || !empresa) {
     if (req.flash) req.flash('error', error || 'Sin empresa');
@@ -155,7 +157,7 @@ router.post('/nomina/flujo/periodos/:id/confirmar-revision', async (req, res) =>
 });
 
 router.post('/nomina/flujo/periodos/:id/omitir-dispersion', async (req, res) => {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const returnTo = String(req.body.returnTo || `/dashboard?periodoId=${req.params.id}`).trim();
   if (error || !empresa) {
     if (req.flash) req.flash('error', error || 'Sin empresa');
@@ -185,12 +187,39 @@ router.post('/config-roles', rolesController.createRole);
 
 router.get('/config-empresa', empresaController.showEmpresa);
 router.post('/config-empresa', empresaController.updateEmpresa);
+router.post('/config-empresa/nueva', empresaController.createEmpresa);
 router.get('/config-empresa/cargas', cargasInicialesController.index);
 router.get('/config-empresa/cargas/creditos-saldos', cargasInicialesController.proximamenteCreditos);
 router.get('/config-empresa/cargas/jobs/:id', cargasInicialesController.showJob);
+router.get('/config-empresa/cargas/jobs/:id/status.json', cargasInicialesController.jobStatusJson);
 router.post('/config-empresa/cargas/jobs/:id/aplicar', cargasInicialesController.applyJobAction);
 router.get('/config-empresa/cargas/:tipo/plantilla.csv', cargasInicialesController.downloadTemplate);
 router.get('/config-empresa/cargas/:tipo', cargasInicialesController.showTipo);
+const uploadCfdiZipMem = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 40 * 1024 * 1024 }
+});
+const os = require('os');
+const uploadCfdiZipDisk = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, os.tmpdir()),
+    filename: (_req, file, cb) => {
+      const safe = String(file.originalname || 'cfdi.zip').replace(/[^\w.\-]+/g, '_');
+      cb(null, `cfdi-masivo-${Date.now()}-${safe}`);
+    }
+  }),
+  limits: { fileSize: 500 * 1024 * 1024 }
+});
+router.post(
+  '/config-empresa/cargas/cfdi_nomina_zip/validar',
+  uploadCfdiZipMem.single('zip'),
+  cargasInicialesController.dryRunCfdiZip
+);
+router.post(
+  '/config-empresa/cargas/cfdi_nomina_zip_masivo/encolar',
+  uploadCfdiZipDisk.single('zip'),
+  cargasInicialesController.encolarCfdiZipMasivo
+);
 router.post('/config-empresa/cargas/:tipo/validar', cargasInicialesController.dryRun);
 
 router.get('/config-subsidiarias', subsidiariasController.listSubsidiarias);
@@ -234,7 +263,6 @@ router.post('/personal-empleados/:id/baja', empleadosController.bajaEmpleado);
 router.post('/personal-empleados/:id/reactivar', empleadosController.reactivarEmpleado);
 router.post('/personal-empleados/:id/calcular-sdi', empleadosController.calcularSdiAction);
 
-const multer = require('multer');
 const biometriaFacialController = require('../controllers/biometriaFacialController');
 const uploadBiometriaMem = multer({
   storage: multer.memoryStorage(),

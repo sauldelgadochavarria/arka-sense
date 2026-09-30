@@ -25,7 +25,7 @@ function sessionActor(req) {
 }
 
 async function showHub(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const scope = await resolveAsistenciaScope(req);
   const fechaStr = trimString(req.query.fecha) || new Date().toISOString().slice(0, 10);
   const fecha = startOfDay(parseDateTimeLocal(`${fechaStr}T12:00`) || new Date());
@@ -115,7 +115,7 @@ async function showHub(req, res) {
 }
 
 async function listAutorizaciones(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const scope = await resolveAsistenciaScope(req);
   const Empleado = await getEmpleadoModel();
   const Turno = await getTurnoModel();
@@ -188,7 +188,7 @@ async function decidirAction(req, res) {
       return res.redirect('/asistencia-autorizaciones');
     }
 
-    const { empresa } = await requireEmpresaForTenant(req.session.tenantId);
+    const { empresa } = await requireEmpresaForTenant(req);
     const actor = sessionActor(req);
 
     // Seguridad básica: supervisor solo su equipo o asignados a él

@@ -94,7 +94,7 @@ function viewLocals(extra = {}) {
 }
 
 async function list(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const Layout = await getLayoutBancarioModel();
   const layouts = empresa
     ? await Layout.find({ tenantId: req.session.tenantId, empresaId: empresa._id })
@@ -108,7 +108,7 @@ async function list(req, res) {
 }
 
 async function newForm(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const subsidiarias = await loadSubsidiarias(empresa?._id);
   res.render(
     'Nomina/layouts-bancarios/edit',
@@ -134,7 +134,7 @@ async function newForm(req, res) {
 
 async function create(req, res) {
   try {
-    const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+    const { empresa, error } = await requireEmpresaForTenant(req);
     if (error || !empresa) {
       req.flash('error', error || 'Sin empresa');
       return res.redirect('/nomina/layouts-bancarios');
@@ -155,7 +155,7 @@ async function create(req, res) {
 }
 
 async function edit(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const Layout = await getLayoutBancarioModel();
   const layout = await Layout.findOne({
     tenantId: req.session.tenantId,
@@ -178,7 +178,7 @@ async function edit(req, res) {
 
 async function update(req, res) {
   try {
-    const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+    const { empresa, error } = await requireEmpresaForTenant(req);
     if (error || !empresa) {
       req.flash('error', error || 'Sin empresa');
       return res.redirect('/nomina/layouts-bancarios');
@@ -218,7 +218,7 @@ async function toggle(req, res) {
 
 async function seedEjemplo(req, res) {
   try {
-    const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+    const { empresa, error } = await requireEmpresaForTenant(req);
     if (error || !empresa) {
       req.flash('error', error || 'Sin empresa');
       return res.redirect('/nomina/layouts-bancarios');
@@ -258,7 +258,7 @@ async function seedEjemplo(req, res) {
 /** Vista previa con datos de muestra (JSON o defaults). */
 async function preview(req, res) {
   try {
-    const { empresa } = await requireEmpresaForTenant(req.session.tenantId);
+    const { empresa } = await requireEmpresaForTenant(req);
     let layout;
     if (req.params.id) {
       const Layout = await getLayoutBancarioModel();
@@ -318,7 +318,7 @@ async function preview(req, res) {
 }
 
 async function wizardDispersion(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const Layout = await getLayoutBancarioModel();
   const Periodo = await getPeriodoNominaModel();
   const tenantId = req.session.tenantId;
@@ -352,7 +352,7 @@ async function wizardDispersion(req, res) {
 
 async function generarDispersion(req, res) {
   try {
-    const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+    const { empresa, error } = await requireEmpresaForTenant(req);
     if (error || !empresa) {
       req.flash('error', error || 'Sin empresa');
       return res.redirect('/nomina/dispersion-bancaria');

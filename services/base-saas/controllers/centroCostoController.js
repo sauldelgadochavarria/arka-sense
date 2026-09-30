@@ -11,7 +11,7 @@ const {
 } = require('../services/centroCostoService');
 
 async function list(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const centros = empresa ? await listCentrosCosto(req.session.tenantId) : [];
 
   res.render('Prenomina/centros-costo', {
@@ -23,7 +23,7 @@ async function list(req, res) {
 }
 
 async function newForm(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   res.render('Prenomina/centro-costo-nuevo', {
     empresa,
     error: error || null,
@@ -33,7 +33,7 @@ async function newForm(req, res) {
 
 async function create(req, res) {
   try {
-    const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+    const { empresa, error } = await requireEmpresaForTenant(req);
     if (error) {
       req.flash('error', error);
       return res.redirect('/prenomina/centros-costo');
@@ -55,7 +55,7 @@ async function create(req, res) {
 }
 
 async function edit(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const centro = await getCentroCostoById(req.session.tenantId, req.params.id);
   if (!centro) return res.status(404).send('Centro de costo no encontrado');
 

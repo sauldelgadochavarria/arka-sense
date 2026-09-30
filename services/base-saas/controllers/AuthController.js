@@ -1,6 +1,5 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
-const crypto = require('crypto');
 const { getUserModel } = require('../models/user');
 const getRoleModel = require('../models/role');
 const getEmpresaModel = require('../models/empresa');
@@ -8,6 +7,13 @@ const getSubsidiariaModel = require('../models/subsidiaria');
 const getTenantModel = require('../models/tenant');
 const { generateSessionToken } = require('../middleware/authMiddleware');
 const { isSoloPortalUser } = require('../libs/roleAccess');
+const {
+  snapshotEmpresa,
+  snapshotSubsidiaria,
+  setSessionEmpresa,
+  setSessionSubsidiaria,
+  redirectAfterContextSwitch
+} = require('../libs/tenantScope');
 
 const router = express.Router();
 
@@ -54,13 +60,19 @@ router.post('/post-login', async (req, res) => {
       tenant = await Tenant.findOne({ tenantId: user.tenantId }).lean();
     }
 
+    const tenantId = user.tenantId || tenant?.tenantId || '';
     const Empresa = await getEmpresaModel();
     const Subsidiaria = await getSubsidiariaModel();
+    let empresa = null;
     let subsidiariaActiva = null;
-    if (tenant) {
-      const empresa = await Empresa.findOne({ tenantId: tenant.tenantId }).lean();
+    if (tenantId) {
+      empresa = await Empresa.findOne({ tenantId, activo: { $ne: false } })
+        .sort({ createdAt: 1 })
+        .lean();
       if (empresa) {
-        subsidiariaActiva = await Subsidiaria.findOne({ empresaId: empresa._id, activo: true }).lean();
+        subsidiariaActiva =
+          (await Subsidiaria.findOne({ empresaId: empresa._id, activo: true, codigo: 'MAIN' }).lean()) ||
+          (await Subsidiaria.findOne({ empresaId: empresa._id, activo: true }).sort({ codigo: 1 }).lean());
       }
     }
 
@@ -68,11 +80,13 @@ router.post('/post-login', async (req, res) => {
     req.session.userid = String(user._id);
     req.session.email = user.email;
     req.session.roles = roles;
-    req.session.tenantId = user.tenantId || tenant?.tenantId || '';
+    req.session.tenantId = tenantId;
     req.session.tenantSlug = tenant?.slug || req.session.tenantSlug || '';
     req.session.featureFlags = tenant?.featureFlags || {};
     req.session.sessionToken = sessionToken;
-    req.session.subsidiariaActiva = subsidiariaActiva;
+    req.session.empresaId = empresa ? String(empresa._id) : '';
+    req.session.empresaActiva = snapshotEmpresa(empresa);
+    req.session.subsidiariaActiva = snapshotSubsidiaria(subsidiariaActiva);
     req.session.empleadoId = user.empleadoId ? String(user.empleadoId) : '';
 
     const soloEmpleado = isSoloPortalUser({ roles });
@@ -96,13 +110,28 @@ router.get('/logout', async (req, res) => {
   req.session.destroy(() => res.redirect('/auth-login'));
 });
 
+router.post('/cambiar-empresa/:id', async (req, res) => {
+  if (!req.session?.userid) return res.redirect('/auth-login');
+  if (isSoloPortalUser(req.session)) return res.redirect('/portal');
+  try {
+    await setSessionEmpresa(req, req.params.id);
+    req.flash('success', 'Empresa activa actualizada');
+  } catch (err) {
+    req.flash('error', err.message || 'No se pudo cambiar de empresa');
+  }
+  res.redirect(redirectAfterContextSwitch(req, '/dashboard'));
+});
+
 router.post('/cambiar-subsidiaria/:id', async (req, res) => {
   if (!req.session?.userid) return res.redirect('/auth-login');
   if (isSoloPortalUser(req.session)) return res.redirect('/portal');
-  const Subsidiaria = await getSubsidiariaModel();
-  const sub = await Subsidiaria.findById(req.params.id).lean();
-  if (sub) req.session.subsidiariaActiva = sub;
-  res.redirect(req.get('Referer') || '/dashboard');
+  try {
+    await setSessionSubsidiaria(req, req.params.id);
+    req.flash('success', 'Subsidiaria activa actualizada');
+  } catch (err) {
+    req.flash('error', err.message || 'No se pudo cambiar de subsidiaria');
+  }
+  res.redirect(redirectAfterContextSwitch(req, '/dashboard'));
 });
 
 module.exports = router;

@@ -63,7 +63,7 @@ async function bootstrapArquitectura(req, res) {
       /* ignore */
     }
     await ensureConceptCatalog();
-    const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+    const { empresa, error } = await requireEmpresaForTenant(req);
     if (error || !empresa) {
       req.flash('error', error || 'Sin empresa');
       return res.redirect('/config-sistema/enums');

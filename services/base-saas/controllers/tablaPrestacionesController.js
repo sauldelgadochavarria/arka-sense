@@ -107,14 +107,15 @@ async function loadCatalogs(tenantId, empresaId) {
 }
 
 async function listTablas(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   if (error || !empresa) {
     req.flash('error', error || 'Sin empresa');
     return res.redirect('/');
   }
   const Tabla = await getTablaPrestacionesModel();
   await ensureTablaGlobal(req.session.tenantId, empresa._id);
-  const tablas = await Tabla.find({ tenantId: req.session.tenantId, empresaId: empresa._id })
+  // Catálogo global del tenant: visible desde cualquier empresa
+  const tablas = await Tabla.find({ tenantId: req.session.tenantId })
     .sort({ ambito: -1, nombre: 1 })
     .lean();
   const catalogs = await loadCatalogs(req.session.tenantId, empresa._id);
@@ -128,7 +129,7 @@ async function listTablas(req, res) {
 }
 
 async function newTabla(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   if (error || !empresa) {
     req.flash('error', error || 'Sin empresa');
     return res.redirect('/personal/prestaciones');
@@ -147,7 +148,7 @@ async function newTabla(req, res) {
 
 async function createTabla(req, res) {
   try {
-    const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+    const { empresa, error } = await requireEmpresaForTenant(req);
     if (error || !empresa) throw new Error(error || 'Sin empresa');
     const Tabla = await getTablaPrestacionesModel();
     await Tabla.create(buildPayload(req.body, req.session.tenantId, empresa._id));
@@ -160,7 +161,7 @@ async function createTabla(req, res) {
 }
 
 async function editTabla(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const Tabla = await getTablaPrestacionesModel();
   const tabla = await Tabla.findOne({
     _id: req.params.id,
@@ -186,7 +187,7 @@ async function editTabla(req, res) {
 
 async function updateTabla(req, res) {
   try {
-    const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+    const { empresa, error } = await requireEmpresaForTenant(req);
     if (error || !empresa) throw new Error(error || 'Sin empresa');
     const Tabla = await getTablaPrestacionesModel();
     const payload = buildPayload(req.body, req.session.tenantId, empresa._id);
@@ -213,7 +214,7 @@ async function toggleTabla(req, res) {
 }
 
 async function seedGlobal(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   if (error || !empresa) {
     req.flash('error', error || 'Sin empresa');
     return res.redirect('/personal/prestaciones');

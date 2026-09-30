@@ -6,6 +6,13 @@ const payrollPeriodSchema = new mongoose.Schema(
   {
     tenantId: { type: String, required: true, trim: true, index: true },
     empresaId: { type: mongoose.Schema.Types.ObjectId, ref: 'Empresa', required: true },
+    /** Sucursal/contexto operativo; períodos independientes por subsidiaria. */
+    subsidiariaId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Subsidiaria',
+      default: null,
+      index: true
+    },
     tipo: { type: String, enum: ['semanal', 'quincenal', 'catorcenal', 'mensual', 'decena'], required: true },
     tipoNomina: {
       type: String,
@@ -56,10 +63,16 @@ const payrollPeriodSchema = new mongoose.Schema(
   { timestamps: true, collection: COLLECTION_PAYROLL_PERIODS }
 );
 
-payrollPeriodSchema.index({ tenantId: 1, fechaInicio: 1, fechaFin: 1 });
+payrollPeriodSchema.index({ tenantId: 1, empresaId: 1, subsidiariaId: 1, fechaInicio: 1 });
 payrollPeriodSchema.index(
-  { tenantId: 1, tipoPeriodoId: 1, anio: 1, numeroPeriodo: 1 },
-  { unique: true, partialFilterExpression: { tipoPeriodoId: { $type: 'objectId' }, numeroPeriodo: { $type: 'number' } } }
+  { tenantId: 1, empresaId: 1, subsidiariaId: 1, tipoPeriodoId: 1, anio: 1, numeroPeriodo: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      tipoPeriodoId: { $type: 'objectId' },
+      numeroPeriodo: { $type: 'number' }
+    }
+  }
 );
 
 async function getPayrollPeriodModel() {

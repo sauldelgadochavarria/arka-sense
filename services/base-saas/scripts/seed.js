@@ -980,6 +980,16 @@ async function seedPersonalMenus(Menu, adminRoleId) {
     { menuPrincipal: 'Puestos', rutaApp: '/personal-puestos', orden: 12 },
     { menuPrincipal: 'Empresa', rutaApp: '/config-empresa', orden: 13 },
     { menuPrincipal: 'Cargas iniciales', rutaApp: '/config-empresa/cargas', orden: 14 },
+    {
+      menuPrincipal: 'Históricos CFDI (ZIP)',
+      rutaApp: '/config-empresa/cargas/cfdi_nomina_zip',
+      orden: 14.1
+    },
+    {
+      menuPrincipal: 'Históricos CFDI masivo',
+      rutaApp: '/config-empresa/cargas/cfdi_nomina_zip_masivo',
+      orden: 14.2
+    },
     { menuPrincipal: 'Ajuste anual de sueldos', rutaApp: '/personal/ajuste-anual', orden: 16 },
     { menuPrincipal: 'Créditos / saldos (próx.)', rutaApp: '/config-empresa/cargas/creditos-saldos', orden: 99, activo: false }
   ];

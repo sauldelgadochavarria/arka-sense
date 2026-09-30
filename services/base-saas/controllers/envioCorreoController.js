@@ -28,7 +28,7 @@ async function loadPeriodosCerrados(tenantId, empresaId) {
 }
 
 async function wizard(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const periodos = empresa ? await loadPeriodosCerrados(req.session.tenantId, empresa._id) : [];
   const periodoId = parseOptionalObjectId(req.query.periodoId || req.body.periodoId);
   const correoConfigId = parseOptionalObjectId(req.query.correoConfigId || req.body.correoConfigId);
@@ -73,7 +73,7 @@ async function wizard(req, res) {
 }
 
 async function enviar(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const periodoId = parseOptionalObjectId(req.body.periodoId || req.params.periodoId);
   if (error || !empresa) {
     return flashRedirect(req, res, '/nomina/envio-correo', 'error', error || 'Sin empresa');

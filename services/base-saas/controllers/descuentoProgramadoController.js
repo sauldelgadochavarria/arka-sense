@@ -51,7 +51,7 @@ function money(n) {
 
 async function index(req, res) {
   if (!canView(req.session)) return res.status(403).send('Sin permiso');
-  const { empresa } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa } = await requireEmpresaForTenant(req);
   const tenantId = req.session.tenantId;
   const estatus = (req.query.estatus || '').trim() || null;
   const conceptoCodigo = (req.query.concepto || '').trim() || null;
@@ -111,7 +111,7 @@ async function index(req, res) {
 
 async function configForm(req, res) {
   if (!canEdit(req.session)) return res.status(403).send('Sin permiso');
-  const { empresa } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa } = await requireEmpresaForTenant(req);
   if (!empresa) return flashRedirect(req, res, '/nomina/descuentos-programados', 'error', 'Sin empresa');
 
   const tenantId = req.session.tenantId;
@@ -154,7 +154,7 @@ async function configForm(req, res) {
 
 async function saveConfig(req, res) {
   if (!canEdit(req.session)) return res.status(403).send('Sin permiso');
-  const { empresa } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa } = await requireEmpresaForTenant(req);
   if (!empresa) return flashRedirect(req, res, '/nomina/descuentos-programados', 'error', 'Sin empresa');
 
   const subsidiariaId = parseOptionalObjectId(req.body.subsidiariaId);
@@ -206,7 +206,7 @@ async function saveConfig(req, res) {
 
 async function nuevoForm(req, res) {
   if (!canEdit(req.session)) return res.status(403).send('Sin permiso');
-  const { empresa } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa } = await requireEmpresaForTenant(req);
   const tenantId = req.session.tenantId;
   const Empleado = await getEmpleadoModel();
   const Subsidiaria = await getSubsidiariaModel();
@@ -235,7 +235,7 @@ async function nuevoForm(req, res) {
 
 async function create(req, res) {
   if (!canEdit(req.session)) return res.status(403).send('Sin permiso');
-  const { empresa } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa } = await requireEmpresaForTenant(req);
   try {
     const empleadoId = parseOptionalObjectId(req.body.empleadoId);
     if (!empleadoId) throw new Error('Selecciona un empleado');

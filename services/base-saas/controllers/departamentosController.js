@@ -7,10 +7,10 @@ const {
 const { trimString, parseOptionalObjectId, parseOptionalLegadoCode } = require('../libs/formHelpers');
 
 async function listDepartamentos(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const Departamento = await getDepartamentoModel();
   const departamentos = empresa
-    ? await Departamento.find({ tenantId: req.session.tenantId }).sort({ nombre: 1 }).lean()
+    ? await Departamento.find({ tenantId: req.session.tenantId, empresaId: empresa._id }).sort({ nombre: 1 }).lean()
     : [];
   const parentMap = new Map(departamentos.map((d) => [String(d._id), d.nombre]));
 
@@ -24,10 +24,10 @@ async function listDepartamentos(req, res) {
 }
 
 async function newDepartamento(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const Departamento = await getDepartamentoModel();
   const departamentos = empresa
-    ? await Departamento.find({ tenantId: req.session.tenantId, activo: true }).sort({ nombre: 1 }).lean()
+    ? await Departamento.find({ tenantId: req.session.tenantId, empresaId: empresa._id, activo: true }).sort({ nombre: 1 }).lean()
     : [];
 
   res.render('Personal/departamento-nuevo', {
@@ -40,7 +40,7 @@ async function newDepartamento(req, res) {
 
 async function createDepartamento(req, res) {
   try {
-    const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+    const { empresa, error } = await requireEmpresaForTenant(req);
     if (error) {
       req.flash('error', error);
       return res.redirect('/personal-departamentos');
@@ -68,7 +68,7 @@ async function createDepartamento(req, res) {
 }
 
 async function editDepartamento(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const Departamento = await getDepartamentoModel();
   const departamento = await findOneByTenant(Departamento, req.session.tenantId, req.params.id);
   if (!departamento) return res.status(404).send('Departamento no encontrado');

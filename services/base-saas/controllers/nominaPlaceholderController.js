@@ -34,7 +34,7 @@ async function show(req, res) {
   if (key === 'plantilla') {
     return res.redirect('/nomina/recibos-pdf');
   }
-  const { empresa } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa } = await requireEmpresaForTenant(req);
   const seccion = PLACEHOLDERS[key] || {
     titulo: 'Sección en construcción',
     descripcion: 'Esta sección está definida en el menú y se implementará en la siguiente fase.'

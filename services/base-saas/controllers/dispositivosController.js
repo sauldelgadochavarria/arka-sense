@@ -6,7 +6,7 @@ const { TIPOS_DISPOSITIVO } = require('../config/integraciones');
 const { pingDevice, syncCatalogToDevice } = require('../services/biometricDeviceService');
 
 async function listDispositivos(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const BiometricDevice = await getBiometricDeviceModel();
   const Subsidiaria = await getSubsidiariaModel();
 
@@ -29,7 +29,7 @@ async function listDispositivos(req, res) {
 
 async function createDispositivo(req, res) {
   try {
-    const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+    const { empresa, error } = await requireEmpresaForTenant(req);
     if (error) {
       req.flash('error', error);
       return res.redirect('/integraciones/dispositivos');
@@ -58,7 +58,7 @@ async function createDispositivo(req, res) {
 }
 
 async function editDispositivo(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const BiometricDevice = await getBiometricDeviceModel();
   const Subsidiaria = await getSubsidiariaModel();
 

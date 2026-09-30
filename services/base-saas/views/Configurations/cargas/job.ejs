@@ -1,4 +1,11 @@
 <%- include('../../Partials/layout-top', { title: 'Job de carga', session }) %>
+<%
+  const isCfdi = job.tipo === 'cfdi_nomina_zip' || job.tipo === 'cfdi_nomina_zip_masivo';
+  const isMasivo = job.tipo === 'cfdi_nomina_zip_masivo';
+  const pollStatuses = ['encolado', 'parseando', 'aplicando'];
+  const shouldPoll = isMasivo && pollStatuses.includes(job.estatus);
+  const P = job.progreso || {};
+%>
 <h1>Job de carga</h1>
 <div class="toolbar">
   <a class="btn" href="/config-empresa/cargas">← Cargas</a>
@@ -9,35 +16,151 @@
 
 <div class="summary-cards">
   <div class="card"><strong><%= job.tipo %></strong> tipo</div>
-  <div class="card"><strong><%= job.estatus %></strong> estatus</div>
-  <div class="card"><strong><%= job.totalFilas || 0 %></strong> filas</div>
-  <div class="card"><strong><%= job.filasOk || 0 %></strong> OK</div>
-  <div class="card"><strong><%= job.filasError || 0 %></strong> errores</div>
-  <div class="card"><strong><%= job.filasAplicadas || 0 %></strong> aplicadas</div>
+  <div class="card"><strong id="job-estatus"><%= job.estatus %></strong> estatus</div>
+  <div class="card"><strong id="job-total"><%= job.totalFilas || 0 %></strong> filas</div>
+  <div class="card"><strong id="job-ok"><%= job.filasOk || 0 %></strong> OK</div>
+  <div class="card"><strong id="job-err"><%= job.filasError || 0 %></strong> errores</div>
+  <div class="card"><strong id="job-apl"><%= job.filasAplicadas || 0 %></strong> aplicadas</div>
 </div>
+
+<% if (isMasivo) { %>
+<section class="panel" id="panel-progreso">
+  <h2 class="panel-title">Progreso (async)</h2>
+  <p class="muted" id="job-progreso-msg"><%= P.mensaje || P.fase || '—' %></p>
+  <% const tot = Number(P.total || job.totalFilas || 0); const proc = Number(P.procesados || 0); %>
+  <div style="background:#e5e7eb;border-radius:6px;height:12px;overflow:hidden;max-width:420px">
+    <div id="job-progreso-bar" style="height:100%;width:<%= tot ? Math.min(100, Math.round(proc / tot * 100)) : 0 %>%;background:#2563eb;transition:width .3s"></div>
+  </div>
+  <p class="muted small" id="job-progreso-nums">
+    <%= proc %> / <%= tot || '—' %>
+    · OK <%= P.exitos || 0 %> · err <%= P.errores || 0 %> · omit <%= P.omitidos || 0 %>
+  </p>
+</section>
+<% } %>
 
 <p class="muted small">
   Archivo: <strong><%= job.archivoNombre || '—' %></strong>
   · <%= new Date(job.createdAt).toLocaleString('es-MX') %>
   <% if (job.userLabel) { %> · por <%= job.userLabel %><% } %>
 </p>
-<% if (job.notas) { %><p><%= job.notas %></p><% } %>
+<p id="job-notas"><% if (job.notas) { %><%= job.notas %><% } %></p>
 
-<% if (job.resumen && job.resumen.nota) { %>
-<p class="muted small"><%= job.resumen.nota %></p>
+<% if (job.resumen) { %>
+<section class="panel">
+  <h2 class="panel-title">Conciliación / resumen</h2>
+  <% const R = job.resumen; %>
+  <% if (isCfdi) { %>
+  <% const O = R.opciones || {}; const OR = R.opcionesResumen || {}; const Plan = R.planAplicacion || {}; %>
+  <ul class="vars-list">
+    <li>Año: <strong><%= R.anio || '—' %></strong><% if (R.async) { %> · <span class="badge">async</span><% } %></li>
+    <li>Bloques: <strong><%= (OR.bloques || []).join(', ') || '—' %></strong> · modo <code><%= OR.modo || 'upsert' %></code></li>
+    <% if (Plan.empresa != null) { %>
+    <li>Plan: empresa <%= Plan.empresa ? 'sí' : 'no' %> · empleados <%= Plan.empleados %> · org <%= Plan.organizacion %> · conceptos <%= Plan.conceptos %> · histórico <%= Plan.historico %> · acumulados <%= Plan.acumulados %></li>
+    <% } %>
+    <li>XML en ZIP: <%= R.xmlEnZip || 0 %> · Recibos OK: <strong><%= R.recibosOk || 0 %></strong> · Omitidos: <%= R.omitidos || 0 %></li>
+    <li>Empleados únicos: <%= R.empleadosUnicos || 0 %> (crear <%= R.empleadosCrear || 0 %> · actualizar <%= R.empleadosActualizar || 0 %>)</li>
+    <li>Conceptos detectados: <%= R.conceptosDetectados || 0 %></li>
+    <li>Departamentos: <%= (R.departamentos || []).length %> · Puestos: <%= (R.puestos || []).length %></li>
+    <li>Neto total XML: <strong>$<%= Number(R.totalNeto || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></strong></li>
+    <li>Recibos que no cuadran (±$0.05): <%= R.recibosNoCuadran || 0 %></li>
+    <li>RFC empresa: <code><%= R.rfcEmpresa || '—' %></code> · Emisor muestra: <code><%= R.rfcEmisorMuestra || '—' %></code></li>
+    <% if (R.periodos) { %>
+    <li>Períodos inferidos: <strong><%= R.periodos.ventanas || 0 %></strong> ventanas · tipos <%= R.periodos.tipos || 0 %> · creados <%= R.periodos.periodosCreados || 0 %> · actualizados <%= R.periodos.periodosActualizados || 0 %></li>
+    <% } %>
+    <% if (R.aplicadas != null) { %>
+    <li>Aplicadas: <strong><%= R.aplicadas %></strong> · empleados afectados <%= R.empleadosAfectados || 0 %></li>
+    <% } %>
+  </ul>
+  <% if (R.departamentos && R.departamentos.length) { %>
+  <p class="muted small">Deptos: <%= R.departamentos.slice(0, 20).join(', ') %><%= R.departamentos.length > 20 ? '…' : '' %></p>
+  <% } %>
+  <% if (R.conceptosMuestra && R.conceptosMuestra.length) { %>
+  <details>
+    <summary>Conceptos (muestra)</summary>
+    <pre class="muted small" style="max-height:200px;overflow:auto"><%= JSON.stringify(R.conceptosMuestra, null, 2) %></pre>
+  </details>
+  <% } %>
+  <% if (R.omitidosMuestra && R.omitidosMuestra.length) { %>
+  <details>
+    <summary>Omitidos (muestra)</summary>
+    <pre class="muted small" style="max-height:160px;overflow:auto"><%= JSON.stringify(R.omitidosMuestra, null, 2) %></pre>
+  </details>
+  <% } %>
+  <% } else if (R.nota) { %>
+  <p class="muted small"><%= R.nota %></p>
+  <% } %>
+</section>
 <% } %>
 
-<% if ((job.estatus === 'validado' || job.estatus === 'parcial') && !job.aplicadoAt) { %>
+<% 
+  const canApplyFirst = (job.estatus === 'validado' || job.estatus === 'parcial') && !job.aplicadoAt;
+  const canReapplyCfdi = isCfdi && ['ok', 'parcial', 'validado'].includes(job.estatus) && !['encolado', 'parseando', 'aplicando'].includes(job.estatus);
+  const showApplyForm = canApplyFirst || canReapplyCfdi;
+%>
+<% if (showApplyForm) { %>
 <section class="panel">
-  <h2 class="panel-title">2. Confirmar aplicación</h2>
-  <p class="muted small">Se aplicarán las <strong><%= job.filasOk %></strong> filas válidas. Esta acción escribe en la base de datos.</p>
+  <h2 class="panel-title"><%= canApplyFirst ? '2. Confirmar aplicación' : 'Reaplicar / completar bloques' %></h2>
+  <% if (canApplyFirst) { %>
+  <p class="muted small">Se aplicarán las <strong><%= job.filasOk %></strong> filas válidas según los bloques marcados.</p>
+  <% } else { %>
+  <p class="muted small">
+    Este job ya se aplicó. Puedes volver a ejecutar bloques (idempotente).
+    Para generar períodos cerrados/timbrados desde el CFDI, deja marcado <strong>Períodos</strong>.
+  </p>
+  <% } %>
   <% if (job.tipo === 'historico_recibos') { %>
   <p class="muted small">Los recibos se guardan como histórico importado (sin período local vinculado).</p>
   <% } %>
+  <% if (isCfdi) {
+    const O = (job.resumen && job.resumen.opciones) || {};
+    const reapply = !canApplyFirst;
+  %>
+  <form method="post" action="/config-empresa/cargas/jobs/<%= job._id %>/aplicar" class="form-grid"
+        onsubmit="return confirm('<%= reapply ? '¿Reaplicar con los bloques seleccionados?' : '¿Aplicar con los bloques seleccionados?' %>');">
+    <input type="hidden" name="opcionesForm" value="1" />
+    <fieldset style="grid-column:1/-1;border:1px solid #e5e7eb;border-radius:8px;padding:0.85rem 1rem">
+      <legend>Bloques a aplicar (puedes ajustar)</legend>
+      <label class="inline-check"><input type="checkbox" name="importEmpresa" value="1" <%= !reapply && O.importEmpresa !== false ? 'checked' : '' %> /> Empresa</label>
+      <label class="inline-check"><input type="checkbox" name="importEmpleados" value="1" <%= (!reapply && O.importEmpleados !== false) || reapply ? 'checked' : '' %> /> Empleados</label>
+      <label class="inline-check"><input type="checkbox" name="importOrganizacion" value="1" <%= !reapply && O.importOrganizacion !== false ? 'checked' : '' %> /> Deptos / puestos</label>
+      <label class="inline-check"><input type="checkbox" name="importConceptos" value="1" <%= !reapply && O.importConceptos !== false ? 'checked' : '' %> /> Conceptos</label>
+      <label class="inline-check"><input type="checkbox" name="importHistorico" value="1" id="job-opt-hist" <%= (!reapply && O.importHistorico !== false) || reapply ? 'checked' : '' %> /> Histórico</label>
+      <label class="inline-check"><input type="checkbox" name="importAcumulados" value="1" id="job-opt-acu" <%= !reapply && O.importAcumulados !== false ? 'checked' : '' %> /> Acumulados</label>
+      <label class="inline-check"><input type="checkbox" name="importPeriodos" value="1" id="job-opt-per" checked /> Períodos (inferir / cerrar / timbrados)</label>
+    </fieldset>
+    <label>Modo de escritura
+      <select name="modoEscritura">
+        <option value="upsert" <%= O.modoEscritura === 'upsert' || !O.modoEscritura ? 'selected' : '' %>>Upsert</option>
+        <option value="crear_solo" <%= O.modoEscritura === 'crear_solo' ? 'selected' : '' %>>Solo crear</option>
+        <option value="solo_vacios" <%= O.modoEscritura === 'solo_vacios' ? 'selected' : '' %>>Solo vacíos</option>
+      </select>
+    </label>
+    <label class="inline-check"><input type="checkbox" name="excluirExtraordinarias" value="1" <%= O.excluirExtraordinarias ? 'checked' : '' %> /> Excluir extraordinarias</label>
+    <label class="inline-check"><input type="checkbox" name="actualizarDatosLaborales" value="1" <%= O.actualizarDatosLaborales !== false ? 'checked' : '' %> /> Actualizar datos laborales</label>
+    <button type="submit"><%= isMasivo ? (reapply ? 'Reencolar apply (async)' : 'Encolar apply (async)') : (reapply ? 'Reaplicar selección' : 'Aplicar selección') %></button>
+  </form>
+  <script>
+  (function(){
+    var h=document.getElementById('job-opt-hist'), a=document.getElementById('job-opt-acu'), p=document.getElementById('job-opt-per');
+    function s(){
+      if(!h)return;
+      if(!h.checked){
+        if(a){a.checked=false;a.disabled=true;}
+        if(p){p.checked=false;p.disabled=true;}
+      } else {
+        if(a) a.disabled=false;
+        if(p) p.disabled=false;
+      }
+    }
+    if(h) h.addEventListener('change',s); s();
+  })();
+  </script>
+  <% } else if (canApplyFirst) { %>
   <form method="post" action="/config-empresa/cargas/jobs/<%= job._id %>/aplicar"
         onsubmit="return confirm('¿Aplicar <%= job.filasOk %> fila(s) válidas?');">
     <button type="submit">Aplicar filas válidas</button>
   </form>
+  <% } %>
 </section>
 <% } %>
 
@@ -65,6 +188,48 @@
     </tbody>
   </table>
 </section>
+<% } %>
+
+<% if (shouldPoll) { %>
+<script>
+(function () {
+  var done = { validado:1, parcial:1, ok:1, error:1, cancelado:1 };
+  function tick() {
+    fetch('/config-empresa/cargas/jobs/<%= job._id %>/status.json', { credentials: 'same-origin' })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d || !d.ok) return;
+        var el = function (id) { return document.getElementById(id); };
+        if (el('job-estatus')) el('job-estatus').textContent = d.estatus || '';
+        if (el('job-total')) el('job-total').textContent = d.totalFilas || 0;
+        if (el('job-ok')) el('job-ok').textContent = d.filasOk || 0;
+        if (el('job-err')) el('job-err').textContent = d.filasError || 0;
+        if (el('job-apl')) el('job-apl').textContent = d.filasAplicadas || 0;
+        if (el('job-notas') && d.notas) el('job-notas').textContent = d.notas;
+        var p = d.progreso || {};
+        if (el('job-progreso-msg')) el('job-progreso-msg').textContent = p.mensaje || p.fase || '—';
+        var tot = Number(p.total || d.totalFilas || 0);
+        var proc = Number(p.procesados || 0);
+        var pct = tot ? Math.min(100, Math.round(proc / tot * 100)) : 0;
+        if (el('job-progreso-bar')) el('job-progreso-bar').style.width = pct + '%';
+        if (el('job-progreso-nums')) {
+          el('job-progreso-nums').textContent =
+            proc + ' / ' + (tot || '—') +
+            ' · OK ' + (p.exitos || 0) +
+            ' · err ' + (p.errores || 0) +
+            ' · omit ' + (p.omitidos || 0);
+        }
+        if (done[d.estatus]) {
+          window.location.reload();
+          return;
+        }
+        setTimeout(tick, 2500);
+      })
+      .catch(function () { setTimeout(tick, 4000); });
+  }
+  setTimeout(tick, 1500);
+})();
+</script>
 <% } %>
 
 <%- include('../../Partials/layout-bottom') %>

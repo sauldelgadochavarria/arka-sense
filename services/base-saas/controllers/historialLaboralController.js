@@ -45,7 +45,7 @@ function tipoSalarioLabel(value) {
 }
 
 async function listTipos(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const tipos = await listTiposMovimiento(req.session.tenantId);
 
   res.render('Personal/tipos-movimiento-laboral', {
@@ -86,7 +86,7 @@ async function toggleTipo(req, res) {
 }
 
 async function showHistorialEmpleado(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const Empleado = await getEmpleadoModel();
   const empleado = await findOneByTenant(Empleado, req.session.tenantId, req.params.id);
   if (!empleado) return res.status(404).send('Empleado no encontrado');
@@ -115,7 +115,7 @@ async function showHistorialEmpleado(req, res) {
 
 async function createMovimientoManual(req, res) {
   try {
-    const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+    const { empresa, error } = await requireEmpresaForTenant(req);
     if (error) {
       req.flash('error', error);
       return res.redirect(`/personal-empleados/${req.params.id}/historial-laboral`);

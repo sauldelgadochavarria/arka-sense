@@ -20,15 +20,44 @@ const cargaInicialJobSchema = new mongoose.Schema(
     empresaId: { type: mongoose.Schema.Types.ObjectId, ref: 'Empresa', default: null },
     tipo: {
       type: String,
-      enum: ['empleados', 'historial_laboral', 'acumulados', 'historico_recibos', 'creditos_saldos'],
+      enum: [
+        'empleados',
+        'historial_laboral',
+        'acumulados',
+        'historico_recibos',
+        'creditos_saldos',
+        'cfdi_nomina_zip',
+        'cfdi_nomina_zip_masivo'
+      ],
       required: true,
       index: true
     },
     estatus: {
       type: String,
-      enum: ['borrador', 'validado', 'aplicando', 'ok', 'parcial', 'error', 'cancelado'],
+      enum: [
+        'borrador',
+        'encolado',
+        'parseando',
+        'validado',
+        'aplicando',
+        'ok',
+        'parcial',
+        'error',
+        'cancelado'
+      ],
       default: 'borrador',
       index: true
+    },
+    /** Ruta local del ZIP (solo masivo async). */
+    archivoPath: { type: String, default: '' },
+    progreso: {
+      fase: { type: String, default: '' },
+      total: { type: Number, default: 0 },
+      procesados: { type: Number, default: 0 },
+      exitos: { type: Number, default: 0 },
+      errores: { type: Number, default: 0 },
+      omitidos: { type: Number, default: 0 },
+      mensaje: { type: String, default: '' }
     },
     modo: {
       type: String,

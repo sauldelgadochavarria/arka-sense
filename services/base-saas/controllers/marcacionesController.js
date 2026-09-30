@@ -35,7 +35,7 @@ function auditMeta(req) {
 }
 
 async function listMarcaciones(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const fechaStr = defaultFechaQuery(req);
   const fecha = startOfDay(parseDateTimeLocal(`${fechaStr}T12:00`) || new Date());
   const verAnuladas = trimString(req.query.anuladas) === '1';
@@ -121,7 +121,7 @@ async function listMarcaciones(req, res) {
 }
 
 async function showMarcacionDetalle(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const id = parseOptionalObjectId(req.params.id);
   if (!empresa || !id) {
     req.flash('error', error || 'Marcación no encontrada');
@@ -182,7 +182,7 @@ async function showMarcacionDetalle(req, res) {
 }
 
 async function listIntentosDia(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const fechaStr = defaultFechaQuery(req);
   const fecha = startOfDay(parseDateTimeLocal(`${fechaStr}T12:00`) || new Date());
   const empleadoId = parseOptionalObjectId(req.query.empleadoId);
@@ -221,7 +221,7 @@ async function listIntentosDia(req, res) {
 
 async function createMarcacion(req, res) {
   try {
-    const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+    const { empresa, error } = await requireEmpresaForTenant(req);
     if (error) {
       req.flash('error', error);
       return res.redirect('/asistencia-marcaciones');
@@ -347,7 +347,7 @@ async function createMarcacion(req, res) {
 async function ajustarMarcacion(req, res) {
   const fechaRedirect = defaultFechaQuery(req);
   try {
-    const { error } = await requireEmpresaForTenant(req.session.tenantId);
+    const { error } = await requireEmpresaForTenant(req);
     if (error) {
       req.flash('error', error);
       return res.redirect('/asistencia-marcaciones');
@@ -454,7 +454,7 @@ async function ajustarMarcacion(req, res) {
 async function anularMarcacion(req, res) {
   const fechaRedirect = defaultFechaQuery(req);
   try {
-    const { error } = await requireEmpresaForTenant(req.session.tenantId);
+    const { error } = await requireEmpresaForTenant(req);
     if (error) {
       req.flash('error', error);
       return res.redirect('/asistencia-marcaciones');

@@ -7,10 +7,10 @@ const {
 const { trimString, parseOptionalLegadoCode } = require('../libs/formHelpers');
 
 async function listPuestos(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const Puesto = await getPuestoModel();
   const puestos = empresa
-    ? await Puesto.find({ tenantId: req.session.tenantId }).sort({ nombre: 1 }).lean()
+    ? await Puesto.find({ tenantId: req.session.tenantId, empresaId: empresa._id }).sort({ nombre: 1 }).lean()
     : [];
 
   res.render('Personal/puestos', { puestos, empresa, error: error || null, session: req.session });
@@ -18,7 +18,7 @@ async function listPuestos(req, res) {
 
 async function createPuesto(req, res) {
   try {
-    const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+    const { empresa, error } = await requireEmpresaForTenant(req);
     if (error) {
       req.flash('error', error);
       return res.redirect('/personal-puestos');
@@ -44,7 +44,7 @@ async function createPuesto(req, res) {
 }
 
 async function editPuesto(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const Puesto = await getPuestoModel();
   const puesto = await findOneByTenant(Puesto, req.session.tenantId, req.params.id);
   if (!puesto) return res.status(404).send('Puesto no encontrado');

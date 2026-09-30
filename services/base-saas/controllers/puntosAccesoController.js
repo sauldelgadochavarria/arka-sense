@@ -36,7 +36,7 @@ function buildPayload(body, empresaId) {
 }
 
 async function listPuntos(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const PuntoAcceso = await getPuntoAccesoModel();
   const Subsidiaria = await getSubsidiariaModel();
 
@@ -62,7 +62,7 @@ async function listPuntos(req, res) {
 
 async function createPunto(req, res) {
   try {
-    const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+    const { empresa, error } = await requireEmpresaForTenant(req);
     if (error) {
       req.flash('error', error);
       return res.redirect('/config-puntos-acceso');
@@ -96,7 +96,7 @@ async function createPunto(req, res) {
 }
 
 async function editPunto(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const PuntoAcceso = await getPuntoAccesoModel();
   const Subsidiaria = await getSubsidiariaModel();
   const punto = await findOneByTenant(PuntoAcceso, req.session.tenantId, req.params.id);

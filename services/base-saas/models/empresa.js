@@ -47,7 +47,8 @@ const empresaSchema = new mongoose.Schema(
   { timestamps: true, collection: 'empresas' }
 );
 
-empresaSchema.index({ tenantId: 1 }, { unique: true, sparse: true });
+empresaSchema.index({ tenantId: 1 }, { sparse: true });
+empresaSchema.index({ tenantId: 1, rfc: 1 }, { sparse: true });
 
 async function getEmpresaModel() {
   const conn = await getFixedMongooseConnection(FIXED_CONNECTIONS.CONFIG);

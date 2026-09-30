@@ -15,7 +15,7 @@ const { exportPayrollPeriod } = require('../services/payrollExportService');
 const { exportEmpleados, importEmpleados, resolveConflicto } = require('../services/empleadoSyncService');
 
 async function listPerfiles(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const perfiles = empresa
     ? await ensureDefaultProfiles(req.session.tenantId, empresa._id)
     : [];
@@ -82,7 +82,7 @@ async function updatePerfil(req, res) {
 }
 
 async function showExportacion(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const PayrollPeriod = await getPayrollPeriodModel();
   const perfiles = empresa
     ? await ensureDefaultProfiles(req.session.tenantId, empresa._id)
@@ -134,13 +134,13 @@ async function ejecutarExportacion(req, res) {
 }
 
 async function showAbcSync(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   res.render('Integraciones/abc-sync', { empresa, error: error || null, session: req.session });
 }
 
 async function ejecutarExportAbc(req, res) {
   try {
-    const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+    const { empresa, error } = await requireEmpresaForTenant(req);
     if (error) {
       req.flash('error', error);
       return res.redirect('/integraciones/abc');
@@ -158,7 +158,7 @@ async function ejecutarExportAbc(req, res) {
 
 async function ejecutarImportAbc(req, res) {
   try {
-    const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+    const { empresa, error } = await requireEmpresaForTenant(req);
     if (error) {
       req.flash('error', error);
       return res.redirect('/integraciones/abc');

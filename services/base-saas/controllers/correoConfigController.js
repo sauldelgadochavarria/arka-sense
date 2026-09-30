@@ -49,7 +49,7 @@ async function ensureUnicoDefault(Correo, tenantId, empresaId, id) {
 }
 
 async function list(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const Correo = await getCorreoConfigModel();
   const rows = empresa
     ? await Correo.find({ tenantId: req.session.tenantId, empresaId: empresa._id })
@@ -66,7 +66,7 @@ async function list(req, res) {
 }
 
 async function newForm(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   res.render('Nomina/correo/edit', {
     session: req.session,
     empresa,
@@ -80,7 +80,7 @@ async function newForm(req, res) {
 }
 
 async function edit(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const Correo = await getCorreoConfigModel();
   const doc = await Correo.findOne({
     _id: req.params.id,
@@ -101,7 +101,7 @@ async function edit(req, res) {
 }
 
 async function create(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   if (error || !empresa) return flashRedirect(req, res, '/nomina/correo', 'error', error || 'Sin empresa');
   const Correo = await getCorreoConfigModel();
   const payload = fromBody(req.body, req.session.tenantId, empresa._id);
@@ -123,7 +123,7 @@ async function create(req, res) {
 }
 
 async function update(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   if (error || !empresa) return flashRedirect(req, res, '/nomina/correo', 'error', error || 'Sin empresa');
   const Correo = await getCorreoConfigModel();
   const doc = await Correo.findOne({
@@ -145,7 +145,7 @@ async function update(req, res) {
 }
 
 async function toggle(req, res) {
-  const { empresa } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa } = await requireEmpresaForTenant(req);
   const Correo = await getCorreoConfigModel();
   const doc = await Correo.findOne({
     _id: req.params.id,
@@ -161,7 +161,7 @@ async function toggle(req, res) {
 }
 
 async function setDefault(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   if (error || !empresa) return flashRedirect(req, res, '/nomina/correo', 'error', error || 'Sin empresa');
   const Correo = await getCorreoConfigModel();
   const doc = await Correo.findOne({
@@ -178,7 +178,7 @@ async function setDefault(req, res) {
 }
 
 async function probar(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const dest = trimString(req.body.destinatarioPrueba).toLowerCase();
   const back = `/nomina/correo/${req.params.id}/edit`;
   if (error || !empresa) return flashRedirect(req, res, '/nomina/correo', 'error', error || 'Sin empresa');
@@ -222,7 +222,7 @@ async function probar(req, res) {
 }
 
 async function seedEjemplo(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   if (error || !empresa) return flashRedirect(req, res, '/nomina/correo', 'error', error || 'Sin empresa');
   const Correo = await getCorreoConfigModel();
   const exists = await Correo.findOne({

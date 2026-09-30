@@ -45,7 +45,7 @@ const tipoPeriodoNominaSchema = new mongoose.Schema(
   { timestamps: true, collection: COLLECTION_TIPOS_PERIODO_NOMINA }
 );
 
-tipoPeriodoNominaSchema.index({ tenantId: 1, codigoLegado: 1 }, { unique: true });
+tipoPeriodoNominaSchema.index({ tenantId: 1, empresaId: 1, codigoLegado: 1 }, { unique: true });
 
 async function getTipoPeriodoNominaModel() {
   const conn = await getFixedMongooseConnection(FIXED_CONNECTIONS.CONFIG);

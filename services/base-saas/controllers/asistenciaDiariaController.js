@@ -26,7 +26,7 @@ function labelPeriodo(p, tipoMap) {
 }
 
 async function listDiaria(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   let fechaStr = defaultFechaQuery(req);
   const estatusFiltro = trimString(req.query.estatus);
   const departamentoId = parseOptionalObjectId(req.query.departamentoId);

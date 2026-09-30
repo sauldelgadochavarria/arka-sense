@@ -60,7 +60,7 @@ async function loadCatalogs(tenantId, empresa) {
 }
 
 async function index(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const filters = parseFilters(req.query);
   const catalogs = await loadCatalogs(req.session.tenantId, empresa);
 
@@ -84,7 +84,7 @@ async function index(req, res) {
 }
 
 async function exportCsv(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   if (error || !empresa) {
     return res.status(400).send(error || 'Sin empresa');
   }

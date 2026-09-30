@@ -13,6 +13,8 @@ async function listarPeriodos(tenantId, filtros = {}) {
   const PayrollPeriod = await getPayrollPeriodModel();
   const q = { tenantId };
 
+  if (filtros.empresaId) q.empresaId = filtros.empresaId;
+  if (filtros.subsidiariaId) q.subsidiariaId = filtros.subsidiariaId;
   if (filtros.tipoPeriodoId) q.tipoPeriodoId = filtros.tipoPeriodoId;
   if (filtros.anio) q.anio = Number(filtros.anio);
   if (filtros.estatus) q.estatus = filtros.estatus;
@@ -30,7 +32,8 @@ async function generarPeriodosAnuales(tenantId, empresaId, payload) {
     anio,
     fechaInicial,
     tipoNomina = 'ordinaria',
-    notas = ''
+    notas = '',
+    subsidiariaId = null
   } = payload;
 
   if (!tipoPeriodoRef) throw new Error('Tipo de período requerido');
@@ -46,10 +49,12 @@ async function generarPeriodosAnuales(tenantId, empresaId, payload) {
   const PayrollPeriod = await getPayrollPeriodModel();
   const insertados = [];
   const omitidos = [];
+  const scopeBase = { tenantId, empresaId };
+  if (subsidiariaId) scopeBase.subsidiariaId = subsidiariaId;
 
   for (const bloque of bloques) {
     const dup = await PayrollPeriod.findOne({
-      tenantId,
+      ...scopeBase,
       tipoPeriodoId: tipoPeriodoRef._id,
       anio: bloque.anio,
       numeroPeriodo: bloque.numeroPeriodo
@@ -61,7 +66,7 @@ async function generarPeriodosAnuales(tenantId, empresaId, payload) {
     }
 
     const overlap = await PayrollPeriod.findOne({
-      tenantId,
+      ...scopeBase,
       tipoPeriodoId: tipoPeriodoRef._id,
       fechaInicio: { $lte: endOfDay(bloque.fechaFin) },
       fechaFin: { $gte: startOfDay(bloque.fechaInicio) }
@@ -75,6 +80,7 @@ async function generarPeriodosAnuales(tenantId, empresaId, payload) {
     const doc = await PayrollPeriod.create({
       tenantId,
       empresaId,
+      subsidiariaId: subsidiariaId || null,
       tipo: tipoPeriodoRef.tipoMotor,
       tipoPeriodoId: tipoPeriodoRef._id,
       codigoLegadoTipoPeriodo: tipoPeriodoRef.codigoLegado,
@@ -95,14 +101,22 @@ async function generarPeriodosAnuales(tenantId, empresaId, payload) {
   return { insertados: insertados.length, omitidos, bloques: bloques.length };
 }
 
-async function findPeriodoDoc(tenantId, id) {
+async function findPeriodoDoc(tenantId, id, empresaId = null) {
   const PayrollPeriod = await getPayrollPeriodModel();
-  return PayrollPeriod.findOne({ tenantId, _id: id });
+  const q = { tenantId, _id: id };
+  if (empresaId) q.empresaId = empresaId;
+  return PayrollPeriod.findOne(q);
 }
 
 async function getContextoPeriodo(tenantId, periodo) {
   const PayrollPeriod = await getPayrollPeriodModel();
-  const base = { tenantId, tipoPeriodoId: periodo.tipoPeriodoId, anio: periodo.anio };
+  const base = {
+    tenantId,
+    empresaId: periodo.empresaId,
+    tipoPeriodoId: periodo.tipoPeriodoId,
+    anio: periodo.anio
+  };
+  if (periodo.subsidiariaId) base.subsidiariaId = periodo.subsidiariaId;
 
   const [anterior, siguiente, abiertoOtro] = await Promise.all([
     periodo.numeroPeriodo > 1
@@ -112,6 +126,8 @@ async function getContextoPeriodo(tenantId, periodo) {
     periodo.tipoPeriodoId
       ? PayrollPeriod.findOne({
           tenantId,
+          empresaId: periodo.empresaId,
+          ...(periodo.subsidiariaId ? { subsidiariaId: periodo.subsidiariaId } : {}),
           tipoPeriodoId: periodo.tipoPeriodoId,
           _id: { $ne: periodo._id },
           estatus: { $in: ESTATUS_PERIODO_OCUPA_VENTANA }

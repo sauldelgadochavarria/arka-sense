@@ -101,7 +101,7 @@ async function list(req, res) {
   if (!canView(req.session)) {
     return flashRedirect(req, res, '/', 'error', 'Sin permiso de nómina');
   }
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   let items = [];
   if (empresa) {
     items = await finiquitoService.listar({
@@ -123,7 +123,7 @@ async function newForm(req, res) {
   if (!canEdit(req.session)) {
     return flashRedirect(req, res, '/nomina/finiquitos', 'error', 'Sin permiso para calcular finiquitos');
   }
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const hoy = toDateInputValue(new Date());
   let extras = {
     empleados: [],
@@ -198,7 +198,7 @@ async function preview(req, res) {
   if (!canEdit(req.session)) {
     return flashRedirect(req, res, '/nomina/finiquitos', 'error', 'Sin permiso');
   }
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   if (!empresa) return flashRedirect(req, res, '/nomina/finiquitos/nuevo', 'error', error || 'Sin empresa');
 
   try {
@@ -253,7 +253,7 @@ async function create(req, res) {
   if (!canEdit(req.session)) {
     return flashRedirect(req, res, '/nomina/finiquitos', 'error', 'Sin permiso');
   }
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   if (!empresa) return flashRedirect(req, res, '/nomina/finiquitos/nuevo', 'error', error || 'Sin empresa');
 
   try {
@@ -350,7 +350,7 @@ async function editForm(req, res) {
   if (!canEdit(req.session)) {
     return flashRedirect(req, res, '/nomina/finiquitos', 'error', 'Sin permiso');
   }
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const doc = await finiquitoService.obtener(req.session.tenantId, req.params.id);
   if (!doc) return flashRedirect(req, res, '/nomina/finiquitos', 'error', 'No encontrado');
 
@@ -449,7 +449,7 @@ async function show(req, res) {
   if (!canView(req.session)) {
     return flashRedirect(req, res, '/', 'error', 'Sin permiso');
   }
-  const { empresa } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa } = await requireEmpresaForTenant(req);
   const doc = await finiquitoService.obtener(req.session.tenantId, req.params.id);
   if (!doc) return flashRedirect(req, res, '/nomina/finiquitos', 'error', 'No encontrado');
 

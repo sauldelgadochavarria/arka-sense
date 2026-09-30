@@ -29,7 +29,7 @@ async function loadFilterCatalogs(tenantId) {
 }
 
 async function index(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   res.render('Reportes/index', {
     reportes: REPORTES,
     empresa,
@@ -39,7 +39,7 @@ async function index(req, res) {
 }
 
 async function dashboardKpis(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const kpis = empresa ? await getDashboardKpis(req.session.tenantId) : null;
   res.render('Reportes/kpis', {
     kpis,
@@ -56,7 +56,7 @@ async function show(req, res) {
     return res.redirect('/reportes');
   }
 
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const filters = parseReportFilters(req.query);
   const catalogs = empresa ? await loadFilterCatalogs(req.session.tenantId) : null;
   const result = empresa ? await runReport(meta.slug, req.session.tenantId, filters) : null;
@@ -96,7 +96,7 @@ async function exportCsv(req, res) {
     return res.redirect('/reportes');
   }
 
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   if (!empresa) {
     req.flash('error', error || 'Sin empresa configurada');
     return res.redirect('/reportes');

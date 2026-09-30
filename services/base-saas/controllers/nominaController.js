@@ -121,7 +121,7 @@ function diasEntre(inicio, fin) {
 
 async function index(req, res) {
   if (requireNominaViewOrRedirect(req, res) === false) return;
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
 
   res.render('Nomina/index', {
     modulo: MODULO_NOMINA,
@@ -934,7 +934,7 @@ async function loadConceptoAmbitoEnums() {
 
 async function newConcepto(req, res) {
   if (requireNominaEditOrRedirect(req, res) === false) return;
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const ambitoEnums = await loadConceptoAmbitoEnums();
   const { getEnumItems } = require('../services/nomina/systemEnumService');
   let categoriasConcepto = [];
@@ -1333,7 +1333,7 @@ async function saveFormulaAction(req, res) {
 
     let empresaIdOverride = null;
     if (req.body.comoOverride === 'on') {
-      const { empresa } = await requireEmpresaForTenant(req.session.tenantId);
+      const { empresa } = await requireEmpresaForTenant(req);
       empresaIdOverride = empresa?._id || null;
     }
 

@@ -9,7 +9,7 @@ const {
 } = require('../services/movimientoAsistenciaNominaService');
 
 async function list(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const Empleado = await getEmpleadoModel();
   const [movimientos, empleados] = await Promise.all([
     empresa ? listMovimientos(req.session.tenantId, 300) : [],
@@ -30,7 +30,7 @@ async function list(req, res) {
 
 async function create(req, res) {
   try {
-    const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+    const { empresa, error } = await requireEmpresaForTenant(req);
     if (error) {
       req.flash('error', error);
       return res.redirect('/prenomina/movimientos');

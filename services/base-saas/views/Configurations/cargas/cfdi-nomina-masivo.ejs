@@ -1,0 +1,111 @@
+<%- include('../../Partials/layout-top', { title: 'Carga CFDI masiva', session }) %>
+<h1>Carga masiva desde XML (CFDI)</h1>
+<div class="toolbar">
+  <a class="btn" href="/config-empresa/cargas">← Cargas iniciales</a>
+  <a class="btn" href="/config-empresa/cargas/cfdi_nomina_zip">Carga rápida (clientes menores)</a>
+  <a class="btn" href="/nomina/configuracion">Configuración fiscal</a>
+</div>
+
+<% if (!empresa) { %>
+<p>No hay empresa vinculada a este tenant.</p>
+<% } else { %>
+
+<section class="panel">
+  <h2 class="panel-title">1. Sube el ZIP (procesamiento en segundo plano)</h2>
+  <p class="muted">
+    Pensado para miles–decenas de miles de recibos. El ZIP se guarda en disco y un worker parsea por lotes;
+    puedes cerrar esta pantalla y volver al job para ver el progreso.
+  </p>
+  <p class="muted small">
+    Límites orientativos: hasta ~50 000 XML · ZIP hasta ~500 MB.
+    Empresa: <strong><%= empresa.razonSocial %></strong>
+    · RFC <code><%= empresa.rfc || 'sin RFC' %></code>
+  </p>
+  <form method="post" action="/config-empresa/cargas/cfdi_nomina_zip_masivo/encolar"
+        enctype="multipart/form-data" class="form-grid form-wide" id="form-cfdi-masivo">
+    <input type="hidden" name="opcionesForm" value="1" />
+    <label>Año a importar
+      <input type="number" name="anio" min="2020" max="2100" value="<%= anioActual %>" required />
+    </label>
+    <label>Archivo ZIP
+      <input type="file" name="zip" accept=".zip,application/zip" required />
+    </label>
+
+    <fieldset style="grid-column:1/-1;border:1px solid #e5e7eb;border-radius:8px;padding:0.85rem 1rem;margin:0.25rem 0">
+      <legend>Bloques a importar</legend>
+      <label class="inline-check"><input type="checkbox" name="importEmpresa" value="1" checked /> Empresa (solo campos vacíos: RFC, RP, CP…)</label>
+      <label class="inline-check"><input type="checkbox" name="importEmpleados" value="1" checked id="opt-emp" /> Empleados / trabajadores</label>
+      <label class="inline-check"><input type="checkbox" name="importOrganizacion" value="1" checked /> Departamentos y puestos</label>
+      <label class="inline-check"><input type="checkbox" name="importConceptos" value="1" checked /> Conceptos de nómina</label>
+      <label class="inline-check"><input type="checkbox" name="importHistorico" value="1" checked id="opt-hist" /> Histórico de recibos</label>
+      <label class="inline-check"><input type="checkbox" name="importAcumulados" value="1" checked id="opt-acu" /> Acumulados del año</label>
+      <label class="inline-check"><input type="checkbox" name="importPeriodos" value="1" checked id="opt-per" /> Períodos (inferir tipos, clasificar empleados, cerrar como timbrados)</label>
+    </fieldset>
+
+    <label>Modo de escritura
+      <select name="modoEscritura">
+        <option value="upsert" selected>Upsert (crear o actualizar)</option>
+        <option value="crear_solo">Solo crear (no toca existentes)</option>
+        <option value="solo_vacios">Solo vacíos (no sobrescribe datos ya capturados)</option>
+      </select>
+    </label>
+
+    <fieldset style="grid-column:1/-1;border:1px solid #e5e7eb;border-radius:8px;padding:0.85rem 1rem">
+      <legend>Filtros / cuidado</legend>
+      <label class="inline-check"><input type="checkbox" name="excluirExtraordinarias" value="1" /> Excluir nóminas extraordinarias (E)</label>
+      <label class="inline-check"><input type="checkbox" name="actualizarDatosLaborales" value="1" checked /> Actualizar sueldo / depto / puesto en empleados existentes</label>
+    </fieldset>
+
+    <button type="submit" class="btn btn-primary">Encolar ZIP (async)</button>
+  </form>
+</section>
+
+<section class="panel">
+  <h2 class="panel-title">Jobs masivos recientes</h2>
+  <% if (!jobs.length) { %>
+  <p class="muted">Aún no hay cargas masivas.</p>
+  <% } else { %>
+  <table class="data-table">
+    <thead>
+      <tr><th>Fecha</th><th>Archivo</th><th>OK / Err</th><th>Aplicadas</th><th>Estatus</th><th>Progreso</th><th></th></tr>
+    </thead>
+    <tbody>
+      <% jobs.forEach(function(j) {
+        const p = j.progreso || {};
+      %>
+      <tr>
+        <td><%= new Date(j.createdAt).toLocaleString('es-MX') %></td>
+        <td><%= j.archivoNombre || '—' %></td>
+        <td><%= j.filasOk || 0 %> / <%= j.filasError || 0 %></td>
+        <td><%= j.filasAplicadas || 0 %></td>
+        <td><span class="badge"><%= j.estatus %></span></td>
+        <td class="muted small"><%= p.mensaje || p.fase || '—' %></td>
+        <td><a href="/config-empresa/cargas/jobs/<%= j._id %>">Ver</a></td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table>
+  <% } %>
+</section>
+<% } %>
+
+<script>
+(function () {
+  var hist = document.getElementById('opt-hist');
+  var acu = document.getElementById('opt-acu');
+  var per = document.getElementById('opt-per');
+  function sync() {
+    if (!hist) return;
+    if (!hist.checked) {
+      if (acu) { acu.checked = false; acu.disabled = true; }
+      if (per) { per.checked = false; per.disabled = true; }
+    } else {
+      if (acu) acu.disabled = false;
+      if (per) per.disabled = false;
+    }
+  }
+  if (hist) hist.addEventListener('change', sync);
+  sync();
+})();
+</script>
+<%- include('../../Partials/layout-bottom') %>

@@ -26,7 +26,7 @@ function money(n) {
 }
 
 async function index(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const tab = ['confronta', 'checklist', 'calendario'].includes(String(req.query.tab))
     ? String(req.query.tab)
     : 'confronta';

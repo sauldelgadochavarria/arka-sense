@@ -100,6 +100,30 @@ const CARGAS_INICIALES = [
     ]
   },
   {
+    codigo: 'cfdi_nomina_zip',
+    titulo: 'CFDI XML — carga rápida',
+    descripcion:
+      'Para empresas chicas/medianas (hasta ~2 000 recibos). ZIP síncrono: dry-run inmediato y apply en la misma sesión.',
+    fase: 1,
+    aplica: true,
+    formato: 'zip_xml',
+    perfil: 'lite',
+    columnas: [],
+    ejemploFilas: []
+  },
+  {
+    codigo: 'cfdi_nomina_zip_masivo',
+    titulo: 'CFDI XML — carga masiva (async)',
+    descripcion:
+      'Para volúmenes altos (miles–decenas de miles). El ZIP se procesa en segundo plano con progreso; pensado para ~30 k recibos/mes.',
+    fase: 1,
+    aplica: true,
+    formato: 'zip_xml_async',
+    perfil: 'masivo',
+    columnas: [],
+    ejemploFilas: []
+  },
+  {
     codigo: 'creditos_saldos',
     titulo: 'Créditos y saldos',
     descripcion: 'Infonavit, préstamos, fondo de ahorro (saldo inicial). Próximamente.',

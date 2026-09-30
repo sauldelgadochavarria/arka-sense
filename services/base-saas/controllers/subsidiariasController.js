@@ -25,7 +25,7 @@ function buildSubsidiariaPayload(body) {
 }
 
 async function listSubsidiarias(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const Subsidiaria = await getSubsidiariaModel();
   const subsidiarias = empresa
     ? await Subsidiaria.find({ empresaId: empresa._id }).sort({ nombre: 1 }).lean()
@@ -35,7 +35,7 @@ async function listSubsidiarias(req, res) {
 
 async function createSubsidiaria(req, res) {
   try {
-    const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+    const { empresa, error } = await requireEmpresaForTenant(req);
     if (error) {
       req.flash('error', error);
       return res.redirect('/config-subsidiarias');
@@ -57,7 +57,7 @@ async function createSubsidiaria(req, res) {
 }
 
 async function editSubsidiaria(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const Subsidiaria = await getSubsidiariaModel();
   const subsidiaria = empresa
     ? await findOneByEmpresa(Subsidiaria, empresa._id, req.params.id)
@@ -69,7 +69,7 @@ async function editSubsidiaria(req, res) {
 
 async function updateSubsidiaria(req, res) {
   try {
-    const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+    const { empresa, error } = await requireEmpresaForTenant(req);
     if (error) {
       req.flash('error', error);
       return res.redirect('/config-subsidiarias');
@@ -102,7 +102,7 @@ async function updateSubsidiaria(req, res) {
 }
 
 async function toggleSubsidiaria(req, res) {
-  const { empresa } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa } = await requireEmpresaForTenant(req);
   if (!empresa) return res.status(400).send('Empresa no encontrada');
 
   const Subsidiaria = await getSubsidiariaModel();

@@ -5,8 +5,33 @@
   <a class="btn" href="/nomina/configuracion">Políticas de nómina</a>
   <a class="btn" href="/nomina/correo">Correo que envía recibos</a>
 </div>
+
+<% const _empresas = typeof empresas !== 'undefined' ? empresas : []; %>
+<% if (_empresas.length > 1) { %>
+<section class="panel">
+  <h2 class="panel-title">Empresas de esta cuenta</h2>
+  <p class="muted small">Cambia la activa desde el menú superior derecho. Trabajadores y períodos son independientes por empresa.</p>
+  <ul class="vars-list">
+    <% _empresas.forEach(function(e) {
+      const isActive = empresa && String(empresa._id) === String(e._id);
+    %>
+    <li>
+      <% if (isActive) { %><strong><% } %>
+      <%= e.nombreComercial || e.razonSocial %>
+      <% if (e.rfc) { %> · <code><%= e.rfc %></code><% } %>
+      <% if (isActive) { %></strong> (activa)<% } else { %>
+      <form method="post" action="/cambiar-empresa/<%= e._id %>" class="inline-form" style="display:inline">
+        <button type="submit">Usar</button>
+      </form>
+      <% } %>
+    </li>
+    <% }); %>
+  </ul>
+</section>
+<% } %>
+
 <% if (!empresa) { %>
-<p>No hay empresa vinculada a este tenant. Activa el tenant desde Arka-Presence Admin.</p>
+<p>No hay empresa vinculada a este tenant. Crea la primera abajo o actívala desde Arka-Presence Admin.</p>
 <% } else { %>
 <form method="post" action="/config-empresa" class="form-grid form-wide">
   <fieldset class="form-section">
@@ -60,4 +85,20 @@
   <a class="btn" href="/config-empresa/cargas">Ir a cargas iniciales →</a>
 </section>
 <% } %>
+
+<section class="panel" style="margin-top:1.5rem">
+  <h2 class="panel-title">Nueva empresa (mismo tenant)</h2>
+  <p class="muted small">
+    Trabajadores, períodos y organización quedan aislados por empresa.
+    Catálogos globales (p. ej. tablas de prestaciones) se comparten en la cuenta.
+  </p>
+  <form method="post" action="/config-empresa/nueva" class="form-grid form-wide">
+    <input name="razonSocial" placeholder="Razón social *" required />
+    <input name="nombreComercial" placeholder="Nombre comercial" />
+    <input name="rfc" placeholder="RFC" maxlength="13" />
+    <input name="registroPatronal" maxlength="11" placeholder="Registro patronal IMSS *" required />
+    <input name="ciudad" placeholder="Ciudad" />
+    <button type="submit">Crear empresa</button>
+  </form>
+</section>
 <%- include('../Partials/layout-bottom') %>

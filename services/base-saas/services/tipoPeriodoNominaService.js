@@ -28,7 +28,7 @@ async function ensureTiposPeriodoForTenant(tenantId, empresaId) {
   const TipoPeriodoNomina = await getTipoPeriodoNominaModel();
   for (const t of TIPOS_PERIODO_DEFAULT) {
     await TipoPeriodoNomina.updateOne(
-      { tenantId, codigoLegado: t.codigoLegado },
+      { tenantId, empresaId, codigoLegado: t.codigoLegado },
       {
         $setOnInsert: {
           tenantId,
@@ -55,9 +55,10 @@ async function ensureTiposPeriodoForTenant(tenantId, empresaId) {
   }
 }
 
-async function listTiposPeriodo(tenantId, soloActivos = false) {
+async function listTiposPeriodo(tenantId, soloActivos = false, empresaId = null) {
   const TipoPeriodoNomina = await getTipoPeriodoNominaModel();
   const filter = { tenantId };
+  if (empresaId) filter.empresaId = empresaId;
   if (soloActivos) filter.activo = true;
   return TipoPeriodoNomina.find(filter).sort({ codigoLegado: 1 }).lean();
 }
@@ -72,7 +73,7 @@ async function crearTipoPeriodo(tenantId, empresaId, data) {
   const codigoLegado = Number(data.codigoLegado);
   if (!Number.isFinite(codigoLegado)) throw new Error('Código interno requerido');
 
-  const exists = await TipoPeriodoNomina.findOne({ tenantId, codigoLegado }).lean();
+  const exists = await TipoPeriodoNomina.findOne({ tenantId, empresaId, codigoLegado }).lean();
   if (exists) {
     throw new Error(
       `El código interno ${codigoLegado} ya está asignado a «${exists.nombre}». Elige otro.`
@@ -121,6 +122,7 @@ async function actualizarTipoPeriodo(tenantId, id, data) {
 
   const duplicado = await TipoPeriodoNomina.findOne({
     tenantId,
+    empresaId: doc.empresaId,
     codigoLegado,
     _id: { $ne: doc._id }
   }).lean();
@@ -154,9 +156,11 @@ async function actualizarTipoPeriodo(tenantId, id, data) {
   return doc.toObject();
 }
 
-async function nextCodigoLegado(tenantId) {
+async function nextCodigoLegado(tenantId, empresaId = null) {
   const TipoPeriodoNomina = await getTipoPeriodoNominaModel();
-  const top = await TipoPeriodoNomina.find({ tenantId, codigoLegado: { $ne: null } })
+  const q = { tenantId, codigoLegado: { $ne: null } };
+  if (empresaId) q.empresaId = empresaId;
+  const top = await TipoPeriodoNomina.find(q)
     .sort({ codigoLegado: -1 })
     .limit(1)
     .select('codigoLegado')
@@ -165,9 +169,10 @@ async function nextCodigoLegado(tenantId) {
   return Number.isFinite(Number(max)) ? Number(max) + 1 : 1;
 }
 
-async function listCodigosLegadoOcupados(tenantId, excludeId = null) {
+async function listCodigosLegadoOcupados(tenantId, excludeId = null, empresaId = null) {
   const TipoPeriodoNomina = await getTipoPeriodoNominaModel();
   const q = { tenantId, codigoLegado: { $ne: null } };
+  if (empresaId) q.empresaId = empresaId;
   if (excludeId) q._id = { $ne: excludeId };
   const rows = await TipoPeriodoNomina.find(q).select('codigoLegado').lean();
   return rows.map((r) => Number(r.codigoLegado)).filter((n) => Number.isFinite(n));

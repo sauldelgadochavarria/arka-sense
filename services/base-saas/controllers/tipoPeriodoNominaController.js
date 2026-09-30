@@ -27,9 +27,9 @@ function formLocals(extra = {}) {
 }
 
 async function list(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   if (empresa) await ensureTiposPeriodoForTenant(req.session.tenantId, empresa._id);
-  const tipos = empresa ? await listTiposPeriodo(req.session.tenantId) : [];
+  const tipos = empresa ? await listTiposPeriodo(req.session.tenantId, false, empresa._id) : [];
 
   res.render('Prenomina/tipos-periodo', {
     tipos,
@@ -41,11 +41,11 @@ async function list(req, res) {
 }
 
 async function newForm(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const sugeridoCodigoLegado = empresa
-    ? await nextCodigoLegado(req.session.tenantId)
+    ? await nextCodigoLegado(req.session.tenantId, empresa._id)
     : 1;
-  const ocupados = empresa ? await listCodigosLegadoOcupados(req.session.tenantId) : [];
+  const ocupados = empresa ? await listCodigosLegadoOcupados(req.session.tenantId, null, empresa._id) : [];
   res.render(
     'Prenomina/tipo-periodo-nuevo',
     formLocals({
@@ -60,7 +60,7 @@ async function newForm(req, res) {
 
 async function create(req, res) {
   try {
-    const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+    const { empresa, error } = await requireEmpresaForTenant(req);
     if (error) {
       req.flash('error', error);
       return res.redirect('/prenomina/tipos-periodo');
@@ -89,12 +89,19 @@ async function create(req, res) {
 }
 
 async function edit(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const tipo = await getTipoPeriodoById(req.session.tenantId, req.params.id);
   if (!tipo) return res.status(404).send('Tipo de período no encontrado');
 
-  const sugeridoCodigoLegado = await nextCodigoLegado(req.session.tenantId);
-  const ocupados = await listCodigosLegadoOcupados(req.session.tenantId, tipo._id);
+  const sugeridoCodigoLegado = await nextCodigoLegado(
+    req.session.tenantId,
+    empresa ? empresa._id : null
+  );
+  const ocupados = await listCodigosLegadoOcupados(
+    req.session.tenantId,
+    tipo._id,
+    empresa ? empresa._id : null
+  );
 
   res.render(
     'Prenomina/tipo-periodo-edit',

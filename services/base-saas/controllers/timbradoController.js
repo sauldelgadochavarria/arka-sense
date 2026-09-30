@@ -125,7 +125,7 @@ function maskPac(doc) {
 }
 
 async function listPac(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const Pac = await getPacConfigModel();
   const rows = empresa
     ? await Pac.find({ tenantId: req.session.tenantId, empresaId: empresa._id }).sort({ codigo: 1 }).lean()
@@ -139,7 +139,7 @@ async function listPac(req, res) {
 }
 
 async function newPacForm(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const Subsidiaria = await getSubsidiariaModel();
   const subsidiarias = empresa
     ? await Subsidiaria.find({ empresaId: empresa._id, activo: true }).sort({ nombre: 1 }).lean()
@@ -156,7 +156,7 @@ async function newPacForm(req, res) {
 }
 
 async function createPac(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   if (error || !empresa) return flashRedirect(req, res, '/nomina/pac', 'error', error || 'Sin empresa');
   try {
     const Pac = await getPacConfigModel();
@@ -171,7 +171,7 @@ async function createPac(req, res) {
 }
 
 async function editPac(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const Pac = await getPacConfigModel();
   const pac = await Pac.findOne({
     _id: req.params.id,
@@ -195,7 +195,7 @@ async function editPac(req, res) {
 }
 
 async function updatePac(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   if (error || !empresa) return flashRedirect(req, res, '/nomina/pac', 'error', error || 'Sin empresa');
   try {
     const Pac = await getPacConfigModel();
@@ -220,7 +220,7 @@ async function updatePac(req, res) {
 }
 
 async function togglePac(req, res) {
-  const { empresa } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa } = await requireEmpresaForTenant(req);
   const Pac = await getPacConfigModel();
   const pac = await Pac.findOne({ _id: req.params.id, tenantId: req.session.tenantId, empresaId: empresa?._id });
   if (pac) {
@@ -231,7 +231,7 @@ async function togglePac(req, res) {
 }
 
 async function probarPac(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   if (error || !empresa) return flashRedirect(req, res, '/nomina/pac', 'error', error || 'Sin empresa');
   const Pac = await getPacConfigModel();
   const pac = await Pac.findOne({
@@ -276,7 +276,7 @@ async function probarPac(req, res) {
 }
 
 async function seedPacEjemplo(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   if (error || !empresa) return flashRedirect(req, res, '/nomina/pac', 'error', error || 'Sin empresa');
   const Pac = await getPacConfigModel();
   const exists = await Pac.findOne({ tenantId: req.session.tenantId, empresaId: empresa._id, codigo: 'SW-DEMO' });
@@ -323,7 +323,7 @@ function plantillaFromBody(body, tenantId, empresaId) {
 }
 
 async function listPlantillas(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const Plantilla = await getReciboPdfPlantillaModel();
   const Tipo = await getTipoPeriodoNominaModel();
   const rows = empresa
@@ -343,7 +343,7 @@ async function listPlantillas(req, res) {
 }
 
 async function newPlantillaForm(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const Tipo = await getTipoPeriodoNominaModel();
   const tipos = empresa
     ? await Tipo.find({ tenantId: req.session.tenantId, empresaId: empresa._id, activo: true })
@@ -373,7 +373,7 @@ async function newPlantillaForm(req, res) {
 }
 
 async function createPlantilla(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   if (error || !empresa) return flashRedirect(req, res, '/nomina/recibos-pdf', 'error', error || 'Sin empresa');
   try {
     const Plantilla = await getReciboPdfPlantillaModel();
@@ -394,7 +394,7 @@ async function createPlantilla(req, res) {
 }
 
 async function editPlantilla(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const Plantilla = await getReciboPdfPlantillaModel();
   const plantilla = await Plantilla.findOne({
     _id: req.params.id,
@@ -420,7 +420,7 @@ async function editPlantilla(req, res) {
 }
 
 async function updatePlantilla(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   if (error || !empresa) return flashRedirect(req, res, '/nomina/recibos-pdf', 'error', error || 'Sin empresa');
   try {
     const Plantilla = await getReciboPdfPlantillaModel();
@@ -445,7 +445,7 @@ async function updatePlantilla(req, res) {
 }
 
 async function togglePlantilla(req, res) {
-  const { empresa } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa } = await requireEmpresaForTenant(req);
   const Plantilla = await getReciboPdfPlantillaModel();
   const doc = await Plantilla.findOne({
     _id: req.params.id,
@@ -460,7 +460,7 @@ async function togglePlantilla(req, res) {
 }
 
 async function seedPlantillaEjemplo(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   if (error || !empresa) return flashRedirect(req, res, '/nomina/recibos-pdf', 'error', error || 'Sin empresa');
   const Plantilla = await getReciboPdfPlantillaModel();
   const exists = await Plantilla.findOne({
@@ -490,7 +490,7 @@ async function seedPlantillaEjemplo(req, res) {
 }
 
 async function aplicarLayoutCfdi(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   if (error || !empresa) return flashRedirect(req, res, '/nomina/recibos-pdf', 'error', error || 'Sin empresa');
   const Plantilla = await getReciboPdfPlantillaModel();
   const doc = await Plantilla.findOne({
@@ -508,7 +508,7 @@ async function aplicarLayoutCfdi(req, res) {
 }
 
 async function previewPlantilla(req, res) {
-  const { empresa } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa } = await requireEmpresaForTenant(req);
   const Plantilla = await getReciboPdfPlantillaModel();
   const plantilla = await Plantilla.findOne({
     _id: req.params.id,
@@ -599,7 +599,7 @@ async function previewPlantilla(req, res) {
 /* ───────────── Proceso timbrado ───────────── */
 
 async function wizardTimbrado(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const Periodo = await getPeriodoNominaModel();
   const Pac = await getPacConfigModel();
   const Plantilla = await getReciboPdfPlantillaModel();
@@ -638,7 +638,7 @@ async function wizardTimbrado(req, res) {
 }
 
 async function generarTimbrado(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   if (error || !empresa) return flashRedirect(req, res, '/nomina/timbrado', 'error', error || 'Sin empresa');
   try {
     const result = await crearYProcesarLote({
@@ -731,7 +731,7 @@ function uniqueFilterOptions(items) {
 }
 
 async function showLote(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const Lote = await getTimbradoLoteModel();
   const lote = await Lote.findOne({
     _id: req.params.id,
@@ -773,7 +773,7 @@ async function descargarCfdiArchivo(req, res) {
  * body: { itemIds: string|string[], incluirXml?: '1', incluirPdf?: '1' }
  */
 async function descargarMasivoLote(req, res) {
-  const { empresa } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa } = await requireEmpresaForTenant(req);
   const Lote = await getTimbradoLoteModel();
   const lote = await Lote.findOne({
     _id: req.params.id,
@@ -852,7 +852,7 @@ async function descargarMasivoLote(req, res) {
 }
 
 async function reciboPdfHtml(req, res) {
-  const { empresa } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa } = await requireEmpresaForTenant(req);
   const historicoId = parseOptionalObjectId(req.query.historicoId);
   const reciboId = parseOptionalObjectId(req.query.reciboId);
   const Plantilla = await getReciboPdfPlantillaModel();

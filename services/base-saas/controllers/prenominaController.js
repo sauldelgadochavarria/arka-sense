@@ -2,7 +2,7 @@ const getPayrollPeriodModel = require('../models/payrollPeriod');
 const getPayrollDetailModel = require('../models/payrollDetail');
 const getConceptoNominaModel = require('../models/conceptoNomina');
 const getEmpleadoModel = require('../models/empleado');
-const { requireEmpresaForTenant } = require('../libs/tenantScope');
+const { requireEmpresaForTenant, scopeEmpresaFilter, sessionSubsidiariaId } = require('../libs/tenantScope');
 const { resolvePeriodRange } = require('../libs/payrollPeriodDates');
 const { trimString, parseDate, parseCheckbox } = require('../libs/formHelpers');
 const { startOfDay, endOfDay, ymdInTimeZone, formatTimeHHMM } = require('../libs/timeHelpers');
@@ -31,16 +31,17 @@ const { findOneByTenant, findOneDocByTenant } = require('../libs/tenantScope');
 const { parsePositiveNumber } = require('../libs/formHelpers');
 
 async function listPeriodos(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const PayrollPeriod = await getPayrollPeriodModel();
   if (empresa) await ensureTiposPeriodoForTenant(req.session.tenantId, empresa._id);
 
   const anioActual = new Date().getFullYear();
   const anioFiltro = req.query.anio ? Number(req.query.anio) : anioActual;
+  const scope = scopeEmpresaFilter(req, empresa);
 
-  const periodos = empresa
+  const periodos = scope
     ? await PayrollPeriod.find({
-        tenantId: req.session.tenantId,
+        ...scope,
         $or: [
           { anio: anioFiltro },
           { anio: { $exists: false }, fechaInicio: {
@@ -67,7 +68,7 @@ async function listPeriodos(req, res) {
     }
   }
 
-  const tiposPeriodoCatalogo = empresa ? await listTiposPeriodo(req.session.tenantId, true) : [];
+  const tiposPeriodoCatalogo = empresa ? await listTiposPeriodo(req.session.tenantId, true, empresa._id) : [];
 
   res.render('Prenomina/periodos', {
     periodos,
@@ -84,7 +85,7 @@ async function listPeriodos(req, res) {
 
 async function createPeriodo(req, res) {
   try {
-    const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+    const { empresa, error } = await requireEmpresaForTenant(req);
     if (error) {
       req.flash('error', error);
       return res.redirect('/prenomina-periodos');
@@ -114,11 +115,15 @@ async function createPeriodo(req, res) {
     const { sugerirFechaPago } = require('../libs/calendarioPeriodo');
 
     const PayrollPeriod = await getPayrollPeriodModel();
-    const exists = await PayrollPeriod.findOne({
+    const subId = sessionSubsidiariaId(req);
+    const existsQ = {
       tenantId: req.session.tenantId,
+      empresaId: empresa._id,
       fechaInicio: startOfDay(fechaInicio),
       fechaFin: endOfDay(fechaFin)
-    });
+    };
+    if (subId) existsQ.subsidiariaId = subId;
+    const exists = await PayrollPeriod.findOne(existsQ);
     if (exists) {
       req.flash('error', 'Ya existe un período con esas fechas');
       return res.redirect('/prenomina-periodos');
@@ -127,6 +132,7 @@ async function createPeriodo(req, res) {
     const period = await PayrollPeriod.create({
       tenantId: req.session.tenantId,
       empresaId: empresa._id,
+      subsidiariaId: subId || null,
       tipo,
       fechaInicio: startOfDay(fechaInicio),
       fechaFin: endOfDay(fechaFin),
@@ -234,25 +240,42 @@ function buildAsistenciaPeriodoFilas(empleadosScope, dailies, fechasYmd) {
 }
 
 async function showPeriodo(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
+  if (error || !empresa) {
+    req.flash('error', error || 'Sin empresa activa');
+    return res.redirect('/prenomina-periodos');
+  }
   const PayrollPeriod = await getPayrollPeriodModel();
   const PayrollDetail = await getPayrollDetailModel();
   const Empleado = await getEmpleadoModel();
   const getDailyAttendanceModel = require('../models/dailyAttendance');
   const DailyAttendance = await getDailyAttendanceModel();
 
+  const scope = scopeEmpresaFilter(req, empresa);
   const periodo = await PayrollPeriod.findOne({
     _id: req.params.id,
-    tenantId: req.session.tenantId
+    ...scope
   }).lean();
-  if (!periodo) return res.status(404).send('Período no encontrado');
+  if (!periodo) {
+    req.flash('error', 'Período no encontrado en la empresa/subsidiaria activa');
+    return res.redirect('/prenomina-periodos');
+  }
+
+  const empFilter = {
+    tenantId: req.session.tenantId,
+    empresaId: empresa._id
+  };
+  const subId = sessionSubsidiariaId(req);
+  if (subId) {
+    empFilter.$or = [{ subsidiariaId: subId }, { subsidiariaId: null }, { subsidiariaId: { $exists: false } }];
+  }
 
   const [detalles, empleadosAll, tiposPeriodo] = await Promise.all([
     PayrollDetail.find({ tenantId: req.session.tenantId, periodId: periodo._id })
       .sort({ netoPagar: -1 })
       .lean(),
-    Empleado.find({ tenantId: req.session.tenantId }).lean(),
-    listTiposPeriodo(req.session.tenantId, false)
+    Empleado.find(empFilter).lean(),
+    listTiposPeriodo(req.session.tenantId, false, empresa._id)
   ]);
 
   const empMap = new Map(empleadosAll.map((e) => [String(e._id), e]));
@@ -352,9 +375,15 @@ async function calcularPeriodo(req, res) {
 async function reprocesarAsistenciaPeriodo(req, res) {
   try {
     const PayrollPeriod = await getPayrollPeriodModel();
+    const { empresa } = await requireEmpresaForTenant(req);
+    if (!empresa) {
+      req.flash('error', 'Sin empresa activa');
+      return res.redirect('/prenomina-periodos');
+    }
+    const scope = scopeEmpresaFilter(req, empresa);
     const periodo = await PayrollPeriod.findOne({
       _id: req.params.id,
-      tenantId: req.session.tenantId
+      ...scope
     }).lean();
     if (!periodo) {
       req.flash('error', 'Período no encontrado');
@@ -413,13 +442,16 @@ async function cerrarPeriodo(req, res) {
 }
 
 async function showComprobante(req, res) {
+  const { empresa } = await requireEmpresaForTenant(req);
+  if (!empresa) return res.status(404).send('Sin empresa activa');
   const PayrollPeriod = await getPayrollPeriodModel();
   const PayrollDetail = await getPayrollDetailModel();
   const Empleado = await getEmpleadoModel();
 
+  const scope = scopeEmpresaFilter(req, empresa);
   const periodo = await PayrollPeriod.findOne({
     _id: req.params.periodId,
-    tenantId: req.session.tenantId
+    ...scope
   }).lean();
   if (!periodo) return res.status(404).send('Período no encontrado');
 
@@ -429,7 +461,11 @@ async function showComprobante(req, res) {
       periodId: periodo._id,
       empleadoId: req.params.empleadoId
     }).lean(),
-    Empleado.findOne({ _id: req.params.empleadoId, tenantId: req.session.tenantId }).lean()
+    Empleado.findOne({
+      _id: req.params.empleadoId,
+      tenantId: req.session.tenantId,
+      empresaId: empresa._id
+    }).lean()
   ]);
 
   if (!detalle || !empleado) return res.status(404).send('Comprobante no encontrado');
@@ -502,7 +538,7 @@ async function aplicarAjuste(req, res) {
 }
 
 async function listConceptos(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   let conceptos = [];
   if (empresa) {
     await ensurePayrollConceptsForTenant(req.session.tenantId, empresa._id);
@@ -519,7 +555,7 @@ async function listConceptos(req, res) {
 }
 
 async function newConcepto(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   res.render('Prenomina/concepto-nuevo', {
     formulasConcepto: FORMULAS_CONCEPTO,
     empresa,
@@ -530,7 +566,7 @@ async function newConcepto(req, res) {
 
 async function createConcepto(req, res) {
   try {
-    const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+    const { empresa, error } = await requireEmpresaForTenant(req);
     if (error) {
       req.flash('error', error);
       return res.redirect('/prenomina-conceptos');
@@ -573,7 +609,7 @@ async function createConcepto(req, res) {
 }
 
 async function editConcepto(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const Concepto = await getConceptoNominaModel();
   const doc = await findOneByTenant(Concepto, req.session.tenantId, req.params.id);
   if (!doc) return res.status(404).send('Concepto no encontrado');

@@ -62,7 +62,7 @@ function userMeta(req) {
 
 async function tablero(req, res) {
   if (requireGestionDocumental(req, res) === false) return;
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   let tableroData = null;
   if (empresa) {
     tableroData = await tableroCumplimiento({
@@ -80,7 +80,7 @@ async function tablero(req, res) {
 
 async function explorador(req, res) {
   if (requireGestionDocumental(req, res) === false) return;
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const anio = Number(req.query.anio) || new Date().getFullYear();
   const mes = req.query.mes ? Number(req.query.mes) : null;
   const ambito = trimString(req.query.ambito) || '';
@@ -139,7 +139,7 @@ async function explorador(req, res) {
 
 async function configForm(req, res) {
   if (requireGestionDocumental(req, res) === false) return;
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   let config = null;
   if (empresa) {
     config = maskConfig(await getOrCreateConfig(req.session.tenantId, empresa._id, empresa));
@@ -157,7 +157,7 @@ async function configForm(req, res) {
 
 async function saveConfigAction(req, res) {
   if (requireGestionDocumental(req, res) === false) return;
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   if (error || !empresa) {
     return flashRedirect(req, res, '/nomina/gestion-documental/config', 'error', error || 'Sin empresa');
   }
@@ -201,7 +201,7 @@ async function saveConfigAction(req, res) {
 
 async function uploadForm(req, res) {
   if (requireGestionDocumental(req, res) === false) return;
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const Periodo = await getPeriodoNominaModel();
   const Empleado = await getEmpleadoModel();
   const anio = new Date().getFullYear();
@@ -232,7 +232,7 @@ async function uploadForm(req, res) {
 
 async function uploadAction(req, res) {
   if (requireGestionDocumental(req, res) === false) return;
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   if (error || !empresa) {
     return flashRedirect(req, res, '/nomina/gestion-documental/subir', 'error', error || 'Sin empresa');
   }
@@ -289,7 +289,7 @@ async function uploadAction(req, res) {
 
 async function descargar(req, res) {
   if (requireGestionDocumental(req, res) === false) return;
-  const { empresa } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa } = await requireEmpresaForTenant(req);
   try {
     const { doc, buffer } = await obtenerContenido(
       req.session.tenantId,
@@ -311,7 +311,7 @@ async function descargar(req, res) {
 
 async function eliminar(req, res) {
   if (requireGestionDocumental(req, res) === false) return;
-  const { empresa } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa } = await requireEmpresaForTenant(req);
   try {
     const hard = !!parseCheckbox(req.body, 'hard');
     await eliminarDocumento(req.session.tenantId, empresa._id, req.params.id, {
@@ -326,7 +326,7 @@ async function eliminar(req, res) {
 
 async function reporte(req, res) {
   if (requireGestionDocumental(req, res) === false) return;
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const anio = Number(req.query.anio) || new Date().getFullYear();
   const mes = req.query.mes ? Number(req.query.mes) : new Date().getMonth() + 1;
   let reporteData = null;
@@ -376,7 +376,7 @@ async function reporte(req, res) {
 
 async function reindexar(req, res) {
   if (requireGestionDocumental(req, res) === false) return;
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   if (error || !empresa) {
     return flashRedirect(req, res, '/nomina/gestion-documental', 'error', error || 'Sin empresa');
   }

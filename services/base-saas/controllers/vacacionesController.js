@@ -4,7 +4,7 @@ const { requireEmpresaForTenant } = require('../libs/tenantScope');
 const { recalcularSaldosTenant, calcularAniosServicio, diasVacacionesPorAntiguedad } = require('../services/vacacionesService');
 
 async function listVacaciones(req, res) {
-  const { empresa, error } = await requireEmpresaForTenant(req.session.tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const anio = Number(req.query.anio) || new Date().getFullYear();
 
   const VacacionSaldo = await getVacacionSaldoModel();

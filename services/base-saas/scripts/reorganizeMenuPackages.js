@@ -144,6 +144,20 @@ async function reorganizeMenuPackages(Menu, adminRoleId) {
     });
     await upsertByRuta(Menu, {
       ...pCommon,
+      menuPrincipal: 'Históricos CFDI (ZIP)',
+      rutaApp: '/config-empresa/cargas/cfdi_nomina_zip',
+      parentId: personal._id,
+      orden: 14.1
+    });
+    await upsertByRuta(Menu, {
+      ...pCommon,
+      menuPrincipal: 'Históricos CFDI masivo',
+      rutaApp: '/config-empresa/cargas/cfdi_nomina_zip_masivo',
+      parentId: personal._id,
+      orden: 14.2
+    });
+    await upsertByRuta(Menu, {
+      ...pCommon,
       menuPrincipal: 'Tipos mov. laboral',
       rutaApp: '/personal/tipos-movimiento-laboral',
       parentId: personal._id,
