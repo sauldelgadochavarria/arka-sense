@@ -153,6 +153,8 @@ function escXml(s) {
 
 function joinNombre(emp) {
   if (!emp) return '';
+  const sat = String(emp.nombreSat || '').trim();
+  if (sat) return sat;
   if (emp.nombre) return String(emp.nombre).trim();
   return [emp.firstName, emp.lastName].filter(Boolean).join(' ').trim();
 }

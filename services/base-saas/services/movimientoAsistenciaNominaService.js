@@ -34,16 +34,19 @@ async function listPorEmpleadoPeriodo(tenantId, empleadoId, payrollPeriodId) {
   return Movimiento.find({ tenantId, empleadoId, payrollPeriodId }).sort({ fechaMovimiento: -1 }).lean();
 }
 
-async function listPendientesPorRango(tenantId, inicio, fin, payrollPeriodId) {
+async function listPendientesPorRango(tenantId, inicio, fin, payrollPeriodId, opts = {}) {
   const Movimiento = await getMovimientoAsistenciaNominaModel();
-  return Movimiento.find({
+  const q = {
     tenantId,
     empleadoId: { $ne: null },
     fechaMovimiento: { $gte: inicio, $lte: fin },
     $or: [{ payrollPeriodId: null }, { payrollPeriodId }]
-  })
-    .sort({ fechaMovimiento: 1 })
-    .lean();
+  };
+  if (opts.empresaId) q.empresaId = opts.empresaId;
+  if (opts.empleadoIds?.length) {
+    q.empleadoId = { $in: opts.empleadoIds };
+  }
+  return Movimiento.find(q).sort({ fechaMovimiento: 1 }).lean();
 }
 
 async function vincularAlPeriodo(tenantId, movimientoIds, payrollPeriodId) {

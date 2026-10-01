@@ -56,7 +56,8 @@ async function encolarZipMasivo({
   anio = new Date().getFullYear(),
   userId = '',
   userLabel = '',
-  opciones: opcionesIn = {}
+  opciones: opcionesIn = {},
+  subsidiariaId = null
 }) {
   const hasBuf = Buffer.isBuffer(zipBuffer) && zipBuffer.length;
   const hasPath = zipPath && fs.existsSync(zipPath);
@@ -76,6 +77,7 @@ async function encolarZipMasivo({
   const job = await Job.create({
     tenantId,
     empresaId,
+    subsidiariaId: subsidiariaId || null,
     tipo: 'cfdi_nomina_zip_masivo',
     estatus: 'encolado',
     modo: 'dry_run',
@@ -92,7 +94,7 @@ async function encolarZipMasivo({
       omitidos: 0,
       mensaje: 'En cola'
     },
-    resumen: { anio, opciones, async: true }
+    resumen: { anio, opciones, async: true, subsidiariaId: subsidiariaId || null }
   });
 
   const dir = zipDir(tenantId);
@@ -275,6 +277,7 @@ async function procesarParseMasivo(jobId) {
             uuid: d.uuid,
             anio: d.anio,
             payload: d,
+            xmlText: text || '',
             bitacora: d.bitacora || [],
             estatus: 'ok'
           });
@@ -382,7 +385,11 @@ async function procesarParseMasivo(jobId) {
   }
 }
 
-async function encolarApplyMasivo(tenantId, jobId, { userId = '', userLabel = '', opcionesOverride = null } = {}) {
+async function encolarApplyMasivo(
+  tenantId,
+  jobId,
+  { userId = '', userLabel = '', opcionesOverride = null, subsidiariaIdFallback = null } = {}
+) {
   const Job = await getCargaInicialJobModel();
   const job = await Job.findOne({ _id: jobId, tenantId, tipo: 'cfdi_nomina_zip_masivo' });
   if (!job) throw new Error('Job masivo no encontrado');
@@ -397,7 +404,17 @@ async function encolarApplyMasivo(tenantId, jobId, { userId = '', userLabel = ''
   const opciones = parseImportOptions(opcionesOverride || job.resumen?.opciones || {});
   job.estatus = 'encolado';
   job.modo = 'aplicar';
-  job.resumen = { ...(job.resumen || {}), opciones, applyAsync: true };
+  job.resumen = {
+    ...(job.resumen || {}),
+    opciones,
+    applyAsync: true,
+    ...(!job.resumen?.subsidiariaId && subsidiariaIdFallback
+      ? { subsidiariaId: subsidiariaIdFallback }
+      : {})
+  };
+  if (!job.subsidiariaId && (job.resumen?.subsidiariaId || subsidiariaIdFallback)) {
+    job.subsidiariaId = job.resumen.subsidiariaId || subsidiariaIdFallback;
+  }
   job.progreso = {
     fase: 'espera_apply',
     total: job.filasOk || 0,

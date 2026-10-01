@@ -40,6 +40,8 @@
       <label class="inline-check"><input type="checkbox" name="importHistorico" value="1" checked id="opt-hist" /> Histórico de recibos</label>
       <label class="inline-check"><input type="checkbox" name="importAcumulados" value="1" checked id="opt-acu" /> Acumulados del año</label>
       <label class="inline-check"><input type="checkbox" name="importPeriodos" value="1" checked id="opt-per" /> Períodos (inferir tipos, clasificar empleados, cerrar como timbrados)</label>
+      <label class="inline-check"><input type="checkbox" name="importHistorialLaboral" value="1" checked /> Historial laboral (altas desde FechaInicioRelLaboral)</label>
+      <label class="inline-check"><input type="checkbox" name="aplicarBajasFiniquito" value="1" checked /> Bajas por finiquito / indemnización (Separación CFDI)</label>
     </fieldset>
 
     <label>Modo de escritura
@@ -52,7 +54,7 @@
 
     <fieldset style="grid-column:1/-1;border:1px solid #e5e7eb;border-radius:8px;padding:0.85rem 1rem">
       <legend>Filtros / cuidado</legend>
-      <label class="inline-check"><input type="checkbox" name="excluirExtraordinarias" value="1" /> Excluir nóminas extraordinarias (E)</label>
+      <label class="inline-check"><input type="checkbox" name="excluirExtraordinarias" value="1" /> Excluir nóminas extraordinarias (E) — déjalo <strong>sin marcar</strong> para cargar finiquitos, aguinaldo, PTU, etc.</label>
       <label class="inline-check"><input type="checkbox" name="actualizarDatosLaborales" value="1" checked /> Actualizar sueldo / depto / puesto en empleados existentes</label>
     </fieldset>
 

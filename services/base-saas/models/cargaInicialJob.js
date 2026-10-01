@@ -18,6 +18,13 @@ const cargaInicialJobSchema = new mongoose.Schema(
   {
     tenantId: { type: String, required: true, trim: true, index: true },
     empresaId: { type: mongoose.Schema.Types.ObjectId, ref: 'Empresa', default: null },
+    /** Scope multi-sucursal: jobs listados por empresa + subsidiaria activa. */
+    subsidiariaId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Subsidiaria',
+      default: null,
+      index: true
+    },
     tipo: {
       type: String,
       enum: [
@@ -84,6 +91,7 @@ const cargaInicialJobSchema = new mongoose.Schema(
 );
 
 cargaInicialJobSchema.index({ tenantId: 1, tipo: 1, createdAt: -1 });
+cargaInicialJobSchema.index({ tenantId: 1, empresaId: 1, subsidiariaId: 1, tipo: 1, createdAt: -1 });
 
 async function getCargaInicialJobModel() {
   const conn = await getFixedMongooseConnection(FIXED_CONNECTIONS.CONFIG);

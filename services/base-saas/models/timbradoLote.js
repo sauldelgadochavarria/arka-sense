@@ -13,6 +13,8 @@ const itemSchema = new mongoose.Schema(
     numEmpleado: { type: String, default: '' },
     nombre: { type: String, default: '' },
     netoPagar: { type: Number, default: 0 },
+    departamentoId: { type: mongoose.Schema.Types.ObjectId, ref: 'Departamento', default: null },
+    departamentoNombre: { type: String, default: '' },
     ...timbradoStatusFields()
   },
   { _id: true }
@@ -22,6 +24,13 @@ const timbradoLoteSchema = new mongoose.Schema(
   {
     tenantId: { type: String, required: true, trim: true, index: true },
     empresaId: { type: mongoose.Schema.Types.ObjectId, ref: 'Empresa', required: true, index: true },
+    /** Denormalizado desde PayrollPeriod del período (scope multi-subsidiaria). */
+    subsidiariaId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Subsidiaria',
+      default: null,
+      index: true
+    },
     periodoId: { type: mongoose.Schema.Types.ObjectId, ref: 'PeriodoNomina', required: true, index: true },
     pacConfigId: { type: mongoose.Schema.Types.ObjectId, ref: 'PacConfig', required: true },
     plantillaPdfId: {
@@ -58,6 +67,7 @@ const timbradoLoteSchema = new mongoose.Schema(
 );
 
 timbradoLoteSchema.index({ tenantId: 1, periodoId: 1, createdAt: -1 });
+timbradoLoteSchema.index({ tenantId: 1, empresaId: 1, subsidiariaId: 1, createdAt: -1 });
 
 async function getTimbradoLoteModel() {
   const conn = await getFixedMongooseConnection(FIXED_CONNECTIONS.CONFIG);

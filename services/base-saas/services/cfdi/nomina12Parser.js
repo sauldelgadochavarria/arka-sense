@@ -170,6 +170,17 @@ function parseNomina12Xml(xmlText, { anioFiltro = null } = {}) {
   if (!curpInfo.ok && curpEmp) bitacora.push({ tipo: 'curp_invalido', detalle: curpInfo.error });
   if (!cuadra) bitacora.push({ tipo: 'recibo_no_cuadra', detalle: `${netoCalc} vs ${totalXml}` });
 
+  const sepNode = nomina.SeparacionIndemnizacion || nomina.Separacionindemnizacion || null;
+  const separacion = sepNode
+    ? {
+        totalPagado: money(sepNode.TotalPagado),
+        numAniosServicio: Number(sepNode.NumAñosServicio || sepNode.NumAniosServicio) || 0,
+        ultimoSueldoMensOrd: money(sepNode.UltimoSueldoMensOrd),
+        ingresoAcumulable: money(sepNode.IngresoAcumulable),
+        ingresoNoAcumulable: money(sepNode.IngresoNoAcumulable)
+      }
+    : null;
+
   return {
     ok: true,
     data: {
@@ -228,7 +239,8 @@ function parseNomina12Xml(xmlText, { anioFiltro = null } = {}) {
         cuadra
       },
       bitacora,
-      tieneSeparacion: !!(nomina.SeparacionIndemnizacion || nomina.Separacionindemnizacion)
+      tieneSeparacion: !!sepNode,
+      separacion
     }
   };
 }

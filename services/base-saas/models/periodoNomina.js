@@ -8,7 +8,7 @@ const periodoNominaSchema = new mongoose.Schema(
     empresaId: { type: mongoose.Schema.Types.ObjectId, ref: 'Empresa', required: true },
     tipoPeriodo: {
       type: String,
-      enum: ['semanal', 'quincenal', 'catorcenal', 'mensual', 'decena'],
+      enum: ['semanal', 'quincenal', 'catorcenal', 'mensual', 'decena', 'otra'],
       required: true
     },
     tipoNomina: {
@@ -22,10 +22,25 @@ const periodoNominaSchema = new mongoose.Schema(
         'primas',
         'comisiones',
         'indemnizacion',
+        'fondo_ahorro',
+        'bono',
         'otro'
       ],
       default: 'ordinaria'
     },
+    /**
+     * TipoNomina SAT del CFDI (O/E). Independiente del tipoNomina interno de negocio.
+     */
+    tipoNominaCfdi: {
+      type: String,
+      enum: ['O', 'E', ''],
+      default: '',
+      index: true
+    },
+    /**
+     * c_PeriodicidadPago SAT (01…10, 99). Fuente del tipoPeriodo interno.
+     */
+    periodicidadPagoSat: { type: Number, default: null, index: true },
     /**
      * Empleados objetivo para períodos especiales (finiquito / indemnización).
      * Vacío = comportamiento ordinario (todos los activos / prenómina).

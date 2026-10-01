@@ -8,6 +8,7 @@
 const getTimbradoLoteModel = require('../models/timbradoLote');
 const getPacConfigModel = require('../models/pacConfig');
 const getPeriodoNominaModel = require('../models/periodoNomina');
+const { resolveSubsidiariaIdFromPeriodo } = require('../libs/periodosNominaScope');
 const getReciboNominaModel = require('../models/reciboNomina');
 const getNominaHistoricoReciboModel = require('../models/nominaHistoricoRecibo');
 const getEmpleadoModel = require('../models/empleado');
@@ -262,6 +263,7 @@ function empleadoParaCfdi(empleado, pac) {
   if (rfc) base.rfc = rfc;
   if (nombre) {
     base.nombre = nombre;
+    base.nombreSat = nombre;
     base.firstName = nombre;
     base.lastName = '';
   }
@@ -293,7 +295,7 @@ async function loadRecibosParaTimbrar(tenantId, periodo) {
     const rows = await Historico.find({
       tenantId,
       periodoId: periodo._id,
-      origen: 'cierre'
+      origen: { $in: ['cierre', 'importacion'] }
     }).lean();
     const empIds = [...new Set(rows.map((h) => String(h.empleadoId)).filter(Boolean))];
     const empleados = empIds.length ? await Empleado.find({ _id: { $in: empIds } }).lean() : [];
@@ -307,8 +309,8 @@ async function loadRecibosParaTimbrar(tenantId, periodo) {
           historicoId: h._id,
           reciboId: h.reciboOrigenId || null,
           empleadoId: h.empleadoId,
-          numEmpleado: snap.numEmpleado || '',
-          nombre: snap.nombre || '',
+          numEmpleado: snap.numEmpleado || h.empleado?.numEmpleado || '',
+          nombre: snap.nombre || h.empleado?.nombre || '',
           netoPagar: money(h.netoPagar),
           totalPercepciones: money(h.totalPercepciones),
           totalDeducciones: money(h.totalDeducciones),
@@ -320,7 +322,12 @@ async function loadRecibosParaTimbrar(tenantId, periodo) {
           cfdiSeparacionIndemnizacion: h.cfdiSeparacionIndemnizacion || null,
           timbrado: h.timbrado || {},
           empleadoSnap: snap,
-          periodoSnap: h.periodo || {}
+          periodoSnap: h.periodo || {},
+          departamentoId: h.empleado?.departamentoId || live.departamentoId || null,
+          departamentoNombre:
+            h.empleado?.departamentoNombre ||
+            snap.departamentoNombre ||
+            ''
         };
       })
     );
@@ -441,6 +448,8 @@ async function crearYProcesarLote({
   const recibos = await loadRecibosParaTimbrar(tenantId, periodo);
   if (!recibos.length) throw new Error('No hay recibos para timbrar en el período');
 
+  const subsidiariaId = await resolveSubsidiariaIdFromPeriodo(periodo, { tenantId, empresaId });
+
   const modo = forzarReal || pac.modoReal ? 'real' : 'simulacion';
   const items = recibos.map((r) => {
     const ini = resolverEstatusInicialItem(r.timbrado, modo);
@@ -451,6 +460,8 @@ async function crearYProcesarLote({
       numEmpleado: r.numEmpleado,
       nombre: r.nombre,
       netoPagar: r.netoPagar,
+      departamentoId: r.departamentoId || null,
+      departamentoNombre: r.departamentoNombre || '',
       estatus: ini.estatus,
       uuid: ini.uuid,
       serie: ini.serie,
@@ -464,6 +475,7 @@ async function crearYProcesarLote({
   const lote = await Lote.create({
     tenantId,
     empresaId,
+    subsidiariaId: subsidiariaId || null,
     periodoId: periodo._id,
     pacConfigId: pac._id,
     plantillaPdfId: plantillaPdfId || null,

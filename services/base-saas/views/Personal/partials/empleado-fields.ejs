@@ -18,6 +18,13 @@
   <input name="apellidoPaterno" placeholder="Apellido paterno *" value="<%= apPat || lastFallback %>" required />
   <input name="apellidoMaterno" placeholder="Apellido materno" value="<%= apMat %>" />
   <input type="hidden" name="lastName" value="<%= empleado ? empleado.lastName : '' %>" />
+  <label style="grid-column:1/-1">Nombre SAT (Receptor CFDI)
+    <input name="nombreSat" placeholder="Como aparece en constancia / CFDI" value="<%= empleado ? (empleado.nombreSat || '') : '' %>" maxlength="300" />
+  </label>
+  <p class="hint" style="grid-column:1/-1">
+    <strong>Nombre SAT</strong> = texto exacto del atributo <code>Nombre</code> del Receptor.
+    Se usa al timbrar; si está vacío se arma con nombre + apellidos.
+  </p>
   <label>Fecha de alta
     <input name="fechaIngreso" type="date" required value="<%= empleado && empleado.fechaIngreso ? toDateInputValue(empleado.fechaIngreso) : '' %>" />
   </label>  <select name="tipoContrato" required>

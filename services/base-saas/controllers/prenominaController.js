@@ -261,14 +261,12 @@ async function showPeriodo(req, res) {
     return res.redirect('/prenomina-periodos');
   }
 
+  const subId = sessionSubsidiariaId(req) || periodo.subsidiariaId || null;
   const empFilter = {
     tenantId: req.session.tenantId,
-    empresaId: empresa._id
+    empresaId: empresa._id,
+    ...(subId ? { subsidiariaId: subId } : {})
   };
-  const subId = sessionSubsidiariaId(req);
-  if (subId) {
-    empFilter.$or = [{ subsidiariaId: subId }, { subsidiariaId: null }, { subsidiariaId: { $exists: false } }];
-  }
 
   const [detalles, empleadosAll, tiposPeriodo] = await Promise.all([
     PayrollDetail.find({ tenantId: req.session.tenantId, periodId: periodo._id })
@@ -398,7 +396,11 @@ async function reprocesarAsistenciaPeriodo(req, res) {
     const result = await recalculateRangeForTenant(
       req.session.tenantId,
       periodo.fechaInicio,
-      periodo.fechaFin
+      periodo.fechaFin,
+      {
+        empresaId: periodo.empresaId || empresa._id,
+        subsidiariaId: periodo.subsidiariaId || sessionSubsidiariaId(req)
+      }
     );
     req.flash(
       'success',
@@ -662,6 +664,14 @@ async function toggleConcepto(req, res) {
 
 async function abrirPeriodoAction(req, res) {
   try {
+    const { empresa } = await requireEmpresaForTenant(req);
+    const scope = scopeEmpresaFilter(req, empresa);
+    const PayrollPeriod = await getPayrollPeriodModel();
+    const exists = await PayrollPeriod.findOne({ _id: req.params.id, ...scope }).select('_id').lean();
+    if (!exists) {
+      req.flash('error', 'Período no encontrado en la subsidiaria activa');
+      return res.redirect('/prenomina-periodos');
+    }
     await abrirPeriodo(req.session.tenantId, req.params.id, req.session.userid || req.session.userId || '');
     req.flash('success', 'Período abierto. Ya puedes calcularlo en pre-nómina / pre-cálculo.');
     return res.redirect(`/prenomina-periodos/${req.params.id}`);

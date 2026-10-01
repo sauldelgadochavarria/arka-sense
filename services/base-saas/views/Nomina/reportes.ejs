@@ -16,6 +16,7 @@
 
 <div class="toolbar">
   <a class="btn" href="/nomina">← Nómina</a>
+  <a class="btn" href="/nomina/reportes/acumulados">Acumulados anuales</a>
   <% if (r && r.rows && r.rows.length) { %>
   <a class="btn btn-primary" href="/nomina/reportes/export?<%= exportQuery %>">Exportar CSV</a>
   <% } %>

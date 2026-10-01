@@ -1,6 +1,6 @@
 'use strict';
 
-const { requireEmpresaForTenant } = require('../libs/tenantScope');
+const { requireEmpresaForTenant, sessionSubsidiariaId } = require('../libs/tenantScope');
 const { getCargaByCodigo, buildCsvTemplate, listCargasParaHub } = require('../config/cargasIniciales');
 const {
   crearYValidar,
@@ -10,6 +10,10 @@ const {
 } = require('../services/cargas/cargaInicialService');
 const { crearYValidarDesdeZip, parseImportOptions } = require('../services/cargas/cfdiNominaImportService');
 const { encolarZipMasivo } = require('../services/cargas/cfdiNominaMasivoService');
+const { religarXmlDesdeZip } = require('../services/cargas/cfdiXmlReligarService');
+const getCargaInicialJobModel = require('../models/cargaInicialJob');
+const fs = require('fs');
+const fsp = require('fs').promises;
 
 function sessionUser(req) {
   return {
@@ -28,7 +32,11 @@ async function index(req, res) {
       session: req.session
     });
   }
-  const jobs = await listJobs(req.session.tenantId, { limit: 20 });
+  const jobs = await listJobs(req.session.tenantId, {
+    empresaId: empresa._id,
+    subsidiariaId: sessionSubsidiariaId(req),
+    limit: 20
+  });
   res.render('Configurations/cargas/index', {
     empresa,
     cargas: listCargasParaHub(),
@@ -61,7 +69,14 @@ async function showTipo(req, res) {
     return showCfdiNominaMasivo(req, res);
   }
   const { empresa } = await requireEmpresaForTenant(req);
-  const jobs = empresa ? await listJobs(req.session.tenantId, { tipo: carga.codigo, limit: 15 }) : [];
+  const jobs = empresa
+    ? await listJobs(req.session.tenantId, {
+        tipo: carga.codigo,
+        empresaId: empresa._id,
+        subsidiariaId: sessionSubsidiariaId(req),
+        limit: 15
+      })
+    : [];
   res.render('Configurations/cargas/tipo', {
     empresa,
     carga,
@@ -73,7 +88,14 @@ async function showTipo(req, res) {
 async function showCfdiNomina(req, res) {
   const carga = getCargaByCodigo('cfdi_nomina_zip');
   const { empresa } = await requireEmpresaForTenant(req);
-  const jobs = empresa ? await listJobs(req.session.tenantId, { tipo: 'cfdi_nomina_zip', limit: 15 }) : [];
+  const jobs = empresa
+    ? await listJobs(req.session.tenantId, {
+        tipo: 'cfdi_nomina_zip',
+        empresaId: empresa._id,
+        subsidiariaId: sessionSubsidiariaId(req),
+        limit: 15
+      })
+    : [];
   const anioActual = new Date().getFullYear();
   res.render('Configurations/cargas/cfdi-nomina', {
     empresa,
@@ -88,7 +110,12 @@ async function showCfdiNominaMasivo(req, res) {
   const carga = getCargaByCodigo('cfdi_nomina_zip_masivo');
   const { empresa } = await requireEmpresaForTenant(req);
   const jobs = empresa
-    ? await listJobs(req.session.tenantId, { tipo: 'cfdi_nomina_zip_masivo', limit: 15 })
+    ? await listJobs(req.session.tenantId, {
+        tipo: 'cfdi_nomina_zip_masivo',
+        empresaId: empresa._id,
+        subsidiariaId: sessionSubsidiariaId(req),
+        limit: 15
+      })
     : [];
   const anioActual = new Date().getFullYear();
   res.render('Configurations/cargas/cfdi-nomina-masivo', {
@@ -116,7 +143,8 @@ async function dryRunCfdiZip(req, res) {
       anio,
       userId,
       userLabel,
-      opciones
+      opciones,
+      subsidiariaId: sessionSubsidiariaId(req)
     });
     req.flash(
       job.filasOk ? 'success' : 'error',
@@ -146,7 +174,8 @@ async function encolarCfdiZipMasivo(req, res) {
       anio,
       userId,
       userLabel,
-      opciones
+      opciones,
+      subsidiariaId: sessionSubsidiariaId(req)
     });
     req.flash(
       'success',
@@ -247,7 +276,9 @@ async function applyJobAction(req, res) {
     const job = await aplicarJob(req.session.tenantId, req.params.id, {
       userId,
       userLabel,
-      opcionesOverride
+      opcionesOverride,
+      // Solo rellena si el job no guardó subsidiaria al subir el ZIP
+      subsidiariaIdFallback: sessionSubsidiariaId(req)
     });
     const asyncMasivo =
       job.tipo === 'cfdi_nomina_zip_masivo' &&
@@ -265,6 +296,115 @@ async function applyJobAction(req, res) {
   }
 }
 
+/**
+ * Religa XML a históricos ya importados (por UUID).
+ * Acepta ZIP nuevo o reutiliza archivoPath del job si aún existe.
+ */
+async function religarXmlJobAction(req, res) {
+  const tenantId = req.session.tenantId;
+  const jobId = req.params.id;
+  try {
+    const { empresa } = await requireEmpresaForTenant(req);
+    if (!empresa) throw new Error('Sin empresa');
+
+    const Job = await getCargaInicialJobModel();
+    const job = await Job.findOne({ _id: jobId, tenantId });
+    if (!job) throw new Error('Job no encontrado');
+    if (!['cfdi_nomina_zip', 'cfdi_nomina_zip_masivo'].includes(job.tipo)) {
+      throw new Error('Solo aplica a jobs CFDI');
+    }
+
+    const zipPathUpload = req.file?.path || null;
+    const zipBuffer = req.file?.buffer || null;
+    const zipPathJob =
+      job.archivoPath && fs.existsSync(job.archivoPath) ? job.archivoPath : null;
+
+    if (!zipPathUpload && !zipBuffer && !zipPathJob) {
+      throw new Error('Sube el ZIP original de los CFDI (el del job ya no está en disco)');
+    }
+
+    job.estatus = 'aplicando';
+    job.notas = 'Religando XML a históricos…';
+    job.progreso = {
+      ...(job.progreso || {}),
+      fase: 'religar_xml',
+      procesados: 0,
+      total: 0,
+      exitos: 0,
+      errores: 0,
+      mensaje: 'Iniciando religado de XML…'
+    };
+    await job.save();
+
+    const zipPath = zipPathUpload || zipPathJob || null;
+    const empresaId = empresa._id;
+    const jid = job._id;
+
+    setImmediate(() => {
+      (async () => {
+        try {
+          const result = await religarXmlDesdeZip({
+            tenantId,
+            empresaId,
+            zipPath,
+            zipBuffer: zipPath ? null : zipBuffer,
+            jobId: jid,
+            onProgress: async (p) => {
+              await Job.updateOne(
+                { _id: jid },
+                {
+                  $set: {
+                    'progreso.fase': 'religar_xml',
+                    'progreso.total': p.total,
+                    'progreso.procesados': p.procesados,
+                    'progreso.exitos': p.ligados,
+                    'progreso.mensaje': p.mensaje
+                  }
+                }
+              );
+            }
+          });
+          await Job.updateOne(
+            { _id: jid },
+            {
+              $set: {
+                estatus: 'ok',
+                notas: `XML religados: ${result.ligados} · ya tenían ${result.yaTenian} · sin histórico ${result.sinHistorico} · parse err ${result.parseError} · errores ${result.errores}`,
+                'progreso.fase': 'religar_xml_ok',
+                'progreso.mensaje': `Listo · ${result.ligados} XML ligados`,
+                'progreso.exitos': result.ligados,
+                'resumen.religarXml': result
+              }
+            }
+          );
+        } catch (err) {
+          await Job.updateOne(
+            { _id: jid },
+            {
+              $set: {
+                estatus: 'parcial',
+                notas: `Error al religar XML: ${err.message || err}`,
+                'progreso.fase': 'religar_xml_error',
+                'progreso.mensaje': err.message || 'error'
+              }
+            }
+          );
+        } finally {
+          if (zipPathUpload) {
+            await fsp.unlink(zipPathUpload).catch(() => {});
+          }
+        }
+      })().catch((err) => console.error('[religar-xml]', jid, err));
+    });
+
+    req.flash('success', 'Religado de XML en curso. El progreso se actualiza en esta página.');
+    return res.redirect(`/config-empresa/cargas/jobs/${jobId}`);
+  } catch (err) {
+    req.flash('error', err.message || 'No se pudo religar XML');
+    return res.redirect(`/config-empresa/cargas/jobs/${jobId}`);
+  }
+}
+
 module.exports = {
   index,
   showTipo,
@@ -277,5 +417,6 @@ module.exports = {
   showJob,
   jobStatusJson,
   applyJobAction,
+  religarXmlJobAction,
   proximamenteCreditos
 };

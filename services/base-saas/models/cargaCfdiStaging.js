@@ -11,6 +11,8 @@ const cargaCfdiStagingSchema = new mongoose.Schema(
     uuid: { type: String, required: true, trim: true, uppercase: true },
     anio: { type: Number, default: null },
     payload: { type: mongoose.Schema.Types.Mixed, required: true },
+    /** XML crudo (para guardar NominaCfdiArchivo al aplicar). */
+    xmlText: { type: String, default: '' },
     bitacora: { type: [mongoose.Schema.Types.Mixed], default: [] },
     estatus: {
       type: String,

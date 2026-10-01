@@ -2,7 +2,7 @@
 
 const { z } = require('zod');
 
-const TIPOS_PERIODO = ['semanal', 'quincenal', 'catorcenal', 'mensual', 'decena'];
+const TIPOS_PERIODO = ['semanal', 'quincenal', 'catorcenal', 'mensual', 'decena', 'otra'];
 const TIPOS_NOMINA = [
   'ordinaria',
   'extraordinaria',
@@ -12,6 +12,8 @@ const TIPOS_NOMINA = [
   'primas',
   'comisiones',
   'indemnizacion',
+  'fondo_ahorro',
+  'bono',
   'otro'
 ];
 const TIPOS_CONCEPTO = ['percepcion', 'deduccion', 'otro_pago'];

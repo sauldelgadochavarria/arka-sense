@@ -1,7 +1,7 @@
 'use strict';
 
 const getEmpleadoModel = require('../models/empleado');
-const { requireEmpresaForTenant } = require('../libs/tenantScope');
+const { requireEmpresaForTenant, scopeEmpleadosFromReq, sessionSubsidiariaId } = require('../libs/tenantScope');
 const { parseOptionalObjectId, trimString } = require('../libs/formHelpers');
 const { parseDateTimeLocal, startOfDay, endOfDay } = require('../libs/timeHelpers');
 const { ESTATUS_DIARIO } = require('../config/asistencia');
@@ -46,10 +46,12 @@ async function showRegistroJornada(req, res) {
   const fechaFin = endOfDay(parseDateTimeLocal(`${hastaStr}T12:00`) || new Date());
 
   const Empleado = await getEmpleadoModel();
+  const empQ = scopeEmpleadosFromReq(req, empresa, { soloActivos: true }) || {
+    tenantId: req.session.tenantId,
+    estatus: 'activo'
+  };
   const empleados = empresa
-    ? await Empleado.find({ tenantId: req.session.tenantId, estatus: 'activo' })
-        .sort({ lastName: 1 })
-        .lean()
+    ? await Empleado.find(empQ).sort({ lastName: 1 }).lean()
     : [];
 
   let result = { filas: [], semanas: [], empleados: [], fechaInicio, fechaFin };
@@ -57,7 +59,9 @@ async function showRegistroJornada(req, res) {
     result = await buildRegistroJornada(req.session.tenantId, {
       fechaInicio,
       fechaFin,
-      empleadoId
+      empleadoId,
+      empresaId: empresa._id,
+      subsidiariaId: sessionSubsidiariaId(req)
     });
 
     await registrarAuditoriaAsistencia({

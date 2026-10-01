@@ -50,6 +50,40 @@ function scopeEmpresaFilter(req, empresa, { includeSubsidiaria = true } = {}) {
   return filter;
 }
 
+/**
+ * Filtro de empleados para operativa (asistencia / prenómina).
+ * Con subsidiaria activa: solo esa subsidiaria (estricto).
+ * Sin subsidiaria: toda la empresa (si se pasa empresaId) o tenant.
+ */
+function scopeEmpleadosFilter(
+  { tenantId, empresaId = null, subsidiariaId = null } = {},
+  { soloActivos = true } = {}
+) {
+  const filter = { tenantId: String(tenantId || '') };
+  if (empresaId) filter.empresaId = empresaId;
+  if (subsidiariaId) filter.subsidiariaId = subsidiariaId;
+  if (soloActivos) {
+    filter.estatus = 'activo';
+    filter.activo = true;
+  }
+  return filter;
+}
+
+/**
+ * Igual que scopeEmpleadosFilter pero leyendo sesión + empresa.
+ */
+function scopeEmpleadosFromReq(req, empresa, opts = {}) {
+  if (!empresa) return null;
+  return scopeEmpleadosFilter(
+    {
+      tenantId: req.session?.tenantId,
+      empresaId: empresa._id,
+      subsidiariaId: sessionSubsidiariaId(req)
+    },
+    opts
+  );
+}
+
 async function findOneByTenant(Model, tenantId, id) {
   if (!tenantId || !isValidObjectId(id)) return null;
   return Model.findOne({ _id: id, tenantId }).lean();
@@ -210,6 +244,9 @@ function redirectAfterContextSwitch(req, fallback = '/dashboard') {
     if (/\/prenomina-periodos\/[a-f0-9]{24}/i.test(path)) return '/prenomina-periodos';
     if (/\/nomina\/periodos\/[a-f0-9]{24}/i.test(path)) return '/nomina/periodos';
     if (/\/personal-empleados\/[a-f0-9]{24}/i.test(path)) return '/personal-empleados';
+    // Reportes pesados: volver sin query para no regenerar sábanota/export al cambiar de sub
+    if (/\/nomina\/reportes\/acumulados/i.test(path)) return '/nomina/reportes/acumulados';
+    if (/\/nomina\/reportes/i.test(path)) return '/nomina/reportes';
     if (path && path !== '/auth-login' && path !== '/logout') return path + (u.search || '');
   } catch (_) {}
   return fallback;
@@ -230,5 +267,7 @@ module.exports = {
   snapshotSubsidiaria,
   sessionSubsidiariaId,
   scopeEmpresaFilter,
+  scopeEmpleadosFilter,
+  scopeEmpleadosFromReq,
   redirectAfterContextSwitch
 };

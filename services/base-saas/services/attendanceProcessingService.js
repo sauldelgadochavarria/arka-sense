@@ -347,10 +347,16 @@ async function recalculateDailyAttendance(tenantId, empleadoId, fechaInput) {
   return daily;
 }
 
-async function recalculateDayForTenant(tenantId, fechaInput) {
+async function recalculateDayForTenant(tenantId, fechaInput, opts = {}) {
   const fecha = startOfDay(fechaInput);
   const Empleado = await getEmpleadoModel();
-  const empleados = await Empleado.find({ tenantId, estatus: 'activo', activo: true }).lean();
+  const { scopeEmpleadosFilter } = require('../libs/tenantScope');
+  const empQ = scopeEmpleadosFilter({
+    tenantId,
+    empresaId: opts.empresaId || null,
+    subsidiariaId: opts.subsidiariaId || null
+  });
+  const empleados = await Empleado.find(empQ).lean();
 
   const results = [];
   for (const empleado of empleados) {
@@ -360,13 +366,13 @@ async function recalculateDayForTenant(tenantId, fechaInput) {
 }
 
 /** Reprocesa asistencia diaria día a día en un rango (marcaciones → daily_attendance). */
-async function recalculateRangeForTenant(tenantId, fechaInicio, fechaFin) {
+async function recalculateRangeForTenant(tenantId, fechaInicio, fechaFin, opts = {}) {
   let d = startOfDay(fechaInicio);
   const end = startOfDay(fechaFin);
   let dias = 0;
   let registros = 0;
   while (d <= end) {
-    const dayResults = await recalculateDayForTenant(tenantId, d);
+    const dayResults = await recalculateDayForTenant(tenantId, d, opts);
     dias += 1;
     registros += dayResults.length;
     d = new Date(d.getTime() + 86400000);

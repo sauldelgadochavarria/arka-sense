@@ -20,6 +20,9 @@
 </div>
 
 <form id="form-descarga-masiva" method="post" action="/nomina/timbrado/lotes/<%= L._id %>/descargar-masivo" class="filter-form form-grid" style="margin-bottom:1rem">
+  <label>Buscar empleado
+    <input type="search" id="filtro-empleado" placeholder="No. o nombre" autocomplete="off" />
+  </label>
   <label>Departamento
     <select id="filtro-depto">
       <option value="">Todos</option>
@@ -75,8 +78,9 @@
       const canDl = hasXml || hasPdf;
     %>
     <tr
-      data-depto="<%= it.departamentoId || '' %>"
+      data-depto="<%= it.departamentoKey || it.departamentoNombre || it.departamentoId || '' %>"
       data-entidad="<%= it.entidadFederativa || '' %>"
+      data-empleado="<%= String(it.numEmpleado || '').toLowerCase() %> <%= String(it.nombre || '').toLowerCase() %>"
       data-has-xml="<%= hasXml ? '1' : '0' %>"
       data-has-pdf="<%= hasPdf ? '1' : '0' %>"
       class="lote-row"
@@ -130,6 +134,7 @@
 (function () {
   var filtroDepto = document.getElementById('filtro-depto');
   var filtroEntidad = document.getElementById('filtro-entidad');
+  var filtroEmp = document.getElementById('filtro-empleado');
   var checkAll = document.getElementById('check-all');
   var selCount = document.getElementById('sel-count');
   var form = document.getElementById('form-descarga-masiva');
@@ -142,11 +147,15 @@
   function applyFilters() {
     var depto = filtroDepto ? filtroDepto.value : '';
     var entidad = filtroEntidad ? filtroEntidad.value : '';
+    var q = filtroEmp ? String(filtroEmp.value || '').trim().toLowerCase() : '';
     rows.forEach(function (tr) {
       var okDepto = !depto || tr.getAttribute('data-depto') === depto;
       var okEnt = !entidad || tr.getAttribute('data-entidad') === entidad;
-      tr.style.display = okDepto && okEnt ? '' : 'none';
-      if (!(okDepto && okEnt)) {
+      var haystack = tr.getAttribute('data-empleado') || '';
+      var okEmp = !q || haystack.indexOf(q) !== -1;
+      var show = okDepto && okEnt && okEmp;
+      tr.style.display = show ? '' : 'none';
+      if (!show) {
         var cb = tr.querySelector('.row-check');
         if (cb) cb.checked = false;
       }
@@ -162,6 +171,7 @@
 
   if (filtroDepto) filtroDepto.addEventListener('change', applyFilters);
   if (filtroEntidad) filtroEntidad.addEventListener('change', applyFilters);
+  if (filtroEmp) filtroEmp.addEventListener('input', applyFilters);
 
   if (checkAll) {
     checkAll.addEventListener('change', function () {

@@ -1,0 +1,248 @@
+<%- include('../Partials/layout-top', { title: 'Acumulados de nómina', session }) %>
+<%
+  const f = filters || {};
+  const cats = catalogs || {};
+  const r = result;
+  const selConceptos = Array.isArray(f.conceptos)
+    ? f.conceptos.map(function(c){ return String(c).toUpperCase(); })
+    : String(f.conceptos || '').split(/[,;\s]+/).map(function(s){ return s.trim().toUpperCase(); }).filter(Boolean);
+  const selSet = {};
+  selConceptos.forEach(function(c){ selSet[c] = true; });
+%>
+<div class="page-header">
+  <h1>Acumulados de nómina</h1>
+  <p class="page-subtitle">
+    Sábanota anual: empleado × concepto, columnas por período e importe, con enlace al cálculo del recibo.
+    También vistas de detalle / matriz / resumen desde acumulados.
+  </p>
+</div>
+
+<% if (error) { %><p class="alert"><%= error %></p><% } %>
+<% if (!empresa) { %>
+<p>No hay empresa vinculada a este tenant.</p>
+<% } else { %>
+
+<div class="toolbar">
+  <a class="btn" href="/nomina/reportes">← Reportes por período</a>
+  <a class="btn" href="/nomina">Nómina</a>
+  <% if (r && r.rows && r.rows.length) { %>
+  <a class="btn btn-primary" href="/nomina/reportes/acumulados/export?<%= exportQuery %>">Exportar CSV</a>
+  <% } %>
+</div>
+
+<form method="get" action="/nomina/reportes/acumulados" class="filter-form form-grid">
+  <input type="hidden" name="generar" value="1" />
+  <label>Año
+    <select name="anio">
+      <% (cats.anios || []).forEach(function(y) { %>
+      <option value="<%= y %>" <%= Number(f.anio) === Number(y) ? 'selected' : '' %>><%= y %></option>
+      <% }); %>
+    </select>
+  </label>
+
+  <label>Vista
+    <select name="vista" id="vista-acum">
+      <option value="sabanota" <%= f.vista === 'sabanota' || !f.vista ? 'selected' : '' %>>Sábanota (períodos del año)</option>
+      <option value="detalle" <%= f.vista === 'detalle' ? 'selected' : '' %>>Detalle (empleado × concepto)</option>
+      <option value="matriz" <%= f.vista === 'matriz' ? 'selected' : '' %>>Matriz (conceptos en columnas)</option>
+      <option value="resumen" <%= f.vista === 'resumen' ? 'selected' : '' %>>Resumen</option>
+    </select>
+  </label>
+
+  <label id="agrupar-acum-wrap" style="<%= f.vista === 'resumen' ? '' : 'display:none' %>">Agrupar por
+    <select name="agrupar">
+      <option value="departamento" <%= f.agrupar === 'departamento' ? 'selected' : '' %>>Departamento</option>
+      <option value="concepto" <%= f.agrupar === 'concepto' ? 'selected' : '' %>>Concepto</option>
+      <option value="departamento_concepto" <%= f.agrupar === 'departamento_concepto' ? 'selected' : '' %>>Depto + concepto</option>
+    </select>
+  </label>
+
+  <label>Naturaleza
+    <select name="tipoConcepto">
+      <option value="ambas" <%= !f.tipoConcepto || f.tipoConcepto === 'ambas' ? 'selected' : '' %>>Ambas (percepciones y deducciones)</option>
+      <option value="percepcion" <%= f.tipoConcepto === 'percepcion' ? 'selected' : '' %>>Solo percepciones</option>
+      <option value="deduccion" <%= f.tipoConcepto === 'deduccion' ? 'selected' : '' %>>Solo deducciones</option>
+      <option value="otro_pago" <%= f.tipoConcepto === 'otro_pago' ? 'selected' : '' %>>Otros pagos</option>
+      <option value="" <%= f.tipoConcepto === '' ? 'selected' : '' %>>Todos (incl. otros)</option>
+    </select>
+  </label>
+
+  <label>Departamento
+    <select name="departamentoId">
+      <option value="">Todos</option>
+      <% (cats.departamentos || []).forEach(function(d) { %>
+      <option value="<%= d._id %>" <%= f.departamentoId && String(f.departamentoId) === String(d._id) ? 'selected' : '' %>><%= d.nombre %></option>
+      <% }); %>
+    </select>
+  </label>
+
+  <label>Centro de costo
+    <select name="centroCostoId">
+      <option value="">Todos</option>
+      <% (cats.centrosCosto || []).forEach(function(c) { %>
+      <option value="<%= c._id %>" <%= f.centroCostoId && String(f.centroCostoId) === String(c._id) ? 'selected' : '' %>><%= c.codigo %> — <%= c.nombre %></option>
+      <% }); %>
+    </select>
+  </label>
+
+  <label>Empleado
+    <select name="empleadoId">
+      <option value="">Todos</option>
+      <% (cats.empleados || []).forEach(function(e) { %>
+      <option value="<%= e._id %>" <%= f.empleadoId && String(f.empleadoId) === String(e._id) ? 'selected' : '' %>>
+        <%= e.numEmpleado %> — <%= e.nombreSat || ((e.firstName || '') + ' ' + (e.lastName || '')).trim() %>
+      </option>
+      <% }); %>
+    </select>
+    <% if (cats.empleadosTotal && cats.empleadosTotal > (cats.empleados || []).length) { %>
+    <span class="hint">Lista: primeros <%= (cats.empleados || []).length %> de <%= cats.empleadosTotal %>. En sábanota grande usa departamento o impuestos.</span>
+    <% } %>
+  </label>
+
+  <label class="inline-check" style="align-self:end">
+    <input type="checkbox" name="impuestosRetenidos" value="1" <%= f.impuestosRetenidos ? 'checked' : '' %> />
+    Solo impuestos retenidos
+    <span class="muted small">(<%= (codigosImpuestos || []).join(', ') %>)</span>
+  </label>
+
+  <label class="inline-check" style="align-self:end" id="meses-wrap">
+    <input type="checkbox" name="mostrarMeses" value="1" <%= f.mostrarMeses ? 'checked' : '' %> />
+    Desglose mensual (vista detalle)
+  </label>
+
+  <label style="grid-column:1/-1">Concepto(s)
+    <select name="conceptos" multiple size="8" style="min-height:9rem">
+      <% (cats.conceptos || []).forEach(function(c) { %>
+      <option value="<%= c.codigo %>" <%= selSet[String(c.codigo).toUpperCase()] ? 'selected' : '' %>>
+        [<%= c.tipo %>] <%= c.codigo %> — <%= c.nombre %>
+      </option>
+      <% }); %>
+    </select>
+    <span class="hint">Ctrl/Cmd + clic para varios. Vacío = todos (según tipo / impuestos).</span>
+  </label>
+
+  <button type="submit">Generar</button>
+</form>
+
+<% if (typeof mustGenerate === 'undefined' || !mustGenerate) { %>
+<p class="muted">Elige filtros y pulsa <strong>Generar</strong>. En subsidiarias grandes la sábanota completa no se calcula sola (puede colgar el servidor).</p>
+<% } %>
+
+<script>
+(function () {
+  var vista = document.getElementById('vista-acum');
+  var wrap = document.getElementById('agrupar-acum-wrap');
+  var meses = document.getElementById('meses-wrap');
+  if (!vista) return;
+  function sync() {
+    if (wrap) wrap.style.display = vista.value === 'resumen' ? '' : 'none';
+    if (meses) meses.style.display = vista.value === 'detalle' ? '' : 'none';
+  }
+  vista.addEventListener('change', sync);
+  sync();
+})();
+</script>
+
+<% if (r && r.summary && !r.summary.mensaje) { %>
+<div class="report-summary summary-cards">
+  <p>
+    <strong>Fuente:</strong>
+    <%= r.fuente === 'historico+temporal' ? 'Histórico + períodos abiertos' : 'Acumulados anuales' %>
+    · <strong>Año:</strong> <%= r.summary.anio || f.anio %>
+    <% if (r.summary.empleados != null) { %> · <strong>Empleados:</strong> <%= r.summary.empleados %><% } %>
+    <% if (r.summary.conceptos != null) { %> · <strong>Conceptos:</strong> <%= r.summary.conceptos %><% } %>
+    <% if (r.summary.periodos != null) { %> · <strong>Períodos:</strong> <%= r.summary.periodos %><% } %>
+    <% if (r.summary.grupos != null) { %> · <strong>Grupos:</strong> <%= r.summary.grupos %><% } %>
+    <% if (r.summary.filas != null) { %> · <strong>Filas:</strong> <%= r.summary.filas %><% } %>
+  </p>
+  <p>
+    <% if (r.summary.importeAnual != null) { %>Importe $<%= formatMoney(r.summary.importeAnual) %><% } %>
+    <% if (r.summary.gravadoAnual != null) { %> · Gravado $<%= formatMoney(r.summary.gravadoAnual) %><% } %>
+    <% if (r.summary.exentoAnual != null) { %> · Exento $<%= formatMoney(r.summary.exentoAnual) %><% } %>
+  </p>
+  <p>
+    <strong>Retenciones:</strong>
+    ISR $<%= formatMoney(r.summary.isr) %>
+    · IMSS $<%= formatMoney(r.summary.imss) %>
+    · Infonavit $<%= formatMoney(r.summary.infonavit) %>
+    · Fonacot $<%= formatMoney(r.summary.fonacot) %>
+    · <strong>Total $<%= formatMoney(r.summary.impuestosRetenidos) %></strong>
+  </p>
+  <% if (r.vista === 'sabanota') { %>
+  <p class="muted small">Clic en el importe de un período para abrir el cálculo del recibo (período × empleado).</p>
+  <% } %>
+  <% if (r.summary.aviso) { %>
+  <p class="alert"><%= r.summary.aviso %></p>
+  <% } %>
+</div>
+<% } %>
+
+<% if (r && r.summary && r.summary.mensaje && !(r.rows && r.rows.length)) { %>
+<p class="muted"><%= r.summary.mensaje %></p>
+<% } %>
+
+<% if (r && r.rows && r.rows.length) { %>
+<style>
+  .sabanota-scroll { overflow:auto; max-width:100%; max-height:70vh; border:1px solid #e5e7eb; border-radius:8px; }
+  .sabanota-scroll table { border-collapse:separate; border-spacing:0; min-width:100%; }
+  .sabanota-scroll thead th { position:sticky; top:0; background:#f8fafc; z-index:2; white-space:nowrap; }
+  .sabanota-scroll th.sticky-col, .sabanota-scroll td.sticky-col {
+    position:sticky; left:0; background:#fff; z-index:1; box-shadow:1px 0 0 #e5e7eb;
+  }
+  .sabanota-scroll thead th.sticky-col { z-index:3; background:#f8fafc; }
+  .sabanota-scroll th.sticky-col-2, .sabanota-scroll td.sticky-col-2 {
+    position:sticky; left:5.5rem; background:#fff; z-index:1; box-shadow:1px 0 0 #e5e7eb;
+  }
+  .sabanota-scroll thead th.sticky-col-2 { z-index:3; background:#f8fafc; }
+  .sabanota-scroll a.money-link { font-variant-numeric:tabular-nums; text-decoration:underline; }
+</style>
+<div class="<%= r.vista === 'sabanota' ? 'sabanota-scroll' : 'table-scroll' %>">
+<table class="data-table report-table">
+  <thead>
+    <tr>
+      <% (r.columns || []).forEach(function(c, idx) { %>
+      <th class="<%= c.type === 'money' || c.type === 'number' || c.type === 'money_link' ? 'num' : '' %> <%= idx===0 ? 'sticky-col' : (idx===1 ? 'sticky-col-2' : '') %>"
+          title="<%= c.periodoLabel || c.label %>">
+        <%= c.label %>
+      </th>
+      <% }); %>
+    </tr>
+  </thead>
+  <tbody>
+    <% r.rows.forEach(function(row) { %>
+    <tr>
+      <% (r.columns || []).forEach(function(c, idx) { %>
+      <td class="<%= c.type === 'money' || c.type === 'number' || c.type === 'money_link' ? 'num' : '' %> <%= idx===0 ? 'sticky-col' : (idx===1 ? 'sticky-col-2' : '') %>">
+        <% if (c.type === 'money_link') {
+             var amt = Number(row[c.key] || 0);
+             var url = c.urlKey ? row[c.urlKey] : '';
+             if (amt && url) { %>
+        <a class="money-link" href="<%= url %>" target="_blank" rel="noopener" title="Ver cálculo período-empleado">$<%= formatMoney(amt) %></a>
+        <%   } else if (amt) { %>$<%= formatMoney(amt) %><% }
+             else { %><span class="muted">—</span><% }
+           } else if (c.type === 'money') { %>$<%= formatMoney(row[c.key]) %><%
+           } else { %><%= row[c.key] != null ? row[c.key] : '' %><% } %>
+      </td>
+      <% }); %>
+    </tr>
+    <% }); %>
+  </tbody>
+  <% if (r.summary) { %>
+  <tfoot>
+    <tr>
+      <% (r.columns || []).forEach(function(c, idx) { %>
+      <td class="<%= c.type === 'money' || c.type === 'number' || c.type === 'money_link' ? 'num' : '' %> <%= idx===0 ? 'sticky-col' : (idx===1 ? 'sticky-col-2' : '') %>">
+        <% if (idx === 0) { %><strong>Totales</strong><%
+           } else if ((c.type === 'money' || c.type === 'money_link') && r.summary[c.key] != null) { %><strong>$<%= formatMoney(r.summary[c.key]) %></strong><%
+           } else if (c.key === 'empleados' && r.summary.empleados != null) { %><strong><%= r.summary.empleados %></strong><% } %>
+      </td>
+      <% }); %>
+    </tr>
+  </tfoot>
+  <% } %>
+</table>
+</div>
+<% } %>
+
+<% } %>
+<%- include('../Partials/layout-bottom') %>

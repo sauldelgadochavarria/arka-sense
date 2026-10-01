@@ -19,6 +19,7 @@ const { clasificarHorasExtraPeriodo, minutosExtraDesdeDaily } = require('../libs
 const { resolveEsquemaJornada, computeValorHora } = require('../libs/esquemaJornada');
 const { normalizeWeekday } = require('../libs/calendarioPeriodo');
 const { getTipoPeriodoById } = require('./tipoPeriodoNominaService');
+const { scopeEmpleadosFilter } = require('../libs/tenantScope');
 
 function roundMoney(n) {
   return Math.round((Number(n) || 0) * 100) / 100;
@@ -256,7 +257,13 @@ async function calculatePayrollPeriod(periodId, tenantId, userId = '') {
   const Incidencia = await getIncidenciaModel();
   const PayrollDetail = await getPayrollDetailModel();
 
-  const empleadosAll = await Empleado.find({ tenantId, estatus: 'activo', activo: true }).lean();
+  const empleadosAll = await Empleado.find(
+    scopeEmpleadosFilter({
+      tenantId,
+      empresaId: period.empresaId || null,
+      subsidiariaId: period.subsidiariaId || null
+    })
+  ).lean();
   const tiposPeriodo = await listTiposPeriodo(tenantId, false);
   const tipoMotor = period.tipo || null;
   const empleados = filterEmpleadosByTipoMotor(empleadosAll, tiposPeriodo, tipoMotor, {
@@ -277,7 +284,10 @@ async function calculatePayrollPeriod(periodId, tenantId, userId = '') {
 
   const tiposById = new Map(tiposPeriodo.map((t) => [String(t._id), t]));
 
-  const movimientos = await listPendientesPorRango(tenantId, inicio, fin, period._id);
+  const movimientos = await listPendientesPorRango(tenantId, inicio, fin, period._id, {
+    empresaId: period.empresaId || null,
+    empleadoIds: empleados.map((e) => e._id)
+  });
   const movPorEmpleado = new Map();
   const movimientoIds = [];
   for (const mov of movimientos) {

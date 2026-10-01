@@ -169,6 +169,8 @@ function renderPlantillaHtml(tpl, ctx = {}) {
 }
 
 function joinNombre(emp = {}) {
+  const sat = String(emp.nombreSat || '').trim();
+  if (sat) return sat;
   if (emp.nombre) return String(emp.nombre).trim();
   const parts = [emp.firstName, emp.apellidoPaterno || emp.lastName, emp.apellidoMaterno].filter(Boolean);
   if (parts.length) return parts.join(' ').replace(/\s+/g, ' ').trim();
@@ -504,6 +506,7 @@ function mergeEmpleadoPdf(snap = {}, live = {}) {
     datosBancarios: live.datosBancarios || snap.datosBancarios,
     nominaConfig: live.nominaConfig || snap.nominaConfig,
     numEmpleado: snap.numEmpleado || live.numEmpleado,
+    nombreSat: live.nombreSat || snap.nombreSat || '',
     nombre: snap.nombre || joinNombre(live),
     departamentoNombre: snap.departamentoNombre || live.departamentoNombre,
     centroCostoNombre: snap.centroCostoNombre || live.centroCostoNombre,

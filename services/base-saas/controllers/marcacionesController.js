@@ -3,7 +3,7 @@
 const getEmpleadoModel = require('../models/empleado');
 const getTurnoModel = require('../models/turno');
 const getAttendanceRecordModel = require('../models/attendanceRecord');
-const { requireEmpresaForTenant } = require('../libs/tenantScope');
+const { requireEmpresaForTenant, scopeEmpleadosFromReq, sessionSubsidiariaId } = require('../libs/tenantScope');
 const { parseOptionalObjectId, trimString } = require('../libs/formHelpers');
 const { parseDateTimeLocal, startOfDay, endOfDay, formatTimeHHMM } = require('../libs/timeHelpers');
 const { TIPOS_MARCACION, METODOS_REGISTRO } = require('../config/asistencia');
@@ -54,6 +54,8 @@ async function listMarcaciones(req, res) {
     tenantId: req.session.tenantId,
     fecha: { $gte: fecha, $lte: endOfDay(fecha) }
   };
+  const subId = sessionSubsidiariaId(req);
+  if (subId) marcFilter.subsidiariaId = subId;
   if (!verAnuladas) {
     marcFilter.$or = [{ estado: 'activa' }, { estado: { $exists: false } }, { estado: null }];
   }
@@ -62,9 +64,14 @@ async function listMarcaciones(req, res) {
     if (oid) marcFilter.empleadoId = oid;
   }
 
+  const empQ = scopeEmpleadosFromReq(req, empresa, { soloActivos: true }) || {
+    tenantId: req.session.tenantId,
+    estatus: 'activo'
+  };
+
   const [empleados, marcaciones, diarios, bitacora] = empresa
     ? await Promise.all([
-        Empleado.find({ tenantId: req.session.tenantId, estatus: 'activo' }).sort({ lastName: 1 }).lean(),
+        Empleado.find(empQ).sort({ lastName: 1 }).lean(),
         AttendanceRecord.find(marcFilter).sort({ timestamp: 1 }).lean(),
         DailyAttendance.find({
           tenantId: req.session.tenantId,
@@ -84,21 +91,27 @@ async function listMarcaciones(req, res) {
       ])
     : [[], [], [], []];
 
+  const empIdSet = new Set(empleados.map((e) => String(e._id)));
+  const diariosScoped = diarios.filter((d) => empIdSet.has(String(d.empleadoId)));
+  const marcacionesScoped = marcaciones.filter(
+    (m) => !subId || empIdSet.has(String(m.empleadoId)) || String(m.subsidiariaId || '') === String(subId)
+  );
+
   const empMap = new Map(
     empleados.map((e) => [String(e._id), `${e.firstName} ${e.lastName} (${e.numEmpleado})`])
   );
-  const dailyMap = new Map(diarios.map((d) => [String(d.empleadoId), d]));
+  const dailyMap = new Map(diariosScoped.map((d) => [String(d.empleadoId), d]));
 
   // Contar checadas activas por empleado+tipo (detectar duplicados)
   const dupKeyCount = new Map();
-  for (const m of marcaciones) {
+  for (const m of marcacionesScoped) {
     if (m.estado === 'anulada') continue;
     const k = `${m.empleadoId}|${m.tipoMarcacion}`;
     dupKeyCount.set(k, (dupKeyCount.get(k) || 0) + 1);
   }
 
   res.render('Asistencia/marcaciones', {
-    marcaciones,
+    marcaciones: marcacionesScoped,
     empleados,
     empMap,
     dailyMap,
@@ -188,16 +201,18 @@ async function listIntentosDia(req, res) {
   const empleadoId = parseOptionalObjectId(req.query.empleadoId);
 
   const Empleado = await getEmpleadoModel();
+  const empQ = scopeEmpleadosFromReq(req, empresa, { soloActivos: true }) || {
+    tenantId: req.session.tenantId,
+    estatus: 'activo'
+  };
   const empleados = empresa
-    ? await Empleado.find({ tenantId: req.session.tenantId, estatus: 'activo' })
-        .sort({ lastName: 1 })
-        .lean()
+    ? await Empleado.find(empQ).sort({ lastName: 1 }).lean()
     : [];
   const empMap = new Map(
     empleados.map((e) => [String(e._id), `${e.firstName} ${e.lastName} (${e.numEmpleado})`])
   );
 
-  const intentos = empresa
+  const intentosRaw = empresa
     ? await listIntentos(req.session.tenantId, {
         empleadoId: empleadoId || undefined,
         fechaDesde: fecha,
@@ -205,6 +220,8 @@ async function listIntentosDia(req, res) {
         limit: 300
       })
     : [];
+  const empIdSet = new Set(empleados.map((e) => String(e._id)));
+  const intentos = intentosRaw.filter((i) => !i.empleadoId || empIdSet.has(String(i.empleadoId)));
 
   res.render('Asistencia/intentos', {
     empresa,
@@ -257,13 +274,17 @@ async function createMarcacion(req, res) {
     }
 
     const Empleado = await getEmpleadoModel();
-    const empleado = await Empleado.findOne({
-      _id: empleadoId,
+    const { empresa: empCtx } = await requireEmpresaForTenant(req);
+    const empQ = scopeEmpleadosFromReq(req, empCtx, { soloActivos: true }) || {
       tenantId: req.session.tenantId,
       estatus: 'activo'
+    };
+    const empleado = await Empleado.findOne({
+      _id: empleadoId,
+      ...empQ
     }).lean();
     if (!empleado) {
-      req.flash('error', 'Empleado no encontrado o inactivo');
+      req.flash('error', 'Empleado no encontrado en la subsidiaria activa o inactivo');
       return res.redirect(`/asistencia-marcaciones?fecha=${defaultFechaQuery(req)}`);
     }
 

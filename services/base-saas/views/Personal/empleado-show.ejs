@@ -14,6 +14,7 @@
       <dt>Nombre(s)</dt><dd><%= empleado.firstName || '—' %></dd>
       <dt>Apellido paterno</dt><dd><%= empleado.apellidoPaterno || '—' %></dd>
       <dt>Apellido materno</dt><dd><%= empleado.apellidoMaterno || '—' %></dd>
+      <dt>Nombre SAT</dt><dd><%= empleado.nombreSat || '—' %></dd>
       <dt>Fecha alta</dt><dd><%= empleado.fechaIngreso ? new Date(empleado.fechaIngreso).toLocaleDateString('es-MX') : '—' %></dd>
       <dt>Tipo contrato</dt><dd><%= typeof labelTipoContrato !== 'undefined' ? labelTipoContrato : (empleado.tipoContrato || '—') %></dd>
       <dt>Tipo empleado</dt><dd><%= typeof labelTipoEmpleado !== 'undefined' ? labelTipoEmpleado : (empleado.tipoEmpleado || '—') %></dd>
@@ -236,6 +237,53 @@
   <p><a href="/personal-empleados/<%= empleado._id %>/historial-laboral">Ver historial completo →</a></p>
 </section>
 <% } %>
+
+<section class="historial-resumen">
+  <h2>Historial de nóminas</h2>
+  <% if (!historialNominas || !historialNominas.length) { %>
+  <p class="muted">Sin recibos de nómina (cierres / importación CFDI) para este empleado.</p>
+  <% } else { %>
+  <div class="table-scroll">
+  <table class="table-compact data-table">
+    <thead>
+      <tr>
+        <th>Período</th>
+        <th>Tipo</th>
+        <th>Fecha</th>
+        <th class="num">Subtotal</th>
+        <th class="num">Descuentos</th>
+        <th class="num">Neto</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      <% historialNominas.forEach(function(n) { %>
+      <tr>
+        <td><%= n.periodoLabel || '—' %></td>
+        <td><%= n.tipo || '—' %><% if (n.origen === 'abierto') { %> <span class="muted small">(abierto)</span><% } %></td>
+        <td>
+          <% if (n.fechaInicio && n.fechaFin) { %>
+          <%= new Date(n.fechaInicio).toLocaleDateString('es-MX') %> – <%= new Date(n.fechaFin).toLocaleDateString('es-MX') %>
+          <% } else if (n.fecha) { %>
+          <%= new Date(n.fecha).toLocaleDateString('es-MX') %>
+          <% } else { %>—<% } %>
+        </td>
+        <td class="num">$<%= Number(n.subtotal || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></td>
+        <td class="num">$<%= Number(n.descuentos || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></td>
+        <td class="num"><strong>$<%= Number(n.neto || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></strong></td>
+        <td>
+          <% if (n.detalleUrl) { %>
+          <a href="<%= n.detalleUrl %>">Ver cálculo</a>
+          <% } else { %>—<% } %>
+        </td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table>
+  </div>
+  <p class="muted small">Hasta <%= historialNominas.length %> recibos más recientes (histórico e importación; incluye períodos abiertos si existen).</p>
+  <% } %>
+</section>
 
 <div class="actions-bar">
   <a class="btn" href="/personal-empleados/<%= empleado._id %>/edit">Editar</a>

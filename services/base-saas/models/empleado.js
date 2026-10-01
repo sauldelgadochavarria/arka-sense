@@ -13,6 +13,11 @@ const empleadoSchema = new mongoose.Schema(
     lastName: { type: String, required: true, trim: true },
     apellidoPaterno: { type: String, trim: true, default: '' },
     apellidoMaterno: { type: String, trim: true, default: '' },
+    /**
+     * Nombre fiscal exacto del Receptor CFDI (atributo Nombre).
+     * Se usa al armar XML de nómina para el PAC; preferible al firstName+lastName.
+     */
+    nombreSat: { type: String, trim: true, default: '' },
     curp: { type: String, trim: true, uppercase: true, default: '' },
     rfc: { type: String, trim: true, uppercase: true, default: '' },
     nss: { type: String, trim: true, default: '' },

@@ -108,6 +108,7 @@ function buildEmpleadoPayload(body, tenantId, empresaId) {
     apellidoPaterno,
     apellidoMaterno,
     lastName: lastName || trimString(body.lastName) || '.',
+    nombreSat: trimString(body.nombreSat).replace(/\s+/g, ' ').slice(0, 300),
     curp: trimUpper(body.curp),
     rfc: trimUpper(body.rfc),
     nss: trimString(body.nss),

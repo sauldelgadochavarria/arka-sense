@@ -55,20 +55,63 @@ const TIPOS_PERIODO = [
   { value: 'quincenal', label: 'Quincenal' },
   { value: 'catorcenal', label: 'Catorcenal' },
   { value: 'mensual', label: 'Mensual' },
-  { value: 'decena', label: 'Decena' }
+  { value: 'decena', label: 'Decena' },
+  { value: 'otra', label: 'Otra periodicidad (SAT 99)' }
 ];
 
 const TIPOS_NOMINA = [
   { value: 'ordinaria', label: 'Ordinaria' },
-  { value: 'extraordinaria', label: 'Extraordinaria' },
+  { value: 'extraordinaria', label: 'Extraordinaria (genérica)' },
   { value: 'finiquito', label: 'Finiquito' },
   { value: 'aguinaldo', label: 'Aguinaldo' },
   { value: 'ptu', label: 'PTU' },
   { value: 'primas', label: 'Primas vacacionales' },
   { value: 'comisiones', label: 'Comisiones' },
   { value: 'indemnizacion', label: 'Indemnización' },
+  { value: 'fondo_ahorro', label: 'Fondo de ahorro' },
+  { value: 'bono', label: 'Bono / gratificación' },
   { value: 'otro', label: 'Otro extraordinario' }
 ];
+
+/** Catálogo c_PeriodicidadPago SAT (Nómina 1.2) para filtros/UI. */
+const PERIODICIDADES_PAGO_SAT = [
+  { value: 1, code: '01', label: 'Diario' },
+  { value: 2, code: '02', label: 'Semanal' },
+  { value: 3, code: '03', label: 'Catorcenal' },
+  { value: 4, code: '04', label: 'Quincenal' },
+  { value: 5, code: '05', label: 'Mensual' },
+  { value: 6, code: '06', label: 'Bimestral' },
+  { value: 7, code: '07', label: 'Unidad obra' },
+  { value: 8, code: '08', label: 'Comisión' },
+  { value: 9, code: '09', label: 'Precio alzado' },
+  { value: 10, code: '10', label: 'Decenal' },
+  { value: 99, code: '99', label: 'Otra periodicidad (extraordinarias)' }
+];
+
+const TIPOS_NOMINA_CFDI = [
+  { value: 'O', label: 'O · Ordinaria' },
+  { value: 'E', label: 'E · Extraordinaria' }
+];
+
+/** Motor interno → c_PeriodicidadPago SAT sugerido al crear período. */
+const MOTOR_A_PERIODICIDAD_SAT = {
+  semanal: 2,
+  catorcenal: 3,
+  quincenal: 4,
+  mensual: 5,
+  decena: 10,
+  otra: 99
+};
+
+/** Tipo de nómina de negocio → TipoNomina CFDI (O/E). */
+function tipoNominaCfdiDesdeNegocio(tipoNomina) {
+  return String(tipoNomina || '').toLowerCase() === 'ordinaria' ? 'O' : 'E';
+}
+
+function periodicidadSatDesdeMotor(tipoPeriodo) {
+  const n = MOTOR_A_PERIODICIDAD_SAT[String(tipoPeriodo || '').toLowerCase()];
+  return n != null ? n : null;
+}
 
 const TIPOS_CONCEPTO = [
   { value: 'percepcion', label: 'Percepción' },
@@ -550,6 +593,11 @@ module.exports = {
   RELACION_PRENOMINA,
   TIPOS_PERIODO,
   TIPOS_NOMINA,
+  PERIODICIDADES_PAGO_SAT,
+  TIPOS_NOMINA_CFDI,
+  MOTOR_A_PERIODICIDAD_SAT,
+  tipoNominaCfdiDesdeNegocio,
+  periodicidadSatDesdeMotor,
   TIPOS_CONCEPTO,
   NATURALEZAS_CONCEPTO,
   ESTATUS_PERIODO_NOMINA,

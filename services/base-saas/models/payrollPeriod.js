@@ -13,7 +13,7 @@ const payrollPeriodSchema = new mongoose.Schema(
       default: null,
       index: true
     },
-    tipo: { type: String, enum: ['semanal', 'quincenal', 'catorcenal', 'mensual', 'decena'], required: true },
+    tipo: { type: String, enum: ['semanal', 'quincenal', 'catorcenal', 'mensual', 'decena', 'otra'], required: true },
     tipoNomina: {
       type: String,
       enum: [
@@ -25,11 +25,22 @@ const payrollPeriodSchema = new mongoose.Schema(
         'primas',
         'comisiones',
         'indemnizacion',
+        'fondo_ahorro',
+        'bono',
         'otro'
       ],
       default: 'ordinaria',
       index: true
     },
+    /** TipoNomina SAT del CFDI (O/E). */
+    tipoNominaCfdi: {
+      type: String,
+      enum: ['O', 'E', ''],
+      default: '',
+      index: true
+    },
+    /** c_PeriodicidadPago SAT (01…10, 99). */
+    periodicidadPagoSat: { type: Number, default: null, index: true },
     anio: { type: Number, default: null, index: true },
     numeroPeriodo: { type: Number, default: null },
     fechaInicio: { type: Date, required: true, index: true },
@@ -64,8 +75,17 @@ const payrollPeriodSchema = new mongoose.Schema(
 );
 
 payrollPeriodSchema.index({ tenantId: 1, empresaId: 1, subsidiariaId: 1, fechaInicio: 1 });
+/** Unique por tipo de nómina de negocio: bono #1 y aguinaldo #1 pueden coexistir en SAT 99. */
 payrollPeriodSchema.index(
-  { tenantId: 1, empresaId: 1, subsidiariaId: 1, tipoPeriodoId: 1, anio: 1, numeroPeriodo: 1 },
+  {
+    tenantId: 1,
+    empresaId: 1,
+    subsidiariaId: 1,
+    tipoPeriodoId: 1,
+    tipoNomina: 1,
+    anio: 1,
+    numeroPeriodo: 1
+  },
   {
     unique: true,
     partialFilterExpression: {

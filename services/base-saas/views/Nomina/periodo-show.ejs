@@ -6,6 +6,39 @@
   · <%= periodo.tipoNomina %>
   <% if (periodo.anio) { %><span class="muted small">(<%= periodo.anio %>)</span><% } %>
 </h1>
+<% if (periodo.cerradoPorLabel === 'import_cfdi' || (periodo.notas && /Importado desde CFDI/i.test(periodo.notas))) { %>
+<p class="alert" style="margin:0.75rem 0">Período histórico importado desde CFDI · timbrado y dispersión marcados como hechos.</p>
+<% } %>
+
+<%
+  const satHit = (typeof periodicidadesSat !== 'undefined' ? periodicidadesSat : []).find(function (p) {
+    return Number(p.value) === Number(periodo.periodicidadPagoSat);
+  });
+%>
+<section class="panel" style="margin:1rem 0">
+  <h2 class="panel-title">Clasificación</h2>
+  <dl class="flag-labels" style="margin:0 0 .75rem">
+    <div>Motor interno: <strong><%= periodo.tipoPeriodo %></strong></div>
+    <div>Periodicidad SAT: <strong><%= satHit ? (satHit.code + ' · ' + satHit.label) : (periodo.periodicidadPagoSat != null ? periodo.periodicidadPagoSat : '—') %></strong></div>
+    <div>CFDI TipoNomina: <strong><%= periodo.tipoNominaCfdi || '—' %></strong> <span class="muted small">(O=ordinaria, E=extraordinaria)</span></div>
+  </dl>
+  <% if (_canEdit) { %>
+  <form method="post" action="/nomina/periodos/<%= periodo._id %>/clasificacion" class="form-grid">
+    <input type="hidden" name="returnTo" value="/nomina/periodos/<%= periodo._id %>" />
+    <label>Tipo de nómina (negocio — editable)
+      <select name="tipoNomina" required>
+        <% (typeof tiposNomina !== 'undefined' ? tiposNomina : []).forEach(function(t) { %>
+        <option value="<%= t.value %>" <%= periodo.tipoNomina === t.value ? 'selected' : '' %>><%= t.label %></option>
+        <% }); %>
+      </select>
+    </label>
+    <button type="submit" class="btn btn-primary">Guardar clasificación</button>
+  </form>
+  <p class="muted small">Tras importar, ajusta aquí si el CFDI quedó como «extraordinaria» genérica y en realidad es aguinaldo, PTU, finiquito, fondo de ahorro, bono, etc.</p>
+  <% } else { %>
+  <p>Tipo de nómina: <strong><%= periodo.tipoNomina %></strong></p>
+  <% } %>
+</section>
 <p>
   <strong><%= new Date(periodo.fechaInicio).toLocaleDateString('es-MX') %></strong>
   al
@@ -230,12 +263,54 @@
 <div class="alert alert-warning"><strong>Error en cálculo:</strong> <%= calculoJob.error %></div>
 <% } %>
 
-<h2>Recibos</h2>
+<h2>Recibos<% if (typeof recibosTotal === 'number' && recibosTotal > 0) { %> <span class="muted small">(<%= recibosTotal.toLocaleString('es-MX') %>)</span><% } %></h2>
+<% const RF = typeof recibosFiltros !== 'undefined' && recibosFiltros ? recibosFiltros : { q: '', departamento: '', departamentos: [] }; %>
+<% 
+  const qsBase = [];
+  if (RF.q) qsBase.push('q=' + encodeURIComponent(RF.q));
+  if (RF.departamento) qsBase.push('departamento=' + encodeURIComponent(RF.departamento));
+  if (typeof recibosPageSize !== 'undefined' && recibosPageSize) qsBase.push('pageSize=' + recibosPageSize);
+  const qsJoin = qsBase.length ? '&' + qsBase.join('&') : '';
+%>
+<% if (typeof recibosDesdeHistorico !== 'undefined' && recibosDesdeHistorico) { %>
+<form method="get" action="/nomina/periodos/<%= periodo._id %>" class="filter-form form-grid" style="margin:0 0 1rem">
+  <label>Buscar empleado
+    <input type="search" name="q" value="<%= RF.q || '' %>" placeholder="No. o nombre" />
+  </label>
+  <label>Departamento
+    <select name="departamento">
+      <option value="">Todos</option>
+      <% (RF.departamentos || []).forEach(function(d) { %>
+      <option value="<%= d.nombre %>" <%= RF.departamento === d.nombre ? 'selected' : '' %>><%= d.nombre %> (<%= d.n %>)</option>
+      <% }); %>
+    </select>
+  </label>
+  <input type="hidden" name="pageSize" value="<%= typeof recibosPageSize !== 'undefined' ? recibosPageSize : 50 %>" />
+  <div style="align-self:end;display:flex;gap:.5rem">
+    <button type="submit" class="btn btn-primary">Filtrar</button>
+    <a class="btn" href="/nomina/periodos/<%= periodo._id %>">Limpiar</a>
+  </div>
+</form>
+<% } %>
+<% if (typeof recibosDesdeHistorico !== 'undefined' && recibosDesdeHistorico && typeof recibosPages === 'number' && recibosPages > 1) { %>
+<p class="muted small" style="margin:0 0 .75rem">
+  Página <%= recibosPage %> de <%= recibosPages %>
+  ·
+  <% if (recibosPage > 1) { %>
+  <a href="?page=<%= recibosPage - 1 %><%= qsJoin %>">← Anterior</a>
+  <% } else { %><span class="muted">← Anterior</span><% } %>
+  ·
+  <% if (recibosPage < recibosPages) { %>
+  <a href="?page=<%= recibosPage + 1 %><%= qsJoin %>">Siguiente →</a>
+  <% } else { %><span class="muted">Siguiente →</span><% } %>
+</p>
+<% } %>
 <table>
   <thead>
     <tr>
       <th>No.</th>
       <th>Empleado</th>
+      <th>Departamento</th>
       <th>ID cálculo</th>
       <th>Días lab.</th>
       <th>Faltas</th>
@@ -247,30 +322,34 @@
       <th>Correo</th>
       <th>Cálculo</th>
       <th>Cierre</th>
+      <th>CFDI</th>
       <th></th>
     </tr>
   </thead>
   <tbody id="recibos-body">
     <% if (!recibos.length) { %>
-    <tr><td colspan="14" class="muted"><%= periodo.estatus === 'cerrado' ? 'Sin recibos en histórico para este período.' : 'Sin recibos. Ejecuta el cálculo del período.' %></td></tr>
+    <tr><td colspan="16" class="muted"><%= periodo.estatus === 'cerrado' ? 'Sin recibos en histórico para este período.' : 'Sin recibos. Ejecuta el cálculo del período.' %></td></tr>
     <% } %>
     <% recibos.forEach(function(r) {
          const fuente = r.insumosFuente || 'default';
          const fuenteLabel = fuente === 'prenomina' ? 'Pre-nómina / asistencia'
-           : (fuente === 'prenomina_sin_detalle' ? 'Pre-nómina (sin detalle)' : 'Calendario / expediente');
+           : (fuente === 'prenomina_sin_detalle' ? 'Pre-nómina (sin detalle)'
+           : (fuente === 'importacion_cfdi' || fuente === 'importacion' ? 'Importación CFDI' : 'Calendario / expediente'));
          const lb = r.layoutBancario || {};
          const cor = r.correo || {};
+         const hasXml = !!(r.archivoXmlId || (r.timbrado && r.timbrado.archivoXmlId));
     %>
     <tr>
       <td><%= r.numEmpleado %></td>
       <td><%= r.empleadoNombre %></td>
+      <td class="muted small"><%= r.departamentoNombre || '—' %></td>
       <td class="muted small"><code title="<%= r.calculoLoteId || '' %>"><%= r.calculoId || '—' %></code></td>
-      <td><%= r.diasLaborados %></td>
-      <td><%= r.faltas %></td>
+      <td><%= r.diasLaborados != null ? r.diasLaborados : '—' %></td>
+      <td><%= r.faltas != null ? r.faltas : '—' %></td>
       <td class="muted small"><%= fuenteLabel %></td>
-      <td>$<%= r.totalPercepciones.toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></td>
-      <td>$<%= r.totalDeducciones.toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></td>
-      <td>$<%= r.netoPagar.toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></td>
+      <td>$<%= Number(r.totalPercepciones || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></td>
+      <td>$<%= Number(r.totalDeducciones || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></td>
+      <td>$<%= Number(r.netoPagar || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></td>
       <td>
         <% if (lb.estatus === 'generado') { %>
         <span class="badge badge-activo" title="<%= lb.layoutCodigo || '' %>">Generado</span>
@@ -293,11 +372,28 @@
       </td>
       <td class="muted small"><%= fmtDt(r.fechaCalculo) %></td>
       <td class="muted small"><%= fmtDt(r.fechaCierre) %></td>
+      <td>
+        <% if (hasXml) { %>
+        <a href="/nomina/periodos/<%= periodo._id %>/recibos/<%= r._id %>/xml" target="_blank" rel="noopener">XML</a>
+        <% } else if (r.cfdiUuid || (r.timbrado && r.timbrado.uuid)) { %>
+        <span class="muted small" title="<%= r.cfdiUuid || r.timbrado.uuid %>">UUID sin archivo</span>
+        <% } else { %>
+        <span class="muted small">—</span>
+        <% } %>
+      </td>
       <td><a href="/nomina/periodos/<%= periodo._id %>/recibos/<%= r._id %>">Detalle</a></td>
     </tr>
     <% }); %>
   </tbody>
 </table>
+<% if (typeof recibosDesdeHistorico !== 'undefined' && recibosDesdeHistorico && typeof recibosPages === 'number' && recibosPages > 1) { %>
+<p class="muted small" style="margin:.75rem 0">
+  Página <%= recibosPage %> / <%= recibosPages %> ·
+  <% if (recibosPage > 1) { %><a href="?page=<%= recibosPage - 1 %><%= qsJoin %>">Anterior</a><% } %>
+  <% if (recibosPage > 1 && recibosPage < recibosPages) { %> · <% } %>
+  <% if (recibosPage < recibosPages) { %><a href="?page=<%= recibosPage + 1 %><%= qsJoin %>">Siguiente</a><% } %>
+</p>
+<% } %>
 
 <% if (typeof auditoria !== 'undefined' && auditoria && auditoria.length) { %>
 <h2>Bitácora de auditoría</h2>

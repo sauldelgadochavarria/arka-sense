@@ -116,21 +116,27 @@ async function crearYValidar({
   return doc;
 }
 
-async function aplicarJob(tenantId, jobId, { userId = '', userLabel = '', opcionesOverride = null } = {}) {
+async function aplicarJob(
+  tenantId,
+  jobId,
+  { userId = '', userLabel = '', opcionesOverride = null, subsidiariaIdFallback = null } = {}
+) {
   const Job = await getCargaInicialJobModel();
   const jobMeta = await Job.findOne({ _id: jobId, tenantId }).select('tipo').lean();
   if (jobMeta?.tipo === 'cfdi_nomina_zip') {
     return aplicarJobCfdi(tenantId, jobId, {
       userId,
       userLabel,
-      opcionesOverride
+      opcionesOverride,
+      subsidiariaIdFallback
     });
   }
   if (jobMeta?.tipo === 'cfdi_nomina_zip_masivo') {
     return encolarApplyMasivo(tenantId, jobId, {
       userId,
       userLabel,
-      opcionesOverride
+      opcionesOverride,
+      subsidiariaIdFallback
     });
   }
 
@@ -178,10 +184,15 @@ async function aplicarJob(tenantId, jobId, { userId = '', userLabel = '', opcion
   return job;
 }
 
-async function listJobs(tenantId, { tipo = null, limit = 30 } = {}) {
+async function listJobs(
+  tenantId,
+  { tipo = null, empresaId = null, subsidiariaId = null, limit = 30 } = {}
+) {
   const Job = await getCargaInicialJobModel();
   const q = { tenantId };
   if (tipo) q.tipo = tipo;
+  if (empresaId) q.empresaId = empresaId;
+  if (subsidiariaId) q.subsidiariaId = subsidiariaId;
   return Job.find(q).sort({ createdAt: -1 }).limit(limit).lean();
 }
 

@@ -3,7 +3,7 @@
 const getEmpleadoModel = require('../models/empleado');
 const getTurnoModel = require('../models/turno');
 const getDailyAttendanceModel = require('../models/dailyAttendance');
-const { requireEmpresaForTenant } = require('../libs/tenantScope');
+const { requireEmpresaForTenant, scopeEmpleadosFromReq, sessionSubsidiariaId } = require('../libs/tenantScope');
 const { parseOptionalObjectId, trimString } = require('../libs/formHelpers');
 const { parseDateTimeLocal, startOfDay, endOfDay, formatTimeHHMM } = require('../libs/timeHelpers');
 const { resolveAsistenciaScope } = require('../libs/portalSession');
@@ -64,6 +64,12 @@ async function showHub(req, res) {
     };
     if (scope.onlyEquipo && scope.equipoIds.length) {
       dailyFilter.empleadoId = { $in: scope.equipoIds };
+    } else {
+      const empQ = scopeEmpleadosFromReq(req, empresa, { soloActivos: true });
+      if (empQ?.subsidiariaId) {
+        const empIds = await Empleado.find(empQ).select('_id').lean();
+        dailyFilter.empleadoId = { $in: empIds.map((e) => e._id) };
+      }
     }
     diariosHoy = await DailyAttendance.find(dailyFilter).lean();
     alertasHoy.excede12 = diariosHoy.filter((d) => d.excedeLimiteDiario).length;
@@ -147,20 +153,20 @@ async function listAutorizaciones(req, res) {
   const turnos = empresa
     ? await Turno.find({ tenantId: req.session.tenantId, activo: true }).sort({ nombre: 1 }).lean()
     : [];
+  const empQBase = scopeEmpleadosFromReq(req, empresa, { soloActivos: true }) || {
+    tenantId: req.session.tenantId,
+    estatus: 'activo'
+  };
   const equipo =
     scope.hasEquipo && scope.empleadoId
       ? await Empleado.find({
-          tenantId: req.session.tenantId,
-          supervisorId: scope.empleadoId,
-          estatus: 'activo'
+          ...empQBase,
+          supervisorId: scope.empleadoId
         })
           .sort({ lastName: 1 })
           .lean()
       : scope.scopeAll
-        ? await Empleado.find({ tenantId: req.session.tenantId, estatus: 'activo' })
-            .sort({ lastName: 1 })
-            .limit(200)
-            .lean()
+        ? await Empleado.find(empQBase).sort({ lastName: 1 }).limit(200).lean()
         : [];
 
   res.render('Asistencia/autorizaciones', {

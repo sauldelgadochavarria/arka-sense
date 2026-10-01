@@ -33,15 +33,23 @@ function semaforoOrdinarias(horasOrdinarias, maxOrdinarias) {
 /**
  * Armado de registro de jornada (REJL) + semáforos 46 h / 12 h.
  */
-async function buildRegistroJornada(tenantId, { fechaInicio, fechaFin, empleadoId = null } = {}) {
+async function buildRegistroJornada(
+  tenantId,
+  { fechaInicio, fechaFin, empleadoId = null, empresaId = null, subsidiariaId = null } = {}
+) {
   const fi = startOfDay(fechaInicio);
   const ff = endOfDay(fechaFin);
   const Empleado = await getEmpleadoModel();
   const Turno = await getTurnoModel();
   const DailyAttendance = await getDailyAttendanceModel();
   const TipoPeriodo = await getTipoPeriodoNominaModel();
+  const { scopeEmpleadosFilter } = require('../libs/tenantScope');
 
-  const empFilter = { tenantId, estatus: 'activo' };
+  const empFilter = scopeEmpleadosFilter({
+    tenantId,
+    empresaId,
+    subsidiariaId
+  });
   if (empleadoId) empFilter._id = empleadoId;
   const empleados = await Empleado.find(empFilter).sort({ lastName: 1, firstName: 1 }).lean();
   const empIds = empleados.map((e) => e._id);

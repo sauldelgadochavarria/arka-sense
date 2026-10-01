@@ -1,6 +1,7 @@
 'use strict';
 
-const { requireEmpresaForTenant } = require('../libs/tenantScope');
+const { requireEmpresaForTenant, sessionSubsidiariaId } = require('../libs/tenantScope');
+const { listPeriodosNominaScoped, assertPeriodoEnSubsidiaria, listLotesTimbradoScoped } = require('../libs/periodosNominaScope');
 const {
   trimString,
   trimUpper,
@@ -600,29 +601,30 @@ async function previewPlantilla(req, res) {
 
 async function wizardTimbrado(req, res) {
   const { empresa, error } = await requireEmpresaForTenant(req);
-  const Periodo = await getPeriodoNominaModel();
   const Pac = await getPacConfigModel();
   const Plantilla = await getReciboPdfPlantillaModel();
-  const Lote = await getTimbradoLoteModel();
+  const subId = sessionSubsidiariaId(req);
 
   const [periodos, pacs, plantillas, lotes] = empresa
     ? await Promise.all([
-        Periodo.find({
+        listPeriodosNominaScoped({
           tenantId: req.session.tenantId,
           empresaId: empresa._id,
-          estatus: 'cerrado'
-        })
-          .sort({ anio: -1, numeroPeriodo: -1 })
-          .limit(40)
-          .lean(),
+          subsidiariaId: subId,
+          filter: { estatus: 'cerrado' },
+          sort: { anio: -1, numeroPeriodo: -1, fechaInicio: -1 },
+          limit: 40
+        }),
         Pac.find({ tenantId: req.session.tenantId, empresaId: empresa._id, activo: true }).sort({ codigo: 1 }).lean(),
         Plantilla.find({ tenantId: req.session.tenantId, empresaId: empresa._id, activo: true })
           .sort({ orden: 1 })
           .lean(),
-        Lote.find({ tenantId: req.session.tenantId, empresaId: empresa._id })
-          .sort({ createdAt: -1 })
-          .limit(15)
-          .lean()
+        listLotesTimbradoScoped({
+          tenantId: req.session.tenantId,
+          empresaId: empresa._id,
+          subsidiariaId: subId,
+          limit: 15
+        })
       ])
     : [[], [], [], []];
 
@@ -641,11 +643,28 @@ async function generarTimbrado(req, res) {
   const { empresa, error } = await requireEmpresaForTenant(req);
   if (error || !empresa) return flashRedirect(req, res, '/nomina/timbrado', 'error', error || 'Sin empresa');
   try {
+    const periodoId = parseOptionalObjectId(req.body.periodoId);
+    const Periodo = await getPeriodoNominaModel();
+    const periodo = await Periodo.findOne({
+      _id: periodoId,
+      tenantId: req.session.tenantId,
+      empresaId: empresa._id
+    }).lean();
+    if (!periodo) throw new Error('Período no encontrado');
+    const okSub = await assertPeriodoEnSubsidiaria(periodo, {
+      tenantId: req.session.tenantId,
+      empresaId: empresa._id,
+      subsidiariaId: sessionSubsidiariaId(req)
+    });
+    if (!okSub) {
+      throw new Error('El período no pertenece a la subsidiaria activa');
+    }
+
     const result = await crearYProcesarLote({
       tenantId: req.session.tenantId,
       empresaId: empresa._id,
       empresa,
-      periodoId: parseOptionalObjectId(req.body.periodoId),
+      periodoId,
       pacConfigId: parseOptionalObjectId(req.body.pacConfigId),
       plantillaPdfId: parseOptionalObjectId(req.body.plantillaPdfId),
       forzarReal: parseCheckbox(req.body, 'forzarReal'),
@@ -665,23 +684,38 @@ async function generarTimbrado(req, res) {
 
 async function enrichLoteItems(tenantId, items = []) {
   const empIds = [...new Set(items.map((it) => it.empleadoId).filter(Boolean).map(String))];
-  if (!empIds.length) {
-    return items.map((it) => ({
-      ...it,
-      departamentoId: null,
-      departamentoNombre: '',
-      entidadFederativa: '',
-      entidadLabel: ''
-    }));
-  }
+  const histIds = [...new Set(items.map((it) => it.historicoId).filter(Boolean).map(String))];
 
   const Empleado = await getEmpleadoModel();
   const Departamento = await getDepartamentoModel();
-  const empleados = await Empleado.find({ tenantId, _id: { $in: empIds } })
-    .select('departamentoId domicilio entidadNacimiento entidadFederativa')
-    .lean();
+  const Historico = await getNominaHistoricoReciboModel();
+
+  const [empleados, historicos] = await Promise.all([
+    empIds.length
+      ? Empleado.find({ tenantId, _id: { $in: empIds } })
+          .select('departamentoId domicilio entidadNacimiento entidadFederativa')
+          .lean()
+      : [],
+    histIds.length
+      ? Historico.find({ tenantId, _id: { $in: histIds } })
+          .select('empleado')
+          .lean()
+      : []
+  ]);
+
   const empById = new Map(empleados.map((e) => [String(e._id), e]));
-  const deptoIds = [...new Set(empleados.map((e) => e.departamentoId).filter(Boolean).map(String))];
+  const histById = new Map(historicos.map((h) => [String(h._id), h]));
+  const deptoIds = [
+    ...new Set(
+      [
+        ...empleados.map((e) => e.departamentoId),
+        ...items.map((it) => it.departamentoId),
+        ...historicos.map((h) => h.empleado?.departamentoId)
+      ]
+        .filter(Boolean)
+        .map(String)
+    )
+  ];
   const deptos = deptoIds.length
     ? await Departamento.find({ _id: { $in: deptoIds } }).select('nombre').lean()
     : [];
@@ -690,10 +724,17 @@ async function enrichLoteItems(tenantId, items = []) {
 
   return items.map((it) => {
     const emp = empById.get(String(it.empleadoId)) || {};
-    const departamentoId = emp.departamentoId || null;
-    const departamentoNombre = departamentoId
-      ? deptoById.get(String(departamentoId))?.nombre || ''
-      : '';
+    const hist = it.historicoId ? histById.get(String(it.historicoId)) : null;
+    const snapDeptoNombre = String(
+      it.departamentoNombre || hist?.empleado?.departamentoNombre || ''
+    ).trim();
+    const departamentoId =
+      it.departamentoId || hist?.empleado?.departamentoId || emp.departamentoId || null;
+    const departamentoNombre =
+      snapDeptoNombre ||
+      (departamentoId ? deptoById.get(String(departamentoId))?.nombre || '' : '');
+    // Clave estable para filtros UI: preferir nombre de snapshot CFDI / histórico
+    const departamentoKey = departamentoNombre || (departamentoId ? String(departamentoId) : '');
     const entidadFederativa = String(
       emp.entidadFederativa || emp.domicilio?.entidad || emp.entidadNacimiento || ''
     )
@@ -703,6 +744,7 @@ async function enrichLoteItems(tenantId, items = []) {
       ...it,
       departamentoId,
       departamentoNombre,
+      departamentoKey,
       entidadFederativa,
       entidadLabel: entLabel.get(entidadFederativa) || entidadFederativa
     };
@@ -713,8 +755,9 @@ function uniqueFilterOptions(items) {
   const deptos = new Map();
   const entidades = new Map();
   for (const it of items) {
-    if (it.departamentoId) {
-      deptos.set(String(it.departamentoId), it.departamentoNombre || 'Sin nombre');
+    const key = it.departamentoKey || it.departamentoNombre || (it.departamentoId ? String(it.departamentoId) : '');
+    if (key) {
+      deptos.set(key, it.departamentoNombre || key);
     }
     if (it.entidadFederativa) {
       entidades.set(it.entidadFederativa, it.entidadLabel || it.entidadFederativa);
@@ -730,6 +773,24 @@ function uniqueFilterOptions(items) {
   };
 }
 
+async function assertLoteEnSubsidiariaActiva(req, empresa, lote) {
+  if (!lote || !empresa) return false;
+  const subId = sessionSubsidiariaId(req);
+  if (!subId) return true;
+  if (lote.subsidiariaId && String(lote.subsidiariaId) === String(subId)) return true;
+  const Periodo = await getPeriodoNominaModel();
+  const periodo = await Periodo.findOne({
+    _id: lote.periodoId,
+    tenantId: req.session.tenantId,
+    empresaId: empresa._id
+  }).lean();
+  return assertPeriodoEnSubsidiaria(periodo, {
+    tenantId: req.session.tenantId,
+    empresaId: empresa._id,
+    subsidiariaId: subId
+  });
+}
+
 async function showLote(req, res) {
   const { empresa, error } = await requireEmpresaForTenant(req);
   const Lote = await getTimbradoLoteModel();
@@ -739,6 +800,17 @@ async function showLote(req, res) {
     empresaId: empresa?._id
   }).lean();
   if (!lote) return res.status(404).send('Lote no encontrado');
+
+  const okSub = await assertLoteEnSubsidiariaActiva(req, empresa, lote);
+  if (!okSub) {
+    return flashRedirect(
+      req,
+      res,
+      '/nomina/timbrado',
+      'error',
+      'El lote no pertenece a la subsidiaria activa'
+    );
+  }
 
   const items = await enrichLoteItems(req.session.tenantId, lote.items || []);
   const filtros = uniqueFilterOptions(items);
@@ -781,6 +853,9 @@ async function descargarMasivoLote(req, res) {
     empresaId: empresa?._id
   }).lean();
   if (!lote) return res.status(404).send('Lote no encontrado');
+
+  const okSub = await assertLoteEnSubsidiariaActiva(req, empresa, lote);
+  if (!okSub) return res.status(404).send('Lote no encontrado');
 
   const rawIds = req.body.itemIds;
   const idList = Array.isArray(rawIds) ? rawIds : rawIds ? [rawIds] : [];

@@ -15,7 +15,7 @@ const {
   ymd,
   startOfUtcDay,
   endOfUtcDay,
-  tipoNominaFromCfdi,
+  classifyTipoNominaFromCfdi,
   periodBucketKey
 } = require('../../libs/periodicidadSatMap');
 
@@ -34,35 +34,51 @@ async function resolveTipoPeriodoPorSat(tenantId, empresaId, satCode, cache) {
   await ensureTiposPeriodoForTenant(tenantId, empresaId);
   const Tipo = await getTipoPeriodoNominaModel();
 
-  let tipo =
-    (await Tipo.findOne({
-      tenantId,
-      empresaId,
-      periodicidadPagoSat: mapped.code,
-      activo: true
-    })
-      .sort({ codigoLegado: 1 })
-      .lean()) ||
-    (await Tipo.findOne({
+  // Siempre preferir match exacto por clave SAT (evita que 99 “Otra” caiga en mensual).
+  let tipo = await Tipo.findOne({
+    tenantId,
+    empresaId,
+    periodicidadPagoSat: mapped.code,
+    activo: true
+  })
+    .sort({ codigoLegado: 1 })
+    .lean();
+
+  if (!tipo && !mapped.evitarFallbackMotor) {
+    tipo = await Tipo.findOne({
       tenantId,
       empresaId,
       tipoMotor: mapped.tipoMotor,
-      activo: true
+      activo: true,
+      $or: [
+        { periodicidadPagoSat: null },
+        { periodicidadPagoSat: { $exists: false } },
+        { periodicidadPagoSat: mapped.code }
+      ]
     })
       .sort({ codigoLegado: 1 })
-      .lean());
+      .lean();
+  }
 
   if (!tipo) {
     const codigoLegado = await nextCodigoLegado(tenantId, empresaId);
     const created = await crearTipoPeriodo(tenantId, empresaId, {
       codigoLegado,
       codigoExterno: `CFDI-SAT-${mapped.code}`,
-      nombre: `Import CFDI · ${mapped.label}`,
+      nombre:
+        mapped.code === 99
+          ? 'Otra periodicidad (SAT 99 · extraordinarias)'
+          : `Import CFDI · ${mapped.label}`,
       tipoMotor: mapped.tipoMotor,
-      diasPeriodo: mapped.diasPeriodo,
+      diasPeriodo: mapped.diasPeriodo || 0,
       esSeptimo: mapped.tipoMotor === 'semanal',
-      diasLaborables: mapped.tipoMotor === 'semanal' ? 6 : Math.min(mapped.diasPeriodo, 15),
-      leyenda: 'cfdi_import',
+      diasLaborables:
+        mapped.tipoMotor === 'semanal'
+          ? 6
+          : mapped.diasPeriodo > 0
+            ? Math.min(mapped.diasPeriodo, 15)
+            : 0,
+      leyenda: mapped.code === 99 ? 'sat_99_otra' : 'cfdi_import',
       periodicidadPagoSat: mapped.code,
       diaInicioSemana: 1,
       modoCalendario: mapped.diasPeriodo > 0 ? 'por_dias' : 'calendario_fijo',
@@ -113,19 +129,34 @@ async function buildPeriodosFromStaging({
     const d = doc.payload || {};
     if (excluirExtraordinarias && String(d.tipoNomina).toUpperCase() === 'E') continue;
 
-    const tipo = await resolveTipoPeriodoPorSat(
+    let tipo = await resolveTipoPeriodoPorSat(
       tenantId,
       empresaId,
       d.empleado?.periodicidadPago,
       tipoCache
     );
+    const tipoNomina = classifyTipoNominaFromCfdi(d);
+    // Extraordinarias / finiquitos suelen traer PeriodicidadPago=99 u otros códigos;
+    // si no hay tipo, caemos a "otra periodicidad" (99) para no perder la ventana.
+    if (!tipo && tipoNomina !== 'ordinaria') {
+      tipo = await resolveTipoPeriodoPorSat(tenantId, empresaId, '99', tipoCache);
+    }
     if (!tipo) continue;
 
     const fi = d.fechaInicio || d.fechaPago;
     const ff = d.fechaFin || d.fechaPago || fi;
     if (!fi || !ff) continue;
 
-    const tipoNomina = tipoNominaFromCfdi(d.tipoNomina);
+    const diasRango = (() => {
+      try {
+        const a = startOfUtcDay(fi).getTime();
+        const b = startOfUtcDay(ff).getTime();
+        return Math.max(1, Math.round((b - a) / 86400000) + 1);
+      } catch (_) {
+        return 1;
+      }
+    })();
+
     const key = periodBucketKey({
       tipoPeriodoId: tipo._id,
       tipoNomina,
@@ -138,6 +169,9 @@ async function buildPeriodosFromStaging({
         key,
         tipo,
         tipoNomina,
+        tipoNominaCfdi: String(d.tipoNomina || 'O').toUpperCase() === 'E' ? 'E' : 'O',
+        periodicidadPagoSat: normalizePeriodicidadSat(d.empleado?.periodicidadPago) ||
+          (tipo.periodicidadPagoSat != null ? Number(tipo.periodicidadPagoSat) : null),
         fechaInicio: startOfUtcDay(fi),
         fechaFin: endOfUtcDay(ff),
         fechaPago: d.fechaPago ? new Date(d.fechaPago) : null,
@@ -146,7 +180,7 @@ async function buildPeriodosFromStaging({
         percepciones: 0,
         deducciones: 0,
         neto: 0,
-        diasPeriodo: Number(d.diasPagados) || Number(tipo.diasPeriodo) || 0
+        diasPeriodo: Number(d.diasPagados) || Number(tipo.diasPeriodo) || diasRango
       });
     }
     const b = buckets.get(key);
@@ -175,18 +209,36 @@ async function buildPeriodosFromStaging({
   const PayrollPeriod = await getPayrollPeriodModel();
   const PeriodoNomina = await getPeriodoNominaModel();
 
-  // Numerar por tipo+año+tipoNomina ordenado por fechaInicio
-  const groups = new Map();
-  for (const b of buckets.values()) {
-    const gk = `${String(b.tipo._id)}|${b.anio}|${b.tipoNomina}`;
-    if (!groups.has(gk)) groups.set(gk, []);
-    groups.get(gk).push(b);
-  }
-  for (const list of groups.values()) {
-    list.sort((a, b) => a.fechaInicio - b.fechaInicio);
-    list.forEach((b, i) => {
-      b.numeroPeriodo = i + 1;
-    });
+  // Orden estable por fechas (el número se asigna sin pisar ventanas ajenas)
+  const ordered = [...buckets.values()].sort((a, b) => a.fechaInicio - b.fechaInicio);
+
+  async function nextNumeroLibre(tipoId, anio, tipoNomina, excludeId = null) {
+    const scope = {
+      tenantId,
+      empresaId,
+      tipoPeriodoId: tipoId,
+      anio,
+      tipoNomina,
+      ...(subId ? { subsidiariaId: subId } : {})
+    };
+    const last = await PayrollPeriod.findOne(scope)
+      .sort({ numeroPeriodo: -1 })
+      .select('numeroPeriodo')
+      .lean();
+    let n = (Number(last?.numeroPeriodo) || 0) + 1;
+    // Evita colisión si el max está "roto" o hay huecos con unique parcial
+    for (let guard = 0; guard < 500; guard += 1) {
+      const clash = await PayrollPeriod.findOne({
+        ...scope,
+        numeroPeriodo: n,
+        ...(excludeId ? { _id: { $ne: excludeId } } : {})
+      })
+        .select('_id')
+        .lean();
+      if (!clash) return n;
+      n += 1;
+    }
+    return n;
   }
 
   const resultMap = new Map();
@@ -194,7 +246,7 @@ async function buildPeriodosFromStaging({
   let updated = 0;
   let i = 0;
 
-  for (const b of buckets.values()) {
+  for (const b of ordered) {
     i += 1;
     const round2 = (n) => Math.round(n * 100) / 100;
     const totales = {
@@ -205,52 +257,75 @@ async function buildPeriodosFromStaging({
     };
     const cerradoAt = b.fechaPago || b.fechaFin;
 
-    let payroll = await PayrollPeriod.findOne({
+    // Match SOLO por ventana de fechas (nunca por numeroPeriodo suelto:
+    // eso reutilizaba períodos del calendario anual con otras fechas).
+    const dateMatch = {
       tenantId,
       empresaId,
       tipoPeriodoId: b.tipo._id,
-      anio: b.anio,
-      numeroPeriodo: b.numeroPeriodo,
       tipoNomina: b.tipoNomina,
+      fechaInicio: b.fechaInicio,
+      fechaFin: b.fechaFin,
       ...(subId ? { subsidiariaId: subId } : {})
-    });
-
-    if (!payroll) {
-      // Fallback por fechas
+    };
+    let payroll = await PayrollPeriod.findOne(dateMatch);
+    if (!payroll && subId) {
       payroll = await PayrollPeriod.findOne({
         tenantId,
         empresaId,
         tipoPeriodoId: b.tipo._id,
+        tipoNomina: b.tipoNomina,
         fechaInicio: b.fechaInicio,
         fechaFin: b.fechaFin,
-        tipoNomina: b.tipoNomina
+        $or: [{ subsidiariaId: null }, { subsidiariaId: { $exists: false } }]
       });
     }
 
+    let numeroPeriodo =
+      payroll?.numeroPeriodo != null && Number.isFinite(Number(payroll.numeroPeriodo))
+        ? Number(payroll.numeroPeriodo)
+        : null;
+    if (numeroPeriodo == null) {
+      numeroPeriodo = await nextNumeroLibre(b.tipo._id, b.anio, b.tipoNomina, payroll?._id || null);
+    }
+    b.numeroPeriodo = numeroPeriodo;
+
     if (payroll) {
       payroll.estatus = 'cerrado';
+      payroll.fechaInicio = b.fechaInicio;
+      payroll.fechaFin = b.fechaFin;
       payroll.fechaPago = b.fechaPago || payroll.fechaPago;
       payroll.totales = totales;
       payroll.cerradoAt = cerradoAt;
       payroll.calculadoAt = cerradoAt;
       payroll.abiertoAt = payroll.abiertoAt || b.fechaInicio;
       payroll.anio = b.anio;
-      payroll.numeroPeriodo = b.numeroPeriodo;
+      payroll.numeroPeriodo = numeroPeriodo;
+      payroll.tipo = b.tipo.tipoMotor;
+      payroll.tipoPeriodoId = b.tipo._id;
+      payroll.codigoLegadoTipoPeriodo = b.tipo.codigoLegado;
+      payroll.tipoNomina = b.tipoNomina;
+      payroll.tipoNominaCfdi = b.tipoNominaCfdi || (b.tipoNomina === 'ordinaria' ? 'O' : 'E');
+      payroll.periodicidadPagoSat =
+        b.periodicidadPagoSat != null ? b.periodicidadPagoSat : b.tipo.periodicidadPagoSat || null;
       payroll.compartirConNomina = true;
       payroll.aplicaAsistenciaPrenomina = false;
       payroll.notas = `Import CFDI · ${b.count} recibos timbrados`;
-      if (subId && !payroll.subsidiariaId) payroll.subsidiariaId = subId;
+      if (subId) payroll.subsidiariaId = subId;
       await payroll.save();
       updated += 1;
     } else {
-      payroll = await PayrollPeriod.create({
+      const payrollPayload = {
         tenantId,
         empresaId,
         subsidiariaId: subId || null,
         tipo: b.tipo.tipoMotor,
         tipoNomina: b.tipoNomina,
+        tipoNominaCfdi: b.tipoNominaCfdi || (b.tipoNomina === 'ordinaria' ? 'O' : 'E'),
+        periodicidadPagoSat:
+          b.periodicidadPagoSat != null ? b.periodicidadPagoSat : b.tipo.periodicidadPagoSat || null,
         anio: b.anio,
-        numeroPeriodo: b.numeroPeriodo,
+        numeroPeriodo,
         fechaInicio: b.fechaInicio,
         fechaFin: b.fechaFin,
         fechaPago: b.fechaPago,
@@ -264,25 +339,50 @@ async function buildPeriodosFromStaging({
         compartirConNomina: true,
         totales,
         notas: `Import CFDI · ${b.count} recibos timbrados`
-      });
+      };
+      try {
+        payroll = await PayrollPeriod.create(payrollPayload);
+      } catch (err) {
+        if (String(err?.code) !== '11000') throw err;
+        // Índice legacy (sin tipoNomina) o carrera: reasigna # libre y reintenta
+        numeroPeriodo = await nextNumeroLibre(b.tipo._id, b.anio, b.tipoNomina, null);
+        // Si el unique viejo aún ignora tipoNomina, fuerza siguiente global del tipoPeriodo+año
+        const globalClash = await PayrollPeriod.findOne({
+          tenantId,
+          empresaId,
+          tipoPeriodoId: b.tipo._id,
+          anio: b.anio,
+          numeroPeriodo,
+          ...(subId ? { subsidiariaId: subId } : {})
+        })
+          .select('_id')
+          .lean();
+        if (globalClash) {
+          const lastGlobal = await PayrollPeriod.findOne({
+            tenantId,
+            empresaId,
+            tipoPeriodoId: b.tipo._id,
+            anio: b.anio,
+            ...(subId ? { subsidiariaId: subId } : {})
+          })
+            .sort({ numeroPeriodo: -1 })
+            .select('numeroPeriodo')
+            .lean();
+          numeroPeriodo = (Number(lastGlobal?.numeroPeriodo) || 0) + 1;
+        }
+        b.numeroPeriodo = numeroPeriodo;
+        payrollPayload.numeroPeriodo = numeroPeriodo;
+        payroll = await PayrollPeriod.create(payrollPayload);
+      }
       created += 1;
     }
 
+    // PeriodoNomina: por vínculo payroll o por mismas fechas (no por # suelto)
     let periodo = await PeriodoNomina.findOne({
       tenantId,
       empresaId,
       payrollPeriodId: payroll._id
     });
-    if (!periodo) {
-      periodo = await PeriodoNomina.findOne({
-        tenantId,
-        empresaId,
-        tipoPeriodo: b.tipo.tipoMotor,
-        tipoNomina: b.tipoNomina,
-        anio: b.anio,
-        numeroPeriodo: b.numeroPeriodo
-      });
-    }
     if (!periodo) {
       periodo = await PeriodoNomina.findOne({
         tenantId,
@@ -299,11 +399,14 @@ async function buildPeriodosFromStaging({
       empresaId,
       tipoPeriodo: b.tipo.tipoMotor,
       tipoNomina: b.tipoNomina,
+      tipoNominaCfdi: b.tipoNominaCfdi || (b.tipoNomina === 'ordinaria' ? 'O' : 'E'),
+      periodicidadPagoSat:
+        b.periodicidadPagoSat != null ? b.periodicidadPagoSat : b.tipo.periodicidadPagoSat || null,
       fechaInicio: b.fechaInicio,
       fechaFin: b.fechaFin,
       fechaPago: b.fechaPago,
       anio: b.anio,
-      numeroPeriodo: b.numeroPeriodo,
+      numeroPeriodo,
       diasPeriodo: b.diasPeriodo,
       estatus: 'cerrado',
       payrollPeriodId: payroll._id,
@@ -313,6 +416,21 @@ async function buildPeriodosFromStaging({
       fechaCierre: cerradoAt,
       cerradoPorLabel: 'import_cfdi',
       calculadoPorLabel: 'import_cfdi',
+      omitirDispersionBancaria: false,
+      /** Histórico ya pagado/timbrado: dispersión se considera hecha. */
+      layoutBancario: {
+        estatus: 'generado',
+        layoutId: null,
+        layoutCodigo: 'IMPORT_CFDI',
+        layoutNombre: 'Dispersión histórica (CFDI)',
+        fechaPago: b.fechaPago || b.fechaFin,
+        fechaGeneracion: cerradoAt,
+        archivoNombre: 'import_cfdi_historico.txt',
+        cantidadRecibos: b.count,
+        totalPagar: totales.neto,
+        generadoPorUserId: '',
+        generadoPorLabel: 'import_cfdi'
+      },
       totales: {
         empleados: totales.empleados,
         percepciones: totales.percepciones,
@@ -336,8 +454,50 @@ async function buildPeriodosFromStaging({
       await PeriodoNomina.updateOne({ _id: periodo._id }, { $set: nominaPayload });
       periodo = await PeriodoNomina.findById(periodo._id).lean();
     } else {
-      periodo = await PeriodoNomina.create(nominaPayload);
-      periodo = periodo.toObject ? periodo.toObject() : periodo;
+      try {
+        periodo = await PeriodoNomina.create(nominaPayload);
+        periodo = periodo.toObject ? periodo.toObject() : periodo;
+      } catch (err) {
+        // Unique por numeroPeriodo: reusa el doc existente solo si es la misma ventana
+        if (String(err?.code) === '11000') {
+          const existing = await PeriodoNomina.findOne({
+            tenantId,
+            empresaId,
+            tipoPeriodo: b.tipo.tipoMotor,
+            tipoNomina: b.tipoNomina,
+            anio: b.anio,
+            numeroPeriodo
+          });
+          if (
+            existing &&
+            ymd(existing.fechaInicio) === ymd(b.fechaInicio) &&
+            ymd(existing.fechaFin) === ymd(b.fechaFin)
+          ) {
+            await PeriodoNomina.updateOne({ _id: existing._id }, { $set: nominaPayload });
+            periodo = await PeriodoNomina.findById(existing._id).lean();
+          } else {
+            // Colisión con otra ventana: toma siguiente número libre en nómina
+            const lastN = await PeriodoNomina.findOne({
+              tenantId,
+              empresaId,
+              tipoPeriodo: b.tipo.tipoMotor,
+              tipoNomina: b.tipoNomina,
+              anio: b.anio
+            })
+              .sort({ numeroPeriodo: -1 })
+              .select('numeroPeriodo')
+              .lean();
+            nominaPayload.numeroPeriodo = (Number(lastN?.numeroPeriodo) || 0) + 1;
+            b.numeroPeriodo = nominaPayload.numeroPeriodo;
+            payroll.numeroPeriodo = nominaPayload.numeroPeriodo;
+            await payroll.save();
+            periodo = await PeriodoNomina.create(nominaPayload);
+            periodo = periodo.toObject ? periodo.toObject() : periodo;
+          }
+        } else {
+          throw err;
+        }
+      }
     }
 
     resultMap.set(b.key, {
@@ -380,13 +540,17 @@ async function buildPeriodosFromStaging({
 
 function lookupPeriodoForPayload(periodMap, tipoCache, payload) {
   if (!periodMap || !periodMap.size) return null;
-  const mapped = mapPeriodicidadSat(payload?.empleado?.periodicidadPago);
+  let mapped = mapPeriodicidadSat(payload?.empleado?.periodicidadPago);
+  const tipoNomina = classifyTipoNominaFromCfdi(payload);
+  if (!mapped?.soportado && tipoNomina !== 'ordinaria') {
+    mapped = mapPeriodicidadSat('99');
+  }
   if (!mapped?.soportado) return null;
   const tipo = tipoCache.get(String(mapped.code));
   if (!tipo) return null;
   const key = periodBucketKey({
     tipoPeriodoId: tipo._id,
-    tipoNomina: tipoNominaFromCfdi(payload.tipoNomina),
+    tipoNomina,
     fechaInicio: payload.fechaInicio || payload.fechaPago,
     fechaFin: payload.fechaFin || payload.fechaPago || payload.fechaInicio
   });

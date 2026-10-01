@@ -1,7 +1,7 @@
 const getIncidenciaModel = require('../models/incidencia');
 const getEmpleadoModel = require('../models/empleado');
 const getTipoIncidenciaModel = require('../models/tipoIncidencia');
-const { requireEmpresaForTenant } = require('../libs/tenantScope');
+const { requireEmpresaForTenant, scopeEmpleadosFromReq, findOneByTenant, findOneDocByTenant } = require('../libs/tenantScope');
 const { ensureTiposIncidenciaForTenant, listAllTiposForTenant } = require('../services/tiposIncidenciaService');
 const { recalcularSaldoEmpleado, calcularDiasSolicitud } = require('../services/vacacionesService');
 const { parseOptionalObjectId, trimString, parseDate, parseCheckbox } = require('../libs/formHelpers');
@@ -9,7 +9,6 @@ const { startOfDay, endOfDay, formatTimeHHMM } = require('../libs/timeHelpers');
 const { toDateInputValue } = require('../libs/formHelpers');
 const { ESTATUS_INCIDENCIA } = require('../config/incidenciasCatalog');
 const { userIsSupervisorOrAdmin, getEquipoEmpleadoIds } = require('../libs/portalSession');
-const { findOneByTenant, findOneDocByTenant } = require('../libs/tenantScope');
 
 function defaultFechaQuery(req) {
   return trimString(req.query.fechaDesde) || new Date().toISOString().slice(0, 10);
@@ -30,13 +29,20 @@ async function listIncidencias(req, res) {
   };
   if (estatus !== 'todos') filter.estatus = estatus;
 
-  const [incidencias, empleados, tipos] = empresa
+  const empQ = scopeEmpleadosFromReq(req, empresa, { soloActivos: false }) || {
+    tenantId: req.session.tenantId
+  };
+
+  const [incidenciasRaw, empleados, tipos] = empresa
     ? await Promise.all([
         Incidencia.find(filter).sort({ fechaInicio: -1, createdAt: -1 }).lean(),
-        Empleado.find({ tenantId: req.session.tenantId }).sort({ lastName: 1 }).lean(),
+        Empleado.find(empQ).sort({ lastName: 1 }).lean(),
         ensureTiposIncidenciaForTenant(req.session.tenantId, empresa._id)
       ])
     : [[], [], []];
+
+  const empIdSet = new Set(empleados.map((e) => String(e._id)));
+  const incidencias = incidenciasRaw.filter((i) => empIdSet.has(String(i.empleadoId)));
 
   const empMap = new Map(empleados.map((e) => [String(e._id), `${e.firstName} ${e.lastName}`]));
   const tipoMap = new Map(tipos.map((t) => [t.clave, t.nombre]));
@@ -158,19 +164,22 @@ async function listPendientes(req, res) {
         .lean()
     : [];
 
-  const empleados = empresa
-    ? await Empleado.find({ tenantId: req.session.tenantId }).lean()
-    : [];
+  const empQ = scopeEmpleadosFromReq(req, empresa, { soloActivos: false }) || {
+    tenantId: req.session.tenantId
+  };
+  const empleados = empresa ? await Empleado.find(empQ).lean() : [];
+  const empIdSet = new Set(empleados.map((e) => String(e._id)));
+  const incidenciasFiltradas = incidencias.filter((i) => empIdSet.has(String(i.empleadoId)));
   const empMap = new Map(empleados.map((e) => [String(e._id), `${e.firstName} ${e.lastName}`]));
 
   const porCodigo = {};
-  for (const i of incidencias) {
+  for (const i of incidenciasFiltradas) {
     const k = i.codigo || '?';
     porCodigo[k] = (porCodigo[k] || 0) + 1;
   }
 
   res.render('Incidencias/pendientes', {
-    incidencias,
+    incidencias: incidenciasFiltradas,
     empMap,
     periodoNomina,
     porCodigo,

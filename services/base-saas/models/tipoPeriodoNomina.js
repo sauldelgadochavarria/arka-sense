@@ -11,7 +11,7 @@ const tipoPeriodoNominaSchema = new mongoose.Schema(
     nombre: { type: String, required: true, trim: true },
     tipoMotor: {
       type: String,
-      enum: ['semanal', 'quincenal', 'catorcenal', 'mensual', 'decena'],
+      enum: ['semanal', 'quincenal', 'catorcenal', 'mensual', 'decena', 'otra'],
       default: 'quincenal'
     },
     diasPeriodo: { type: Number, default: 0 },

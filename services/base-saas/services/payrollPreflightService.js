@@ -9,6 +9,15 @@ const { getEmpleadoExportId } = require('../libs/empleadoHelpers');
 const { startOfDay, endOfDay, ymdInTimeZone } = require('../libs/timeHelpers');
 const { ESQUEMA_JORNADA_DEFAULTS } = require('../libs/esquemaJornada');
 const { buildTiempoClasificado, buildBanderasExcepcion, horasExtraDesdeDetail } = require('./nomina/prenominaBridge');
+const { scopeEmpleadosFilter } = require('../libs/tenantScope');
+
+function empleadosDelPeriodoFilter(period, tenantId) {
+  return scopeEmpleadosFilter({
+    tenantId,
+    empresaId: period.empresaId || null,
+    subsidiariaId: period.subsidiariaId || null
+  });
+}
 
 async function validateCodigoExternoForPeriod(period, tenantId) {
   const Empleado = await getEmpleadoModel();
@@ -18,7 +27,7 @@ async function validateCodigoExternoForPeriod(period, tenantId) {
   const fin = endOfDay(period.fechaFin);
 
   const [empleados, incidencias, detalles] = await Promise.all([
-    Empleado.find({ tenantId, estatus: 'activo', activo: true }).lean(),
+    Empleado.find(empleadosDelPeriodoFilter(period, tenantId)).lean(),
     Incidencia.find({
       tenantId,
       estatus: 'aprobada',
@@ -31,7 +40,7 @@ async function validateCodigoExternoForPeriod(period, tenantId) {
   const afectados = new Set();
 
   for (const inc of incidencias) {
-    afectados.add(String(inc.empleadoId));
+    if (empMap.has(String(inc.empleadoId))) afectados.add(String(inc.empleadoId));
   }
   for (const det of detalles) {
     if ((det.diasFalta || 0) > 0 || (det.minutosRetardo || 0) > 0 || (det.minutosHorasExtra || 0) > 0) {
@@ -76,7 +85,7 @@ async function validateJornadaForPeriod(period, tenantId) {
   const fin = endOfDay(period.fechaFin);
 
   const [empleados, detalles, diarios] = await Promise.all([
-    Empleado.find({ tenantId, estatus: 'activo', activo: true }).lean(),
+    Empleado.find(empleadosDelPeriodoFilter(period, tenantId)).lean(),
     PayrollDetail.find({ tenantId, periodId: period._id }).lean(),
     DailyAttendance.find({
       tenantId,
@@ -219,8 +228,17 @@ async function validateAsistenciaIncompletaForPeriod(period, tenantId) {
   const fin = endOfDay(period.fechaFin);
   const hoyYmd = ymdInTimeZone(new Date());
 
+  const empleadosScope = await Empleado.find(empleadosDelPeriodoFilter(period, tenantId))
+    .select('_id firstName lastName numEmpleado')
+    .lean();
+  const scopeIds = empleadosScope.map((e) => e._id);
+  if (!scopeIds.length) {
+    return { ok: true, bloqueos: [], advertencias: [], incompletos: [], enCurso: [] };
+  }
+
   const diarios = await DailyAttendance.find({
     tenantId,
+    empleadoId: { $in: scopeIds },
     fecha: { $gte: inicio, $lte: fin },
     estatus: { $in: ['incompleto', 'registro_parcial'] }
   })
@@ -231,12 +249,8 @@ async function validateAsistenciaIncompletaForPeriod(period, tenantId) {
     return { ok: true, bloqueos: [], advertencias: [], incompletos: [], enCurso: [] };
   }
 
-  const empIds = [...new Set(diarios.map((d) => String(d.empleadoId)))];
-  const empleados = await Empleado.find({ _id: { $in: empIds } })
-    .select('firstName lastName numEmpleado')
-    .lean();
   const empMap = new Map(
-    empleados.map((e) => [
+    empleadosScope.map((e) => [
       String(e._id),
       { nombre: `${e.firstName || ''} ${e.lastName || ''}`.trim(), numEmpleado: e.numEmpleado || '' }
     ])

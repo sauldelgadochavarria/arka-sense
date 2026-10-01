@@ -17,6 +17,17 @@ const {
   lookupPeriodoForPayload,
   resolveTipoPeriodoPorSat
 } = require('./cfdiPeriodoInferService');
+const {
+  classifyTipoNominaFromCfdi,
+  esNominaBajaLaboral
+} = require('../../libs/periodicidadSatMap');
+const {
+  registrarAlta,
+  registrarCambioAutomatico,
+  ensureTiposMovimientoForTenant
+} = require('../historialLaboralService');
+const getHistorialLaboralModel = require('../../models/historialLaboral');
+const { guardarCfdiArchivo } = require('../cfdiArchivoService');
 
 const MAX_ZIP_BYTES = 40 * 1024 * 1024;
 const MAX_XML_FILES = 5000;
@@ -31,6 +42,8 @@ const DEFAULT_IMPORT_OPTIONS = {
   importHistorico: true,
   importAcumulados: true,
   importPeriodos: true,
+  importHistorialLaboral: true,
+  aplicarBajasFiniquito: true,
   excluirExtraordinarias: false,
   actualizarDatosLaborales: true,
   modoEscritura: 'upsert' // upsert | crear_solo | solo_vacios
@@ -55,6 +68,14 @@ function parseImportOptions(input = {}) {
     importHistorico: flag('importHistorico', DEFAULT_IMPORT_OPTIONS.importHistorico),
     importAcumulados: flag('importAcumulados', DEFAULT_IMPORT_OPTIONS.importAcumulados),
     importPeriodos: flag('importPeriodos', DEFAULT_IMPORT_OPTIONS.importPeriodos),
+    importHistorialLaboral: flag(
+      'importHistorialLaboral',
+      DEFAULT_IMPORT_OPTIONS.importHistorialLaboral
+    ),
+    aplicarBajasFiniquito: flag(
+      'aplicarBajasFiniquito',
+      DEFAULT_IMPORT_OPTIONS.aplicarBajasFiniquito
+    ),
     excluirExtraordinarias: flag(
       'excluirExtraordinarias',
       DEFAULT_IMPORT_OPTIONS.excluirExtraordinarias
@@ -75,6 +96,9 @@ function parseImportOptions(input = {}) {
     opts.importHistorico = true;
     opts.importEmpleados = true;
   }
+  if (opts.aplicarBajasFiniquito || opts.importHistorialLaboral) {
+    opts.importEmpleados = true;
+  }
   return opts;
 }
 
@@ -88,6 +112,8 @@ function opcionesLabels(opts) {
   if (o.importHistorico) bloques.push('Histórico');
   if (o.importAcumulados) bloques.push('Acumulados');
   if (o.importPeriodos) bloques.push('Períodos');
+  if (o.importHistorialLaboral) bloques.push('Historial laboral');
+  if (o.aplicarBajasFiniquito) bloques.push('Bajas por finiquito');
   const modo =
     o.modoEscritura === 'crear_solo'
       ? 'solo crear'
@@ -139,7 +165,8 @@ async function crearYValidarDesdeZip({
   anio = new Date().getFullYear(),
   userId = '',
   userLabel = '',
-  opciones: opcionesIn = {}
+  opciones: opcionesIn = {},
+  subsidiariaId = null
 }) {
   const opciones = parseImportOptions(opcionesIn);
   if (!Buffer.isBuffer(zipBuffer) || !zipBuffer.length) {
@@ -170,6 +197,7 @@ async function crearYValidarDesdeZip({
   const job = await Job.create({
     tenantId,
     empresaId,
+    subsidiariaId: subsidiariaId || null,
     tipo: 'cfdi_nomina_zip',
     estatus: 'borrador',
     modo: 'dry_run',
@@ -229,6 +257,7 @@ async function crearYValidarDesdeZip({
       uuid: d.uuid,
       anio: d.anio,
       payload: d,
+      xmlText: text || '',
       bitacora: d.bitacora || [],
       estatus: 'ok'
     });
@@ -323,6 +352,7 @@ async function crearYValidarDesdeZip({
     anio,
     opciones,
     opcionesResumen: opcionesLabels(opciones),
+    subsidiariaId: subsidiariaId || null,
     xmlEnZip: xmls.length,
     recibosOk: filasOk,
     omitidos: omitidos.length,
@@ -451,7 +481,8 @@ async function resolveEmpleadoId(
     modoEscritura = 'upsert',
     actualizarDatosLaborales = true,
     permitirCrear = true,
-    tipoPeriodoId = null
+    tipoPeriodoId = null,
+    subsidiariaId = null
   } = {}
 ) {
   const curp = normalizeCurp(emp.curp);
@@ -471,12 +502,11 @@ async function resolveEmpleadoId(
   const payloadFull = {
     firstName: emp.firstName || 'SIN',
     lastName: emp.lastName || 'NOMBRE',
+    nombreSat: String(emp.nombre || '').trim() || undefined,
     rfc: rfc || undefined,
     curp: curp || undefined,
     nss: nss || undefined,
     tipoContrato: emp.tipoContrato || undefined,
-    estatus: 'activo',
-    activo: true,
     'domicilio.codigoPostal': emp.codigoPostal || undefined,
     'domicilio.entidad': emp.entidadFederativa || undefined,
     entidadNacimiento: emp.entidadNacimiento || undefined,
@@ -495,6 +525,9 @@ async function resolveEmpleadoId(
   if (tipoPeriodoId) {
     payloadFull.tipoPeriodoId = tipoPeriodoId;
   }
+  if (subsidiariaId) {
+    payloadFull.subsidiariaId = subsidiariaId;
+  }
 
   Object.keys(payloadFull).forEach((k) => payloadFull[k] === undefined && delete payloadFull[k]);
 
@@ -503,7 +536,7 @@ async function resolveEmpleadoId(
       if (tipoPeriodoId && !existing.tipoPeriodoId) {
         await Empleado.updateOne({ _id: existing._id }, { $set: { tipoPeriodoId } });
       }
-      return existing._id;
+      return { id: existing._id, created: false, before: existing };
     }
     if (modoEscritura === 'solo_vacios') {
       const setOnlyEmpty = {};
@@ -517,14 +550,14 @@ async function resolveEmpleadoId(
       if (Object.keys(setOnlyEmpty).length) {
         await Empleado.updateOne({ _id: existing._id }, { $set: setOnlyEmpty });
       }
-      return existing._id;
+      return { id: existing._id, created: false, before: existing };
     }
-    // upsert
+    // upsert: no forzar estatus activo (las bajas por finiquito se aplican después)
     await Empleado.updateOne({ _id: existing._id }, { $set: payloadFull });
-    return existing._id;
+    return { id: existing._id, created: false, before: existing };
   }
 
-  if (!permitirCrear) return null;
+  if (!permitirCrear) return { id: null, created: false, before: null };
 
   const numEmpleado = num || `CFDI${(nss || curp || rfc || Date.now()).toString().slice(-8)}`;
   const created = await Empleado.create({
@@ -538,9 +571,122 @@ async function resolveEmpleadoId(
     puestoId: puestoId || undefined,
     salarioDiario: emp.sdi || emp.sbc || undefined,
     sdi: emp.sdi || undefined,
-    tipoPeriodoId: tipoPeriodoId || undefined
+    tipoPeriodoId: tipoPeriodoId || undefined,
+    subsidiariaId: subsidiariaId || undefined,
+    estatus: 'activo',
+    activo: true
   });
-  return created._id;
+  return { id: created._id, created: true, before: null };
+}
+
+async function ensureAltaHistorial({
+  tenantId,
+  empresaId,
+  empleadoId,
+  empPayload,
+  userLabel = '',
+  uuid = ''
+}) {
+  const Historial = await getHistorialLaboralModel();
+  const ya = await Historial.findOne({
+    tenantId,
+    empleadoId,
+    tipoMovimientoCodigo: 'ALTA'
+  })
+    .select('_id')
+    .lean();
+  if (ya) return null;
+
+  const Empleado = await getEmpleadoModel();
+  const emp = await Empleado.findById(empleadoId).lean();
+  if (!emp) return null;
+
+  await ensureTiposMovimientoForTenant(tenantId);
+  return registrarAlta(tenantId, empresaId, emp, {
+    origen: 'importacion',
+    registradoPor: userLabel || 'import_cfdi',
+    observaciones: `Alta desde CFDI${uuid ? ` ${uuid}` : ''}${
+      empPayload?.fechaIngreso ? '' : ' (sin FechaInicioRelLaboral explícita)'
+    }`
+  });
+}
+
+async function applyBajaDesdeFiniquito({
+  tenantId,
+  empresaId,
+  empleadoId,
+  payload,
+  tipoNomina,
+  userLabel = ''
+}) {
+  const Empleado = await getEmpleadoModel();
+  const empAntes = await Empleado.findById(empleadoId).lean();
+  if (!empAntes) return null;
+
+  const fechaBaja =
+    (payload.fechaPago && new Date(payload.fechaPago)) ||
+    (payload.fechaFin && new Date(payload.fechaFin)) ||
+    new Date();
+
+  if (empAntes.estatus === 'baja' && empAntes.fechaBaja) {
+    // Ya dado de baja: solo asegura movimiento si falta
+  } else {
+    await Empleado.updateOne(
+      { _id: empleadoId },
+      {
+        $set: {
+          estatus: 'baja',
+          activo: false,
+          fechaBaja
+        }
+      }
+    );
+  }
+
+  const Historial = await getHistorialLaboralModel();
+  const dayStart = new Date(
+    Date.UTC(fechaBaja.getUTCFullYear(), fechaBaja.getUTCMonth(), fechaBaja.getUTCDate())
+  );
+  const dayEnd = new Date(
+    Date.UTC(
+      fechaBaja.getUTCFullYear(),
+      fechaBaja.getUTCMonth(),
+      fechaBaja.getUTCDate(),
+      23,
+      59,
+      59,
+      999
+    )
+  );
+  const dup = await Historial.findOne({
+    tenantId,
+    empleadoId,
+    tipoMovimientoCodigo: 'BAJA',
+    fechaMovimiento: { $gte: dayStart, $lte: dayEnd }
+  })
+    .select('_id')
+    .lean();
+  if (dup) return null;
+
+  const empDespues = {
+    ...empAntes,
+    estatus: 'baja',
+    activo: false,
+    fechaBaja
+  };
+  await ensureTiposMovimientoForTenant(tenantId);
+  return registrarCambioAutomatico(tenantId, empresaId, empAntes, empDespues, {
+    tipoMovimientoCodigo: 'BAJA',
+    fechaMovimiento: fechaBaja,
+    origen: 'importacion',
+    registradoPor: userLabel || 'import_cfdi',
+    observaciones: `Baja desde CFDI ${payload.uuid || ''} (${tipoNomina})`,
+    metadata: {
+      uuid: payload.uuid || '',
+      tipoNomina,
+      separacion: payload.separacion || null
+    }
+  });
 }
 
 async function aplicarJobCfdi(
@@ -551,8 +697,9 @@ async function aplicarJobCfdi(
     userLabel = '',
     opcionesOverride = null,
     allowTipos = ['cfdi_nomina_zip'],
-    allowEstatus = ['validado', 'parcial', 'aplicando', 'ok'],
-    onProgress = null
+    allowEstatus = ['validado', 'parcial', 'aplicando', 'ok', 'error'],
+    onProgress = null,
+    subsidiariaIdFallback = null
   } = {}
 ) {
   const Job = await getCargaInicialJobModel();
@@ -571,6 +718,12 @@ async function aplicarJobCfdi(
   if (!job.resumen) job.resumen = {};
   job.resumen.opciones = opciones;
   job.resumen.opcionesResumen = opcionesLabels(opciones);
+  if (!job.resumen.subsidiariaId && subsidiariaIdFallback) {
+    job.resumen.subsidiariaId = subsidiariaIdFallback;
+  }
+  if (!job.subsidiariaId && (job.resumen.subsidiariaId || subsidiariaIdFallback)) {
+    job.subsidiariaId = job.resumen.subsidiariaId || subsidiariaIdFallback;
+  }
   await job.save();
 
   const Empresa = await getEmpresaModel();
@@ -592,6 +745,10 @@ async function aplicarJobCfdi(
   const empCache = new Map();
   const conceptoDone = new Set();
   const acumuladoMap = new Map();
+  const altaDone = new Set();
+  const bajaDone = new Set();
+  let altasRegistradas = 0;
+  let bajasRegistradas = 0;
   let lastProgressAt = 0;
 
   async function reportProgress(force = false) {
@@ -743,10 +900,11 @@ async function aplicarJobCfdi(
       }
 
       let empleadoId = null;
+      const subIdJob = job.resumen?.subsidiariaId || null;
       if (needEmp) {
         const key = empKeyFromPayload(d.empleado) || d.uuid;
         if (!empCache.has(key)) {
-          const empId = await resolveEmpleadoId(
+          const resolved = await resolveEmpleadoId(
             Empleado,
             tenantId,
             job.empresaId,
@@ -757,10 +915,11 @@ async function aplicarJobCfdi(
               modoEscritura: opciones.modoEscritura,
               actualizarDatosLaborales: opciones.actualizarDatosLaborales,
               permitirCrear: opciones.importEmpleados,
-              tipoPeriodoId
+              tipoPeriodoId,
+              subsidiariaId: subIdJob
             }
           );
-          empCache.set(key, empId);
+          empCache.set(key, resolved.id);
         } else if (tipoPeriodoId) {
           // Asegura clasificación aunque el empleado ya estaba en cache
           await Empleado.updateOne(
@@ -774,8 +933,55 @@ async function aplicarJobCfdi(
         }
       }
 
+      const tipoNominaClasificado = classifyTipoNominaFromCfdi(d);
+
+      if (empleadoId && opciones.importHistorialLaboral && !altaDone.has(String(empleadoId))) {
+        try {
+          const mov = await ensureAltaHistorial({
+            tenantId,
+            empresaId: job.empresaId,
+            empleadoId,
+            empPayload: d.empleado,
+            userLabel,
+            uuid: d.uuid
+          });
+          altaDone.add(String(empleadoId));
+          if (mov) altasRegistradas += 1;
+        } catch (_) {
+          /* no bloquear apply por historial */
+        }
+      }
+
+      if (
+        empleadoId &&
+        opciones.aplicarBajasFiniquito &&
+        esNominaBajaLaboral(d) &&
+        !bajaDone.has(`${empleadoId}|${d.uuid}`)
+      ) {
+        try {
+          const mov = await applyBajaDesdeFiniquito({
+            tenantId,
+            empresaId: job.empresaId,
+            empleadoId,
+            payload: d,
+            tipoNomina: tipoNominaClasificado,
+            userLabel
+          });
+          bajaDone.add(`${empleadoId}|${d.uuid}`);
+          if (mov) bajasRegistradas += 1;
+        } catch (_) {
+          /* no bloquear apply */
+        }
+      }
+
       if (!opciones.importHistorico && !opciones.importAcumulados) {
-        if (opciones.importEmpleados || opciones.importOrganizacion || opciones.importConceptos) {
+        if (
+          opciones.importEmpleados ||
+          opciones.importOrganizacion ||
+          opciones.importConceptos ||
+          opciones.importHistorialLaboral ||
+          opciones.aplicarBajasFiniquito
+        ) {
           aplicadas += 1;
         }
         await reportProgress();
@@ -804,52 +1010,76 @@ async function aplicarJobCfdi(
         versionFormula: 1
       }));
 
+      let historicoNuevo = false;
       if (opciones.importHistorico) {
-        await Historico.updateOne(
+        const histSet = {
+          empresaId: job.empresaId,
+          subsidiariaId: subIdJob || null,
+          empleadoId,
+          anio,
+          mes,
+          origen: 'importacion',
+          claveImportacion: d.uuid,
+          periodoId: periodoInfo?.periodoNominaId || null,
+          periodo: {
+            tipoPeriodo: periodoInfo?.tipoMotor || d.empleado.periodicidadPago || '',
+            tipoNomina: tipoNominaClasificado,
+            numeroPeriodo: periodoInfo?.numeroPeriodo ?? null,
+            fechaInicio,
+            fechaFin,
+            diasPeriodo: d.diasPagados || 0
+          },
+          empleado: {
+            numEmpleado: d.empleado.numEmpleado || '',
+            nombre: d.empleado.nombre || '',
+            tipoEmpleado: '',
+            tipoContrato: d.empleado.tipoContrato || '',
+            departamentoId: depto?._id || null,
+            departamentoNombre: deptoName || '',
+            centroCostoId: null,
+            centroCostoCodigo: '',
+            centroCostoNombre: deptoName || ''
+          },
+          diasPagados: d.diasPagados || null,
+          totalPercepciones: d.totales.percepciones,
+          totalDeducciones: d.totales.deducciones,
+          netoPagar: d.totales.totalXml,
+          conceptos: conceptosHist,
+          insumosFuente: 'importacion_cfdi',
+          fechaCierre: fechaPago,
+          fechaCalculo: d.fechaTimbrado || fechaPago,
+          'timbrado.estatus': 'timbrado',
+          'timbrado.uuid': d.uuid,
+          'timbrado.serie': d.serie || '',
+          'timbrado.folio': d.folio || '',
+          'timbrado.fechaTimbrado': d.fechaTimbrado || null,
+          'timbrado.modo': 'real',
+          cfdiSeparacionIndemnizacion: d.separacion || null,
+          insumosResumen: {
+            tipoNominaCfdi: d.tipoNomina || 'O',
+            tipoNominaClasificado,
+            tieneSeparacion: !!d.tieneSeparacion
+          }
+        };
+        if (periodoInfo?.periodoNominaId) {
+          histSet.layoutBancario = {
+            estatus: 'generado',
+            layoutId: null,
+            layoutCodigo: 'IMPORT_CFDI',
+            layoutNombre: 'Dispersión histórica (CFDI)',
+            fechaPago,
+            fechaGeneracion: d.fechaTimbrado || fechaPago,
+            archivoNombre: 'import_cfdi_historico.txt',
+            cantidadRecibos: 1,
+            totalPagar: d.totales.totalXml || 0,
+            generadoPorUserId: '',
+            generadoPorLabel: 'import_cfdi'
+          };
+        }
+        const ur = await Historico.updateOne(
           { tenantId, claveImportacion: d.uuid },
           {
-            $set: {
-              empresaId: job.empresaId,
-              empleadoId,
-              anio,
-              mes,
-              origen: 'importacion',
-              claveImportacion: d.uuid,
-              periodoId: periodoInfo?.periodoNominaId || null,
-              periodo: {
-                tipoPeriodo: periodoInfo?.tipoMotor || d.empleado.periodicidadPago || '',
-                tipoNomina: d.tipoNomina === 'E' ? 'extraordinaria' : 'ordinaria',
-                numeroPeriodo: periodoInfo?.numeroPeriodo ?? null,
-                fechaInicio,
-                fechaFin,
-                diasPeriodo: d.diasPagados || 0
-              },
-              empleado: {
-                numEmpleado: d.empleado.numEmpleado || '',
-                nombre: d.empleado.nombre || '',
-                tipoEmpleado: '',
-                tipoContrato: d.empleado.tipoContrato || '',
-                departamentoId: depto?._id || null,
-                departamentoNombre: deptoName || '',
-                centroCostoId: null,
-                centroCostoCodigo: '',
-                centroCostoNombre: deptoName || ''
-              },
-              diasPagados: d.diasPagados || null,
-              totalPercepciones: d.totales.percepciones,
-              totalDeducciones: d.totales.deducciones,
-              netoPagar: d.totales.totalXml,
-              conceptos: conceptosHist,
-              insumosFuente: 'importacion_cfdi',
-              fechaCierre: fechaPago,
-              fechaCalculo: d.fechaTimbrado || fechaPago,
-              'timbrado.estatus': 'timbrado',
-              'timbrado.uuid': d.uuid,
-              'timbrado.serie': d.serie || '',
-              'timbrado.folio': d.folio || '',
-              'timbrado.fechaTimbrado': d.fechaTimbrado || null,
-              'timbrado.modo': 'real'
-            },
+            $set: histSet,
             $setOnInsert: {
               tenantId,
               reciboOrigenId: null
@@ -857,9 +1087,41 @@ async function aplicarJobCfdi(
           },
           { upsert: true }
         );
+        historicoNuevo = (ur.upsertedCount || 0) > 0 || Boolean(ur.upsertedId);
+
+        const histDoc =
+          ur.upsertedId != null
+            ? { _id: ur.upsertedId }
+            : await Historico.findOne({ tenantId, claveImportacion: d.uuid }).select('_id').lean();
+
+        const xmlRaw = String(doc.xmlText || '').trim();
+        if (histDoc?._id && xmlRaw) {
+          try {
+            const xmlDoc = await guardarCfdiArchivo({
+              tenantId,
+              empresaId: job.empresaId,
+              periodoId: periodoInfo?.periodoNominaId || null,
+              historicoId: histDoc._id,
+              empleadoId,
+              uuid: d.uuid,
+              tipo: 'xml',
+              contentType: 'application/xml; charset=utf-8',
+              nombreArchivo: `${d.uuid}.xml`,
+              data: xmlRaw
+            });
+            if (xmlDoc?._id) {
+              await Historico.updateOne(
+                { _id: histDoc._id },
+                { $set: { 'timbrado.archivoXmlId': xmlDoc._id } }
+              );
+            }
+          } catch (_) {
+            /* no bloquear apply si falla persistir XML */
+          }
+        }
       }
 
-      if (opciones.importAcumulados) {
+      if (opciones.importAcumulados && (historicoNuevo || !opciones.importHistorico)) {
         for (const c of conceptosHist) {
           const ak = `${String(empleadoId)}|${anio}|${c.conceptoCodigo}`;
           if (!acumuladoMap.has(ak)) {
@@ -907,18 +1169,16 @@ async function aplicarJobCfdi(
   if (opciones.importAcumulados) {
     for (const acc of acumuladoMap.values()) {
       try {
-        const setFields = {
-          empresaId: job.empresaId,
-          importeAnual: Math.round(acc.importeAnual * 100) / 100,
-          gravadoAnual: Math.round(acc.gravadoAnual * 100) / 100,
-          exentoAnual: Math.round(acc.exentoAnual * 100) / 100
+        const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+        const inc = {
+          importeAnual: round2(acc.importeAnual),
+          gravadoAnual: round2(acc.gravadoAnual),
+          exentoAnual: round2(acc.exentoAnual)
         };
         for (const [m, b] of Object.entries(acc.porMes)) {
-          setFields[`porMes.${m}`] = {
-            importe: Math.round(b.importe * 100) / 100,
-            gravado: Math.round(b.gravado * 100) / 100,
-            exento: Math.round(b.exento * 100) / 100
-          };
+          inc[`porMes.${m}.importe`] = round2(b.importe);
+          inc[`porMes.${m}.gravado`] = round2(b.gravado);
+          inc[`porMes.${m}.exento`] = round2(b.exento);
         }
         await Acumulado.updateOne(
           {
@@ -928,7 +1188,11 @@ async function aplicarJobCfdi(
             conceptoCodigo: acc.conceptoCodigo
           },
           {
-            $set: setFields,
+            $inc: inc,
+            $set: {
+              empresaId: job.empresaId,
+              ultimaFechaCierre: new Date()
+            },
             $setOnInsert: {
               tenantId,
               empleadoId: acc.empleadoId,
@@ -957,7 +1221,7 @@ async function aplicarJobCfdi(
   job.userId = userId || job.userId;
   job.userLabel = userLabel || job.userLabel;
   job.estatus = erroresApply.length === 0 ? 'ok' : aplicadas > 0 ? 'parcial' : 'error';
-  job.notas = `Aplicado (${lab.bloques.join(', ') || 'sin bloques'}): ${aplicadas} recibos · ${empCache.size} empleados · ${acumuladoMap.size} acumulados${
+  job.notas = `Aplicado (${lab.bloques.join(', ') || 'sin bloques'}): ${aplicadas} recibos · ${empCache.size} empleados · ${acumuladoMap.size} acumulados · altas ${altasRegistradas} · bajas ${bajasRegistradas}${
     periodoStats ? ` · ${periodoStats.ventanas} períodos` : ''
   }.`;
   job.resumen = {
@@ -967,6 +1231,8 @@ async function aplicarJobCfdi(
     aplicadas,
     empleadosAfectados: empCache.size,
     acumuladosEscritos: acumuladoMap.size,
+    altasRegistradas,
+    bajasRegistradas,
     erroresApply: erroresApply.length,
     periodos: periodoStats || null
   };

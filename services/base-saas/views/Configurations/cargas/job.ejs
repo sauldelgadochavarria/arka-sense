@@ -4,6 +4,8 @@
   const isMasivo = job.tipo === 'cfdi_nomina_zip_masivo';
   const pollStatuses = ['encolado', 'parseando', 'aplicando'];
   const shouldPoll = isMasivo && pollStatuses.includes(job.estatus);
+  const isReligar = (job.progreso && String(job.progreso.fase || '').indexOf('religar_xml') === 0 && job.estatus === 'aplicando');
+  const shouldPollAny = shouldPoll || isReligar || job.estatus === 'aplicando';
   const P = job.progreso || {};
 %>
 <h1>Job de carga</h1>
@@ -23,7 +25,7 @@
   <div class="card"><strong id="job-apl"><%= job.filasAplicadas || 0 %></strong> aplicadas</div>
 </div>
 
-<% if (isMasivo) { %>
+<% if (isMasivo || shouldPollAny) { %>
 <section class="panel" id="panel-progreso">
   <h2 class="panel-title">Progreso (async)</h2>
   <p class="muted" id="job-progreso-msg"><%= P.mensaje || P.fase || '—' %></p>
@@ -45,6 +47,23 @@
 </p>
 <p id="job-notas"><% if (job.notas) { %><%= job.notas %><% } %></p>
 
+<% if (isCfdi && (job.estatus === 'ok' || job.estatus === 'parcial')) { %>
+<section class="panel">
+  <h2 class="panel-title">Religar XML a históricos</h2>
+  <p class="muted">
+    Si ves «UUID sin archivo» en el detalle del período, sube de nuevo el mismo ZIP de CFDI.
+    Solo guarda/liga los XML por UUID (no vuelve a crear empleados ni períodos).
+  </p>
+  <form method="post" action="/config-empresa/cargas/jobs/<%= job._id %>/religar-xml"
+        enctype="multipart/form-data" class="form-grid form-wide">
+    <label>ZIP original
+      <input type="file" name="zip" accept=".zip,application/zip" required />
+    </label>
+    <button type="submit" class="btn btn-primary">Religar XML</button>
+  </form>
+</section>
+<% } %>
+
 <% if (job.resumen) { %>
 <section class="panel">
   <h2 class="panel-title">Conciliación / resumen</h2>
@@ -65,7 +84,10 @@
     <li>Recibos que no cuadran (±$0.05): <%= R.recibosNoCuadran || 0 %></li>
     <li>RFC empresa: <code><%= R.rfcEmpresa || '—' %></code> · Emisor muestra: <code><%= R.rfcEmisorMuestra || '—' %></code></li>
     <% if (R.periodos) { %>
-    <li>Períodos inferidos: <strong><%= R.periodos.ventanas || 0 %></strong> ventanas · tipos <%= R.periodos.tipos || 0 %> · creados <%= R.periodos.periodosCreados || 0 %> · actualizados <%= R.periodos.periodosActualizados || 0 %></li>
+    <li>Períodos inferidos: <strong><%= R.periodos.ventanas || 0 %></strong> ventanas · tipos <%= R.periodos.tipos || 0 %> · creados <%= R.periodos.periodosCreados || 0 %> · actualizados <%= R.periodos.periodosActualizados || 0 %>
+      · <a href="/nomina/periodos">Ver períodos de nómina</a>
+      · <a href="/catalogos/periodos">Ver catálogo / pre-nómina</a>
+    </li>
     <% } %>
     <% if (R.aplicadas != null) { %>
     <li>Aplicadas: <strong><%= R.aplicadas %></strong> · empleados afectados <%= R.empleadosAfectados || 0 %></li>
@@ -94,14 +116,19 @@
 
 <% 
   const canApplyFirst = (job.estatus === 'validado' || job.estatus === 'parcial') && !job.aplicadoAt;
-  const canReapplyCfdi = isCfdi && ['ok', 'parcial', 'validado'].includes(job.estatus) && !['encolado', 'parseando', 'aplicando'].includes(job.estatus);
+  const canReapplyCfdi = isCfdi && ['ok', 'parcial', 'validado', 'error'].includes(job.estatus) && !['encolado', 'parseando', 'aplicando'].includes(job.estatus);
   const showApplyForm = canApplyFirst || canReapplyCfdi;
 %>
 <% if (showApplyForm) { %>
 <section class="panel">
-  <h2 class="panel-title"><%= canApplyFirst ? '2. Confirmar aplicación' : 'Reaplicar / completar bloques' %></h2>
+  <h2 class="panel-title"><%= canApplyFirst ? '2. Confirmar aplicación' : (job.estatus === 'error' ? 'Reintentar aplicación' : 'Reaplicar / completar bloques') %></h2>
   <% if (canApplyFirst) { %>
   <p class="muted small">Se aplicarán las <strong><%= job.filasOk %></strong> filas válidas según los bloques marcados.</p>
+  <% } else if (job.estatus === 'error') { %>
+  <p class="muted small">
+    Este job falló al aplicar. Puedes <strong>reintentar con el staging ya parseado</strong> (no hace falta volver a subir el ZIP).
+    Deja marcado <strong>Períodos</strong> si el error fue al inferir períodos.
+  </p>
   <% } else { %>
   <p class="muted small">
     Este job ya se aplicó. Puedes volver a ejecutar bloques (idempotente).
@@ -190,7 +217,7 @@
 </section>
 <% } %>
 
-<% if (shouldPoll) { %>
+<% if (shouldPollAny) { %>
 <script>
 (function () {
   var done = { validado:1, parcial:1, ok:1, error:1, cancelado:1 };

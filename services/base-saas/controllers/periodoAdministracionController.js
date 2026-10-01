@@ -1,8 +1,9 @@
 'use strict';
 
-const { requireEmpresaForTenant } = require('../libs/tenantScope');
+const { requireEmpresaForTenant, scopeEmpresaFilter } = require('../libs/tenantScope');
 const { trimString, parseDate, parsePositiveNumber } = require('../libs/formHelpers');
 const { generarBloquesPeriodoAnio } = require('../libs/generarPeriodosAnio');
+const getPayrollPeriodModel = require('../models/payrollPeriod');
 const {
   ensureTiposPeriodoForTenant,
   listTiposPeriodo,
@@ -162,6 +163,14 @@ async function generar(req, res) {
 
 async function abrir(req, res) {
   try {
+    const { empresa } = await requireEmpresaForTenant(req);
+    const scope = scopeEmpresaFilter(req, empresa);
+    const PayrollPeriod = await getPayrollPeriodModel();
+    const exists = await PayrollPeriod.findOne({ _id: req.params.id, ...scope }).select('_id').lean();
+    if (!exists) {
+      req.flash('error', 'Período no encontrado en la subsidiaria activa');
+      return res.redirect(req.get('Referer') || '/catalogos/periodos');
+    }
     await abrirPeriodo(req.session.tenantId, req.params.id, req.session.userid || '');
     req.flash('success', 'Período declarado abierto');
   } catch (err) {
@@ -178,6 +187,14 @@ async function abrir(req, res) {
 
 async function cerrar(req, res) {
   try {
+    const { empresa } = await requireEmpresaForTenant(req);
+    const scope = scopeEmpresaFilter(req, empresa);
+    const PayrollPeriod = await getPayrollPeriodModel();
+    const exists = await PayrollPeriod.findOne({ _id: req.params.id, ...scope }).select('_id').lean();
+    if (!exists) {
+      req.flash('error', 'Período no encontrado en la subsidiaria activa');
+      return res.redirect(req.get('Referer') || '/catalogos/periodos');
+    }
     await cerrarPeriodoAdmin(req.session.tenantId, req.params.id, req.session.userid || '');
     req.flash('success', 'Período cerrado');
   } catch (err) {

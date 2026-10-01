@@ -4,6 +4,8 @@ const getPeriodoNominaModel = require('../models/periodoNomina');
 const getReciboNominaModel = require('../models/reciboNomina');
 const getConceptoAplicadoModel = require('../models/conceptoAplicado');
 const getNominaHistoricoReciboModel = require('../models/nominaHistoricoRecibo');
+const getNominaCfdiArchivoModel = require('../models/nominaCfdiArchivo');
+const { obtenerCfdiArchivoParaDescarga } = require('../services/cfdiArchivoService');
 const getPayrollPeriodModel = require('../models/payrollPeriod');
 const getEmpleadoModel = require('../models/empleado');
 const getConceptoNominaModel = require('../models/conceptoNomina');
@@ -11,7 +13,8 @@ const getTablaFiscalModel = require('../models/tablaFiscal');
 const getRangoFiscalModel = require('../models/rangoFiscal');
 const getParametroGeneralModel = require('../models/parametroGeneral');
 const getCatalogoSatModel = require('../models/catalogoSat');
-const { requireEmpresaForTenant } = require('../libs/tenantScope');
+const { requireEmpresaForTenant, sessionSubsidiariaId } = require('../libs/tenantScope');
+const { listPeriodosNominaScoped } = require('../libs/periodosNominaScope');
 const { tenantHasFeature } = require('../libs/tenantFeatureFlags');
 const { resolveNominaConceptoModo, userCanEditNomina, userCanViewNomina } = require('../libs/roleAccess');
 const { resolvePeriodRange } = require('../libs/payrollPeriodDates');
@@ -26,6 +29,11 @@ const {
   RELACION_PRENOMINA,
   TIPOS_PERIODO,
   TIPOS_NOMINA,
+  PERIODICIDADES_PAGO_SAT,
+  TIPOS_NOMINA_CFDI,
+  MOTOR_A_PERIODICIDAD_SAT,
+  tipoNominaCfdiDesdeNegocio,
+  periodicidadSatDesdeMotor,
   TIPOS_CONCEPTO,
   NATURALEZAS_CONCEPTO,
   ESTATUS_PERIODO_NOMINA,
@@ -138,30 +146,69 @@ async function index(req, res) {
 async function periodos(req, res) {
   if (requireNominaViewOrRedirect(req, res) === false) return;
   const tenantId = req.session.tenantId;
-  const { empresa, error } = await requireEmpresaForTenant(tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const PeriodoNomina = await getPeriodoNominaModel();
   const PayrollPeriod = await getPayrollPeriodModel();
+  const subId = sessionSubsidiariaId(req);
 
   if (empresa) {
     await ensureNumerosPeriodoTenant(PeriodoNomina, tenantId);
   }
 
+  const filtros = {
+    anio: trimString(req.query.anio),
+    tipoPeriodo: trimString(req.query.tipoPeriodo),
+    tipoNomina: trimString(req.query.tipoNomina),
+    estatus: trimString(req.query.estatus),
+    tipoNominaCfdi: trimString(req.query.tipoNominaCfdi).toUpperCase(),
+    periodicidadPagoSat: trimString(req.query.periodicidadPagoSat),
+    q: trimString(req.query.q)
+  };
+
+  const filter = {};
+  if (filtros.anio && /^\d{4}$/.test(filtros.anio)) filter.anio = Number(filtros.anio);
+  if (filtros.tipoPeriodo) filter.tipoPeriodo = filtros.tipoPeriodo;
+  if (filtros.tipoNomina) filter.tipoNomina = filtros.tipoNomina;
+  if (filtros.estatus) filter.estatus = filtros.estatus;
+  if (filtros.tipoNominaCfdi === 'O' || filtros.tipoNominaCfdi === 'E') {
+    filter.tipoNominaCfdi = filtros.tipoNominaCfdi;
+  }
+  if (filtros.periodicidadPagoSat && /^\d+$/.test(filtros.periodicidadPagoSat)) {
+    filter.periodicidadPagoSat = Number(filtros.periodicidadPagoSat);
+  }
+  if (filtros.q) {
+    const rx = new RegExp(filtros.q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+    filter.$or = [{ notas: rx }, { cerradoPorLabel: rx }, { calculadoPorLabel: rx }];
+  }
+
   const periodosList = empresa
-    ? await PeriodoNomina.find({ tenantId }).sort({ anio: -1, tipoPeriodo: 1, numeroPeriodo: -1, fechaInicio: -1 }).limit(40).lean()
+    ? await listPeriodosNominaScoped({
+        tenantId,
+        empresaId: empresa._id,
+        subsidiariaId: subId,
+        filter,
+        limit: 200
+      })
     : [];
+  const prenominaQ = { tenantId, empresaId: empresa._id, compartirConNomina: true };
+  if (subId) prenominaQ.subsidiariaId = subId;
   const prenominaPeriodos = empresa
-    ? await PayrollPeriod.find({ tenantId, compartirConNomina: true })
-        .sort({ fechaInicio: -1 })
-        .limit(40)
-        .lean()
+    ? await PayrollPeriod.find(prenominaQ).sort({ fechaInicio: -1 }).limit(80).lean()
     : [];
+
+  const openCreate = String(req.query.nuevo || '') === '1';
 
   res.render('Nomina/periodos', {
     periodos: periodosList,
     prenominaPeriodos,
     tiposPeriodo: TIPOS_PERIODO,
     tiposNomina: TIPOS_NOMINA,
+    tiposNominaCfdi: TIPOS_NOMINA_CFDI,
+    periodicidadesSat: PERIODICIDADES_PAGO_SAT,
+    motorAPeriodicidadSat: MOTOR_A_PERIODICIDAD_SAT,
     estatusLabels: ESTATUS_PERIODO_NOMINA,
+    filtros,
+    openCreate,
     sugerirPagaDespensaDefault: sugerirPagaDespensa('quincenal', new Date()),
     empresa,
     error: error || null,
@@ -182,6 +229,15 @@ async function createPeriodo(req, res) {
 
     const tipoPeriodo = trimString(req.body.tipoPeriodo) || 'quincenal';
     const tipoNomina = trimString(req.body.tipoNomina) || 'ordinaria';
+    const tipoNominaCfdiBody = trimString(req.body.tipoNominaCfdi).toUpperCase();
+    const tipoNominaCfdi =
+      tipoNominaCfdiBody === 'O' || tipoNominaCfdiBody === 'E'
+        ? tipoNominaCfdiBody
+        : tipoNominaCfdiDesdeNegocio(tipoNomina);
+    const periodicidadBody = Number(req.body.periodicidadPagoSat);
+    const periodicidadPagoSat = Number.isFinite(periodicidadBody)
+      ? periodicidadBody
+      : periodicidadSatDesdeMotor(tipoPeriodo);
     const ref = parseDate(req.body.fechaReferencia) || new Date();
     let { fechaInicio, fechaFin } = resolvePeriodRange(tipoPeriodo, ref);
     let fechaPago = null;
@@ -253,6 +309,8 @@ async function createPeriodo(req, res) {
       empresaId: empresa._id,
       tipoPeriodo,
       tipoNomina,
+      tipoNominaCfdi,
+      periodicidadPagoSat: periodicidadPagoSat != null ? periodicidadPagoSat : null,
       fechaInicio: startOfDay(fechaInicio),
       fechaFin: endOfDay(fechaFin),
       fechaPago: fechaPago ? startOfDay(fechaPago) : null,
@@ -279,6 +337,8 @@ async function createPeriodo(req, res) {
       detalle: {
         tipoPeriodo,
         tipoNomina,
+        tipoNominaCfdi,
+        periodicidadPagoSat,
         anio,
         numeroPeriodo,
         fechaInicio: periodo.fechaInicio,
@@ -295,6 +355,88 @@ async function createPeriodo(req, res) {
     console.error('[nomina]', err);
     req.flash('error', err.message || 'Error al crear período');
     res.redirect('/nomina/periodos');
+  }
+}
+
+async function updatePeriodoClasificacionAction(req, res) {
+  if (requireNominaEditOrRedirect(req, res) === false) return;
+  const redirectTo = req.body.returnTo || `/nomina/periodos/${req.params.id}`;
+  try {
+    const tenantId = req.session.tenantId;
+    const PeriodoNomina = await getPeriodoNominaModel();
+    const periodo = await PeriodoNomina.findOne({ tenantId, _id: req.params.id });
+    if (!periodo) {
+      req.flash('error', 'Período no encontrado');
+      return res.redirect('/nomina/periodos');
+    }
+    if (periodo.estatus === 'calculando') {
+      req.flash('error', 'Espera a que termine el cálculo');
+      return res.redirect(redirectTo);
+    }
+
+    const allowed = new Set(TIPOS_NOMINA.map((t) => t.value));
+    const tipoNomina = trimString(req.body.tipoNomina);
+    if (!tipoNomina || !allowed.has(tipoNomina)) {
+      req.flash('error', 'Tipo de nómina inválido');
+      return res.redirect(redirectTo);
+    }
+
+    if (tipoNomina !== periodo.tipoNomina && periodo.numeroPeriodo != null) {
+      const clash = await PeriodoNomina.findOne({
+        tenantId,
+        empresaId: periodo.empresaId,
+        anio: periodo.anio,
+        tipoPeriodo: periodo.tipoPeriodo,
+        tipoNomina,
+        numeroPeriodo: periodo.numeroPeriodo,
+        _id: { $ne: periodo._id }
+      })
+        .select('_id')
+        .lean();
+      if (clash) {
+        req.flash(
+          'error',
+          `Ya existe el período #${periodo.numeroPeriodo} ${periodo.tipoPeriodo}/${tipoNomina} en ${periodo.anio}`
+        );
+        return res.redirect(redirectTo);
+      }
+    }
+
+    const prev = periodo.tipoNomina;
+    periodo.tipoNomina = tipoNomina;
+    // Si aún no hay CFDI tipificado y el usuario clasifica especial → E
+    if (!periodo.tipoNominaCfdi) {
+      periodo.tipoNominaCfdi = tipoNomina === 'ordinaria' ? 'O' : 'E';
+    }
+    await periodo.save();
+
+    if (periodo.payrollPeriodId) {
+      const PayrollPeriod = await getPayrollPeriodModel();
+      await PayrollPeriod.updateOne(
+        { _id: periodo.payrollPeriodId, tenantId },
+        {
+          $set: {
+            tipoNomina,
+            ...(periodo.tipoNominaCfdi ? { tipoNominaCfdi: periodo.tipoNominaCfdi } : {})
+          }
+        }
+      );
+    }
+
+    await registrarAuditoriaNomina({
+      tenantId,
+      empresaId: periodo.empresaId,
+      periodoId: periodo._id,
+      accion: 'clasificacion_periodo',
+      mensaje: `Tipo nómina: ${prev} → ${tipoNomina}`,
+      ...sessionActor(req)
+    }).catch(() => {});
+
+    req.flash('success', `Tipo de nómina actualizado a «${tipoNomina}»`);
+    return res.redirect(redirectTo);
+  } catch (err) {
+    req.flash('error', err.message || 'No se pudo actualizar la clasificación');
+    return res.redirect(redirectTo);
   }
 }
 
@@ -381,15 +523,82 @@ async function showPeriodo(req, res) {
 
   let recibos = [];
   let recibosDesdeHistorico = false;
+  let recibosTotal = 0;
+  let recibosPage = 1;
+  let recibosPageSize = 50;
+  let recibosPages = 1;
+  let recibosFiltros = { q: '', departamento: '', departamentos: [] };
 
   if (periodo.estatus === 'cerrado') {
-    const hist = await Historico.find({
+    // Cierre formal + importación CFDI (ambos viven en histórico)
+    const histFilter = {
       tenantId,
       empresaId: periodo.empresaId,
-      periodoId: periodo._id,
-      origen: 'cierre'
-    }).lean();
+      periodoId: periodo._id
+    };
+    const qEmp = trimString(req.query.q);
+    const deptoFiltro = trimString(req.query.departamento);
+    if (deptoFiltro) {
+      histFilter['empleado.departamentoNombre'] = deptoFiltro;
+    }
+    if (qEmp) {
+      const rx = new RegExp(qEmp.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      histFilter.$or = [{ 'empleado.numEmpleado': rx }, { 'empleado.nombre': rx }];
+    }
+
     recibosDesdeHistorico = true;
+    recibosPage = Math.max(1, Number(req.query.page) || 1);
+    recibosPageSize = Math.min(200, Math.max(20, Number(req.query.pageSize) || 50));
+    recibosTotal = await Historico.countDocuments(histFilter);
+    recibosPages = Math.max(1, Math.ceil(recibosTotal / recibosPageSize));
+    if (recibosPage > recibosPages) recibosPage = recibosPages;
+
+    const [hist, deptosAgg] = await Promise.all([
+      Historico.find(histFilter)
+        .select(
+          [
+            'empleadoId',
+            'empleado',
+            'diasLaborados',
+            'faltas',
+            'totalPercepciones',
+            'totalDeducciones',
+            'netoPagar',
+            'insumosFuente',
+            'calculoId',
+            'calculoLoteId',
+            'fechaCalculo',
+            'fechaCierre',
+            'layoutBancario',
+            'timbrado',
+            'correo',
+            'origen'
+          ].join(' ')
+        )
+        .sort({ 'empleado.numEmpleado': 1, netoPagar: -1 })
+        .skip((recibosPage - 1) * recibosPageSize)
+        .limit(recibosPageSize)
+        .lean(),
+      Historico.aggregate([
+        {
+          $match: {
+            tenantId,
+            empresaId: periodo.empresaId,
+            periodoId: periodo._id,
+            'empleado.departamentoNombre': { $exists: true, $nin: [null, ''] }
+          }
+        },
+        { $group: { _id: '$empleado.departamentoNombre', n: { $sum: 1 } } },
+        { $sort: { _id: 1 } }
+      ])
+    ]);
+
+    recibosFiltros = {
+      q: qEmp,
+      departamento: deptoFiltro,
+      departamentos: deptosAgg.map((d) => ({ nombre: d._id, n: d.n }))
+    };
+
     recibos = hist.map((h) => ({
       _id: h._id,
       empleadoId: h.empleadoId,
@@ -398,7 +607,7 @@ async function showPeriodo(req, res) {
       totalPercepciones: h.totalPercepciones,
       totalDeducciones: h.totalDeducciones,
       netoPagar: h.netoPagar,
-      insumosFuente: h.insumosFuente,
+      insumosFuente: h.insumosFuente || (h.origen === 'importacion' ? 'importacion_cfdi' : 'default'),
       calculoId: h.calculoId,
       calculoLoteId: h.calculoLoteId,
       fechaCalculo: h.fechaCalculo,
@@ -409,10 +618,45 @@ async function showPeriodo(req, res) {
       timbrado: h.timbrado || null,
       correo: h.correo || null,
       numEmpleado: h.empleado?.numEmpleado || '',
-      empleadoNombre: h.empleado?.nombre || '—'
+      empleadoNombre: h.empleado?.nombre || '—',
+      departamentoNombre: h.empleado?.departamentoNombre || '',
+      archivoXmlId: h.timbrado?.archivoXmlId || null,
+      cfdiUuid: h.timbrado?.uuid || ''
     }));
+
+    // Resuelve XML guardado por historicoId/uuid cuando el snapshot no trae archivoXmlId
+    const needLookup = recibos.filter((r) => !r.archivoXmlId && (r._id || r.cfdiUuid));
+    if (needLookup.length) {
+      const CfdiArchivo = await getNominaCfdiArchivoModel();
+      const histIds = needLookup.map((r) => r._id);
+      const uuids = needLookup.map((r) => r.cfdiUuid).filter(Boolean);
+      const archivos = await CfdiArchivo.find({
+        tenantId,
+        tipo: 'xml',
+        $or: [
+          ...(histIds.length ? [{ historicoId: { $in: histIds } }] : []),
+          ...(uuids.length ? [{ uuid: { $in: uuids } }] : [])
+        ]
+      })
+        .select('_id historicoId uuid')
+        .lean();
+      const byHist = new Map(
+        archivos.filter((a) => a.historicoId).map((a) => [String(a.historicoId), a._id])
+      );
+      const byUuid = new Map(
+        archivos.filter((a) => a.uuid).map((a) => [String(a.uuid).toUpperCase(), a._id])
+      );
+      recibos = recibos.map((r) => {
+        if (r.archivoXmlId) return r;
+        const id =
+          byHist.get(String(r._id)) ||
+          (r.cfdiUuid ? byUuid.get(String(r.cfdiUuid).toUpperCase()) : null);
+        return id ? { ...r, archivoXmlId: id } : r;
+      });
+    }
   } else {
     recibos = await ReciboNomina.find({ tenantId, periodoId: periodo._id }).lean();
+    recibosTotal = recibos.length;
     const empleadoIds = recibos.map((r) => r.empleadoId);
     const empleados = await Empleado.find({ _id: { $in: empleadoIds } }).lean();
     const empleadoMap = new Map(empleados.map((e) => [String(e._id), e]));
@@ -422,7 +666,9 @@ async function showPeriodo(req, res) {
         ...r,
         empleadoNombre: emp ? `${emp.firstName} ${emp.lastName}` : '—',
         numEmpleado: emp?.numEmpleado || '',
-        desdeHistorico: false
+        desdeHistorico: false,
+        archivoXmlId: r.timbrado?.archivoXmlId || null,
+        cfdiUuid: r.timbrado?.uuid || ''
       };
     });
   }
@@ -473,6 +719,11 @@ async function showPeriodo(req, res) {
     periodo,
     recibos,
     recibosDesdeHistorico,
+    recibosTotal,
+    recibosPage,
+    recibosPageSize,
+    recibosPages,
+    recibosFiltros,
     preflight,
     calculoJob,
     prenominaPeriodo,
@@ -480,6 +731,9 @@ async function showPeriodo(req, res) {
     auditoria,
     calculadoPor,
     cerradoPor,
+    tiposNomina: TIPOS_NOMINA,
+    tiposNominaCfdi: TIPOS_NOMINA_CFDI,
+    periodicidadesSat: PERIODICIDADES_PAGO_SAT,
     estatusLabels: ESTATUS_PERIODO_NOMINA,
     canEdit: userCanEditNomina(req.session),
     session: req.session
@@ -836,6 +1090,24 @@ async function showRecibo(req, res) {
     .filter((c) => !c.esInfo && c.tipo === 'otro_pago' && Number(c.importe) !== 0)
     .sort(byPrintOrder);
 
+  let hasXmlCfdi = Boolean(recibo.timbrado?.archivoXmlId);
+  if (!hasXmlCfdi) {
+    const CfdiArchivo = await getNominaCfdiArchivoModel();
+    const uuid = String(recibo.timbrado?.uuid || '').toUpperCase();
+    const found = await CfdiArchivo.findOne({
+      tenantId,
+      tipo: 'xml',
+      $or: [
+        { historicoId: recibo._id },
+        ...(uuid ? [{ uuid }] : []),
+        { reciboId: recibo._id }
+      ]
+    })
+      .select('_id')
+      .lean();
+    hasXmlCfdi = Boolean(found);
+  }
+
   res.render('Nomina/recibo', {
     recibo,
     periodo,
@@ -847,6 +1119,7 @@ async function showRecibo(req, res) {
     deducciones,
     otrosPagos,
     desdeHistorico,
+    hasXmlCfdi,
     session: req.session
   });
 }
@@ -876,8 +1149,78 @@ function mapHistoricoToReciboView(hist) {
     isrMotor: hist.isrMotor,
     errorCalculo: '',
     layoutBancario: hist.layoutBancario || null,
+    timbrado: hist.timbrado || null,
     desdeHistorico: true
   };
+}
+
+/**
+ * Descarga XML CFDI del recibo/histórico (import o timbrado local).
+ */
+async function descargarXmlRecibo(req, res) {
+  if (requireNominaViewOrRedirect(req, res) === false) return;
+  const tenantId = req.session.tenantId;
+  const ReciboNomina = await getReciboNominaModel();
+  const Historico = await getNominaHistoricoReciboModel();
+  const CfdiArchivo = await getNominaCfdiArchivoModel();
+
+  let archivoId = null;
+  let uuid = '';
+
+  const recibo = await ReciboNomina.findOne({ tenantId, _id: req.params.reciboId })
+    .select('timbrado')
+    .lean();
+  if (recibo) {
+    archivoId = recibo.timbrado?.archivoXmlId || null;
+    uuid = recibo.timbrado?.uuid || '';
+  } else {
+    const hist =
+      (await Historico.findOne({ tenantId, _id: req.params.reciboId })
+        .select('timbrado')
+        .lean()) ||
+      (await Historico.findOne({ tenantId, reciboOrigenId: req.params.reciboId })
+        .select('timbrado')
+        .lean());
+    if (hist) {
+      archivoId = hist.timbrado?.archivoXmlId || null;
+      uuid = hist.timbrado?.uuid || '';
+      if (!archivoId) {
+        const byHist = await CfdiArchivo.findOne({
+          tenantId,
+          historicoId: hist._id,
+          tipo: 'xml'
+        })
+          .select('_id')
+          .lean();
+        archivoId = byHist?._id || null;
+      }
+    }
+  }
+
+  if (!archivoId && uuid) {
+    const byUuid = await CfdiArchivo.findOne({
+      tenantId,
+      uuid: String(uuid).toUpperCase(),
+      tipo: 'xml'
+    })
+      .select('_id')
+      .lean();
+    archivoId = byUuid?._id || null;
+  }
+
+  if (!archivoId) return res.status(404).send('XML no disponible para este recibo');
+
+  const doc = await obtenerCfdiArchivoParaDescarga(tenantId, archivoId);
+  if (!doc || !doc.contenido) return res.status(404).send('Archivo XML no encontrado');
+
+  const buf = Buffer.isBuffer(doc.contenido)
+    ? doc.contenido
+    : Buffer.from(doc.contenido.buffer || doc.contenido);
+  const nombre = doc.nombreArchivo || `cfdi_${doc.uuid || archivoId}.xml`;
+  res.setHeader('Content-Type', doc.contentType || 'application/xml; charset=utf-8');
+  res.setHeader('Content-Disposition', `inline; filename="${nombre.replace(/"/g, '')}"`);
+  res.setHeader('Content-Length', buf.length);
+  return res.send(buf);
 }
 
 // ── Conceptos ────────────────────────────────────────────
@@ -1596,12 +1939,14 @@ module.exports = {
   periodos,
   createPeriodo,
   updatePeriodoPrestacionesAction,
+  updatePeriodoClasificacionAction,
   showPeriodo,
   vincularPrenominaAction,
   calcularPeriodoAction,
   estadoCalculoApi,
   cerrarPeriodoAction,
   showRecibo,
+  descargarXmlRecibo,
   conceptos,
   newConcepto,
   createConcepto,

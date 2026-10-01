@@ -74,10 +74,122 @@ const {
   listHistorialEmpleado
 } = require('../services/historialLaboralService');
 const getTipoMovimientoLaboralModel = require('../models/tipoMovimientoLaboral');
+const getNominaHistoricoReciboModel = require('../models/nominaHistoricoRecibo');
+const getReciboNominaModel = require('../models/reciboNomina');
+const getPeriodoNominaModel = require('../models/periodoNomina');
 const {
   listTiposPeriodo,
   ensureTiposPeriodoForTenant
 } = require('../services/tipoPeriodoNominaService');
+
+function money(n) {
+  return Math.round((Number(n) || 0) * 100) / 100;
+}
+
+function labelPeriodoNomina(p = {}) {
+  const tipo = p.tipoPeriodo || '';
+  const num = p.numeroPeriodo != null ? `#${p.numeroPeriodo}` : '';
+  const anio = p.anio != null ? `/${p.anio}` : '';
+  return `${tipo} ${num}${anio}`.trim() || '—';
+}
+
+/**
+ * Historial de nóminas del empleado (histórico + recibos de períodos abiertos).
+ */
+async function listHistorialNominasEmpleado(tenantId, empleadoId, { limit = 60 } = {}) {
+  const Historico = await getNominaHistoricoReciboModel();
+  const Recibo = await getReciboNominaModel();
+  const Periodo = await getPeriodoNominaModel();
+
+  const [historicos, recibosAbiertos] = await Promise.all([
+    Historico.find({ tenantId, empleadoId })
+      .select(
+        '_id periodoId origen anio mes periodo fechaCierre totalPercepciones totalDeducciones netoPagar'
+      )
+      .sort({ 'periodo.fechaFin': -1, fechaCierre: -1, anio: -1, mes: -1 })
+      .limit(limit)
+      .lean(),
+    Recibo.find({ tenantId, empleadoId })
+      .select('_id periodoId totalPercepciones totalDeducciones netoPagar updatedAt')
+      .sort({ updatedAt: -1 })
+      .limit(40)
+      .lean()
+  ]);
+
+  const periodoIdsAbiertos = [
+    ...new Set(recibosAbiertos.map((r) => String(r.periodoId || '')).filter(Boolean))
+  ];
+  const periodosAbiertos = periodoIdsAbiertos.length
+    ? await Periodo.find({
+        _id: { $in: periodoIdsAbiertos },
+        estatus: { $ne: 'cerrado' }
+      })
+        .select('_id tipoPeriodo tipoNomina numeroPeriodo anio fechaInicio fechaFin estatus')
+        .lean()
+    : [];
+  const perAbiertoById = new Map(periodosAbiertos.map((p) => [String(p._id), p]));
+
+  const rows = [];
+  const histPeriodoIds = new Set(
+    historicos.map((h) => (h.periodoId ? String(h.periodoId) : '')).filter(Boolean)
+  );
+
+  for (const h of historicos) {
+    const p = h.periodo || {};
+    const fecha =
+      p.fechaFin || p.fechaInicio || h.fechaCierre || (h.anio && h.mes ? new Date(h.anio, h.mes - 1, 1) : null);
+    rows.push({
+      periodoLabel: labelPeriodoNomina({
+        tipoPeriodo: p.tipoPeriodo,
+        numeroPeriodo: p.numeroPeriodo,
+        anio: h.anio
+      }),
+      tipo: p.tipoNomina || (h.origen === 'importacion' ? 'importacion' : 'ordinaria'),
+      fecha,
+      fechaInicio: p.fechaInicio || null,
+      fechaFin: p.fechaFin || null,
+      subtotal: money(h.totalPercepciones),
+      descuentos: money(h.totalDeducciones),
+      neto: money(h.netoPagar),
+      origen: h.origen || 'cierre',
+      detalleUrl:
+        h.periodoId && h._id
+          ? `/nomina/periodos/${h.periodoId}/recibos/${h._id}`
+          : null
+    });
+  }
+
+  for (const r of recibosAbiertos) {
+    const pid = r.periodoId ? String(r.periodoId) : '';
+    if (!pid || histPeriodoIds.has(pid)) continue;
+    const p = perAbiertoById.get(pid);
+    if (!p) continue;
+    rows.push({
+      periodoLabel: labelPeriodoNomina({
+        tipoPeriodo: p.tipoPeriodo,
+        numeroPeriodo: p.numeroPeriodo,
+        anio: p.anio
+      }),
+      tipo: p.tipoNomina || 'ordinaria',
+      fecha: p.fechaFin || p.fechaInicio || r.updatedAt,
+      fechaInicio: p.fechaInicio || null,
+      fechaFin: p.fechaFin || null,
+      subtotal: money(r.totalPercepciones),
+      descuentos: money(r.totalDeducciones),
+      neto: money(r.netoPagar),
+      origen: 'abierto',
+      detalleUrl: `/nomina/periodos/${p._id}/recibos/${r._id}`
+    });
+  }
+
+  rows.sort((a, b) => {
+    const ta = a.fecha ? new Date(a.fecha).getTime() : 0;
+    const tb = b.fecha ? new Date(b.fecha).getTime() : 0;
+    return tb - ta;
+  });
+
+  return rows.slice(0, limit);
+}
 
 async function loadEmpleadoEnums() {
   await ensureSystemEnums();
@@ -324,11 +436,12 @@ async function showEmpleado(req, res) {
       ? maps.turnoMap.get(String(turnoVigente.turno._id)) || turnoVigente.turno.nombre
       : '—';
 
-  const [historialReciente, tiposMov, enumsEmp, umaVigente] = await Promise.all([
+  const [historialReciente, tiposMov, enumsEmp, umaVigente, historialNominas] = await Promise.all([
     listHistorialEmpleado(req.session.tenantId, empleado._id, 5),
     getTipoMovimientoLaboralModel().then((M) => M.find({ tenantId: req.session.tenantId }).lean()),
     loadEmpleadoEnums(),
-    loadUmaVigente(req.session.tenantId)
+    loadUmaVigente(req.session.tenantId),
+    listHistorialNominasEmpleado(req.session.tenantId, empleado._id, { limit: 48 })
   ]);
   const tipoMovMap = new Map(tiposMov.map((t) => [t.codigo, t.nombre]));
   const baseImss = resolverBaseImss(empleado, umaVigente, 25);
@@ -376,6 +489,7 @@ async function showEmpleado(req, res) {
     turnoVigenteLabel,
     turnoVigenteOrigen: turnoVigente?.origen || 'ninguno',
     historialReciente,
+    historialNominas,
     tipoMovMap,
     tablaPrestacionesResuelta,
     empresa,

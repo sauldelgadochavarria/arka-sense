@@ -1,8 +1,26 @@
 <%- include('../Partials/layout-top', { title: 'Períodos de nómina', session }) %>
-<% const _canEdit = typeof canEdit !== 'undefined' ? canEdit : true; %>
+<%
+  const _canEdit = typeof canEdit !== 'undefined' ? canEdit : true;
+  const F = typeof filtros !== 'undefined' && filtros ? filtros : {};
+  const showCreate = typeof openCreate !== 'undefined' && openCreate;
+  function labelTipo(list, val) {
+    const hit = (list || []).find(function (t) { return String(t.value) === String(val); });
+    return hit ? hit.label : (val || '—');
+  }
+  function satLabel(code) {
+    if (code == null || code === '') return '—';
+    const hit = (typeof periodicidadesSat !== 'undefined' ? periodicidadesSat : []).find(function (p) {
+      return Number(p.value) === Number(code);
+    });
+    return hit ? (hit.code + ' · ' + hit.label) : String(code);
+  }
+%>
 <h1>Períodos de nómina</h1>
 <div class="toolbar">
   <a class="btn" href="/nomina">← Nómina</a>
+  <% if (_canEdit && empresa) { %>
+  <a class="btn btn-primary" href="/nomina/periodos?nuevo=1<%= F.anio ? '&anio=' + encodeURIComponent(F.anio) : '' %>#nuevo-periodo">+ Nuevo período</a>
+  <% } %>
 </div>
 <% if (!_canEdit) { %>
 <p class="alert">Consulta: puedes ver períodos y recibos. Calcular, cerrar o abrir período requiere el rol <strong>Nómina operativa</strong>.</p>
@@ -12,71 +30,86 @@
 <% } else { %>
 
 <% if (_canEdit) { %>
-<h2>Nuevo período</h2>
-<form method="post" action="/nomina/periodos" class="form-grid">
-  <label>Tipo de período
-    <select name="tipoPeriodo" required>
-      <% tiposPeriodo.forEach(function(t) { %>
-      <option value="<%= t.value %>"><%= t.label %></option>
-      <% }); %>
-    </select>
-  </label>
-  <label>Tipo de nómina
-    <select name="tipoNomina" required>
-      <% tiposNomina.forEach(function(t) { %>
-      <option value="<%= t.value %>"><%= t.label %></option>
-      <% }); %>
-    </select>
-  </label>
-  <label>Fecha de referencia
-    <input type="date" name="fechaReferencia" value="<%= new Date().toISOString().slice(0,10) %>" />
-  </label>
-  <label>Período pre-nómina compartido (insumos, opcional)
-    <select name="payrollPeriodId">
-      <option value="">— Sin vincular —</option>
-      <% prenominaPeriodos.forEach(function(p) { %>
-      <option value="<%= p._id %>">
-        #<%= p.numeroPeriodo != null ? p.numeroPeriodo : '—' %>
-        <%= p.tipo %>
-        <%= new Date(p.fechaInicio).toLocaleDateString('es-MX') %> – <%= new Date(p.fechaFin).toLocaleDateString('es-MX') %>
-        (<%= p.estatus %>)
-      </option>
-      <% }); %>
-    </select>
-  </label>
-  <p class="muted small" style="grid-column:1/-1">
-    Catálogo/pre-nómina y nómina formal son colecciones distintas: pueden tener fechas distintas
-    (p. ej. semana sáb–vie del catálogo vs lun–dom al abrir sin vínculo).
-    <strong>Al elegir pre-nómina aquí, las fechas se copian de esa pre-nómina</strong>.
-    Si abres sin vincular, el cálculo ignora la asistencia.
-  </p>
-  <label>Notas
-    <input name="notas" placeholder="Opcional" />
-  </label>
-  <div class="checkbox-group" style="grid-column:1/-1">
-    <label>
-      <input type="hidden" name="pagaDespensa" value="0" />
-      <input type="checkbox" name="pagaDespensa" value="1" id="pagaDespensa"
-        <%= typeof sugerirPagaDespensaDefault !== 'undefined' && sugerirPagaDespensaDefault ? 'checked' : '' %> />
-      Paga despensa / vales en este período
+<section class="panel" id="nuevo-periodo" style="<%= showCreate ? '' : 'display:none' %>">
+  <h2 class="panel-title">Nuevo período</h2>
+  <form method="post" action="/nomina/periodos" class="form-grid" id="form-nuevo-periodo">
+    <input type="hidden" name="periodicidadPagoSat" id="nuevo-periodicidad-sat" value="4" />
+    <input type="hidden" name="tipoNominaCfdi" id="nuevo-tipo-nomina-cfdi" value="O" />
+
+    <label>Tipo de período (motor interno)
+      <select name="tipoPeriodo" id="nuevo-tipo-periodo" required>
+        <% tiposPeriodo.forEach(function(t) { %>
+        <option value="<%= t.value %>" <%= t.value === 'quincenal' ? 'selected' : '' %>><%= t.label %></option>
+        <% }); %>
+      </select>
     </label>
-  </div>
-  <label>Override monto despensa (opcional)
-    <input type="number" name="despensaMontoOverride" min="0" step="0.01" placeholder="Vacío = política del empleado" />
-  </label>
-  <div class="checkbox-group" style="grid-column:1/-1">
-    <label>
-      <input type="hidden" name="despensaPagoMensual" value="0" />
-      <input type="checkbox" name="despensaPagoMensual" value="1" id="despensaPagoMensual" checked />
-      Pago mensual completo (tope IMSS = 40% UMA mensual)
+    <label>Tipo de nómina (negocio)
+      <select name="tipoNomina" id="nuevo-tipo-nomina" required>
+        <% tiposNomina.forEach(function(t) { %>
+        <option value="<%= t.value %>"><%= t.label %></option>
+        <% }); %>
+      </select>
     </label>
-  </div>
-  <p class="muted small" style="grid-column:1/-1">
-    Habitual: 2ª quincena o 3ª semana. El checkbox se sugiere según tipo y fecha de referencia.
-    Pago mensual → tope IMSS = 40% UMA mensual (~$1,426).
-  </p>
-  <button type="submit">Abrir período</button>
-</form>
+
+    <div class="alert" style="grid-column:1/-1;margin:0" id="nuevo-info-sat">
+      <strong>Mapeo SAT (se guarda al crear)</strong>
+      <ul style="margin:.35rem 0 0;padding-left:1.2rem">
+        <li>PeriodicidadPago SAT: <strong id="info-periodicidad-sat">04 · Quincenal</strong></li>
+        <li>TipoNomina CFDI: <strong id="info-tipo-nomina-cfdi">O · Ordinaria</strong></li>
+      </ul>
+      <p class="muted small" style="margin:.5rem 0 0">
+        El motor interno define la periodicidad SAT. El tipo de negocio define si el CFDI es
+        <code>O</code> (solo ordinaria) o <code>E</code> (cualquier extraordinaria: aguinaldo, PTU, finiquito…).
+      </p>
+    </div>
+
+    <label>Fecha de referencia
+      <input type="date" name="fechaReferencia" value="<%= new Date().toISOString().slice(0,10) %>" />
+    </label>
+    <label>Período pre-nómina compartido (insumos, opcional)
+      <select name="payrollPeriodId">
+        <option value="">— Sin vincular —</option>
+        <% prenominaPeriodos.forEach(function(p) { %>
+        <option value="<%= p._id %>">
+          #<%= p.numeroPeriodo != null ? p.numeroPeriodo : '—' %>
+          <%= p.tipo %>
+          <%= new Date(p.fechaInicio).toLocaleDateString('es-MX') %> – <%= new Date(p.fechaFin).toLocaleDateString('es-MX') %>
+          (<%= p.estatus %>)
+        </option>
+        <% }); %>
+      </select>
+    </label>
+    <p class="muted small" style="grid-column:1/-1">
+      <strong>Al elegir pre-nómina, las fechas se copian de esa pre-nómina</strong>.
+      Si abres sin vincular, el cálculo ignora la asistencia.
+    </p>
+    <label>Notas
+      <input name="notas" placeholder="Opcional" />
+    </label>
+    <div class="checkbox-group" style="grid-column:1/-1">
+      <label>
+        <input type="hidden" name="pagaDespensa" value="0" />
+        <input type="checkbox" name="pagaDespensa" value="1" id="pagaDespensa"
+          <%= typeof sugerirPagaDespensaDefault !== 'undefined' && sugerirPagaDespensaDefault ? 'checked' : '' %> />
+        Paga despensa / vales en este período
+      </label>
+    </div>
+    <label>Override monto despensa (opcional)
+      <input type="number" name="despensaMontoOverride" min="0" step="0.01" placeholder="Vacío = política del empleado" />
+    </label>
+    <div class="checkbox-group" style="grid-column:1/-1">
+      <label>
+        <input type="hidden" name="despensaPagoMensual" value="0" />
+        <input type="checkbox" name="despensaPagoMensual" value="1" id="despensaPagoMensual" checked />
+        Pago mensual completo (tope IMSS = 40% UMA mensual)
+      </label>
+    </div>
+    <div style="grid-column:1/-1;display:flex;gap:.5rem">
+      <button type="submit" class="btn btn-primary">Abrir período</button>
+      <a class="btn" href="/nomina/periodos">Cancelar</a>
+    </div>
+  </form>
+</section>
 
 <script>
 (function () {
@@ -88,37 +121,136 @@
     if (tipo === 'semanal') return Math.min(5, Math.ceil(d / 7)) === 3;
     return false;
   }
-  var form = document.querySelector('form[action="/nomina/periodos"]');
+
+  var motorSat = <%- JSON.stringify(typeof motorAPeriodicidadSat !== 'undefined' ? motorAPeriodicidadSat : { quincenal: 4 }) %>;
+  var satCatalog = <%- JSON.stringify(typeof periodicidadesSat !== 'undefined' ? periodicidadesSat : []) %>;
+  var satByVal = {};
+  satCatalog.forEach(function (p) { satByVal[String(p.value)] = p; });
+
+  var form = document.getElementById('form-nuevo-periodo');
   if (!form) return;
-  var tipoSel = form.querySelector('[name=tipoPeriodo]');
+  var tipoSel = form.querySelector('#nuevo-tipo-periodo');
+  var nominaSel = form.querySelector('#nuevo-tipo-nomina');
   var fechaInp = form.querySelector('[name=fechaReferencia]');
   var chk = form.querySelector('#pagaDespensa');
-  function refresh() {
+  var hidSat = form.querySelector('#nuevo-periodicidad-sat');
+  var hidCfdi = form.querySelector('#nuevo-tipo-nomina-cfdi');
+  var infoSat = document.getElementById('info-periodicidad-sat');
+  var infoCfdi = document.getElementById('info-tipo-nomina-cfdi');
+
+  function refreshDespensa() {
     if (!chk || !tipoSel || !fechaInp) return;
     chk.checked = sugerir(tipoSel.value, fechaInp.value);
   }
-  if (tipoSel) tipoSel.addEventListener('change', refresh);
-  if (fechaInp) fechaInp.addEventListener('change', refresh);
+
+  function refreshSat() {
+    var motor = tipoSel ? tipoSel.value : 'quincenal';
+    var code = motorSat[motor];
+    if (code == null) code = 4;
+    if (hidSat) hidSat.value = String(code);
+    var meta = satByVal[String(code)];
+    if (infoSat) {
+      infoSat.textContent = meta
+        ? (meta.code + ' · ' + meta.label)
+        : String(code);
+    }
+  }
+
+  function refreshCfdi() {
+    var negocio = nominaSel ? nominaSel.value : 'ordinaria';
+    var cfdi = negocio === 'ordinaria' ? 'O' : 'E';
+    if (hidCfdi) hidCfdi.value = cfdi;
+    if (infoCfdi) {
+      infoCfdi.textContent = cfdi === 'O'
+        ? 'O · Ordinaria'
+        : 'E · Extraordinaria (por tipo de negocio «' + negocio + '»)';
+    }
+  }
+
+  function refreshAll() {
+    refreshDespensa();
+    refreshSat();
+    refreshCfdi();
+  }
+
+  if (tipoSel) tipoSel.addEventListener('change', refreshAll);
+  if (nominaSel) nominaSel.addEventListener('change', refreshCfdi);
+  if (fechaInp) fechaInp.addEventListener('change', refreshDespensa);
+  refreshAll();
 })();
 </script>
 <% } %>
 
-<h2>Períodos</h2>
+<section class="panel">
+  <h2 class="panel-title">Filtros</h2>
+  <form method="get" action="/nomina/periodos" class="filter-form form-grid">
+    <label>Año
+      <input type="number" name="anio" min="2020" max="2100" value="<%= F.anio || '' %>" placeholder="Todos" />
+    </label>
+    <label>Tipo período
+      <select name="tipoPeriodo">
+        <option value="">Todos</option>
+        <% tiposPeriodo.forEach(function(t) { %>
+        <option value="<%= t.value %>" <%= F.tipoPeriodo === t.value ? 'selected' : '' %>><%= t.label %></option>
+        <% }); %>
+      </select>
+    </label>
+    <label>Tipo nómina (negocio)
+      <select name="tipoNomina">
+        <option value="">Todos</option>
+        <% tiposNomina.forEach(function(t) { %>
+        <option value="<%= t.value %>" <%= F.tipoNomina === t.value ? 'selected' : '' %>><%= t.label %></option>
+        <% }); %>
+      </select>
+    </label>
+    <label>Estatus
+      <select name="estatus">
+        <option value="">Todos</option>
+        <% Object.keys(estatusLabels).forEach(function(k) { %>
+        <option value="<%= k %>" <%= F.estatus === k ? 'selected' : '' %>><%= estatusLabels[k] %></option>
+        <% }); %>
+      </select>
+    </label>
+    <label>CFDI TipoNomina
+      <select name="tipoNominaCfdi">
+        <option value="">Todos</option>
+        <% (tiposNominaCfdi || []).forEach(function(t) { %>
+        <option value="<%= t.value %>" <%= F.tipoNominaCfdi === t.value ? 'selected' : '' %>><%= t.label %></option>
+        <% }); %>
+      </select>
+    </label>
+    <label>Periodicidad SAT
+      <select name="periodicidadPagoSat">
+        <option value="">Todas</option>
+        <% (periodicidadesSat || []).forEach(function(p) { %>
+        <option value="<%= p.value %>" <%= String(F.periodicidadPagoSat) === String(p.value) ? 'selected' : '' %>><%= p.code %> · <%= p.label %></option>
+        <% }); %>
+      </select>
+    </label>
+    <label>Buscar
+      <input type="search" name="q" value="<%= F.q || '' %>" placeholder="Notas / usuario…" />
+    </label>
+    <div style="align-self:end;display:flex;gap:.5rem">
+      <button type="submit" class="btn btn-primary">Filtrar</button>
+      <a class="btn" href="/nomina/periodos">Limpiar</a>
+    </div>
+  </form>
+</section>
+
+<h2>Períodos <span class="muted small">(<%= periodos.length %>)</span></h2>
 <table>
   <thead>
     <tr>
       <th>#</th>
       <th>Año</th>
-      <th>Tipo período</th>
+      <th>Motor</th>
+      <th>Periodicidad SAT</th>
+      <th>CFDI</th>
       <th>Tipo nómina</th>
       <th>Inicio</th>
       <th>Fin</th>
-      <th>Pre-nómina</th>
       <th>Estatus</th>
       <th>Dispersión</th>
-      <th>Despensa</th>
-      <th>Calculó</th>
-      <th>Cerró</th>
       <th>Empleados</th>
       <th>Neto</th>
       <th></th>
@@ -126,7 +258,7 @@
   </thead>
   <tbody>
     <% if (!periodos.length) { %>
-    <tr><td colspan="15" class="muted">Sin períodos. Al abrir el primero se sembrarán conceptos y fórmulas base.</td></tr>
+    <tr><td colspan="13" class="muted">Sin períodos con estos filtros.</td></tr>
     <% } %>
     <% periodos.forEach(function(p) {
          const lb = p.layoutBancario || {};
@@ -134,22 +266,37 @@
     <tr>
       <td><strong><%= p.numeroPeriodo != null ? p.numeroPeriodo : '—' %></strong></td>
       <td><%= p.anio || (p.fechaInicio ? new Date(p.fechaInicio).getFullYear() : '—') %></td>
-      <td><%= p.tipoPeriodo %></td>
-      <td><%= p.tipoNomina %></td>
+      <td><%= labelTipo(tiposPeriodo, p.tipoPeriodo) %></td>
+      <td class="muted small"><%= satLabel(p.periodicidadPagoSat) %></td>
+      <td>
+        <% if (p.tipoNominaCfdi === 'O' || p.tipoNominaCfdi === 'E') { %>
+        <span class="badge"><%= p.tipoNominaCfdi %></span>
+        <% } else { %><span class="muted small">—</span><% } %>
+      </td>
+      <td>
+        <% if (_canEdit) { %>
+        <form method="post" action="/nomina/periodos/<%= p._id %>/clasificacion" class="inline-form" style="display:flex;gap:.35rem;align-items:center">
+          <input type="hidden" name="returnTo" value="/nomina/periodos<%= (function(){ const qs=[]; if(F.anio) qs.push('anio='+encodeURIComponent(F.anio)); if(F.tipoPeriodo) qs.push('tipoPeriodo='+encodeURIComponent(F.tipoPeriodo)); if(F.tipoNomina) qs.push('tipoNomina='+encodeURIComponent(F.tipoNomina)); if(F.estatus) qs.push('estatus='+encodeURIComponent(F.estatus)); if(F.tipoNominaCfdi) qs.push('tipoNominaCfdi='+encodeURIComponent(F.tipoNominaCfdi)); if(F.periodicidadPagoSat) qs.push('periodicidadPagoSat='+encodeURIComponent(F.periodicidadPagoSat)); if(F.q) qs.push('q='+encodeURIComponent(F.q)); return qs.length?'?'+qs.join('&'):''; })() %>" />
+          <select name="tipoNomina" onchange="this.form.submit()" title="Clasificación de negocio (editable)">
+            <% tiposNomina.forEach(function(t) { %>
+            <option value="<%= t.value %>" <%= p.tipoNomina === t.value ? 'selected' : '' %>><%= t.label %></option>
+            <% }); %>
+          </select>
+        </form>
+        <% } else { %>
+        <%= labelTipo(tiposNomina, p.tipoNomina) %>
+        <% } %>
+      </td>
       <td><%= new Date(p.fechaInicio).toLocaleDateString('es-MX') %></td>
       <td><%= new Date(p.fechaFin).toLocaleDateString('es-MX') %></td>
-      <td class="muted small"><%= p.payrollPeriodId ? 'Vinculada' : 'Sin vincular' %></td>
       <td><span class="badge badge-<%= p.estatus === 'cerrado' ? 'baja' : p.estatus === 'calculado' ? 'activo' : 'suspendido' %>"><%= estatusLabels[p.estatus] || p.estatus %></span></td>
       <td>
         <% if (lb.estatus === 'generado') { %>
-        <span class="badge badge-activo" title="<%= lb.layoutCodigo || '' %>">Generado</span>
+        <span class="badge badge-activo">Generado</span>
         <% } else if (p.estatus === 'calculado' || p.estatus === 'cerrado') { %>
         <span class="muted small">Pendiente</span>
         <% } else { %>—<% } %>
       </td>
-      <td class="muted small"><%= p.prestaciones && p.prestaciones.pagaDespensa ? 'Sí' : 'No' %></td>
-      <td class="muted small"><%= p.calculadoPorLabel || '—' %></td>
-      <td class="muted small"><%= p.cerradoPorLabel || '—' %></td>
       <td><%= p.totales?.empleados || 0 %></td>
       <td>$<%= (p.totales?.neto || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></td>
       <td><a href="/nomina/periodos/<%= p._id %>">Ver</a></td>

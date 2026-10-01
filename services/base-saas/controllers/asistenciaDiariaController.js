@@ -3,7 +3,7 @@ const getTurnoModel = require('../models/turno');
 const getDailyAttendanceModel = require('../models/dailyAttendance');
 const getDepartamentoModel = require('../models/departamento');
 const getPayrollPeriodModel = require('../models/payrollPeriod');
-const { requireEmpresaForTenant } = require('../libs/tenantScope');
+const { requireEmpresaForTenant, scopeEmpresaFilter, scopeEmpleadosFromReq, sessionSubsidiariaId } = require('../libs/tenantScope');
 const { trimString, parseOptionalObjectId } = require('../libs/formHelpers');
 const { parseDateTimeLocal, startOfDay, endOfDay, formatTimeHHMM } = require('../libs/timeHelpers');
 const { ESTATUS_DIARIO } = require('../config/asistencia');
@@ -42,9 +42,10 @@ async function listDiaria(req, res) {
   let periodoSel = null;
   let fechaAjustadaPorPeriodo = false;
   if (empresa && periodoId) {
+    const scope = scopeEmpresaFilter(req, empresa);
     periodoSel = await PayrollPeriod.findOne({
       _id: periodoId,
-      tenantId: req.session.tenantId
+      ...scope
     }).lean();
     if (periodoSel) {
       if (periodoSel.tipoPeriodoId && !tipoPeriodoId) {
@@ -64,13 +65,17 @@ async function listDiaria(req, res) {
 
   const fecha = startOfDay(parseDateTimeLocal(`${fechaStr}T12:00`) || new Date());
 
-  const empQuery = { tenantId: req.session.tenantId, estatus: 'activo' };
+  const empQuery = scopeEmpleadosFromReq(req, empresa, { soloActivos: true }) || {
+    tenantId: req.session.tenantId,
+    estatus: 'activo'
+  };
   if (departamentoId) empQuery.departamentoId = departamentoId;
   if (tipoPeriodoId) empQuery.tipoPeriodoId = tipoPeriodoId;
   else if (periodoSel?.tipo && !periodoSel.tipoPeriodoId) {
     // Período sin tipoPeriodoId: filtrar por motor vía tipos del catálogo
   }
 
+  const scopePeriodos = scopeEmpresaFilter(req, empresa);
   const [empleadosRaw, turnos, resumenes, departamentos, tiposPeriodo, periodos] = empresa
     ? await Promise.all([
         Empleado.find(empQuery).sort({ lastName: 1, firstName: 1 }).lean(),
@@ -79,11 +84,11 @@ async function listDiaria(req, res) {
           tenantId: req.session.tenantId,
           fecha: { $gte: fecha, $lte: endOfDay(fecha) }
         }).lean(),
-        Departamento.find({ tenantId: req.session.tenantId, activo: { $ne: false } })
+        Departamento.find({ tenantId: req.session.tenantId, empresaId: empresa._id, activo: { $ne: false } })
           .sort({ nombre: 1 })
           .lean(),
-        listTiposPeriodo(req.session.tenantId, true),
-        PayrollPeriod.find({ tenantId: req.session.tenantId })
+        listTiposPeriodo(req.session.tenantId, true, empresa._id),
+        PayrollPeriod.find(scopePeriodos || { tenantId: req.session.tenantId })
           .sort({ anio: -1, numeroPeriodo: -1, fechaInicio: -1 })
           .limit(60)
           .lean()
@@ -185,10 +190,14 @@ async function listDiaria(req, res) {
 
 async function reprocesarDiaria(req, res) {
   try {
+    const { empresa } = await requireEmpresaForTenant(req);
     const fechaStr = defaultFechaQuery(req);
     const fecha = startOfDay(parseDateTimeLocal(`${fechaStr}T12:00`) || new Date());
-    await recalculateDayForTenant(req.session.tenantId, fecha);
-    req.flash('success', 'Asistencia del día reprocesada para todos los empleados activos');
+    await recalculateDayForTenant(req.session.tenantId, fecha, {
+      empresaId: empresa?._id || null,
+      subsidiariaId: sessionSubsidiariaId(req)
+    });
+    req.flash('success', 'Asistencia del día reprocesada para empleados de la subsidiaria activa');
     const qs = new URLSearchParams({ fecha: fechaStr });
     const dep = parseOptionalObjectId(req.query.departamentoId);
     const tip = parseOptionalObjectId(req.query.tipoPeriodoId);

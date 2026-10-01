@@ -220,6 +220,11 @@ router.post(
   uploadCfdiZipDisk.single('zip'),
   cargasInicialesController.encolarCfdiZipMasivo
 );
+router.post(
+  '/config-empresa/cargas/jobs/:id/religar-xml',
+  uploadCfdiZipDisk.single('zip'),
+  cargasInicialesController.religarXmlJobAction
+);
 router.post('/config-empresa/cargas/:tipo/validar', cargasInicialesController.dryRun);
 
 router.get('/config-subsidiarias', subsidiariasController.listSubsidiarias);
@@ -311,6 +316,8 @@ router.post('/nomina/dispersion-bancaria/generar', layoutBancarioController.gene
 
 router.get('/nomina/reportes', nominaReportesController.index);
 router.get('/nomina/reportes/export', nominaReportesController.exportCsv);
+router.get('/nomina/reportes/acumulados', nominaReportesController.acumuladosIndex);
+router.get('/nomina/reportes/acumulados/export', nominaReportesController.acumuladosExportCsv);
 
 router.get('/nomina/finiquitos', finiquitoController.list);
 router.get('/nomina/finiquitos/nuevo', finiquitoController.newForm);
@@ -482,11 +489,13 @@ router.get('/nomina/periodos', nominaController.periodos);
 router.post('/nomina/periodos', nominaController.createPeriodo);
 router.get('/nomina/periodos/:id', nominaController.showPeriodo);
 router.post('/nomina/periodos/:id/prestaciones', nominaController.updatePeriodoPrestacionesAction);
+router.post('/nomina/periodos/:id/clasificacion', nominaController.updatePeriodoClasificacionAction);
 router.post('/nomina/periodos/:id/vincular-prenomina', nominaController.vincularPrenominaAction);
 router.post('/nomina/periodos/:id/calcular', nominaController.calcularPeriodoAction);
 router.get('/nomina/periodos/:id/estado-calculo', nominaController.estadoCalculoApi);
 router.post('/nomina/periodos/:id/cerrar', nominaController.cerrarPeriodoAction);
 router.get('/nomina/periodos/:id/recibos/:reciboId', nominaController.showRecibo);
+router.get('/nomina/periodos/:id/recibos/:reciboId/xml', nominaController.descargarXmlRecibo);
 router.get('/nomina/conceptos', nominaController.conceptos);
 router.get('/nomina/conceptos/nuevo', nominaController.newConcepto);
 router.post('/nomina/conceptos', nominaController.createConcepto);
