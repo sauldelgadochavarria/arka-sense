@@ -36,9 +36,10 @@ function toPrenominaShape(doc) {
   };
 }
 
-async function listConceptosUnificados(tenantId, { ambito } = {}) {
+async function listConceptosUnificados(tenantId, { ambito, empresaId } = {}) {
   const Concepto = await getConceptoNominaModel();
   const filter = { tenantId };
+  if (empresaId) filter.empresaId = empresaId;
   if (ambito === 'nomina') {
     filter.$or = [{ aplicaEn: 'nomina' }, { aplicaEn: 'ambos' }, { aplicaEn: { $exists: false } }];
   } else if (ambito === 'prenomina') {
@@ -47,12 +48,13 @@ async function listConceptosUnificados(tenantId, { ambito } = {}) {
   return Concepto.find(filter).sort({ ordenCalculo: 1, codigo: 1 }).lean();
 }
 
-async function listPrenominaConceptos(tenantId, { soloActivos = true } = {}) {
+async function listPrenominaConceptos(tenantId, { soloActivos = true, empresaId } = {}) {
   const Concepto = await getConceptoNominaModel();
   const filter = {
     tenantId,
     aplicaEn: { $in: ['prenomina', 'ambos'] }
   };
+  if (empresaId) filter.empresaId = empresaId;
   if (soloActivos) filter.activo = true;
   const docs = await Concepto.find(filter).sort({ ordenCalculo: 1, codigo: 1 }).lean();
   return docs.map(toPrenominaShape);

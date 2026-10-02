@@ -6,6 +6,16 @@ const periodoNominaSchema = new mongoose.Schema(
   {
     tenantId: { type: String, required: true, trim: true, index: true },
     empresaId: { type: mongoose.Schema.Types.ObjectId, ref: 'Empresa', required: true },
+    /**
+     * Partición por subsidiaria (misma ventana puede existir en DEMOS y Janneth).
+     * Null = legado / empresa sin sub.
+     */
+    subsidiariaId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Subsidiaria',
+      default: null,
+      index: true
+    },
     tipoPeriodo: {
       type: String,
       enum: ['semanal', 'quincenal', 'catorcenal', 'mensual', 'decena', 'otra'],
@@ -131,9 +141,23 @@ const periodoNominaSchema = new mongoose.Schema(
 );
 
 periodoNominaSchema.index({ tenantId: 1, fechaInicio: 1, fechaFin: 1, tipoNomina: 1 });
+periodoNominaSchema.index({ tenantId: 1, empresaId: 1, subsidiariaId: 1, fechaInicio: 1 });
+// Numeración por empresa + subsidiaria + año + tipo
 periodoNominaSchema.index(
-  { tenantId: 1, empresaId: 1, anio: 1, tipoPeriodo: 1, tipoNomina: 1, numeroPeriodo: 1 },
-  { unique: true, partialFilterExpression: { numeroPeriodo: { $type: 'number' } } }
+  {
+    tenantId: 1,
+    empresaId: 1,
+    subsidiariaId: 1,
+    anio: 1,
+    tipoPeriodo: 1,
+    tipoNomina: 1,
+    numeroPeriodo: 1
+  },
+  {
+    unique: true,
+    name: 'uniq_periodo_nomina_sub_num',
+    partialFilterExpression: { numeroPeriodo: { $type: 'number' } }
+  }
 );
 
 async function getPeriodoNominaModel() {

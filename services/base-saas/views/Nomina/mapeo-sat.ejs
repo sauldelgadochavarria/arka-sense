@@ -1,0 +1,125 @@
+<%- include('../Partials/layout-top', { title: 'Mapeo SAT ↔ motor', session }) %>
+<%
+  const _canEdit = typeof canEdit !== 'undefined' ? canEdit : true;
+  const rows = (typeof mapa !== 'undefined' && mapa && mapa.rows) ? mapa.rows : [];
+  const overridesCount = (mapa && mapa.overridesCount) || 0;
+%>
+<h1>Mapeo SAT ↔ motor</h1>
+<div class="toolbar">
+  <a class="btn" href="/nomina">← Nómina</a>
+  <a class="btn" href="/nomina/conceptos">Conceptos</a>
+  <a class="btn" href="/nomina/configuracion">Configuración fiscal</a>
+  <a class="btn" href="/config-empresa/cargas/cfdi_nomina_zip_masivo">Carga históricos CFDI</a>
+  <a class="btn" href="/ayuda/importacion-historicos-cfdi">Ayuda</a>
+</div>
+
+<p>
+  Equivalencias entre <strong>clave SAT</strong> del CFDI
+  (<code>TipoPercepcion</code> / <code>TipoDeduccion</code> / <code>TipoOtroPago</code>)
+  y el <strong>código motor</strong> del sistema. Se usa al cargar históricos CFDI.
+</p>
+<% if (typeof subsidiariaId !== 'undefined' && subsidiariaId) { %>
+<p class="muted small">Ámbito: subsidiaria de sesión <code><%= subsidiariaId %></code>. Overrides: <%= overridesCount %>.</p>
+<% } else { %>
+<p class="muted small">Ámbito: MAIN / sin subsidiaria. Overrides: <%= overridesCount %>.</p>
+<% } %>
+<% if (!_canEdit) { %>
+<p class="banner-readonly">Modo consulta: no puedes crear ni borrar overrides.</p>
+<% } %>
+
+<% if (_canEdit) { %>
+<section class="panel">
+  <h2 class="panel-title">Agregar / reemplazar override</h2>
+  <p class="muted small">
+    Un override de esta subsidiaria tiene prioridad sobre el mapa de sistema.
+    Usa «Match nombre» para desambiguar (texto contenido o <code>/regex/i</code>).
+  </p>
+  <form method="post" action="/nomina/mapeo-sat" class="form-grid">
+    <label>Tipo SAT
+      <select name="tipo" required>
+        <option value="percepcion">Percepción</option>
+        <option value="deduccion">Deducción</option>
+        <option value="otro_pago">Otro pago</option>
+      </select>
+    </label>
+    <label>Clave SAT
+      <input name="claveSat" required maxlength="3" pattern="[0-9]{1,3}" placeholder="001" />
+    </label>
+    <label>Código motor
+      <select name="conceptoCodigo" required>
+        <option value="">— Selecciona —</option>
+        <% (codigosMotor || []).forEach(function(c) { %>
+        <option value="<%= c %>"><%= c %></option>
+        <% }); %>
+      </select>
+    </label>
+    <label>Match nombre (opcional)
+      <input name="matchNombre" placeholder="fondo ahorro o /tripl/i" />
+    </label>
+    <label class="inline-check">
+      <input type="checkbox" name="esDefault" value="1" checked />
+      Default para esta clave (si no hay match de nombre)
+    </label>
+    <label>Notas
+      <input name="notas" placeholder="Opcional" />
+    </label>
+    <button type="submit" class="btn btn-primary">Guardar override</button>
+  </form>
+</section>
+<% } %>
+
+<section class="panel">
+  <h2 class="panel-title">Mapa efectivo</h2>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Tipo</th>
+          <th>Clave SAT</th>
+          <th>Código motor</th>
+          <th>Match nombre</th>
+          <th>Default</th>
+          <th>Origen</th>
+          <th>Categoría</th>
+          <% if (_canEdit) { %><th></th><% } %>
+        </tr>
+      </thead>
+      <tbody>
+        <% if (!rows.length) { %>
+        <tr><td colspan="8" class="muted">Sin filas.</td></tr>
+        <% } %>
+        <% rows.forEach(function(r) { %>
+        <tr class="<%= r.source === 'override' ? 'row-highlight' : '' %>">
+          <td><%= r.tipo %></td>
+          <td><code><%= r.claveSat %></code></td>
+          <td><strong><%= r.conceptoCodigo %></strong></td>
+          <td class="muted small"><%= r.matchNombre || '—' %></td>
+          <td><%= r.esDefault ? 'Sí' : 'No' %></td>
+          <td>
+            <% if (r.source === 'override') { %>
+            <span class="badge">override</span>
+            <% } else { %>
+            <span class="muted">sistema</span>
+            <% } %>
+          </td>
+          <td class="muted small"><%= r.categoria || '—' %></td>
+          <% if (_canEdit) { %>
+          <td>
+            <% if (r.overrideId) { %>
+            <form method="post" action="/nomina/mapeo-sat/<%= r.overrideId %>/eliminar" class="inline-form"
+                  onsubmit="return confirm('¿Eliminar override y volver al mapa de sistema?');">
+              <button type="submit" class="btn btn-sm">Quitar</button>
+            </form>
+            <% } else { %>
+            <span class="muted">—</span>
+            <% } %>
+          </td>
+          <% } %>
+        </tr>
+        <% }); %>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<%- include('../Partials/layout-bottom') %>

@@ -49,6 +49,37 @@
 
 <% if (isCfdi && (job.estatus === 'ok' || job.estatus === 'parcial')) { %>
 <section class="panel">
+  <h2 class="panel-title">Organizar períodos</h2>
+  <p class="muted">
+    Tras una importación masiva, los períodos pueden quedar mezclados entre subsidiarias o con numeración fuera de orden.
+    Este paso separa mezclas, fusiona solapes y renumeración cronológica por subsidiaria.
+  </p>
+  <form method="post" action="/config-empresa/cargas/jobs/<%= job._id %>/organizar-periodos" class="form-grid"
+        onsubmit="return confirm('¿Organizar períodos ahora?');">
+    <label>Tipo período (motor)
+      <select name="tipoPeriodo">
+        <option value="semanal" selected>Semanal</option>
+        <option value="catorcenal">Catorcenal</option>
+        <option value="quincenal">Quincenal</option>
+        <option value="mensual">Mensual</option>
+      </select>
+    </label>
+    <label>Tipo nómina
+      <select name="tipoNomina">
+        <option value="ordinaria" selected>Ordinaria</option>
+        <option value="aguinaldo">Aguinaldo</option>
+        <option value="ptu">PTU</option>
+        <option value="finiquito">Finiquito</option>
+      </select>
+    </label>
+    <div style="align-self:end;display:flex;gap:.5rem;flex-wrap:wrap">
+      <button type="submit" class="btn btn-primary">Organizar períodos</button>
+      <a class="btn" href="/nomina/periodos">Ver períodos</a>
+    </div>
+  </form>
+</section>
+
+<section class="panel">
   <h2 class="panel-title">Religar XML a históricos</h2>
   <p class="muted">
     Si ves «UUID sin archivo» en el detalle del período, sube de nuevo el mismo ZIP de CFDI.

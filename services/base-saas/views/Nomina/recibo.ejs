@@ -31,10 +31,16 @@
   })(recibo.netoPagar);
 %>
 <div class="toolbar no-print">
+  <% if (periodo && periodo._id && !periodo._sintetico) { %>
   <a class="btn" href="/nomina/periodos/<%= periodo._id %>">← Volver al período</a>
+  <% } else if (empleado && empleado._id) { %>
+  <a class="btn" href="/personal-empleados/<%= empleado._id %>">← Volver al empleado</a>
+  <% } else { %>
+  <a class="btn" href="/nomina/periodos">← Volver a períodos</a>
+  <% } %>
   <button type="button" class="btn" id="btn-imprimir-recibo">Imprimir recibo</button>
   <% if (typeof hasXmlCfdi !== 'undefined' && hasXmlCfdi) { %>
-  <a class="btn" href="/nomina/periodos/<%= periodo._id %>/recibos/<%= recibo._id %>/xml" target="_blank" rel="noopener">Ver XML</a>
+  <a class="btn" href="/nomina/periodos/<%= (periodo && periodo._id) || 'x' %>/recibos/<%= recibo._id %>/xml" target="_blank" rel="noopener">Ver XML</a>
   <% } %>
   <% if (typeof desdeHistorico !== 'undefined' && desdeHistorico) { %>
   <span class="badge badge-baja">Histórico</span>

@@ -225,6 +225,10 @@ router.post(
   uploadCfdiZipDisk.single('zip'),
   cargasInicialesController.religarXmlJobAction
 );
+router.post(
+  '/config-empresa/cargas/jobs/:id/organizar-periodos',
+  cargasInicialesController.organizarPeriodosJobAction
+);
 router.post('/config-empresa/cargas/:tipo/validar', cargasInicialesController.dryRun);
 
 router.get('/config-subsidiarias', subsidiariasController.listSubsidiarias);
@@ -487,6 +491,7 @@ router.post('/incidencias/:id/rechazar', incidenciasController.rechazarIncidenci
 router.get('/nomina', nominaController.index);
 router.get('/nomina/periodos', nominaController.periodos);
 router.post('/nomina/periodos', nominaController.createPeriodo);
+router.post('/nomina/periodos/organizar', nominaController.organizarPeriodosAction);
 router.get('/nomina/periodos/:id', nominaController.showPeriodo);
 router.post('/nomina/periodos/:id/prestaciones', nominaController.updatePeriodoPrestacionesAction);
 router.post('/nomina/periodos/:id/clasificacion', nominaController.updatePeriodoClasificacionAction);
@@ -499,6 +504,10 @@ router.get('/nomina/periodos/:id/recibos/:reciboId/xml', nominaController.descar
 router.get('/nomina/conceptos', nominaController.conceptos);
 router.get('/nomina/conceptos/nuevo', nominaController.newConcepto);
 router.post('/nomina/conceptos', nominaController.createConcepto);
+router.post(
+  '/nomina/conceptos/deshabilitar-previos-historico',
+  nominaController.deshabilitarPreviosHistoricoAction
+);
 router.get('/nomina/conceptos/:codigo', nominaController.showConcepto);
 router.post('/nomina/conceptos/:codigo/props', nominaController.saveConceptoPropsAction);
 router.post('/nomina/conceptos/:codigo/formula', nominaController.saveFormulaAction);
@@ -509,6 +518,9 @@ router.get('/nomina/configuracion', nominaController.configuracion);
 router.post('/nomina/configuracion/isr-motor', nominaController.saveIsrMotorConfig);
 router.post('/nomina/configuracion/dias-pagados', nominaController.saveDiasPagadosConfig);
 router.post('/nomina/configuracion/descuentos', nominaController.saveDescuentosConfig);
+router.get('/nomina/mapeo-sat', nominaController.mapeoSat);
+router.post('/nomina/mapeo-sat', nominaController.saveMapeoSatAction);
+router.post('/nomina/mapeo-sat/:id/eliminar', nominaController.deleteMapeoSatAction);
 router.get('/nomina/placeholder/:slug', nominaPlaceholderController.show);
 router.get('/nomina/catalogos', nominaCatalogosController.index);
 router.get('/nomina/catalogos/sat', nominaCatalogosController.catalogoSat);

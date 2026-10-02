@@ -4,8 +4,8 @@ const { COLLECTION_NOMINA_CONCEPTOS } = require('../config/constants');
 const { fiscalSubSchema, satSubSchema } = require('./fiscalConceptoShared');
 
 /**
- * Colección única de conceptos por tenant (nómina + pre-nómina).
- * Se separan solo con aplicaEn: nomina | prenomina | ambos.
+ * Conceptos de nómina por empresa (nómina + pre-nómina).
+ * Se separan con aplicaEn: nomina | prenomina | ambos.
  */
 const conceptoNominaSchema = new mongoose.Schema(
   {
@@ -78,7 +78,7 @@ const conceptoNominaSchema = new mongoose.Schema(
   { timestamps: true, collection: COLLECTION_NOMINA_CONCEPTOS }
 );
 
-conceptoNominaSchema.index({ tenantId: 1, codigo: 1 }, { unique: true });
+conceptoNominaSchema.index({ tenantId: 1, empresaId: 1, codigo: 1 }, { unique: true });
 conceptoNominaSchema.index({ tenantId: 1, activo: 1, ordenCalculo: 1 });
 conceptoNominaSchema.index({ tenantId: 1, activo: 1, ordenImpresion: 1 });
 conceptoNominaSchema.index({ tenantId: 1, aplicaEn: 1, activo: 1 });

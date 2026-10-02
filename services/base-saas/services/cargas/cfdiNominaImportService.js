@@ -15,7 +15,8 @@ const { normalizeCurp } = require('../../libs/curpDerive');
 const {
   buildPeriodosFromStaging,
   lookupPeriodoForPayload,
-  resolveTipoPeriodoPorSat
+  resolveTipoPeriodoPorSat,
+  anioDeVentana
 } = require('./cfdiPeriodoInferService');
 const {
   classifyTipoNominaFromCfdi,
@@ -440,20 +441,32 @@ function escapeRe(s) {
   return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-async function upsertConcepto(Concepto, tenantId, empresaId, c) {
-  const codigo = String(c.conceptoCodigo || '').toUpperCase();
+async function upsertConcepto(Concepto, tenantId, empresaId, c, subsidiariaId = null) {
+  const { applyInferenciaSatAConcepto } = require('../nomina/satConceptoInferService');
+  const inferred = await applyInferenciaSatAConcepto(c, {
+    tenantId,
+    empresaId,
+    subsidiariaId
+  });
+  const codigo = String(inferred.codigo || c.conceptoCodigo || '').toUpperCase();
   if (!codigo) return null;
+
   const tipo = c.tipo === 'deduccion' ? 'deduccion' : c.tipo === 'otro_pago' ? 'otro_pago' : 'percepcion';
+  const claveSat = inferred.claveSat || c.claveSat || '';
+  const claveInterna = inferred.claveInterna || c.claveInterna || '';
+
   await Concepto.updateOne(
     { tenantId, codigo },
     {
       $set: {
         nombre: c.nombre || codigo,
         tipo,
-        claveSAT: c.claveSat || '',
-        'sat.clave': c.claveSat || '',
+        claveSAT: claveSat,
+        'sat.clave': claveSat,
+        'sat.tipo': tipo,
         activo: true,
-        aplicaEn: 'nomina'
+        aplicaEn: 'nomina',
+        ...(claveInterna && claveInterna !== codigo ? { codigoExterno: claveInterna } : {})
       },
       $setOnInsert: {
         tenantId,
@@ -462,11 +475,41 @@ async function upsertConcepto(Concepto, tenantId, empresaId, c) {
         naturaleza: c.gravado > 0 && c.exento > 0 ? 'mixto' : c.exento > 0 ? 'exento' : 'gravado',
         ordenCalculo: 100,
         ordenImpresion: 100,
-        codigoExterno: c.claveInterna || ''
+        codigoExterno: claveInterna || ''
       }
     },
     { upsert: true }
   );
+
+  try {
+    const {
+      upsertSubsidiaryConceptConfig,
+      ensureCompanyConceptConfigs
+    } = require('../nomina/conceptResolutionService');
+
+    // Activa capa empresa (catálogo motor) la primera vez que aparece un código canónico.
+    if (inferred.inferred || inferred.source === 'already_motor') {
+      try {
+        await ensureCompanyConceptConfigs(tenantId, empresaId);
+      } catch (err) {
+        console.warn('[upsertConcepto] ensureCompanyConceptConfigs:', err.message);
+      }
+    }
+
+    await upsertSubsidiaryConceptConfig({
+      tenantId,
+      empresaId,
+      subsidiariaId: subsidiariaId || null,
+      conceptoCodigo: codigo,
+      origen: inferred.inferred ? 'cfdi_sat' : 'cfdi',
+      aliasNombre: c.nombre || '',
+      claveSat,
+      claveInternaCfdi: claveInterna,
+      tipo
+    });
+  } catch (err) {
+    console.warn('[upsertConcepto] subsidiary config:', err.message);
+  }
   return codigo;
 }
 
@@ -495,10 +538,10 @@ async function resolveEmpleadoId(
     (nss && (await Empleado.findOne({ tenantId, empresaId, nss }).lean())) ||
     (rfc && (await Empleado.findOne({ tenantId, empresaId, rfc }).lean())) ||
     (num && (await Empleado.findOne({ tenantId, empresaId, numEmpleado: num }).lean())) ||
-    (curp && (await Empleado.findOne({ tenantId, curp }).lean())) ||
-    (nss && (await Empleado.findOne({ tenantId, nss }).lean())) ||
     null;
 
+  // Nunca reutilizar personal de otra empresa del mismo tenant (CURP/NSS globales).
+  // Si el unique de numEmpleado es por tenant, al crear se genera un número libre.
   const payloadFull = {
     firstName: emp.firstName || 'SIN',
     lastName: emp.lastName || 'NOMBRE',
@@ -559,7 +602,21 @@ async function resolveEmpleadoId(
 
   if (!permitirCrear) return { id: null, created: false, before: null };
 
-  const numEmpleado = num || `CFDI${(nss || curp || rfc || Date.now()).toString().slice(-8)}`;
+  let numEmpleado = num || `CFDI${(nss || curp || rfc || Date.now()).toString().slice(-8)}`;
+  // Unique actual: tenantId + numEmpleado (no por empresa). Evitar chocar con otra empresa.
+  const taken = await Empleado.findOne({ tenantId, numEmpleado }).select('_id empresaId').lean();
+  if (taken && String(taken.empresaId) !== String(empresaId)) {
+    const base = String(numEmpleado).slice(0, 20);
+    for (let i = 2; i < 50; i += 1) {
+      const candidate = `${base}-${i}`;
+      const clash = await Empleado.findOne({ tenantId, numEmpleado: candidate }).select('_id').lean();
+      if (!clash) {
+        numEmpleado = candidate;
+        break;
+      }
+    }
+  }
+
   const created = await Empleado.create({
     tenantId,
     empresaId,
@@ -876,10 +933,17 @@ async function aplicarJobCfdi(
       }
 
       if (opciones.importConceptos) {
+        const subIdConceptos = job.resumen?.subsidiariaId || job.subsidiariaId || null;
+        const { applyInferenciaSatAConcepto } = require('../nomina/satConceptoInferService');
         for (const c of d.conceptos || []) {
+          await applyInferenciaSatAConcepto(c, {
+            tenantId,
+            empresaId: job.empresaId,
+            subsidiariaId: subIdConceptos
+          });
           const ck = `${c.tipo}|${String(c.conceptoCodigo || '').toUpperCase()}`;
           if (!c.conceptoCodigo || conceptoDone.has(ck)) continue;
-          await upsertConcepto(Concepto, tenantId, job.empresaId, c);
+          await upsertConcepto(Concepto, tenantId, job.empresaId, c, subIdConceptos);
           conceptoDone.add(ck);
         }
       }
@@ -994,10 +1058,14 @@ async function aplicarJobCfdi(
       }
 
       const fechaPago = d.fechaPago ? new Date(d.fechaPago) : new Date();
-      const anio = d.anio || fechaPago.getUTCFullYear();
-      const mes = fechaPago.getUTCMonth() + 1;
       const fechaInicio = d.fechaInicio ? new Date(d.fechaInicio) : fechaPago;
       const fechaFin = d.fechaFin ? new Date(d.fechaFin) : fechaPago;
+      const anio =
+        periodoInfo?.anio ||
+        d.anio ||
+        anioDeVentana(fechaInicio, fechaFin) ||
+        fechaPago.getUTCFullYear();
+      const mes = (fechaFin || fechaPago).getUTCMonth() + 1;
 
       const conceptosHist = (d.conceptos || []).map((c) => ({
         conceptoCodigo: c.conceptoCodigo,

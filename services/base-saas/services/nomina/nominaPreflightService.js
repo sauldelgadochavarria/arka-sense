@@ -12,11 +12,16 @@ async function validarClavesSat(conceptos, fechaRef) {
   const CatalogoSat = await getCatalogoSatModel();
   const advertencias = [];
   const ref = new Date(fechaRef);
+  const vistos = new Set();
 
   for (const c of conceptos) {
-    const clave = c.sat?.clave || c.claveSAT;
-    if (!clave) continue;
-    const tipoSat = c.sat?.tipo || c.tipo;
+    const raw = String(c.sat?.clave || c.claveSAT || '').trim();
+    if (!raw) continue;
+    // Normaliza a 3 dígitos (SAT nómina) salvo claves de horas extra (2 dígitos)
+    const clave = /^\d{1,2}$/.test(raw) && raw.length < 3 ? raw.padStart(3, '0') : raw;
+    const tipoSat = String(c.sat?.tipo || c.tipo || '')
+      .trim()
+      .toLowerCase();
     const catalogo =
       tipoSat === 'deduccion'
         ? 'c_TipoDeduccion'
@@ -24,9 +29,13 @@ async function validarClavesSat(conceptos, fechaRef) {
           ? 'c_TipoOtroPago'
           : 'c_TipoPercepcion';
 
+    const firma = `${c.codigo}|${catalogo}|${clave}`;
+    if (vistos.has(firma)) continue;
+    vistos.add(firma);
+
     const existe = await CatalogoSat.findOne({
       catalogo,
-      clave,
+      clave: { $in: [clave, raw] },
       activo: true,
       vigenciaDesde: { $lte: ref },
       $or: [{ vigenciaHasta: null }, { vigenciaHasta: { $gte: ref } }]
@@ -66,7 +75,30 @@ async function validatePeriodoForCalculo(tenantId, periodo) {
   }
 
   const ConceptoNomina = await getConceptoNominaModel();
-  const conceptosActivos = await ConceptoNomina.find({ tenantId, activo: true }).lean();
+  const conceptoQ = { tenantId, activo: true };
+  if (periodo.empresaId) conceptoQ.empresaId = periodo.empresaId;
+  let conceptosActivos = await ConceptoNomina.find(conceptoQ).lean();
+  // Si el período tiene subsidiaria, valida solo conceptos visibles para esa sub
+  // (evita ruido de conceptos de otras subsidiarias aún activos en el maestro).
+  try {
+    if (periodo.empresaId) {
+      const {
+        listConceptosVisiblesParaSubsidiaria
+      } = require('./conceptResolutionService');
+      const visibles = await listConceptosVisiblesParaSubsidiaria(
+        tenantId,
+        periodo.empresaId,
+        periodo.subsidiariaId || null,
+        { soloActivos: true, backfillHistorico: false, ocultarDeshabilitados: true }
+      );
+      if (visibles.length) {
+        const allow = new Set(visibles.map((c) => String(c.codigo).toUpperCase()));
+        conceptosActivos = conceptosActivos.filter((c) => allow.has(String(c.codigo).toUpperCase()));
+      }
+    }
+  } catch (err) {
+    console.warn('[preflight] filtro subsidiaria conceptos:', err.message);
+  }
 
   const usaIsr = conceptosActivos.some((c) => c.codigo === 'ISR');
   if (usaIsr) {
@@ -108,9 +140,17 @@ async function validatePeriodoForCalculo(tenantId, periodo) {
   }
 
   const Empleado = await getEmpleadoModel();
-  const empleados = await Empleado.find({ tenantId, activo: true, estatus: 'activo' }).lean();
+  const empQ = { tenantId, activo: true, estatus: 'activo' };
+  if (periodo.empresaId) empQ.empresaId = periodo.empresaId;
+  if (periodo.subsidiariaId) empQ.subsidiariaId = periodo.subsidiariaId;
+  const empleados = await Empleado.find(empQ).lean();
   if (!empleados.length) {
-    bloqueos.push({ codigo: 'SIN_EMPLEADOS', mensaje: 'No hay empleados activos' });
+    bloqueos.push({
+      codigo: 'SIN_EMPLEADOS',
+      mensaje: periodo.subsidiariaId
+        ? 'No hay empleados activos en esta subsidiaria'
+        : 'No hay empleados activos'
+    });
   }
 
   const sinSalario = empleados

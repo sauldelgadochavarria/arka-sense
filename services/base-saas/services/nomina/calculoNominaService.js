@@ -84,13 +84,19 @@ async function obtenerFormulasVigentes(tenantId, periodo, fechaRef = null) {
   const FormulaConcepto = await getFormulaConceptoModel();
   const ref = fechaRef ? new Date(fechaRef) : fechaVigenciaFormulas(periodo);
 
+  const empresaFiltro = periodo.empresaId
+    ? [{ empresaId: null }, { empresaId: periodo.empresaId }]
+    : [{ empresaId: null }];
   const formulas = await FormulaConcepto.find({
     tenantId,
     tipoPeriodo: periodo.tipoPeriodo,
     tipoNomina: periodo.tipoNomina,
     vigenciaDesde: { $lte: ref },
-    $or: [{ vigenciaHasta: null }, { vigenciaHasta: { $gte: ref } }],
-    activo: true
+    activo: true,
+    $and: [
+      { $or: [{ vigenciaHasta: null }, { vigenciaHasta: { $gte: ref } }] },
+      { $or: empresaFiltro }
+    ]
   })
     .sort({ version: -1, vigenciaDesde: -1, updatedAt: -1 })
     .lean();
@@ -632,8 +638,9 @@ async function calcularPeriodo(tenantId, periodoId, options = {}) {
   if (!periodo) throw new Error('Período no encontrado');
   if (periodo.estatus === 'cerrado') throw new Error('El período está cerrado');
 
-  // Corregir diasPeriodo si quedó mal por conteo con endOfDay
-  const diasOk = diasCalendarioInclusive(periodo.fechaInicio, periodo.fechaFin);
+  // Corregir diasPeriodo si quedó mal (conteo México vs fechas UTC de negocio)
+  const { diasPeriodoUtc } = require('../../libs/periodoNumero');
+  const diasOk = diasPeriodoUtc(periodo.fechaInicio, periodo.fechaFin);
   if (Number(periodo.diasPeriodo) !== diasOk) {
     await PeriodoNomina.updateOne({ _id: periodo._id }, { $set: { diasPeriodo: diasOk } });
     periodo.diasPeriodo = diasOk;
@@ -641,12 +648,16 @@ async function calcularPeriodo(tenantId, periodoId, options = {}) {
 
   await limpiarCalculoPeriodo(tenantId, periodoId);
 
+  if (!periodo.empresaId) {
+    throw new Error('El período no tiene empresa. No se calcula para no mezclar compañías.');
+  }
+
   const fechaFormula = fechaVigenciaFormulas(periodo);
   const legacyFormulas = await obtenerFormulasVigentes(tenantId, periodo, fechaFormula);
   let resolved = [];
   let empresaDoc = null;
   try {
-    const { empresa } = await requireEmpresaForTenant(tenantId);
+    const { empresa } = await requireEmpresaForTenant(tenantId, periodo.empresaId);
     empresaDoc = empresa;
     if (empresa) {
       resolved = await resolveConceptosParaEmpresa(tenantId, empresa._id, {
@@ -714,6 +725,7 @@ async function calcularPeriodo(tenantId, periodoId, options = {}) {
 
   const conceptos = await ConceptoNomina.find({
     tenantId,
+    empresaId: periodo.empresaId,
     activo: true,
     $or: [{ aplicaEn: 'nomina' }, { aplicaEn: 'ambos' }, { aplicaEn: { $exists: false } }]
   }).lean();
@@ -748,8 +760,13 @@ async function calcularPeriodo(tenantId, periodoId, options = {}) {
 
   const empleadosQuery = {
     tenantId,
+    empresaId: periodo.empresaId,
     salarioDiario: { $gt: 0 }
   };
+  // Período de subsidiaria: no mezclar padrón de otras subs (p.ej. Demos REM vs Janeth).
+  if (periodo.subsidiariaId) {
+    empleadosQuery.subsidiariaId = periodo.subsidiariaId;
+  }
 
   const tipoNominaEsp = String(periodo.tipoNomina || '').toLowerCase();
   const esFiniquitoLike = tipoNominaEsp === 'finiquito' || tipoNominaEsp === 'indemnizacion';
@@ -766,7 +783,7 @@ async function calcularPeriodo(tenantId, periodoId, options = {}) {
   }
 
   let empleados;
-  const tiposPeriodo = await listTiposPeriodo(tenantId, false);
+  const tiposPeriodo = await listTiposPeriodo(tenantId, false, periodo.empresaId);
 
   const politicaDias = mergePolitica(empresaDoc?.nominaDias || {});
   const { mergePoliticaDescuentos } = require('../../libs/politicaDescuentosDefaults');

@@ -143,7 +143,7 @@ async function loadAcumuladosCatalogs(tenantId, empresa, subsidiariaId) {
       .sort({ numEmpleado: 1 })
       .limit(400)
       .lean(),
-    empresa ? listConceptosParaFiltro(tenantId, empresa._id) : Promise.resolve([])
+    empresa ? listConceptosParaFiltro(tenantId, empresa._id, subsidiariaId) : Promise.resolve([])
   ]);
 
   const empleadosTotal = await Empleado.countDocuments(empQ);

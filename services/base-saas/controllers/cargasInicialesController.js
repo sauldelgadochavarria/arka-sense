@@ -63,7 +63,8 @@ async function showTipo(req, res) {
     return res.redirect('/config-empresa/cargas');
   }
   if (carga.codigo === 'cfdi_nomina_zip') {
-    return showCfdiNomina(req, res);
+    // Carga rápida retirada: unificar en masiva
+    return res.redirect('/config-empresa/cargas/cfdi_nomina_zip_masivo');
   }
   if (carga.codigo === 'cfdi_nomina_zip_masivo') {
     return showCfdiNominaMasivo(req, res);
@@ -86,24 +87,7 @@ async function showTipo(req, res) {
 }
 
 async function showCfdiNomina(req, res) {
-  const carga = getCargaByCodigo('cfdi_nomina_zip');
-  const { empresa } = await requireEmpresaForTenant(req);
-  const jobs = empresa
-    ? await listJobs(req.session.tenantId, {
-        tipo: 'cfdi_nomina_zip',
-        empresaId: empresa._id,
-        subsidiariaId: sessionSubsidiariaId(req),
-        limit: 15
-      })
-    : [];
-  const anioActual = new Date().getFullYear();
-  res.render('Configurations/cargas/cfdi-nomina', {
-    empresa,
-    carga,
-    jobs,
-    anioActual,
-    session: req.session
-  });
+  return res.redirect('/config-empresa/cargas/cfdi_nomina_zip_masivo');
 }
 
 async function showCfdiNominaMasivo(req, res) {
@@ -300,6 +284,57 @@ async function applyJobAction(req, res) {
  * Religa XML a históricos ya importados (por UUID).
  * Acepta ZIP nuevo o reutiliza archivoPath del job si aún existe.
  */
+async function organizarPeriodosJobAction(req, res) {
+  const jobId = req.params.id;
+  try {
+    const { empresa, error } = await requireEmpresaForTenant(req);
+    if (error || !empresa) throw new Error(error || 'Sin empresa');
+
+    const Job = await getCargaInicialJobModel();
+    const job = await Job.findOne({ _id: jobId, tenantId: req.session.tenantId });
+    if (!job) throw new Error('Job no encontrado');
+    if (!['cfdi_nomina_zip', 'cfdi_nomina_zip_masivo'].includes(job.tipo)) {
+      throw new Error('Solo aplica a jobs CFDI');
+    }
+
+    const {
+      organizarPeriodosTrasImportacion
+    } = require('../services/nomina/organizarPeriodosService');
+
+    const tipoMotor =
+      String(req.body.tipoPeriodo || '').trim() ||
+      String(job.resumen?.periodos?.tipoMotorSugerido || '').trim() ||
+      'semanal';
+    const tipoNomina =
+      String(req.body.tipoNomina || '').trim() || 'ordinaria';
+
+    const result = await organizarPeriodosTrasImportacion({
+      tenantId: req.session.tenantId,
+      empresaId: empresa._id,
+      tipoMotor,
+      tipoNomina,
+      subsidiariaId: sessionSubsidiariaId(req)
+    });
+
+    const sep = result.separacion || {};
+    const act = result.resumenActivo;
+    req.flash(
+      'success',
+      `Períodos organizados (${tipoMotor}/${tipoNomina}): ` +
+        `separados ${sep.split || 0}, sellados ${sep.stamped || 0}` +
+        (act
+          ? `, sub activa renumerados ${act.renumerados || 0} (fusiones ${act.merges || 0})`
+          : '') +
+        '.'
+    );
+    return res.redirect(`/config-empresa/cargas/jobs/${jobId}`);
+  } catch (err) {
+    console.error('[organizarPeriodosJob]', err);
+    req.flash('error', err.message || 'No se pudieron organizar los períodos');
+    return res.redirect(`/config-empresa/cargas/jobs/${jobId}`);
+  }
+}
+
 async function religarXmlJobAction(req, res) {
   const tenantId = req.session.tenantId;
   const jobId = req.params.id;
@@ -417,6 +452,7 @@ module.exports = {
   showJob,
   jobStatusJson,
   applyJobAction,
+  organizarPeriodosJobAction,
   religarXmlJobAction,
   proximamenteCreditos
 };

@@ -220,7 +220,7 @@ const empleadoSchema = new mongoose.Schema(
   { timestamps: true, collection: COLLECTION_EMPLEADOS }
 );
 
-empleadoSchema.index({ tenantId: 1, numEmpleado: 1 }, { unique: true });
+empleadoSchema.index({ tenantId: 1, empresaId: 1, numEmpleado: 1 }, { unique: true });
 empleadoSchema.index({ tenantId: 1, tipoPeriodoId: 1 });
 empleadoSchema.index(
   { tenantId: 1, codigoExterno: 1 },

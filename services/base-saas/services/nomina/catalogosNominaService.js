@@ -53,11 +53,39 @@ function mapeosLegadoPorDefecto() {
   return entradas;
 }
 
+/**
+ * Lista claves SAT activas de un catálogo, sin duplicados por clave.
+ * Si hay varias vigencias, conserva la de vigenciaDesde más reciente
+ * (o la de descripción más completa si empate).
+ */
 async function listCatalogoSat(filtroCatalogo = null) {
   const CatalogoSat = await getCatalogoSatModel();
   const query = { activo: true };
   if (filtroCatalogo) query.catalogo = filtroCatalogo;
-  return CatalogoSat.find(query).sort({ catalogo: 1, clave: 1, vigenciaDesde: -1 }).lean();
+  const rows = await CatalogoSat.find(query).sort({ catalogo: 1, clave: 1, vigenciaDesde: -1 }).lean();
+
+  const byKey = new Map();
+  for (const row of rows) {
+    const key = `${row.catalogo}|${String(row.clave)}`;
+    const prev = byKey.get(key);
+    if (!prev) {
+      byKey.set(key, row);
+      continue;
+    }
+    const prevLen = String(prev.descripcion || '').length;
+    const curLen = String(row.descripcion || '').length;
+    const prevV = new Date(prev.vigenciaDesde || 0).getTime();
+    const curV = new Date(row.vigenciaDesde || 0).getTime();
+    // Preferir descripción oficial más completa; si similar, la vigencia más reciente
+    if (curLen > prevLen + 5 || (Math.abs(curLen - prevLen) <= 5 && curV > prevV)) {
+      byKey.set(key, row);
+    }
+  }
+  return [...byKey.values()].sort((a, b) => {
+    const c = String(a.catalogo).localeCompare(String(b.catalogo));
+    if (c) return c;
+    return String(a.clave).localeCompare(String(b.clave), undefined, { numeric: true });
+  });
 }
 
 async function listCatalogoSatTodos() {

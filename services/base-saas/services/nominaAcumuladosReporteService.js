@@ -983,18 +983,37 @@ function sumImpuestos(rows) {
   return out;
 }
 
-async function listConceptosParaFiltro(tenantId, empresaId) {
-  const ConceptoNomina = await getConceptoNominaModel();
-  const rows = await ConceptoNomina.find({
-    tenantId,
-    empresaId,
-    activo: { $ne: false },
-    codigo: { $nin: [...META_CONCEPTOS, 'IMSS_PATRONAL'] }
-  })
-    .select('codigo nombre tipo')
-    .sort({ tipo: 1, codigo: 1 })
-    .lean();
-  return rows.filter((r) => isVisibleConcepto(r.codigo));
+async function listConceptosParaFiltro(tenantId, empresaId, subsidiariaId = null) {
+  try {
+    const {
+      listConceptosVisiblesParaSubsidiaria
+    } = require('./nomina/conceptResolutionService');
+    const rows = await listConceptosVisiblesParaSubsidiaria(tenantId, empresaId, subsidiariaId, {
+      soloActivos: true,
+      backfillHistorico: false
+    });
+    return rows
+      .filter(
+        (r) =>
+          isVisibleConcepto(r.codigo) &&
+          !META_CONCEPTOS.has(r.codigo) &&
+          r.codigo !== 'IMSS_PATRONAL'
+      )
+      .map((r) => ({ codigo: r.codigo, nombre: r.nombre, tipo: r.tipo }))
+      .sort((a, b) => String(a.tipo).localeCompare(String(b.tipo)) || String(a.codigo).localeCompare(String(b.codigo)));
+  } catch (_) {
+    const ConceptoNomina = await getConceptoNominaModel();
+    const rows = await ConceptoNomina.find({
+      tenantId,
+      empresaId,
+      activo: { $ne: false },
+      codigo: { $nin: [...META_CONCEPTOS, 'IMSS_PATRONAL'] }
+    })
+      .select('codigo nombre tipo')
+      .sort({ tipo: 1, codigo: 1 })
+      .lean();
+    return rows.filter((r) => isVisibleConcepto(r.codigo));
+  }
 }
 
 function toCsv(result) {

@@ -8,7 +8,8 @@ const getCentroCostoModel = require('../models/centroCosto');
 const {
   requireEmpresaForTenant,
   findOneByTenant,
-  findOneDocByTenant
+  findOneDocByTenant,
+  sessionSubsidiariaId
 } = require('../libs/tenantScope');
 const { buildEmpleadoPayload } = require('../libs/empleadoPayload');
 const { validateEmpleadoImssIsn, labelEntidadFederativa } = require('../libs/empleadoImssIsnValidation');
@@ -95,19 +96,37 @@ function labelPeriodoNomina(p = {}) {
 
 /**
  * Historial de nóminas del empleado (histórico + recibos de períodos abiertos).
+ * Filtra por subsidiaria del empleado para no mezclar recibos de otra sucursal (p.ej. MAIN demo).
  */
-async function listHistorialNominasEmpleado(tenantId, empleadoId, { limit = 60 } = {}) {
+async function listHistorialNominasEmpleado(
+  tenantId,
+  empleadoId,
+  { limit = 60, subsidiariaId = null } = {}
+) {
   const Historico = await getNominaHistoricoReciboModel();
   const Recibo = await getReciboNominaModel();
   const Periodo = await getPeriodoNominaModel();
+  const Empleado = await getEmpleadoModel();
+
+  const emp = await Empleado.findById(empleadoId).select('subsidiariaId').lean();
+  const subId = subsidiariaId || emp?.subsidiariaId || null;
+
+  const histFilter = { tenantId, empleadoId };
+  if (subId) {
+    histFilter.$or = [
+      { subsidiariaId: subId },
+      { subsidiariaId: null },
+      { subsidiariaId: { $exists: false } }
+    ];
+  }
 
   const [historicos, recibosAbiertos] = await Promise.all([
-    Historico.find({ tenantId, empleadoId })
+    Historico.find(histFilter)
       .select(
-        '_id periodoId origen anio mes periodo fechaCierre totalPercepciones totalDeducciones netoPagar'
+        '_id periodoId origen anio mes periodo fechaCierre totalPercepciones totalDeducciones netoPagar subsidiariaId'
       )
       .sort({ 'periodo.fechaFin': -1, fechaCierre: -1, anio: -1, mes: -1 })
-      .limit(limit)
+      .limit(Math.max(limit * 2, 80))
       .lean(),
     Recibo.find({ tenantId, empleadoId })
       .select('_id periodoId totalPercepciones totalDeducciones netoPagar updatedAt')
@@ -116,61 +135,70 @@ async function listHistorialNominasEmpleado(tenantId, empleadoId, { limit = 60 }
       .lean()
   ]);
 
-  const periodoIdsAbiertos = [
-    ...new Set(recibosAbiertos.map((r) => String(r.periodoId || '')).filter(Boolean))
+  const periodoIds = [
+    ...new Set(
+      [...historicos, ...recibosAbiertos]
+        .map((r) => (r.periodoId ? String(r.periodoId) : ''))
+        .filter(Boolean)
+    )
   ];
-  const periodosAbiertos = periodoIdsAbiertos.length
-    ? await Periodo.find({
-        _id: { $in: periodoIdsAbiertos },
-        estatus: { $ne: 'cerrado' }
-      })
+  const periodosLive = periodoIds.length
+    ? await Periodo.find({ _id: { $in: periodoIds } })
         .select('_id tipoPeriodo tipoNomina numeroPeriodo anio fechaInicio fechaFin estatus')
         .lean()
     : [];
-  const perAbiertoById = new Map(periodosAbiertos.map((p) => [String(p._id), p]));
+  const perById = new Map(periodosLive.map((p) => [String(p._id), p]));
 
   const rows = [];
-  const histPeriodoIds = new Set(
-    historicos.map((h) => (h.periodoId ? String(h.periodoId) : '')).filter(Boolean)
-  );
+  const histPeriodoIds = new Set();
 
   for (const h of historicos) {
-    const p = h.periodo || {};
+    const live = h.periodoId ? perById.get(String(h.periodoId)) : null;
+    const snap = h.periodo || {};
+    const fechaInicio = live?.fechaInicio || snap.fechaInicio || null;
+    const fechaFin = live?.fechaFin || snap.fechaFin || null;
     const fecha =
-      p.fechaFin || p.fechaInicio || h.fechaCierre || (h.anio && h.mes ? new Date(h.anio, h.mes - 1, 1) : null);
+      fechaFin ||
+      fechaInicio ||
+      h.fechaCierre ||
+      (h.anio && h.mes ? new Date(h.anio, h.mes - 1, 1) : null);
+    const anioLabel = live?.anio
+      ? live.anio
+      : fechaFin
+        ? new Date(fechaFin).getUTCFullYear()
+        : h.anio;
     rows.push({
-      periodoLabel: labelPeriodoNomina({
-        tipoPeriodo: p.tipoPeriodo,
-        numeroPeriodo: p.numeroPeriodo,
-        anio: h.anio
-      }),
-      tipo: p.tipoNomina || (h.origen === 'importacion' ? 'importacion' : 'ordinaria'),
+      tipoPeriodo: live?.tipoPeriodo || snap.tipoPeriodo || '',
+      tipo: live?.tipoNomina || snap.tipoNomina || (h.origen === 'importacion' ? 'importacion' : 'ordinaria'),
+      numeroPeriodoLive: live?.numeroPeriodo ?? snap.numeroPeriodo ?? null,
+      anio: anioLabel,
       fecha,
-      fechaInicio: p.fechaInicio || null,
-      fechaFin: p.fechaFin || null,
+      fechaInicio,
+      fechaFin,
       subtotal: money(h.totalPercepciones),
       descuentos: money(h.totalDeducciones),
       neto: money(h.netoPagar),
       origen: h.origen || 'cierre',
       detalleUrl:
-        h.periodoId && h._id
+        h.periodoId && h._id && live
           ? `/nomina/periodos/${h.periodoId}/recibos/${h._id}`
-          : null
+          : h._id && h.periodoId
+            ? `/nomina/periodos/${h.periodoId}/recibos/${h._id}`
+            : null
     });
+    if (h.periodoId) histPeriodoIds.add(String(h.periodoId));
   }
 
   for (const r of recibosAbiertos) {
     const pid = r.periodoId ? String(r.periodoId) : '';
     if (!pid || histPeriodoIds.has(pid)) continue;
-    const p = perAbiertoById.get(pid);
-    if (!p) continue;
+    const p = perById.get(pid);
+    if (!p || p.estatus === 'cerrado') continue;
     rows.push({
-      periodoLabel: labelPeriodoNomina({
-        tipoPeriodo: p.tipoPeriodo,
-        numeroPeriodo: p.numeroPeriodo,
-        anio: p.anio
-      }),
+      tipoPeriodo: p.tipoPeriodo,
       tipo: p.tipoNomina || 'ordinaria',
+      numeroPeriodoLive: p.numeroPeriodo,
+      anio: p.anio,
       fecha: p.fechaFin || p.fechaInicio || r.updatedAt,
       fechaInicio: p.fechaInicio || null,
       fechaFin: p.fechaFin || null,
@@ -179,6 +207,16 @@ async function listHistorialNominasEmpleado(tenantId, empleadoId, { limit = 60 }
       neto: money(r.netoPagar),
       origen: 'abierto',
       detalleUrl: `/nomina/periodos/${p._id}/recibos/${r._id}`
+    });
+  }
+
+  // Etiqueta desde PeriodoNomina en BD (fuente de verdad)
+  for (const r of rows) {
+    const snapN = r.numeroPeriodoLive;
+    r.periodoLabel = labelPeriodoNomina({
+      tipoPeriodo: r.tipoPeriodo,
+      numeroPeriodo: snapN,
+      anio: r.anio
     });
   }
 
@@ -265,7 +303,8 @@ async function loadEmpleadoCatalogs(tenantId, empresa) {
   const supervisores = empleados.filter((e) => e.estatus === 'activo');
 
   return {
-    empleados,
+    // No devolver `empleados` aquí: el listado debe aplicar su propio filtro
+    // (empresa + subsidiaria). Solo catálogos / supervisores para formularios.
     departamentos,
     puestos,
     subsidiarias,
@@ -326,14 +365,10 @@ async function listEmpleados(req, res) {
 
   let filter = { tenantId: req.session.tenantId };
   if (empresa) filter.empresaId = empresa._id;
-  const subId = req.session?.subsidiariaActiva?._id;
-  if (subId) {
-    filter.$or = [
-      { subsidiariaId: subId },
-      { subsidiariaId: null },
-      { subsidiariaId: { $exists: false } }
-    ];
-  }
+  const subId = sessionSubsidiariaId(req);
+  // Estricto: con subsidiaria activa no mezclar personal de otras sucursales
+  // ni “huérfanos” sin subsidiaria (esos se ven al quitar el filtro de sub).
+  if (subId) filter.subsidiariaId = subId;
   if (estatus !== 'todos') filter.estatus = estatus;
 
   const empleados = empresa
@@ -348,11 +383,11 @@ async function listEmpleados(req, res) {
   const umaVigente = await loadUmaVigente(req.session.tenantId);
 
   res.render('Personal/empleados', {
-    empleados,
     ...catalogs,
     ...maps,
     ...enumsEmp,
     ...empleadoFormExtras(umaVigente),
+    empleados,
     empresa,
     estatus,
     estatusOptions: ESTATUS_EMPLEADO,
@@ -441,7 +476,11 @@ async function showEmpleado(req, res) {
     getTipoMovimientoLaboralModel().then((M) => M.find({ tenantId: req.session.tenantId }).lean()),
     loadEmpleadoEnums(),
     loadUmaVigente(req.session.tenantId),
-    listHistorialNominasEmpleado(req.session.tenantId, empleado._id, { limit: 48 })
+    listHistorialNominasEmpleado(req.session.tenantId, empleado._id, {
+      limit: 48,
+      // Preferir la sub del empleado (no la de sesión): evita mezclar recibos MAIN demo
+      subsidiariaId: empleado.subsidiariaId || sessionSubsidiariaId(req) || null
+    })
   ]);
   const tipoMovMap = new Map(tiposMov.map((t) => [t.codigo, t.nombre]));
   const baseImss = resolverBaseImss(empleado, umaVigente, 25);

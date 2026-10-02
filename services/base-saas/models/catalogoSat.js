@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const { getFixedMongooseConnection, FIXED_CONNECTIONS } = require('../services/cachingService');
 const { COLLECTION_CATALOGOS_SAT } = require('../config/constants');
+const { CATALOGOS_SAT_ENUM } = require('../config/satCatalogSeed');
 
 const catalogoSatSchema = new mongoose.Schema(
   {
@@ -8,7 +9,7 @@ const catalogoSatSchema = new mongoose.Schema(
       type: String,
       required: true,
       trim: true,
-      enum: ['c_TipoPercepcion', 'c_TipoDeduccion', 'c_TipoOtroPago', 'c_TipoHorasExtra']
+      enum: CATALOGOS_SAT_ENUM
     },
     clave: { type: String, required: true, trim: true },
     descripcion: { type: String, trim: true, default: '' },

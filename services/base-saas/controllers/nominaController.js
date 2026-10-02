@@ -20,7 +20,16 @@ const { resolveNominaConceptoModo, userCanEditNomina, userCanViewNomina } = requ
 const { resolvePeriodRange } = require('../libs/payrollPeriodDates');
 const { trimString, parseDate, parseCheckbox, parsePositiveNumber } = require('../libs/formHelpers');
 const { parseBodyStringList } = require('../libs/conceptoAplicabilidad');
-const { asignarNumeroPeriodo, ensureNumerosPeriodoTenant } = require('../libs/periodoNumero');
+const {
+  asignarNumeroPeriodo,
+  ensureNumerosPeriodoTenant,
+  mapSugerenciasSiguientePeriodo,
+  pickSugerenciaDefault,
+  rangoSiguienteTrasUltimo,
+  diasPeriodoUtc,
+  startOfUtcDay,
+  endOfUtcDay
+} = require('../libs/periodoNumero');
 const { startOfDay, endOfDay, diasCalendarioInclusive } = require('../libs/timeHelpers');
 const { sugerirPagaDespensa } = require('../libs/periodoPrestacionesFlags');
 const {
@@ -198,6 +207,88 @@ async function periodos(req, res) {
 
   const openCreate = String(req.query.nuevo || '') === '1';
 
+  let sugerenciasSiguiente = {};
+  let createDefaults = {
+    tipoPeriodo: 'quincenal',
+    tipoNomina: 'ordinaria',
+    fechaReferencia: null,
+    sugerencia: null
+  };
+  if (empresa) {
+    // Sugerencias: anclar al último período de la subsidiaria activa (si hay)
+    const scopedForSug = await listPeriodosNominaScoped({
+      tenantId,
+      empresaId: empresa._id,
+      subsidiariaId: subId,
+      filter: {},
+      limit: 300,
+      annotateDisplay: true,
+      collapseDuplicates: true
+    });
+    sugerenciasSiguiente = {};
+    const byKey = new Map();
+    for (const p of scopedForSug) {
+      const key = `${p.tipoPeriodo}|${p.tipoNomina || 'ordinaria'}`;
+      const prev = byKey.get(key);
+      if (!prev || new Date(p.fechaFin) > new Date(prev.fechaFin)) byKey.set(key, p);
+    }
+    const { ymdUtc } = require('../libs/periodoNumero');
+    for (const [key, ultimo] of byKey) {
+      const [tipoPeriodo, tipoNomina] = key.split('|');
+      const { ref, range, diasPeriodo } = rangoSiguienteTrasUltimo(tipoPeriodo, ultimo.fechaFin, null, {
+        fechaInicioUltimo: ultimo.fechaInicio,
+        diasPeriodo: ultimo.diasPeriodo
+      });
+      const anio = range.fechaInicio.getUTCFullYear();
+      const sameYear = scopedForSug.filter(
+        (p) =>
+          p.tipoPeriodo === tipoPeriodo &&
+          (p.tipoNomina || 'ordinaria') === tipoNomina &&
+          Number(p.anio || new Date(p.fechaInicio).getUTCFullYear()) === anio
+      );
+      const maxDisplay = sameYear.reduce(
+        (m, p) => Math.max(m, Number(p.numeroPeriodoDisplay) || 0),
+        0
+      );
+      sugerenciasSiguiente[key] = {
+        tieneHistorico: true,
+        ultimo: {
+          fechaInicio: ymdUtc(ultimo.fechaInicio),
+          fechaFin: ymdUtc(ultimo.fechaFin),
+          anio: ultimo.anio,
+          numeroPeriodo: ultimo.numeroPeriodoDisplay ?? ultimo.numeroPeriodo,
+          estatus: ultimo.estatus
+        },
+        fechaReferencia: ymdUtc(ref),
+        fechaInicio: ymdUtc(range.fechaInicio),
+        fechaFin: ymdUtc(range.fechaFin),
+        diasPeriodo: diasPeriodo || null,
+        anio,
+        numeroPeriodo: maxDisplay + 1
+      };
+    }
+    // defaults globales si no hay histórico en sub
+    const baseMap = await mapSugerenciasSiguientePeriodo(PeriodoNomina, {
+      tenantId,
+      empresaId: empresa._id,
+      subsidiariaId: subId
+    });
+    for (const [k, v] of Object.entries(baseMap)) {
+      if (!sugerenciasSiguiente[k]) sugerenciasSiguiente[k] = v;
+    }
+    const picked = pickSugerenciaDefault(sugerenciasSiguiente);
+    createDefaults = {
+      tipoPeriodo: picked.tipoPeriodo,
+      tipoNomina: picked.tipoNomina,
+      fechaReferencia: picked.sugerencia?.fechaReferencia || null,
+      sugerencia: picked.sugerencia || null
+    };
+  }
+
+  const fechaRefDefault =
+    createDefaults.fechaReferencia || new Date().toISOString().slice(0, 10);
+  const refForDespensa = parseDate(fechaRefDefault) || new Date();
+
   res.render('Nomina/periodos', {
     periodos: periodosList,
     prenominaPeriodos,
@@ -209,7 +300,9 @@ async function periodos(req, res) {
     estatusLabels: ESTATUS_PERIODO_NOMINA,
     filtros,
     openCreate,
-    sugerirPagaDespensaDefault: sugerirPagaDespensa('quincenal', new Date()),
+    createDefaults,
+    sugerenciasSiguiente,
+    sugerirPagaDespensaDefault: sugerirPagaDespensa(createDefaults.tipoPeriodo, refForDespensa),
     empresa,
     error: error || null,
     canEdit: userCanEditNomina(req.session),
@@ -239,7 +332,33 @@ async function createPeriodo(req, res) {
       ? periodicidadBody
       : periodicidadSatDesdeMotor(tipoPeriodo);
     const ref = parseDate(req.body.fechaReferencia) || new Date();
-    let { fechaInicio, fechaFin } = resolvePeriodRange(tipoPeriodo, ref);
+    const subId = sessionSubsidiariaId(req);
+    const PeriodoNomina = await getPeriodoNominaModel();
+
+    // Continuar secuencia del último período de la misma sub (evita solape calendario lunes-domingo)
+    let fechaInicio;
+    let fechaFin;
+    let diasPeriodoCalc = null;
+    const ultimoQ = {
+      tenantId,
+      empresaId: empresa._id,
+      tipoPeriodo,
+      tipoNomina
+    };
+    if (subId) ultimoQ.subsidiariaId = subId;
+    else ultimoQ.$or = [{ subsidiariaId: null }, { subsidiariaId: { $exists: false } }];
+    const ultimo = await PeriodoNomina.findOne(ultimoQ).sort({ fechaFin: -1, numeroPeriodo: -1 }).lean();
+    if (ultimo?.fechaFin) {
+      const next = rangoSiguienteTrasUltimo(tipoPeriodo, ultimo.fechaFin, null, {
+        fechaInicioUltimo: ultimo.fechaInicio,
+        diasPeriodo: ultimo.diasPeriodo
+      });
+      fechaInicio = next.range.fechaInicio;
+      fechaFin = next.range.fechaFin;
+      diasPeriodoCalc = next.diasPeriodo;
+    } else {
+      ({ fechaInicio, fechaFin } = resolvePeriodRange(tipoPeriodo, ref));
+    }
     let fechaPago = null;
 
     await ensureNominaConceptsForTenant(tenantId, empresa._id);
@@ -265,9 +384,10 @@ async function createPeriodo(req, res) {
         return res.redirect('/nomina/periodos');
       }
       // Alinear fechas con la pre-nómina vinculada (fuente de asistencia)
-      fechaInicio = startOfDay(prePeriodo.fechaInicio);
-      fechaFin = endOfDay(prePeriodo.fechaFin);
-      fechaPago = prePeriodo.fechaPago ? startOfDay(prePeriodo.fechaPago) : null;
+      fechaInicio = startOfUtcDay(prePeriodo.fechaInicio);
+      fechaFin = endOfUtcDay(prePeriodo.fechaFin);
+      fechaPago = prePeriodo.fechaPago ? startOfUtcDay(prePeriodo.fechaPago) : null;
+      diasPeriodoCalc = diasPeriodoUtc(fechaInicio, fechaFin);
     }
 
     if (!fechaPago) {
@@ -275,23 +395,55 @@ async function createPeriodo(req, res) {
       fechaPago = sugerirFechaPago(fechaFin, null);
     }
 
-    const PeriodoNomina = await getPeriodoNominaModel();
+    const fechaInicioNorm = startOfUtcDay(fechaInicio);
+    const fechaFinNorm = endOfUtcDay(fechaFin);
+    const diasPeriodo =
+      diasPeriodoCalc || diasPeriodoUtc(fechaInicioNorm, fechaFinNorm) || diasCalendarioInclusive(fechaInicio, fechaFin);
+
     const exists = await PeriodoNomina.findOne({
       tenantId,
+      empresaId: empresa._id,
+      subsidiariaId: subId || null,
       tipoPeriodo,
       tipoNomina,
-      fechaInicio: startOfDay(fechaInicio),
-      fechaFin: endOfDay(fechaFin)
+      fechaInicio: fechaInicioNorm,
+      fechaFin: fechaFinNorm
     });
     if (exists) {
       req.flash('error', 'Ya existe un período de nómina con esas fechas y tipo');
       return res.redirect('/nomina/periodos');
     }
 
+    // Solape con cualquier período de la misma sub
+    const solape = await PeriodoNomina.findOne({
+      tenantId,
+      empresaId: empresa._id,
+      ...(subId
+        ? { subsidiariaId: subId }
+        : { $or: [{ subsidiariaId: null }, { subsidiariaId: { $exists: false } }] }),
+      tipoPeriodo,
+      tipoNomina,
+      fechaInicio: { $lte: fechaFinNorm },
+      fechaFin: { $gte: fechaInicioNorm }
+    })
+      .select('_id numeroPeriodo fechaInicio fechaFin')
+      .lean();
+    if (solape) {
+      req.flash(
+        'error',
+        `Las fechas se solapan con el período #${solape.numeroPeriodo || '—'} ` +
+          `(${new Date(solape.fechaInicio).toLocaleDateString('es-MX')} – ${new Date(solape.fechaFin).toLocaleDateString('es-MX')}).`
+      );
+      return res.redirect('/nomina/periodos');
+    }
+
     const { anio, numeroPeriodo } = await asignarNumeroPeriodo(PeriodoNomina, {
       tenantId,
+      empresaId: empresa._id,
+      subsidiariaId: subId,
       tipoPeriodo,
-      fechaInicio
+      tipoNomina,
+      fechaInicio: fechaInicioNorm
     });
 
     const lastBody = (name) => {
@@ -307,16 +459,17 @@ async function createPeriodo(req, res) {
     const periodo = await PeriodoNomina.create({
       tenantId,
       empresaId: empresa._id,
+      subsidiariaId: subId || null,
       tipoPeriodo,
       tipoNomina,
       tipoNominaCfdi,
       periodicidadPagoSat: periodicidadPagoSat != null ? periodicidadPagoSat : null,
-      fechaInicio: startOfDay(fechaInicio),
-      fechaFin: endOfDay(fechaFin),
-      fechaPago: fechaPago ? startOfDay(fechaPago) : null,
+      fechaInicio: fechaInicioNorm,
+      fechaFin: fechaFinNorm,
+      fechaPago: fechaPago ? startOfUtcDay(fechaPago) : null,
       anio,
       numeroPeriodo,
-      diasPeriodo: diasCalendarioInclusive(fechaInicio, fechaFin),
+      diasPeriodo,
       estatus: 'abierto',
       payrollPeriodId: payrollPeriodId || null,
       notas: trimString(req.body.notas),
@@ -715,6 +868,33 @@ async function showPeriodo(req, res) {
     cerradoPor = await resolveUserLabel(periodo.cerradoPorUserId);
   }
 
+  // # visible alineado a la subsidiaria activa (1..N cronológico en el listado)
+  try {
+    const { empresa: empCtx } = await requireEmpresaForTenant(req);
+    const subId = sessionSubsidiariaId(req);
+    if (empCtx) {
+      const siblings = await listPeriodosNominaScoped({
+        tenantId,
+        empresaId: empCtx._id,
+        subsidiariaId: subId,
+        filter: {
+          tipoPeriodo: periodo.tipoPeriodo,
+          tipoNomina: periodo.tipoNomina || 'ordinaria',
+          anio: periodo.anio || new Date(periodo.fechaInicio).getFullYear()
+        },
+        limit: 200,
+        annotateDisplay: true,
+        collapseDuplicates: true
+      });
+      const hit = siblings.find((p) => String(p._id) === String(periodo._id));
+      if (hit?.numeroPeriodoDisplay != null) {
+        periodo.numeroPeriodoDisplay = hit.numeroPeriodoDisplay;
+      }
+    }
+  } catch (_) {
+    /* no bloquear detalle */
+  }
+
   res.render('Nomina/periodo-show', {
     periodo,
     recibos,
@@ -825,7 +1005,9 @@ async function vincularPrenominaAction(req, res) {
     if (!periodo.anio || !periodo.numeroPeriodo) {
       const assigned = await asignarNumeroPeriodo(PeriodoNomina, {
         tenantId,
+        empresaId: periodo.empresaId,
         tipoPeriodo: periodo.tipoPeriodo,
+        tipoNomina: periodo.tipoNomina || 'ordinaria',
         fechaInicio
       });
       periodo.anio = assigned.anio;
@@ -1004,6 +1186,7 @@ async function showRecibo(req, res) {
   let recibo = await ReciboNomina.findOne({ tenantId, _id: req.params.reciboId }).lean();
   let conceptos = null;
   let desdeHistorico = false;
+  let histDoc = null;
 
   if (!recibo) {
     const hist = await Historico.findOne({
@@ -1020,10 +1203,12 @@ async function showRecibo(req, res) {
         req.flash('error', 'Recibo no encontrado');
         return res.redirect(`/nomina/periodos/${req.params.id}`);
       }
+      histDoc = histPorOrigen;
       recibo = mapHistoricoToReciboView(histPorOrigen);
       conceptos = histPorOrigen.conceptos || [];
       desdeHistorico = true;
     } else {
+      histDoc = hist;
       recibo = mapHistoricoToReciboView(hist);
       conceptos = hist.conceptos || [];
       desdeHistorico = true;
@@ -1031,15 +1216,45 @@ async function showRecibo(req, res) {
   }
 
   const ConceptoNomina = await getConceptoNominaModel();
+  const empScope = await reqEmp(req).catch(() => ({ empresa: null }));
+  const catalogoQ = empScope.empresa
+    ? { tenantId, empresaId: empScope.empresa._id }
+    : { tenantId };
 
-  const [periodo, empleado, catalogo, empScope] = await Promise.all([
-    PeriodoNomina.findOne({ _id: recibo.periodoId }).lean(),
+  const [empleado, catalogo] = await Promise.all([
     Empleado.findOne({ _id: recibo.empleadoId }).lean(),
-    ConceptoNomina.find({ tenantId })
+    ConceptoNomina.find(catalogoQ)
       .select('codigo nombre naturaleza tipo claveSAT sat metadata ordenImpresion ordenCalculo')
-      .lean(),
-    reqEmp(tenantId).catch(() => ({ empresa: null }))
+      .lean()
   ]);
+
+  let periodo = null;
+  if (recibo.periodoId) {
+    periodo = await PeriodoNomina.findOne({ _id: recibo.periodoId }).lean();
+  }
+  if (!periodo && req.params.id && String(req.params.id) !== String(recibo.periodoId || '')) {
+    periodo = await PeriodoNomina.findOne({ _id: req.params.id }).lean();
+  }
+
+  // Históricos de importación pueden tener periodoId huérfano o solo snapshot embebido.
+  if (!periodo) {
+    const snap = histDoc?.periodo || null;
+    const fallbackId = recibo.periodoId || req.params.id || null;
+    if (snap || fallbackId) {
+      periodo = {
+        _id: fallbackId,
+        tipoPeriodo: snap?.tipoPeriodo || '',
+        tipoNomina: snap?.tipoNomina || '',
+        numeroPeriodo: snap?.numeroPeriodo ?? null,
+        anio: histDoc?.anio || null,
+        fechaInicio: snap?.fechaInicio || null,
+        fechaFin: snap?.fechaFin || null,
+        diasPeriodo: snap?.diasPeriodo || 0,
+        estatus: 'cerrado',
+        _sintetico: true
+      };
+    }
+  }
 
   if (!desdeHistorico) {
     conceptos = await ConceptoAplicado.find({ tenantId, reciboId: recibo._id })
@@ -1228,8 +1443,9 @@ async function descargarXmlRecibo(req, res) {
 async function conceptos(req, res) {
   if (requireNominaViewOrRedirect(req, res) === false) return;
   const tenantId = req.session.tenantId;
-  const { empresa, error } = await requireEmpresaForTenant(tenantId);
+  const { empresa, error } = await requireEmpresaForTenant(req);
   const canEdit = userCanEditNomina(req.session);
+  const subId = sessionSubsidiariaId(req);
 
   if (empresa) {
     await ensureNominaConceptsForTenant(tenantId, empresa._id);
@@ -1241,19 +1457,35 @@ async function conceptos(req, res) {
     }
   }
 
-  let conceptosList = empresa ? await listConceptos(tenantId) : [];
-  // Misma colección: mostrar todos; el badge aplicaEn los separa visualmente
-  conceptosList = conceptosList.map((c) => ({
-    ...c,
-    aplicaEn: c.aplicaEn || c.metadata?.aplicaEn || 'nomina',
-    tiposIncidencia: c.tiposIncidencia || c.metadata?.tiposIncidencia || []
-  }));
+  let conceptosList = [];
+  if (empresa) {
+    try {
+      const {
+        listConceptosVisiblesParaSubsidiaria
+      } = require('../services/nomina/conceptResolutionService');
+      conceptosList = await listConceptosVisiblesParaSubsidiaria(tenantId, empresa._id, subId, {
+        backfillHistorico: true,
+        // En la pantalla de catálogo sí mostramos inactivos (Activo = No) para que el cambio se vea
+        ocultarDeshabilitados: false
+      });
+    } catch (err) {
+      console.error('[conceptos] list:', err);
+      conceptosList = await listConceptos(tenantId, empresa._id);
+      conceptosList = conceptosList.map((c) => ({
+        ...c,
+        aplicaEn: c.aplicaEn || c.metadata?.aplicaEn || 'nomina',
+        tiposIncidencia: c.tiposIncidencia || c.metadata?.tiposIncidencia || [],
+        activoUi: c.activo !== false
+      }));
+    }
+  }
 
   res.render('Nomina/conceptos', {
     conceptos: conceptosList,
     tiposConcepto: TIPOS_CONCEPTO,
     naturalezas: NATURALEZAS_CONCEPTO,
     empresa,
+    subsidiariaId: subId || null,
     canEdit,
     error: error || null,
     session: req.session
@@ -1340,6 +1572,22 @@ async function createConcepto(req, res) {
       aplicaTiposPeriodo: parseBodyStringList(req.body.aplicaTiposPeriodo),
       aplicaTipoNomina: parseBodyStringList(req.body.aplicaTipoNomina)
     });
+    try {
+      const {
+        upsertSubsidiaryConceptConfig
+      } = require('../services/nomina/conceptResolutionService');
+      await upsertSubsidiaryConceptConfig({
+        tenantId,
+        empresaId: empresa._id,
+        subsidiariaId: sessionSubsidiariaId(req),
+        conceptoCodigo: req.body.codigo,
+        origen: 'manual',
+        aliasNombre: req.body.nombre || '',
+        tipo: req.body.tipo || ''
+      });
+    } catch (_) {
+      /* opcional */
+    }
     req.flash('success', 'Concepto creado');
   } catch (err) {
     req.flash('error', err.message || 'Error al crear concepto');
@@ -1361,7 +1609,8 @@ async function showConcepto(req, res) {
     return res.redirect(`/nomina/conceptos/${codigo}?modo=vista`);
   }
 
-  const data = await getConceptoConFormulas(tenantId, codigo);
+  const { empresa } = await requireEmpresaForTenant(req);
+  const data = await getConceptoConFormulas(tenantId, codigo, empresa ? empresa._id : null);
 
   if (!data) {
     req.flash('error', 'Concepto no encontrado');
@@ -1406,15 +1655,13 @@ async function showConcepto(req, res) {
     ? String(req.query.nomina)
     : 'ordinaria';
 
-  const todosConceptos = await listConceptos(tenantId);
+  const todosConceptos = await listConceptos(tenantId, empresa ? empresa._id : null);
   const conceptosOtros = todosConceptos.filter((c) => c.codigo !== codigo);
 
   let companyConfig = null;
   let catalogEntry = null;
   try {
     const { getCatalogWithCompanyConfig, ensureDefaultFormulas } = require('../services/nomina/conceptResolutionService');
-    const { requireEmpresaForTenant: reqEmp } = require('../libs/tenantScope');
-    const { empresa } = await reqEmp(tenantId);
     if (empresa) {
       await ensureDefaultFormulas(tenantId, null);
       const withCfg = await getCatalogWithCompanyConfig(tenantId, empresa._id);
@@ -1712,12 +1959,76 @@ async function saveFormulaAction(req, res) {
   res.redirect(`/nomina/conceptos/${codigo}?periodo=${encodeURIComponent(tipoPeriodo)}&nomina=${encodeURIComponent(tipoNomina)}&modo=edicion`);
 }
 
+async function deshabilitarPreviosHistoricoAction(req, res) {
+  if (requireNominaEditOrRedirect(req, res) === false) return;
+  try {
+    const tenantId = req.session.tenantId;
+    const { empresa, error } = await requireEmpresaForTenant(req);
+    if (error || !empresa) {
+      req.flash('error', error || 'Sin empresa');
+      return res.redirect('/nomina/conceptos');
+    }
+    const {
+      deshabilitarConceptosPreviosAlHistor
+    } = require('../services/nomina/conceptResolutionService');
+    const result = await deshabilitarConceptosPreviosAlHistor({
+      tenantId,
+      empresaId: empresa._id,
+      subsidiariaId: sessionSubsidiariaId(req)
+    });
+    req.flash(
+      'success',
+      `Conceptos previos deshabilitados: empresa ${result.companyDeshabilitados}` +
+        (result.companyCodigos.length
+          ? ` (${result.companyCodigos.slice(0, 12).join(', ')}${result.companyCodigos.length > 12 ? '…' : ''})`
+          : '') +
+        `; sub ${result.subDeshabilitados}; maestro ${result.maestroDeshabilitados || 0}. ` +
+        `Se conservan histórico/CFDI + núcleo operativo.`
+    );
+  } catch (err) {
+    console.error('[deshabilitarPreviosHistorico]', err);
+    req.flash('error', err.message || 'No se pudieron deshabilitar conceptos');
+  }
+  res.redirect('/nomina/conceptos');
+}
+
 async function toggleConceptoAction(req, res) {
   if (requireNominaEditOrRedirect(req, res) === false) return;
   try {
-    await toggleConcepto(req.session.tenantId, req.params.codigo);
-    req.flash('success', 'Estado actualizado');
+    const tenantId = req.session.tenantId;
+    const codigo = String(req.params.codigo || '').trim().toUpperCase();
+    const subId = sessionSubsidiariaId(req);
+    const { empresa, error } = await requireEmpresaForTenant(req);
+    if (error || !empresa) {
+      req.flash('error', error || 'Sin empresa');
+      return res.redirect('/nomina/conceptos');
+    }
+
+    const accion = String(req.body.accion || req.body.action || '')
+      .trim()
+      .toLowerCase();
+    const {
+      setConceptoVisibilidad,
+      toggleConceptoVisibilidad
+    } = require('../services/nomina/conceptResolutionService');
+
+    let result;
+    if (accion === 'desactivar' || accion === 'disable' || accion === '0' || accion === 'off') {
+      result = await setConceptoVisibilidad(tenantId, empresa._id, subId, codigo, false);
+    } else if (accion === 'activar' || accion === 'enable' || accion === '1' || accion === 'on') {
+      result = await setConceptoVisibilidad(tenantId, empresa._id, subId, codigo, true);
+    } else {
+      result = await toggleConceptoVisibilidad(tenantId, empresa._id, subId, codigo);
+    }
+
+    req.flash(
+      'success',
+      result.activo
+        ? `Concepto ${result.codigo} activado`
+        : `Concepto ${result.codigo} desactivado: no participará en futuros cálculos`
+    );
   } catch (err) {
+    console.error('[toggleConcepto]', err);
     req.flash('error', err.message || 'No se pudo cambiar el estado');
   }
   res.redirect('/nomina/conceptos');
@@ -1934,10 +2245,147 @@ async function saveDescuentosConfig(req, res) {
   res.redirect('/nomina/configuracion');
 }
 
+async function organizarPeriodosAction(req, res) {
+  if (requireNominaEditOrRedirect(req, res) === false) return;
+  try {
+    const { empresa, error } = await requireEmpresaForTenant(req);
+    if (error || !empresa) {
+      req.flash('error', error || 'Sin empresa');
+      return res.redirect('/nomina/periodos');
+    }
+    const {
+      organizarPeriodosTrasImportacion
+    } = require('../services/nomina/organizarPeriodosService');
+    const tipoMotor = trimString(req.body.tipoPeriodo) || 'semanal';
+    const tipoNomina = trimString(req.body.tipoNomina) || 'ordinaria';
+    const subId = sessionSubsidiariaId(req);
+    const result = await organizarPeriodosTrasImportacion({
+      tenantId: req.session.tenantId,
+      empresaId: empresa._id,
+      tipoMotor,
+      tipoNomina,
+      subsidiariaId: subId
+    });
+    const sep = result.separacion || {};
+    const act = result.resumenActivo;
+    req.flash(
+      'success',
+      `Períodos organizados (${tipoMotor}/${tipoNomina}): ` +
+        `separados ${sep.split || 0}, sellados ${sep.stamped || 0}` +
+        (act
+          ? `, sub activa renumerados ${act.renumerados || 0} (fusiones ${act.merges || 0})`
+          : '') +
+        '.'
+    );
+  } catch (err) {
+    console.error('[organizarPeriodos]', err);
+    req.flash('error', err.message || 'No se pudieron organizar los períodos');
+  }
+  const qs = new URLSearchParams();
+  if (req.body.tipoPeriodo) qs.set('tipoPeriodo', req.body.tipoPeriodo);
+  if (req.body.tipoNomina) qs.set('tipoNomina', req.body.tipoNomina);
+  if (req.body.anio) qs.set('anio', req.body.anio);
+  const q = qs.toString();
+  res.redirect(`/nomina/periodos${q ? `?${q}` : ''}`);
+}
+
+async function mapeoSat(req, res) {
+  if (requireNominaViewOrRedirect(req, res) === false) return;
+  const tenantId = req.session.tenantId;
+  const { empresa, error } = await requireEmpresaForTenant(tenantId);
+  const subId = sessionSubsidiariaId(req);
+  const canEdit = userCanEditNomina(req.session);
+
+  let mapa = { rows: [], overridesCount: 0 };
+  let codigosMotor = [];
+  if (empresa) {
+    const { listMapaEfectivo } = require('../services/nomina/satConceptoMotorMapService');
+    const { CODIGOS_MOTOR_CONOCIDOS } = require('../config/satConceptoMotorMap');
+    mapa = await listMapaEfectivo({
+      tenantId,
+      empresaId: empresa._id,
+      subsidiariaId: subId
+    });
+    const ConceptoNomina = await getConceptoNominaModel();
+    const fromDb = await ConceptoNomina.find({ tenantId, empresaId: empresa._id, activo: true })
+      .select('codigo')
+      .sort({ codigo: 1 })
+      .lean();
+    const set = new Set([
+      ...CODIGOS_MOTOR_CONOCIDOS,
+      ...fromDb.map((c) => String(c.codigo).toUpperCase()),
+      ...mapa.rows.map((r) => r.conceptoCodigo)
+    ]);
+    codigosMotor = [...set].filter(Boolean).sort();
+  }
+
+  res.render('Nomina/mapeo-sat', {
+    mapa,
+    codigosMotor,
+    empresa,
+    subsidiariaId: subId || null,
+    canEdit,
+    error: error || null,
+    session: req.session
+  });
+}
+
+async function saveMapeoSatAction(req, res) {
+  if (requireNominaEditOrRedirect(req, res) === false) return;
+  try {
+    const tenantId = req.session.tenantId;
+    const { empresa, error } = await requireEmpresaForTenant(tenantId);
+    if (error || !empresa) {
+      req.flash('error', error || 'Sin empresa');
+      return res.redirect('/nomina/mapeo-sat');
+    }
+    const { upsertOverride } = require('../services/nomina/satConceptoMotorMapService');
+    await upsertOverride({
+      tenantId,
+      empresaId: empresa._id,
+      subsidiariaId: sessionSubsidiariaId(req),
+      tipo: trimString(req.body.tipo),
+      claveSat: trimString(req.body.claveSat),
+      conceptoCodigo: trimString(req.body.conceptoCodigo),
+      matchNombre: trimString(req.body.matchNombre),
+      esDefault: req.body.esDefault === '1' || req.body.esDefault === true,
+      notas: trimString(req.body.notas)
+    });
+    req.flash('success', 'Override SAT → motor guardado para esta subsidiaria');
+  } catch (err) {
+    req.flash('error', err.message || 'No se pudo guardar el mapeo');
+  }
+  res.redirect('/nomina/mapeo-sat');
+}
+
+async function deleteMapeoSatAction(req, res) {
+  if (requireNominaEditOrRedirect(req, res) === false) return;
+  try {
+    const tenantId = req.session.tenantId;
+    const { empresa, error } = await requireEmpresaForTenant(tenantId);
+    if (error || !empresa) {
+      req.flash('error', error || 'Sin empresa');
+      return res.redirect('/nomina/mapeo-sat');
+    }
+    const { deleteOverride } = require('../services/nomina/satConceptoMotorMapService');
+    const ok = await deleteOverride({
+      tenantId,
+      empresaId: empresa._id,
+      subsidiariaId: sessionSubsidiariaId(req),
+      id: req.params.id
+    });
+    req.flash(ok ? 'success' : 'error', ok ? 'Override eliminado' : 'Override no encontrado');
+  } catch (err) {
+    req.flash('error', err.message || 'No se pudo eliminar');
+  }
+  res.redirect('/nomina/mapeo-sat');
+}
+
 module.exports = {
   index,
   periodos,
   createPeriodo,
+  organizarPeriodosAction,
   updatePeriodoPrestacionesAction,
   updatePeriodoClasificacionAction,
   showPeriodo,
@@ -1950,6 +2398,7 @@ module.exports = {
   conceptos,
   newConcepto,
   createConcepto,
+  deshabilitarPreviosHistoricoAction,
   showConcepto,
   saveConceptoPropsAction,
   saveFormulaAction,
@@ -1959,5 +2408,8 @@ module.exports = {
   configuracion,
   saveIsrMotorConfig,
   saveDiasPagadosConfig,
-  saveDescuentosConfig
+  saveDescuentosConfig,
+  mapeoSat,
+  saveMapeoSatAction,
+  deleteMapeoSatAction
 };

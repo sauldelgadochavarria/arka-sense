@@ -672,7 +672,9 @@ async function emitirAPeriodoNomina(docId, { tenantId, user = {}, omitirDispersi
     if (!periodo) {
       const { anio, numeroPeriodo } = await asignarNumeroPeriodo(Periodo, {
         tenantId,
+        empresaId: doc.empresaId,
         tipoPeriodo,
+        tipoNomina,
         fechaInicio
       });
       periodo = await Periodo.create({

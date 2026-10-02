@@ -101,11 +101,12 @@ const CARGAS_INICIALES = [
   },
   {
     codigo: 'cfdi_nomina_zip',
-    titulo: 'CFDI XML — carga rápida',
+    titulo: 'CFDI XML — carga rápida (retirada)',
     descripcion:
-      'Para empresas chicas/medianas (hasta ~2 000 recibos). ZIP síncrono: dry-run inmediato y apply en la misma sesión.',
+      'Reemplazada por la carga masiva async. Las URLs antiguas redirigen a cfdi_nomina_zip_masivo.',
     fase: 1,
-    aplica: true,
+    aplica: false,
+    soloMenu: true,
     formato: 'zip_xml',
     perfil: 'lite',
     columnas: [],
@@ -113,9 +114,9 @@ const CARGAS_INICIALES = [
   },
   {
     codigo: 'cfdi_nomina_zip_masivo',
-    titulo: 'CFDI XML — carga masiva (async)',
+    titulo: 'CFDI XML — históricos (masiva)',
     descripcion:
-      'Para volúmenes altos (miles–decenas de miles). El ZIP se procesa en segundo plano con progreso; pensado para ~30 k recibos/mes.',
+      'Importa históricos desde ZIP de XML CFDI Nómina 1.2. Procesamiento en segundo plano con progreso; conceptos se mapean SAT→motor por subsidiaria.',
     fase: 1,
     aplica: true,
     formato: 'zip_xml_async',

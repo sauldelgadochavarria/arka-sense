@@ -541,16 +541,32 @@ async function aplicarAjuste(req, res) {
 
 async function listConceptos(req, res) {
   const { empresa, error } = await requireEmpresaForTenant(req);
+  const subId = sessionSubsidiariaId(req);
   let conceptos = [];
   if (empresa) {
     await ensurePayrollConceptsForTenant(req.session.tenantId, empresa._id);
-    conceptos = await listPrenominaConceptos(req.session.tenantId, { soloActivos: false });
+    try {
+      const {
+        listConceptosVisiblesParaSubsidiaria
+      } = require('../services/nomina/conceptResolutionService');
+      const { toPrenominaShape } = require('../services/payrollConceptService');
+      const visibles = await listConceptosVisiblesParaSubsidiaria(
+        req.session.tenantId,
+        empresa._id,
+        subId,
+        { ambito: 'prenomina', backfillHistorico: true }
+      );
+      conceptos = visibles.map(toPrenominaShape);
+    } catch (_) {
+      conceptos = await listPrenominaConceptos(req.session.tenantId, { soloActivos: false });
+    }
   }
 
   res.render('Prenomina/conceptos', {
     conceptos,
     formulasConcepto: FORMULAS_CONCEPTO,
     empresa,
+    subsidiariaId: subId || null,
     error: error || null,
     session: req.session
   });
@@ -600,6 +616,23 @@ async function createConcepto(req, res) {
       cuentaContable: trimString(req.body.cuentaContable),
       activo: true
     });
+
+    try {
+      const {
+        upsertSubsidiaryConceptConfig
+      } = require('../services/nomina/conceptResolutionService');
+      await upsertSubsidiaryConceptConfig({
+        tenantId: req.session.tenantId,
+        empresaId: empresa._id,
+        subsidiariaId: sessionSubsidiariaId(req),
+        conceptoCodigo: clave,
+        origen: 'manual',
+        aliasNombre: nombre,
+        tipo
+      });
+    } catch (_) {
+      /* opcional */
+    }
 
     req.flash('success', 'Concepto creado (colección única)');
     res.redirect('/prenomina-conceptos');

@@ -20,6 +20,7 @@
   <a class="btn" href="/nomina">← Nómina</a>
   <% if (_canEdit && empresa) { %>
   <a class="btn btn-primary" href="/nomina/periodos?nuevo=1<%= F.anio ? '&anio=' + encodeURIComponent(F.anio) : '' %>#nuevo-periodo">+ Nuevo período</a>
+  <a class="btn" href="#organizar-periodos">Organizar períodos</a>
   <% } %>
 </div>
 <% if (!_canEdit) { %>
@@ -30,6 +31,13 @@
 <% } else { %>
 
 <% if (_canEdit) { %>
+<%
+  var _cd = typeof createDefaults !== 'undefined' && createDefaults ? createDefaults : {};
+  var _defTipo = _cd.tipoPeriodo || 'quincenal';
+  var _defNomina = _cd.tipoNomina || 'ordinaria';
+  var _defFecha = _cd.fechaReferencia || new Date().toISOString().slice(0, 10);
+  var _sug = _cd.sugerencia || null;
+%>
 <section class="panel" id="nuevo-periodo" style="<%= showCreate ? '' : 'display:none' %>">
   <h2 class="panel-title">Nuevo período</h2>
   <form method="post" action="/nomina/periodos" class="form-grid" id="form-nuevo-periodo">
@@ -39,14 +47,14 @@
     <label>Tipo de período (motor interno)
       <select name="tipoPeriodo" id="nuevo-tipo-periodo" required>
         <% tiposPeriodo.forEach(function(t) { %>
-        <option value="<%= t.value %>" <%= t.value === 'quincenal' ? 'selected' : '' %>><%= t.label %></option>
+        <option value="<%= t.value %>" <%= t.value === _defTipo ? 'selected' : '' %>><%= t.label %></option>
         <% }); %>
       </select>
     </label>
     <label>Tipo de nómina (negocio)
       <select name="tipoNomina" id="nuevo-tipo-nomina" required>
         <% tiposNomina.forEach(function(t) { %>
-        <option value="<%= t.value %>"><%= t.label %></option>
+        <option value="<%= t.value %>" <%= t.value === _defNomina ? 'selected' : '' %>><%= t.label %></option>
         <% }); %>
       </select>
     </label>
@@ -63,8 +71,26 @@
       </p>
     </div>
 
+    <div class="alert" style="grid-column:1/-1;margin:0;background:#f0f7ff;border-color:#b6d4fe" id="nuevo-info-siguiente">
+      <strong>Siguiente propuesto</strong>
+      <p class="muted small" style="margin:.35rem 0 0" id="info-siguiente-texto">
+        <% if (_sug && _sug.tieneHistorico && _sug.ultimo) { %>
+        Último: #<%= _sug.ultimo.numeroPeriodo %>/<%= _sug.ultimo.anio %>
+        (<%= _sug.ultimo.fechaInicio %> – <%= _sug.ultimo.fechaFin %>).
+        Propuesto: <strong>#<%= _sug.numeroPeriodo %>/<%= _sug.anio %></strong>
+        · <%= _sug.fechaInicio %> – <%= _sug.fechaFin %>.
+        <% } else if (_sug) { %>
+        Sin histórico para esta combinación. Ventana sugerida:
+        <strong>#<%= _sug.numeroPeriodo %>/<%= _sug.anio %></strong>
+        · <%= _sug.fechaInicio %> – <%= _sug.fechaFin %>.
+        <% } else { %>
+        Se calculará al elegir tipo de período y nómina.
+        <% } %>
+      </p>
+    </div>
+
     <label>Fecha de referencia
-      <input type="date" name="fechaReferencia" value="<%= new Date().toISOString().slice(0,10) %>" />
+      <input type="date" name="fechaReferencia" id="nuevo-fecha-ref" value="<%= _defFecha %>" />
     </label>
     <label>Período pre-nómina compartido (insumos, opcional)
       <select name="payrollPeriodId">
@@ -82,6 +108,7 @@
     <p class="muted small" style="grid-column:1/-1">
       <strong>Al elegir pre-nómina, las fechas se copian de esa pre-nómina</strong>.
       Si abres sin vincular, el cálculo ignora la asistencia.
+      La fecha de referencia se prellena con el día siguiente al último período del mismo tipo (evita duplicar # / fechas tras carga histórica).
     </p>
     <label>Notas
       <input name="notas" placeholder="Opcional" />
@@ -124,6 +151,7 @@
 
   var motorSat = <%- JSON.stringify(typeof motorAPeriodicidadSat !== 'undefined' ? motorAPeriodicidadSat : { quincenal: 4 }) %>;
   var satCatalog = <%- JSON.stringify(typeof periodicidadesSat !== 'undefined' ? periodicidadesSat : []) %>;
+  var sugerencias = <%- JSON.stringify(typeof sugerenciasSiguiente !== 'undefined' ? sugerenciasSiguiente : {}) %>;
   var satByVal = {};
   satCatalog.forEach(function (p) { satByVal[String(p.value)] = p; });
 
@@ -137,6 +165,36 @@
   var hidCfdi = form.querySelector('#nuevo-tipo-nomina-cfdi');
   var infoSat = document.getElementById('info-periodicidad-sat');
   var infoCfdi = document.getElementById('info-tipo-nomina-cfdi');
+  var infoSig = document.getElementById('info-siguiente-texto');
+  var fechaTouched = false;
+
+  function keySug() {
+    return String(tipoSel ? tipoSel.value : 'quincenal') + '|' + String(nominaSel ? nominaSel.value : 'ordinaria');
+  }
+
+  function refreshSiguiente(applyFecha) {
+    var s = sugerencias[keySug()];
+    if (infoSig) {
+      if (s && s.tieneHistorico && s.ultimo) {
+        infoSig.innerHTML =
+          'Último: #' + s.ultimo.numeroPeriodo + '/' + s.ultimo.anio +
+          ' (' + s.ultimo.fechaInicio + ' – ' + s.ultimo.fechaFin + '). ' +
+          'Propuesto: <strong>#' + s.numeroPeriodo + '/' + s.anio + '</strong>' +
+          ' · ' + s.fechaInicio + ' – ' + s.fechaFin + '.';
+      } else if (s) {
+        infoSig.innerHTML =
+          'Sin histórico para esta combinación. Ventana sugerida: ' +
+          '<strong>#' + s.numeroPeriodo + '/' + s.anio + '</strong>' +
+          ' · ' + s.fechaInicio + ' – ' + s.fechaFin + '.';
+      } else {
+        infoSig.textContent =
+          'Sin propuesta cargada para esta combinación; se usará la fecha de referencia y el siguiente # libre.';
+      }
+    }
+    if (applyFecha && s && s.fechaReferencia && fechaInp && !fechaTouched) {
+      fechaInp.value = s.fechaReferencia;
+    }
+  }
 
   function refreshDespensa() {
     if (!chk || !tipoSel || !fechaInp) return;
@@ -167,18 +225,55 @@
     }
   }
 
-  function refreshAll() {
+  function refreshAll(applyFecha) {
+    refreshSiguiente(applyFecha !== false);
     refreshDespensa();
     refreshSat();
     refreshCfdi();
   }
 
-  if (tipoSel) tipoSel.addEventListener('change', refreshAll);
-  if (nominaSel) nominaSel.addEventListener('change', refreshCfdi);
-  if (fechaInp) fechaInp.addEventListener('change', refreshDespensa);
-  refreshAll();
+  if (tipoSel) tipoSel.addEventListener('change', function () { fechaTouched = false; refreshAll(true); });
+  if (nominaSel) nominaSel.addEventListener('change', function () { fechaTouched = false; refreshAll(true); });
+  if (fechaInp) fechaInp.addEventListener('change', function () {
+    fechaTouched = true;
+    refreshDespensa();
+  });
+  refreshAll(false);
 })();
 </script>
+<% } %>
+
+<% if (_canEdit && empresa) { %>
+<section class="panel" id="organizar-periodos">
+  <h2 class="panel-title">Organizar períodos (tras importación CFDI)</h2>
+  <p class="muted small">
+    Separa períodos mezclados entre subsidiarias, fusiona ventanas solapadas y renumeración cronológica 1…N
+    por subsidiaria / año / tipo. Úsalo después de una carga masiva de históricos si los números o fechas no cuadran.
+  </p>
+  <form method="post" action="/nomina/periodos/organizar" class="form-grid"
+        onsubmit="return confirm('¿Organizar períodos? Separará mezclas entre subsidiarias, fusionará solapes y renumerará cronológicamente.');">
+    <label>Tipo período (motor)
+      <select name="tipoPeriodo" required>
+        <% tiposPeriodo.forEach(function(t) { %>
+        <option value="<%= t.value %>" <%= (F.tipoPeriodo || 'semanal') === t.value ? 'selected' : '' %>><%= t.label %></option>
+        <% }); %>
+      </select>
+    </label>
+    <label>Tipo nómina (negocio)
+      <select name="tipoNomina" required>
+        <% tiposNomina.forEach(function(t) { %>
+        <option value="<%= t.value %>" <%= (F.tipoNomina || 'ordinaria') === t.value ? 'selected' : '' %>><%= t.label %></option>
+        <% }); %>
+      </select>
+    </label>
+    <% if (F.anio) { %>
+    <input type="hidden" name="anio" value="<%= F.anio %>" />
+    <% } %>
+    <div style="align-self:end">
+      <button type="submit" class="btn btn-primary">Organizar períodos</button>
+    </div>
+  </form>
+</section>
 <% } %>
 
 <section class="panel">

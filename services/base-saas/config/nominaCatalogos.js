@@ -4,7 +4,16 @@ const CATALOGOS_SAT = [
   { value: 'c_TipoPercepcion', label: 'Percepciones (SAT)' },
   { value: 'c_TipoDeduccion', label: 'Deducciones (SAT)' },
   { value: 'c_TipoOtroPago', label: 'Otros pagos (SAT)' },
-  { value: 'c_TipoHorasExtra', label: 'Horas extra (SAT)' }
+  { value: 'c_TipoHorasExtra', label: 'Horas extra (SAT)' },
+  { value: 'c_TipoHoras', label: 'Horas (SAT alias)' },
+  { value: 'c_TipoNomina', label: 'Tipo nómina (SAT)' },
+  { value: 'c_TipoContrato', label: 'Tipo contrato (SAT)' },
+  { value: 'c_TipoJornada', label: 'Tipo jornada (SAT)' },
+  { value: 'c_TipoIncapacidad', label: 'Tipo incapacidad (SAT)' },
+  { value: 'c_TipoRegimen', label: 'Tipo régimen (SAT)' },
+  { value: 'c_RiesgoPuesto', label: 'Riesgo puesto (SAT)' },
+  { value: 'c_PeriodicidadPago', label: 'Periodicidad pago (SAT)' },
+  { value: 'c_Banco', label: 'Bancos (SAT)' }
 ];
 
 const TIPOS_MAPEO_LEGADO = [

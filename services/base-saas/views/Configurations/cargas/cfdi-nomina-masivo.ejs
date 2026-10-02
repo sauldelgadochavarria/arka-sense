@@ -1,9 +1,10 @@
-<%- include('../../Partials/layout-top', { title: 'Carga CFDI masiva', session }) %>
-<h1>Carga masiva desde XML (CFDI)</h1>
+<%- include('../../Partials/layout-top', { title: 'Carga CFDI históricos', session }) %>
+<h1>Carga de históricos desde XML (CFDI)</h1>
 <div class="toolbar">
   <a class="btn" href="/config-empresa/cargas">← Cargas iniciales</a>
-  <a class="btn" href="/config-empresa/cargas/cfdi_nomina_zip">Carga rápida (clientes menores)</a>
+  <a class="btn" href="/nomina/mapeo-sat">Mapeo SAT ↔ motor</a>
   <a class="btn" href="/nomina/configuracion">Configuración fiscal</a>
+  <a class="btn" href="/ayuda/importacion-historicos-cfdi">Ayuda</a>
 </div>
 
 <% if (!empresa) { %>
@@ -13,13 +14,16 @@
 <section class="panel">
   <h2 class="panel-title">1. Sube el ZIP (procesamiento en segundo plano)</h2>
   <p class="muted">
-    Pensado para miles–decenas de miles de recibos. El ZIP se guarda en disco y un worker parsea por lotes;
-    puedes cerrar esta pantalla y volver al job para ver el progreso.
+    Importa recibos CFDI Nómina 1.2 para armar empleados, conceptos, períodos e histórico.
+    El ZIP se procesa en segundo plano; puedes cerrar esta pantalla y volver al job.
+    Los conceptos se mapean por <strong>clave SAT → código motor</strong>
+    (ver <a href="/nomina/mapeo-sat">Mapeo SAT ↔ motor</a>).
   </p>
   <p class="muted small">
     Límites orientativos: hasta ~50 000 XML · ZIP hasta ~500 MB.
     Empresa: <strong><%= empresa.razonSocial %></strong>
     · RFC <code><%= empresa.rfc || 'sin RFC' %></code>
+    · Guía: <a href="/ayuda/importacion-historicos-cfdi">/ayuda/importacion-historicos-cfdi</a>
   </p>
   <form method="post" action="/config-empresa/cargas/cfdi_nomina_zip_masivo/encolar"
         enctype="multipart/form-data" class="form-grid form-wide" id="form-cfdi-masivo">
@@ -36,7 +40,7 @@
       <label class="inline-check"><input type="checkbox" name="importEmpresa" value="1" checked /> Empresa (solo campos vacíos: RFC, RP, CP…)</label>
       <label class="inline-check"><input type="checkbox" name="importEmpleados" value="1" checked id="opt-emp" /> Empleados / trabajadores</label>
       <label class="inline-check"><input type="checkbox" name="importOrganizacion" value="1" checked /> Departamentos y puestos</label>
-      <label class="inline-check"><input type="checkbox" name="importConceptos" value="1" checked /> Conceptos de nómina</label>
+      <label class="inline-check"><input type="checkbox" name="importConceptos" value="1" checked /> Conceptos de nómina (con mapeo SAT→motor)</label>
       <label class="inline-check"><input type="checkbox" name="importHistorico" value="1" checked id="opt-hist" /> Histórico de recibos</label>
       <label class="inline-check"><input type="checkbox" name="importAcumulados" value="1" checked id="opt-acu" /> Acumulados del año</label>
       <label class="inline-check"><input type="checkbox" name="importPeriodos" value="1" checked id="opt-per" /> Períodos (inferir tipos, clasificar empleados, cerrar como timbrados)</label>
@@ -63,9 +67,9 @@
 </section>
 
 <section class="panel">
-  <h2 class="panel-title">Jobs masivos recientes</h2>
+  <h2 class="panel-title">Jobs recientes</h2>
   <% if (!jobs.length) { %>
-  <p class="muted">Aún no hay cargas masivas.</p>
+  <p class="muted">Aún no hay cargas de históricos CFDI.</p>
   <% } else { %>
   <table class="data-table">
     <thead>

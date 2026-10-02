@@ -248,7 +248,10 @@ async function calculatePayrollPeriod(periodId, tenantId, userId = '') {
   if (!['abierto', 'borrador'].includes(period.estatus)) throw new Error('PERIOD_NOT_OPEN');
 
   await ensurePayrollConceptsForTenant(tenantId, period.empresaId);
-  const conceptos = await listPrenominaConceptos(tenantId, { soloActivos: true });
+  const conceptos = await listPrenominaConceptos(tenantId, {
+    soloActivos: true,
+    empresaId: period.empresaId || null
+  });
   const conceptosMap = buildConceptosMap(conceptos);
 
   const Empleado = await getEmpleadoModel();
@@ -264,7 +267,7 @@ async function calculatePayrollPeriod(periodId, tenantId, userId = '') {
       subsidiariaId: period.subsidiariaId || null
     })
   ).lean();
-  const tiposPeriodo = await listTiposPeriodo(tenantId, false);
+  const tiposPeriodo = await listTiposPeriodo(tenantId, false, period.empresaId || null);
   const tipoMotor = period.tipo || null;
   const empleados = filterEmpleadosByTipoMotor(empleadosAll, tiposPeriodo, tipoMotor, {
     strict: false

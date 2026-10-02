@@ -6,9 +6,12 @@
 <div class="toolbar">
   <a class="btn" href="/nomina">← Nómina</a>
   <a class="btn" href="/nomina/configuracion">Configuración fiscal</a>
+  <a class="btn" href="/nomina/mapeo-sat">Mapeo SAT ↔ motor</a>
+  <a class="btn" href="/ayuda/importacion-historicos-cfdi">Ayuda CFDI / mapeo</a>
   <a class="btn" href="/config-sistema/enums">Enums / ámbitos</a>
   <% if (_canEdit) { %>
   <a class="btn btn-primary" href="/nomina/conceptos/nuevo">+ Nuevo</a>
+  <a class="btn" href="#limpiar-previos">Deshabilitar previos</a>
   <% } %>
 </div>
 <% if (!_canEdit) { %>
@@ -18,9 +21,31 @@
 <p>No hay empresa vinculada a este tenant.</p>
 <% } else { %>
 <p class="muted">
-  Colección única (<code>nomina_conceptos</code>): se separan solo por <strong>ámbito</strong>
-  (nómina / pre-nómina / ambos). Misma ficha compartida; el motor formal usa fórmulas y la pre-nómina usa <code>formulaPrenomina</code>.
+  Colección maestra por tenant (<code>nomina_conceptos</code>).
+  La lista se filtra por <strong>subsidiaria de sesión</strong>:
+  catálogo de empresa + conceptos usados/importados en esta sub
+  (<code>subsidiary_concept_config</code>). Así no se mezclan códigos CFDI de otras subsidiarias.
 </p>
+<% if (typeof subsidiariaId !== 'undefined' && subsidiariaId) { %>
+<p class="muted small">Filtro activo de subsidiaria: <code><%= subsidiariaId %></code></p>
+<% } else { %>
+<p class="muted small">Sin subsidiaria en sesión (ámbito MAIN / empresa).</p>
+<% } %>
+
+<% if (_canEdit) { %>
+<section class="panel" id="limpiar-previos">
+  <h2 class="panel-title">Preparar primer paralelo</h2>
+  <p class="muted small">
+    Deshabilita conceptos de catálogo/seed <strong>previos al histórico</strong> (no borra el maestro).
+    Conserva los usados en CFDI/histórico de esta subsidiaria y el núcleo operativo
+    (SUELDO, ISR, IMSS, pre-nómina, etc.).
+  </p>
+  <form method="post" action="/nomina/conceptos/deshabilitar-previos-historico"
+        onsubmit="return confirm('¿Deshabilitar conceptos previos al histórico? Se conservan CFDI/histórico de esta sub y el núcleo operativo.');">
+    <button type="submit" class="btn btn-primary">Deshabilitar conceptos previos</button>
+  </form>
+</section>
+<% } %>
 
 <table>
   <thead>
@@ -28,6 +53,7 @@
       <th>Código</th>
       <th>Nombre</th>
       <th>Ámbito</th>
+      <th>Origen</th>
       <th>SAT</th>
       <th>Fiscal</th>
       <th>Incidencias</th>
@@ -38,7 +64,7 @@
   </thead>
   <tbody>
     <% if (!conceptos.length) { %>
-    <tr><td colspan="9" class="muted">Sin conceptos.</td></tr>
+    <tr><td colspan="10" class="muted">Sin conceptos.</td></tr>
     <% } %>
     <% conceptos.forEach(function(c) {
          const ambito = c.aplicaEn || 'nomina';
@@ -46,22 +72,30 @@
          const satClave = (c.sat && c.sat.clave) || c.claveSAT || '—';
          const fiscal = c.fiscal || {};
          const fiscalTxt = (fiscal.integraISR === false ? 'ISR×' : 'ISR✓') + ' ' + (fiscal.integraIMSS === false ? 'IMSS×' : 'IMSS✓');
+         const origen = (c.subsidiaryConfig && c.subsidiaryConfig.origen) || c.visiblePor || 'catalogo';
+         const activoUi = typeof c.activoUi === 'boolean'
+           ? c.activoUi
+           : !!(c.activo);
+         const codigoJs = String(c.codigo || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     %>
-    <tr class="<%= !c.activo ? 'row-muted' : '' %>">
+    <tr class="<%= !activoUi ? 'row-muted' : '' %>">
       <td><code><%= c.codigo %></code></td>
-      <td><%= c.nombre %></td>
+      <td><%= (c.subsidiaryConfig && c.subsidiaryConfig.aliasNombre) || c.nombre %></td>
       <td><span class="badge-ambito badge-ambito-<%= ambito %>"><%= ambitoLabel %></span></td>
+      <td class="muted small"><%= origen %></td>
       <td><code><%= satClave %></code></td>
       <td class="muted small"><%= fiscalTxt %><% if (fiscal.desglose && fiscal.desglose.modo) { %> · <%= fiscal.desglose.modo %><% } %></td>
       <td class="muted small"><%= (c.tiposIncidencia || []).join(', ') || '—' %></td>
       <td><%= c.tipo %></td>
-      <td><%= c.activo ? 'Sí' : 'No' %></td>
+      <td><%= activoUi ? 'Sí' : 'No' %></td>
       <td class="actions">
         <a href="/nomina/conceptos/<%= c.codigo %>?modo=vista">Ver</a>
         <% if (_canEdit) { %>
         <a href="/nomina/conceptos/<%= c.codigo %>?modo=edicion">Editar</a>
-        <form method="post" action="/nomina/conceptos/<%= c.codigo %>/toggle" class="inline-form">
-          <button type="submit"><%= c.activo ? 'Desactivar' : 'Activar' %></button>
+        <form method="post" action="/nomina/conceptos/<%= encodeURIComponent(c.codigo) %>/toggle" class="inline-form"
+              onsubmit="return confirmarCambioConcepto(<%= activoUi ? 'true' : 'false' %>, '<%= codigoJs %>');">
+          <input type="hidden" name="accion" value="<%= activoUi ? 'desactivar' : 'activar' %>" />
+          <button type="submit"><%= activoUi ? 'Desactivar' : 'Activar' %></button>
         </form>
         <% } %>
       </td>
@@ -69,5 +103,20 @@
     <% }); %>
   </tbody>
 </table>
+<script>
+function confirmarCambioConcepto(estaActivo, codigo) {
+  if (estaActivo) {
+    return window.confirm(
+      'Advertencia\n\n' +
+      'Al desactivar el concepto «' + codigo + '» NO participará en futuros cálculos de nómina.\n\n' +
+      'Quedará marcado como inactivo en esta lista.\n\n' +
+      '¿Está seguro de desactivarlo?'
+    );
+  }
+  return window.confirm(
+    '¿Activar el concepto «' + codigo + '» para que vuelva a participar en los cálculos?'
+  );
+}
+</script>
 <% } %>
 <%- include('../Partials/layout-bottom') %>

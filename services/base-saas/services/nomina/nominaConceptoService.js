@@ -861,9 +861,11 @@ async function recalcularDependientes(tenantId) {
   }
 }
 
-async function listConceptos(tenantId) {
+async function listConceptos(tenantId, empresaId = null) {
   const ConceptoNomina = await getConceptoNominaModel();
-  return ConceptoNomina.find({ tenantId }).sort({ ordenCalculo: 1, codigo: 1 }).lean();
+  const filter = { tenantId };
+  if (empresaId) filter.empresaId = empresaId;
+  return ConceptoNomina.find(filter).sort({ ordenCalculo: 1, codigo: 1 }).lean();
 }
 
 function pickFormulaPreferida(candidatas) {
@@ -884,13 +886,19 @@ function pickFormulaPreferida(candidatas) {
   return pool[0];
 }
 
-async function getConceptoConFormulas(tenantId, codigo) {
+async function getConceptoConFormulas(tenantId, codigo, empresaId = null) {
   const ConceptoNomina = await getConceptoNominaModel();
   const FormulaConcepto = await getFormulaConceptoModel();
-  const concepto = await ConceptoNomina.findOne({ tenantId, codigo: String(codigo).toUpperCase() }).lean();
+  const conceptoQ = { tenantId, codigo: String(codigo).toUpperCase() };
+  if (empresaId) conceptoQ.empresaId = empresaId;
+  const concepto = await ConceptoNomina.findOne(conceptoQ).lean();
   if (!concepto) return null;
 
-  const formulas = await FormulaConcepto.find({ tenantId, conceptoCodigo: concepto.codigo, activo: true })
+  const formulaQ = { tenantId, conceptoCodigo: concepto.codigo, activo: true };
+  if (empresaId) {
+    formulaQ.$or = [{ empresaId: null }, { empresaId }];
+  }
+  const formulas = await FormulaConcepto.find(formulaQ)
     .sort({ tipoPeriodo: 1, tipoNomina: 1, version: -1, vigenciaDesde: -1 })
     .lean();
 
