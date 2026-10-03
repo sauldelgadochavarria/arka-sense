@@ -34,20 +34,37 @@
 <%
   var _cd = typeof createDefaults !== 'undefined' && createDefaults ? createDefaults : {};
   var _defTipo = _cd.tipoPeriodo || 'quincenal';
+  var _defTipoId = _cd.tipoPeriodoId || '';
   var _defNomina = _cd.tipoNomina || 'ordinaria';
   var _defFecha = _cd.fechaReferencia || new Date().toISOString().slice(0, 10);
   var _sug = _cd.sugerencia || null;
+  var _catalogo = typeof tiposPeriodoCatalogo !== 'undefined' && tiposPeriodoCatalogo ? tiposPeriodoCatalogo : [];
+  if (!_defTipoId && _catalogo.length) {
+    var _hitDef = _catalogo.find(function(t) { return t.tipoMotor === _defTipo; });
+    if (_hitDef) _defTipoId = String(_hitDef._id);
+  }
 %>
 <section class="panel" id="nuevo-periodo" style="<%= showCreate ? '' : 'display:none' %>">
   <h2 class="panel-title">Nuevo período</h2>
   <form method="post" action="/nomina/periodos" class="form-grid" id="form-nuevo-periodo">
     <input type="hidden" name="periodicidadPagoSat" id="nuevo-periodicidad-sat" value="4" />
     <input type="hidden" name="tipoNominaCfdi" id="nuevo-tipo-nomina-cfdi" value="O" />
+    <input type="hidden" name="tipoPeriodo" id="nuevo-tipo-periodo" value="<%= _defTipo %>" />
 
-    <label>Tipo de período (motor interno)
-      <select name="tipoPeriodo" id="nuevo-tipo-periodo" required>
-        <% tiposPeriodo.forEach(function(t) { %>
-        <option value="<%= t.value %>" <%= t.value === _defTipo ? 'selected' : '' %>><%= t.label %></option>
+    <label>Tipo de período
+      <select name="tipoPeriodoId" id="nuevo-tipo-periodo-id" required>
+        <option value="">— Selecciona —</option>
+        <% _catalogo.forEach(function(t) { %>
+        <option
+          value="<%= t._id %>"
+          data-motor="<%= t.tipoMotor %>"
+          data-sat="<%= t.periodicidadPagoSat != null ? t.periodicidadPagoSat : '' %>"
+          data-clasif="<%= t.clasificacion || '' %>"
+          <%= String(t._id) === String(_defTipoId) ? 'selected' : '' %>
+        >
+          <%= t.nombre %><% if (t.clasificacionLabel) { %> · <%= t.clasificacionLabel %><% } %>
+          (<%= t.tipoMotor %>)
+        </option>
         <% }); %>
       </select>
     </label>
@@ -59,15 +76,25 @@
       </select>
     </label>
 
+    <div class="alert" style="grid-column:1/-1;margin:0;background:#fff8e6;border-color:#f0d78c" id="nuevo-info-clasif">
+      <strong>Clasificación laboral del período</strong>
+      <p style="margin:.35rem 0 0" id="info-clasif-texto">
+        Elige <em>SEMANAL SIND</em> o <em>SEMANAL CONF.</em> (u homólogo) según si el período es para
+        trabajadores <strong>sindicalizados</strong> o de <strong>confianza</strong>.
+        El cálculo solo incluirá empleados de esa clasificación.
+      </p>
+    </div>
+
     <div class="alert" style="grid-column:1/-1;margin:0" id="nuevo-info-sat">
       <strong>Mapeo SAT (se guarda al crear)</strong>
       <ul style="margin:.35rem 0 0;padding-left:1.2rem">
         <li>PeriodicidadPago SAT: <strong id="info-periodicidad-sat">04 · Quincenal</strong></li>
         <li>TipoNomina CFDI: <strong id="info-tipo-nomina-cfdi">O · Ordinaria</strong></li>
+        <li>Motor interno: <strong id="info-motor">—</strong></li>
       </ul>
       <p class="muted small" style="margin:.5rem 0 0">
-        El motor interno define la periodicidad SAT. El tipo de negocio define si el CFDI es
-        <code>O</code> (solo ordinaria) o <code>E</code> (cualquier extraordinaria: aguinaldo, PTU, finiquito…).
+        El tipo de catálogo define motor, periodicidad SAT y si es sindicalizado/confianza.
+        El tipo de negocio define si el CFDI es <code>O</code> u <code>E</code>.
       </p>
     </div>
 
@@ -157,7 +184,8 @@
 
   var form = document.getElementById('form-nuevo-periodo');
   if (!form) return;
-  var tipoSel = form.querySelector('#nuevo-tipo-periodo');
+  var tipoIdSel = form.querySelector('#nuevo-tipo-periodo-id');
+  var tipoMotorHid = form.querySelector('#nuevo-tipo-periodo');
   var nominaSel = form.querySelector('#nuevo-tipo-nomina');
   var fechaInp = form.querySelector('[name=fechaReferencia]');
   var chk = form.querySelector('#pagaDespensa');
@@ -165,15 +193,35 @@
   var hidCfdi = form.querySelector('#nuevo-tipo-nomina-cfdi');
   var infoSat = document.getElementById('info-periodicidad-sat');
   var infoCfdi = document.getElementById('info-tipo-nomina-cfdi');
+  var infoMotor = document.getElementById('info-motor');
+  var infoClasif = document.getElementById('info-clasif-texto');
   var infoSig = document.getElementById('info-siguiente-texto');
   var fechaTouched = false;
 
+  function selectedTipoOpt() {
+    if (!tipoIdSel) return null;
+    return tipoIdSel.options[tipoIdSel.selectedIndex] || null;
+  }
+
+  function motorActual() {
+    var opt = selectedTipoOpt();
+    if (opt && opt.getAttribute('data-motor')) return opt.getAttribute('data-motor');
+    return tipoMotorHid ? tipoMotorHid.value : 'quincenal';
+  }
+
   function keySug() {
-    return String(tipoSel ? tipoSel.value : 'quincenal') + '|' + String(nominaSel ? nominaSel.value : 'ordinaria');
+    var id = tipoIdSel && tipoIdSel.value ? String(tipoIdSel.value) : '';
+    var nom = String(nominaSel ? nominaSel.value : 'ordinaria');
+    if (id) return 'id:' + id + '|' + nom;
+    return String(motorActual()) + '|' + nom;
   }
 
   function refreshSiguiente(applyFecha) {
     var s = sugerencias[keySug()];
+    if (!s) {
+      // fallback motor|nomina si aún no hay histórico por catálogo
+      s = sugerencias[String(motorActual()) + '|' + String(nominaSel ? nominaSel.value : 'ordinaria')];
+    }
     if (infoSig) {
       if (s && s.tieneHistorico && s.ultimo) {
         infoSig.innerHTML =
@@ -197,20 +245,49 @@
   }
 
   function refreshDespensa() {
-    if (!chk || !tipoSel || !fechaInp) return;
-    chk.checked = sugerir(tipoSel.value, fechaInp.value);
+    if (!chk || !fechaInp) return;
+    chk.checked = sugerir(motorActual(), fechaInp.value);
   }
 
   function refreshSat() {
-    var motor = tipoSel ? tipoSel.value : 'quincenal';
-    var code = motorSat[motor];
-    if (code == null) code = 4;
+    var opt = selectedTipoOpt();
+    var motor = motorActual();
+    if (tipoMotorHid) tipoMotorHid.value = motor;
+    var code = opt && opt.getAttribute('data-sat') ? Number(opt.getAttribute('data-sat')) : motorSat[motor];
+    if (code == null || !Number.isFinite(code)) code = 4;
     if (hidSat) hidSat.value = String(code);
     var meta = satByVal[String(code)];
     if (infoSat) {
       infoSat.textContent = meta
         ? (meta.code + ' · ' + meta.label)
         : String(code);
+    }
+    if (infoMotor) infoMotor.textContent = motor || '—';
+  }
+
+  function refreshClasif() {
+    if (!infoClasif) return;
+    var opt = selectedTipoOpt();
+    var clasif = opt ? (opt.getAttribute('data-clasif') || '') : '';
+    var nombre = opt && opt.value ? opt.textContent.trim() : '';
+    if (clasif === 'sindicalizado') {
+      infoClasif.innerHTML =
+        'Período <strong>sindicalizado</strong>' +
+        (nombre ? ' («' + nombre + '»)' : '') +
+        '. Al calcular se incluirán empleados con Sindicalizado = Sí / tipo SEMANAL SIND.';
+    } else if (clasif === 'confianza') {
+      infoClasif.innerHTML =
+        'Período de <strong>confianza</strong>' +
+        (nombre ? ' («' + nombre + '»)' : '') +
+        '. Al calcular se incluirán empleados con Sindicalizado = No / tipo SEMANAL CONF.';
+    } else if (opt && opt.value) {
+      infoClasif.innerHTML =
+        'Tipo «' + nombre + '» sin etiqueta SIND/CONF explícita. ' +
+        'El filtro usará el catálogo asignado al empleado.';
+    } else {
+      infoClasif.innerHTML =
+        'Elige <em>SEMANAL SIND</em> o <em>SEMANAL CONF.</em> (u homólogo) según si el período es para ' +
+        'trabajadores <strong>sindicalizados</strong> o de <strong>confianza</strong>.';
     }
   }
 
@@ -229,10 +306,11 @@
     refreshSiguiente(applyFecha !== false);
     refreshDespensa();
     refreshSat();
+    refreshClasif();
     refreshCfdi();
   }
 
-  if (tipoSel) tipoSel.addEventListener('change', function () { fechaTouched = false; refreshAll(true); });
+  if (tipoIdSel) tipoIdSel.addEventListener('change', function () { fechaTouched = false; refreshAll(true); });
   if (nominaSel) nominaSel.addEventListener('change', function () { fechaTouched = false; refreshAll(true); });
   if (fechaInp) fechaInp.addEventListener('change', function () {
     fechaTouched = true;
@@ -338,6 +416,7 @@
     <tr>
       <th>#</th>
       <th>Año</th>
+      <th>Tipo / clasif.</th>
       <th>Motor</th>
       <th>Periodicidad SAT</th>
       <th>CFDI</th>
@@ -353,14 +432,27 @@
   </thead>
   <tbody>
     <% if (!periodos.length) { %>
-    <tr><td colspan="13" class="muted">Sin períodos con estos filtros.</td></tr>
+    <tr><td colspan="14" class="muted">Sin períodos con estos filtros.</td></tr>
     <% } %>
     <% periodos.forEach(function(p) {
          const lb = p.layoutBancario || {};
+         const cat = (typeof tiposPeriodoById !== 'undefined' && p.tipoPeriodoId)
+           ? tiposPeriodoById[String(p.tipoPeriodoId)]
+           : null;
     %>
     <tr>
       <td><strong><%= p.numeroPeriodo != null ? p.numeroPeriodo : '—' %></strong></td>
       <td><%= p.anio || (p.fechaInicio ? new Date(p.fechaInicio).getFullYear() : '—') %></td>
+      <td>
+        <% if (cat) { %>
+        <%= cat.nombre %>
+        <% if (cat.clasificacionLabel) { %>
+        <br/><span class="badge"><%= cat.clasificacionLabel %></span>
+        <% } %>
+        <% } else { %>
+        <span class="muted small">—</span>
+        <% } %>
+      </td>
       <td><%= labelTipo(tiposPeriodo, p.tipoPeriodo) %></td>
       <td class="muted small"><%= satLabel(p.periodicidadPagoSat) %></td>
       <td>

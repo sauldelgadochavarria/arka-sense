@@ -255,10 +255,17 @@ function pickSugerenciaDefault(map) {
     bestKey = 'semanal|ordinaria';
     best = map[bestKey];
   }
-  const [tipoPeriodo, tipoNomina] = String(bestKey).split('|');
+  const pipe = String(bestKey).lastIndexOf('|');
+  const left = pipe >= 0 ? String(bestKey).slice(0, pipe) : String(bestKey);
+  const tipoNomina = pipe >= 0 ? String(bestKey).slice(pipe + 1) : 'ordinaria';
+  const tipoPeriodoId = left.startsWith('id:') ? left.slice(3) : best?.tipoPeriodoId || '';
+  const tipoPeriodo = left.startsWith('id:')
+    ? best?.tipoPeriodo || 'quincenal'
+    : left || 'quincenal';
   return {
     key: bestKey,
-    tipoPeriodo: tipoPeriodo || 'quincenal',
+    tipoPeriodo,
+    tipoPeriodoId: tipoPeriodoId || '',
     tipoNomina: tipoNomina || 'ordinaria',
     sugerencia: best || null
   };

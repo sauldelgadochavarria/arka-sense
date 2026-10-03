@@ -18,6 +18,16 @@
 <section class="panel" style="margin:1rem 0">
   <h2 class="panel-title">Clasificación</h2>
   <dl class="flag-labels" style="margin:0 0 .75rem">
+    <div>Tipo catálogo:
+      <strong>
+        <% if (typeof tipoPeriodoCatalogo !== 'undefined' && tipoPeriodoCatalogo) { %>
+        <%= tipoPeriodoCatalogo.nombre %>
+        <% if (tipoPeriodoCatalogo.clasificacionLabel) { %>
+        · <%= tipoPeriodoCatalogo.clasificacionLabel %>
+        <% } %>
+        <% } else { %>—<% } %>
+      </strong>
+    </div>
     <div>Motor interno: <strong><%= periodo.tipoPeriodo %></strong></div>
     <div>Periodicidad SAT: <strong><%= satHit ? (satHit.code + ' · ' + satHit.label) : (periodo.periodicidadPagoSat != null ? periodo.periodicidadPagoSat : '—') %></strong></div>
     <div>CFDI TipoNomina: <strong><%= periodo.tipoNominaCfdi || '—' %></strong> <span class="muted small">(O=ordinaria, E=extraordinaria)</span></div>

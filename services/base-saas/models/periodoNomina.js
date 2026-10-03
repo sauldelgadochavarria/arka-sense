@@ -21,6 +21,16 @@ const periodoNominaSchema = new mongoose.Schema(
       enum: ['semanal', 'quincenal', 'catorcenal', 'mensual', 'decena', 'otra'],
       required: true
     },
+    /**
+     * Catálogo TipoPeriodoNomina (p.ej. SEMANAL SIND vs SEMANAL CONF).
+     * Distingue sindicalizado/confianza cuando el motor es el mismo.
+     */
+    tipoPeriodoId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'TipoPeriodoNomina',
+      default: null,
+      index: true
+    },
     tipoNomina: {
       type: String,
       enum: [

@@ -141,7 +141,21 @@ function buildEmpleadoPayload(body, tenantId, empresaId) {
     tipoPeriodoId: parseOptionalObjectId(body.tipoPeriodoId),
     supervisorId: parseOptionalObjectId(body.supervisorId),
     tipoContrato: trimString(body.tipoContrato) || 'indefinido',
-    tipoEmpleado: trimString(body.tipoEmpleado),
+    tipoEmpleado: (() => {
+      const sind = trimString(body.sindicalizado);
+      if (sind === '1' || sind === 'true' || sind === 'si' || sind === 'sí') return 'sindicalizado';
+      if (sind === '0' || sind === 'false' || sind === 'no') return 'confianza';
+      return trimString(body.tipoEmpleado);
+    })(),
+    sindicalizado: (() => {
+      const sind = trimString(body.sindicalizado);
+      if (sind === '1' || sind === 'true' || sind === 'si' || sind === 'sí') return true;
+      if (sind === '0' || sind === 'false' || sind === 'no') return false;
+      const te = trimString(body.tipoEmpleado).toLowerCase();
+      if (te.includes('sind')) return true;
+      if (te === 'confianza') return false;
+      return null;
+    })(),
     salarioDiario: parsePositiveNumber(body.salarioDiario),
     tipoSalario,
     sdi: parsePositiveNumber(body.sdi) ?? 0,

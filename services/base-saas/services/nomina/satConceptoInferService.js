@@ -200,11 +200,61 @@ async function inferCodigoMotorFromSat(line = {}, scope = {}) {
   };
 }
 
+function normalizeClaveInterna(raw) {
+  return String(raw || '')
+    .trim()
+    .toUpperCase()
+    .replace(/[^\w.-]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 40);
+}
+
+function slugNombreConcepto(nombre) {
+  return String(nombre || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+    .replace(/[^\w]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 24);
+}
+
+/**
+ * Identidad del concepto en import CFDI: Clave del XML (no clave SAT).
+ * Varias líneas pueden compartir TipoPercepcion=001 (sueldo vs séptimo día).
+ */
+function codigoIdentidadDesdeCfdi(line = {}) {
+  const clave = normalizeClaveInterna(line.claveInterna);
+  if (clave) return clave;
+  const sat = padClaveSat(line.claveSat || line.tipoSat);
+  const slug = slugNombreConcepto(line.nombre);
+  if (sat && slug) return `SAT${sat}_${slug}`.slice(0, 40);
+  const actual = normalizeClaveInterna(line.conceptoCodigo);
+  if (actual) return actual;
+  return sat ? `SAT${sat}` : 'SIN_CLAVE';
+}
+
 async function applyInferenciaSatAConcepto(line, scope = {}) {
   const inferred = await inferCodigoMotorFromSat(line, scope);
-  line.conceptoCodigo = inferred.codigo;
-  line._satInfer = inferred;
-  return inferred;
+  // Por defecto la carga masiva conserva la Clave CFDI como código de concepto.
+  // La inferencia SAT solo sugiere motor (sueldo/séptimo…) sin colapsar líneas distintas.
+  const preferClave = scope.preferClaveInterna !== false;
+  const codigoCatalogo = preferClave
+    ? codigoIdentidadDesdeCfdi(line)
+    : String(inferred.codigo || line.conceptoCodigo || '')
+        .trim()
+        .toUpperCase();
+
+  line.conceptoCodigo = codigoCatalogo;
+  line.codigoMotorSugerido = inferred.codigo || codigoCatalogo;
+  if (inferred.claveSat) line.claveSat = inferred.claveSat;
+  if (inferred.claveInterna && !line.claveInterna) line.claveInterna = inferred.claveInterna;
+  line._satInfer = {
+    ...inferred,
+    codigo: codigoCatalogo,
+    codigoMotor: inferred.codigo || codigoCatalogo
+  };
+  return line._satInfer;
 }
 
 function resetCatalogIndexCache() {
@@ -214,6 +264,7 @@ function resetCatalogIndexCache() {
 module.exports = {
   inferCodigoMotorFromSat,
   applyInferenciaSatAConcepto,
+  codigoIdentidadDesdeCfdi,
   resetCatalogIndexCache,
   padClaveSat,
   mapKey

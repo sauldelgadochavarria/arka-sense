@@ -17,6 +17,14 @@
       <dt>Nombre SAT</dt><dd><%= empleado.nombreSat || '—' %></dd>
       <dt>Fecha alta</dt><dd><%= empleado.fechaIngreso ? new Date(empleado.fechaIngreso).toLocaleDateString('es-MX') : '—' %></dd>
       <dt>Tipo contrato</dt><dd><%= typeof labelTipoContrato !== 'undefined' ? labelTipoContrato : (empleado.tipoContrato || '—') %></dd>
+      <dt>Sindicalizado (SAT)</dt>
+      <dd>
+        <% if (empleado.sindicalizado === true) { %>Sí
+        <% } else if (empleado.sindicalizado === false) { %>No
+        <% } else if (/sind/i.test(String(empleado.tipoEmpleado || ''))) { %>Sí <span class="muted">(vía tipo empleado)</span>
+        <% } else if (String(empleado.tipoEmpleado || '') === 'confianza') { %>No <span class="muted">(vía tipo empleado)</span>
+        <% } else { %>—<% } %>
+      </dd>
       <dt>Tipo empleado</dt><dd><%= typeof labelTipoEmpleado !== 'undefined' ? labelTipoEmpleado : (empleado.tipoEmpleado || '—') %></dd>
     </dl>
   </section>

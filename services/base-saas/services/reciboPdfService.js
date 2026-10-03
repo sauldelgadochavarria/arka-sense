@@ -342,11 +342,13 @@ function buildReciboPdfContext({
   const selloSat = cfdi.selloSat || cfdi.selloCFD || '';
   const rfcEmp = empleado.rfc || '';
   const sindicalizado =
-    empleado.sindicalizado != null
-      ? empleado.sindicalizado
-      : /sind/i.test(String(empleado.tipoEmpleado || empleado.leyenda || ''))
-        ? 'Sí'
-        : 'No';
+    empleado.sindicalizado === true
+      ? 'Sí'
+      : empleado.sindicalizado === false
+        ? 'No'
+        : /sind/i.test(String(empleado.tipoEmpleado || empleado.leyenda || ''))
+          ? 'Sí'
+          : 'No';
 
   const domicilioEmp = joinDomicilio(dom) || empleado.domicilioTexto || '';
   const domicilioEmpresa =

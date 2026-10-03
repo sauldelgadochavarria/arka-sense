@@ -15,6 +15,11 @@ const getParametroGeneralModel = require('../models/parametroGeneral');
 const getCatalogoSatModel = require('../models/catalogoSat');
 const { requireEmpresaForTenant, sessionSubsidiariaId } = require('../libs/tenantScope');
 const { listPeriodosNominaScoped } = require('../libs/periodosNominaScope');
+const {
+  listTiposPeriodo,
+  ensureTiposPeriodoForTenant
+} = require('../services/tipoPeriodoNominaService');
+const { clasificacionFromTipoPeriodo } = require('../libs/empleadoTipoPeriodo');
 const { tenantHasFeature } = require('../libs/tenantFeatureFlags');
 const { resolveNominaConceptoModo, userCanEditNomina, userCanViewNomina } = require('../libs/roleAccess');
 const { resolvePeriodRange } = require('../libs/payrollPeriodDates');
@@ -205,11 +210,28 @@ async function periodos(req, res) {
     ? await PayrollPeriod.find(prenominaQ).sort({ fechaInicio: -1 }).limit(80).lean()
     : [];
 
+  let tiposPeriodoCatalogo = [];
+  if (empresa) {
+    await ensureTiposPeriodoForTenant(tenantId, empresa._id);
+    tiposPeriodoCatalogo = (await listTiposPeriodo(tenantId, true, empresa._id)).map((t) => {
+      const clasif = clasificacionFromTipoPeriodo(t);
+      return {
+        ...t,
+        clasificacion: clasif,
+        clasificacionLabel:
+          clasif === 'sindicalizado' ? 'Sindicalizado' : clasif === 'confianza' ? 'Confianza' : ''
+      };
+    });
+  }
+  const tiposPeriodoById = {};
+  for (const t of tiposPeriodoCatalogo) tiposPeriodoById[String(t._id)] = t;
+
   const openCreate = String(req.query.nuevo || '') === '1';
 
   let sugerenciasSiguiente = {};
   let createDefaults = {
     tipoPeriodo: 'quincenal',
+    tipoPeriodoId: '',
     tipoNomina: 'ordinaria',
     fechaReferencia: null,
     sugerencia: null
@@ -228,24 +250,31 @@ async function periodos(req, res) {
     sugerenciasSiguiente = {};
     const byKey = new Map();
     for (const p of scopedForSug) {
-      const key = `${p.tipoPeriodo}|${p.tipoNomina || 'ordinaria'}`;
+      const key = p.tipoPeriodoId
+        ? `id:${p.tipoPeriodoId}|${p.tipoNomina || 'ordinaria'}`
+        : `${p.tipoPeriodo}|${p.tipoNomina || 'ordinaria'}`;
       const prev = byKey.get(key);
       if (!prev || new Date(p.fechaFin) > new Date(prev.fechaFin)) byKey.set(key, p);
     }
     const { ymdUtc } = require('../libs/periodoNumero');
     for (const [key, ultimo] of byKey) {
-      const [tipoPeriodo, tipoNomina] = key.split('|');
+      const tipoPeriodo = ultimo.tipoPeriodo;
+      const tipoNomina = ultimo.tipoNomina || 'ordinaria';
       const { ref, range, diasPeriodo } = rangoSiguienteTrasUltimo(tipoPeriodo, ultimo.fechaFin, null, {
         fechaInicioUltimo: ultimo.fechaInicio,
         diasPeriodo: ultimo.diasPeriodo
       });
       const anio = range.fechaInicio.getUTCFullYear();
-      const sameYear = scopedForSug.filter(
-        (p) =>
-          p.tipoPeriodo === tipoPeriodo &&
+      const sameYear = scopedForSug.filter((p) => {
+        const sameCat = ultimo.tipoPeriodoId
+          ? String(p.tipoPeriodoId || '') === String(ultimo.tipoPeriodoId)
+          : p.tipoPeriodo === tipoPeriodo && !p.tipoPeriodoId;
+        return (
+          sameCat &&
           (p.tipoNomina || 'ordinaria') === tipoNomina &&
           Number(p.anio || new Date(p.fechaInicio).getUTCFullYear()) === anio
-      );
+        );
+      });
       const maxDisplay = sameYear.reduce(
         (m, p) => Math.max(m, Number(p.numeroPeriodoDisplay) || 0),
         0
@@ -264,7 +293,10 @@ async function periodos(req, res) {
         fechaFin: ymdUtc(range.fechaFin),
         diasPeriodo: diasPeriodo || null,
         anio,
-        numeroPeriodo: maxDisplay + 1
+        numeroPeriodo: maxDisplay + 1,
+        tipoPeriodo,
+        tipoPeriodoId: ultimo.tipoPeriodoId ? String(ultimo.tipoPeriodoId) : '',
+        tipoNomina
       };
     }
     // defaults globales si no hay histórico en sub
@@ -277,8 +309,15 @@ async function periodos(req, res) {
       if (!sugerenciasSiguiente[k]) sugerenciasSiguiente[k] = v;
     }
     const picked = pickSugerenciaDefault(sugerenciasSiguiente);
+    const defTipoId =
+      picked.tipoPeriodoId ||
+      picked.sugerencia?.tipoPeriodoId ||
+      (tiposPeriodoCatalogo.find((t) => t.tipoMotor === picked.tipoPeriodo)
+        ? String(tiposPeriodoCatalogo.find((t) => t.tipoMotor === picked.tipoPeriodo)._id)
+        : '');
     createDefaults = {
       tipoPeriodo: picked.tipoPeriodo,
+      tipoPeriodoId: defTipoId ? String(defTipoId) : '',
       tipoNomina: picked.tipoNomina,
       fechaReferencia: picked.sugerencia?.fechaReferencia || null,
       sugerencia: picked.sugerencia || null
@@ -293,6 +332,8 @@ async function periodos(req, res) {
     periodos: periodosList,
     prenominaPeriodos,
     tiposPeriodo: TIPOS_PERIODO,
+    tiposPeriodoCatalogo,
+    tiposPeriodoById,
     tiposNomina: TIPOS_NOMINA,
     tiposNominaCfdi: TIPOS_NOMINA_CFDI,
     periodicidadesSat: PERIODICIDADES_PAGO_SAT,
@@ -320,7 +361,20 @@ async function createPeriodo(req, res) {
       return res.redirect('/nomina/periodos');
     }
 
-    const tipoPeriodo = trimString(req.body.tipoPeriodo) || 'quincenal';
+    const tipoPeriodoIdBody = trimString(req.body.tipoPeriodoId);
+    let tipoCatalogo = null;
+    if (tipoPeriodoIdBody) {
+      await ensureTiposPeriodoForTenant(tenantId, empresa._id);
+      const tipos = await listTiposPeriodo(tenantId, true, empresa._id);
+      tipoCatalogo = tipos.find((t) => String(t._id) === tipoPeriodoIdBody) || null;
+      if (!tipoCatalogo) {
+        req.flash('error', 'El tipo de período seleccionado no existe o está inactivo');
+        return res.redirect('/nomina/periodos?nuevo=1#nuevo-periodo');
+      }
+    }
+    const tipoPeriodo =
+      (tipoCatalogo && tipoCatalogo.tipoMotor) || trimString(req.body.tipoPeriodo) || 'quincenal';
+    const tipoPeriodoId = tipoCatalogo ? tipoCatalogo._id : null;
     const tipoNomina = trimString(req.body.tipoNomina) || 'ordinaria';
     const tipoNominaCfdiBody = trimString(req.body.tipoNominaCfdi).toUpperCase();
     const tipoNominaCfdi =
@@ -330,12 +384,14 @@ async function createPeriodo(req, res) {
     const periodicidadBody = Number(req.body.periodicidadPagoSat);
     const periodicidadPagoSat = Number.isFinite(periodicidadBody)
       ? periodicidadBody
-      : periodicidadSatDesdeMotor(tipoPeriodo);
+      : tipoCatalogo?.periodicidadPagoSat != null
+        ? Number(tipoCatalogo.periodicidadPagoSat)
+        : periodicidadSatDesdeMotor(tipoPeriodo);
     const ref = parseDate(req.body.fechaReferencia) || new Date();
     const subId = sessionSubsidiariaId(req);
     const PeriodoNomina = await getPeriodoNominaModel();
 
-    // Continuar secuencia del último período de la misma sub (evita solape calendario lunes-domingo)
+    // Continuar secuencia del último período de la misma sub + catálogo (SIND/CONF)
     let fechaInicio;
     let fechaFin;
     let diasPeriodoCalc = null;
@@ -345,6 +401,7 @@ async function createPeriodo(req, res) {
       tipoPeriodo,
       tipoNomina
     };
+    if (tipoPeriodoId) ultimoQ.tipoPeriodoId = tipoPeriodoId;
     if (subId) ultimoQ.subsidiariaId = subId;
     else ultimoQ.$or = [{ subsidiariaId: null }, { subsidiariaId: { $exists: false } }];
     const ultimo = await PeriodoNomina.findOne(ultimoQ).sort({ fechaFin: -1, numeroPeriodo: -1 }).lean();
@@ -357,7 +414,7 @@ async function createPeriodo(req, res) {
       fechaFin = next.range.fechaFin;
       diasPeriodoCalc = next.diasPeriodo;
     } else {
-      ({ fechaInicio, fechaFin } = resolvePeriodRange(tipoPeriodo, ref));
+      ({ fechaInicio, fechaFin } = resolvePeriodRange(tipoPeriodo, ref, tipoCatalogo));
     }
     let fechaPago = null;
 
@@ -400,7 +457,7 @@ async function createPeriodo(req, res) {
     const diasPeriodo =
       diasPeriodoCalc || diasPeriodoUtc(fechaInicioNorm, fechaFinNorm) || diasCalendarioInclusive(fechaInicio, fechaFin);
 
-    const exists = await PeriodoNomina.findOne({
+    const existsQ = {
       tenantId,
       empresaId: empresa._id,
       subsidiariaId: subId || null,
@@ -408,14 +465,16 @@ async function createPeriodo(req, res) {
       tipoNomina,
       fechaInicio: fechaInicioNorm,
       fechaFin: fechaFinNorm
-    });
+    };
+    if (tipoPeriodoId) existsQ.tipoPeriodoId = tipoPeriodoId;
+    const exists = await PeriodoNomina.findOne(existsQ);
     if (exists) {
       req.flash('error', 'Ya existe un período de nómina con esas fechas y tipo');
       return res.redirect('/nomina/periodos');
     }
 
-    // Solape con cualquier período de la misma sub
-    const solape = await PeriodoNomina.findOne({
+    // Solape: misma sub + mismo catálogo (SIND y CONF pueden coexistir en fechas)
+    const solapeQ = {
       tenantId,
       empresaId: empresa._id,
       ...(subId
@@ -425,7 +484,9 @@ async function createPeriodo(req, res) {
       tipoNomina,
       fechaInicio: { $lte: fechaFinNorm },
       fechaFin: { $gte: fechaInicioNorm }
-    })
+    };
+    if (tipoPeriodoId) solapeQ.tipoPeriodoId = tipoPeriodoId;
+    const solape = await PeriodoNomina.findOne(solapeQ)
       .select('_id numeroPeriodo fechaInicio fechaFin')
       .lean();
     if (solape) {
@@ -456,11 +517,13 @@ async function createPeriodo(req, res) {
     const despensaPagoMensual =
       lastBody('despensaPagoMensual') === '1' || lastBody('despensaPagoMensual') === true;
 
+    const clasifLab = clasificacionFromTipoPeriodo(tipoCatalogo);
     const periodo = await PeriodoNomina.create({
       tenantId,
       empresaId: empresa._id,
       subsidiariaId: subId || null,
       tipoPeriodo,
+      tipoPeriodoId: tipoPeriodoId || null,
       tipoNomina,
       tipoNominaCfdi,
       periodicidadPagoSat: periodicidadPagoSat != null ? periodicidadPagoSat : null,
@@ -486,9 +549,11 @@ async function createPeriodo(req, res) {
       entidad: 'periodo',
       periodoId: periodo._id,
       ...sessionActor(req),
-      mensaje: `Período abierto ${tipoPeriodo}/${tipoNomina} #${numeroPeriodo}/${anio}`,
+      mensaje: `Período abierto ${tipoCatalogo?.nombre || tipoPeriodo}/${tipoNomina} #${numeroPeriodo}/${anio}`,
       detalle: {
         tipoPeriodo,
+        tipoPeriodoId: tipoPeriodoId ? String(tipoPeriodoId) : null,
+        clasificacionLaboral: clasifLab,
         tipoNomina,
         tipoNominaCfdi,
         periodicidadPagoSat,
@@ -502,7 +567,18 @@ async function createPeriodo(req, res) {
       userAgent: req.get('user-agent') || ''
     });
 
-    req.flash('success', `Período de nómina abierto (#${numeroPeriodo} / ${anio})`);
+    const clasifMsg =
+      clasifLab === 'sindicalizado'
+        ? ' · Sindicalizado'
+        : clasifLab === 'confianza'
+          ? ' · Confianza'
+          : '';
+    req.flash(
+      'success',
+      `Período de nómina abierto (#${numeroPeriodo} / ${anio})${clasifMsg}${
+        tipoCatalogo?.nombre ? ` · ${tipoCatalogo.nombre}` : ''
+      }`
+    );
     res.redirect(`/nomina/periodos/${periodo._id}`);
   } catch (err) {
     console.error('[nomina]', err);
@@ -895,8 +971,28 @@ async function showPeriodo(req, res) {
     /* no bloquear detalle */
   }
 
+  let tipoPeriodoCatalogo = null;
+  if (periodo.tipoPeriodoId && periodo.empresaId) {
+    try {
+      const tipos = await listTiposPeriodo(tenantId, false, periodo.empresaId);
+      const hit = tipos.find((t) => String(t._id) === String(periodo.tipoPeriodoId));
+      if (hit) {
+        const clasif = clasificacionFromTipoPeriodo(hit);
+        tipoPeriodoCatalogo = {
+          ...hit,
+          clasificacion: clasif,
+          clasificacionLabel:
+            clasif === 'sindicalizado' ? 'Sindicalizado' : clasif === 'confianza' ? 'Confianza' : ''
+        };
+      }
+    } catch (_) {
+      /* opcional */
+    }
+  }
+
   res.render('Nomina/periodo-show', {
     periodo,
+    tipoPeriodoCatalogo,
     recibos,
     recibosDesdeHistorico,
     recibosTotal,

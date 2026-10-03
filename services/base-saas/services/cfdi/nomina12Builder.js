@@ -364,8 +364,11 @@ function buildNomina12Context({
     nominaReceptor.SalarioBaseCotApor = moneyStr(emp.sbc || sdi);
   }
 
-  if (/sind/i.test(String(emp.tipoEmpleado || ''))) nominaReceptor.Sindicalizado = 'Sí';
-  else nominaReceptor.Sindicalizado = 'No';
+  if (emp.sindicalizado === true || /sind/i.test(String(emp.tipoEmpleado || ''))) {
+    nominaReceptor.Sindicalizado = 'Sí';
+  } else {
+    nominaReceptor.Sindicalizado = 'No';
+  }
 
   const nominaAttrs = {
     Version: '1.2',

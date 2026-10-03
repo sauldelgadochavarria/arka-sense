@@ -214,6 +214,16 @@ function parseNomina12Xml(xmlText, { anioFiltro = null } = {}) {
         tipoContrato: String(nomReceptor.TipoContrato || ''),
         tipoJornada: String(nomReceptor.TipoJornada || ''),
         tipoRegimen: String(nomReceptor.TipoRegimen || ''),
+        /** Atributo SAT NominaReceptor@Sindicalizado (Sí/No) → tipoEmpleado interno */
+        sindicalizado: (() => {
+          const raw = String(nomReceptor.Sindicalizado || '').trim().toLowerCase();
+          if (!raw) return null;
+          if (raw === 'sí' || raw === 'si' || raw === 'yes' || raw === '1' || raw === 'true') {
+            return true;
+          }
+          if (raw === 'no' || raw === '0' || raw === 'false') return false;
+          return null;
+        })(),
         periodicidadPago: String(nomReceptor.PeriodicidadPago || ''),
         riesgoPuesto: String(nomReceptor.RiesgoPuesto || ''),
         banco: String(nomReceptor.Banco || ''),

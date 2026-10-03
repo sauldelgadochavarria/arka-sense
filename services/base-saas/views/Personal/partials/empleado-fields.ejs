@@ -33,17 +33,44 @@
     <option value="<%= t.value %>" <%= empleado && empleado.tipoContrato === t.value ? 'selected' : (!empleado && t.value === 'indefinido' ? 'selected' : '') %>><%= t.label %></option>
     <% }); %>
   </select>
-  <select name="tipoEmpleado">
+  <%
+    const _sindVal = empleado && empleado.sindicalizado === true
+      ? '1'
+      : (empleado && empleado.sindicalizado === false
+        ? '0'
+        : (/sind/i.test(String(empleado && empleado.tipoEmpleado || '')) ? '1'
+          : (String(empleado && empleado.tipoEmpleado || '') === 'confianza' ? '0' : '')));
+  %>
+  <label>Sindicalizado (SAT)
+    <select name="sindicalizado" id="campoSindicalizado" required>
+      <option value="">— Selecciona —</option>
+      <option value="1" <%= _sindVal === '1' ? 'selected' : '' %>>Sí</option>
+      <option value="0" <%= _sindVal === '0' ? 'selected' : '' %>>No</option>
+    </select>
+  </label>
+  <select name="tipoEmpleado" id="campoTipoEmpleado">
     <option value="">— Tipo de empleado —</option>
     <% (tiposEmpleado || []).forEach(function(t) { %>
     <option value="<%= t.value %>" <%= empleado && empleado.tipoEmpleado === t.value ? 'selected' : '' %>><%= t.label %></option>
     <% }); %>
   </select>
+  <script>
+  (function () {
+    var sind = document.getElementById('campoSindicalizado');
+    var tipo = document.getElementById('campoTipoEmpleado');
+    if (!sind || !tipo) return;
+    function sync() {
+      if (sind.value === '1') tipo.value = 'sindicalizado';
+      else if (sind.value === '0') tipo.value = 'confianza';
+    }
+    sind.addEventListener('change', sync);
+  })();
+  </script>
   <p class="hint" style="grid-column:1/-1">
     <strong>Fecha de alta</strong> = inicio de la relación laboral.
     <strong>Tipo de contrato</strong> = modalidad jurídica.
-    <strong>Tipo de empleado</strong> = confianza / sindicalizado
-    (<a href="/config-sistema/enums/tipo_contrato" target="_blank">enums</a>).
+    <strong>Sindicalizado</strong> = atributo CFDI <code>NominaReceptor@Sindicalizado</code> (Sí/No); la carga masiva lo llena desde el XML.
+    <strong>Tipo de empleado</strong> = confianza / sindicalizado (se alinea con Sindicalizado al guardar).
   </p>
 </fieldset>
 

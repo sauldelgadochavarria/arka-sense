@@ -16,6 +16,7 @@ const {
   buildPeriodosFromStaging,
   lookupPeriodoForPayload,
   resolveTipoPeriodoPorSat,
+  clasificacionLaboralFromEmpleado,
   anioDeVentana
 } = require('./cfdiPeriodoInferService');
 const {
@@ -317,7 +318,8 @@ async function crearYValidarDesdeZip({
     if (d.empleado.departamento) deptos.add(normName(d.empleado.departamento));
     if (d.empleado.puesto) puestos.add(normName(d.empleado.puesto));
     for (const c of d.conceptos || []) {
-      const k = `${c.tipo}|${c.conceptoCodigo}`;
+      // Identidad por Clave CFDI (+tipo); no colapsar por clave SAT.
+      const k = `${c.tipo}|${String(c.claveInterna || c.conceptoCodigo || '').toUpperCase()}|${String(c.nombre || '').toUpperCase()}`;
       if (!conceptos.has(k)) conceptos.set(k, c);
     }
     const key = empKeyFromPayload(d.empleado);
@@ -446,15 +448,18 @@ async function upsertConcepto(Concepto, tenantId, empresaId, c, subsidiariaId = 
   const inferred = await applyInferenciaSatAConcepto(c, {
     tenantId,
     empresaId,
-    subsidiariaId
+    subsidiariaId,
+    preferClaveInterna: true
   });
+  // Identidad = Clave CFDI (conceptoCodigo ya resuelto). Motor SAT es sugerencia aparte.
   const codigo = String(inferred.codigo || c.conceptoCodigo || '').toUpperCase();
   if (!codigo) return null;
 
   const tipo = c.tipo === 'deduccion' ? 'deduccion' : c.tipo === 'otro_pago' ? 'otro_pago' : 'percepcion';
   const claveSat = inferred.claveSat || c.claveSat || '';
-  const claveInterna = inferred.claveInterna || c.claveInterna || '';
+  const claveInterna = inferred.claveInterna || c.claveInterna || codigo;
 
+  // codigoExterno solo en $set (no repetir en $setOnInsert → conflicto Mongo)
   await Concepto.updateOne(
     { tenantId, codigo },
     {
@@ -466,7 +471,7 @@ async function upsertConcepto(Concepto, tenantId, empresaId, c, subsidiariaId = 
         'sat.tipo': tipo,
         activo: true,
         aplicaEn: 'nomina',
-        ...(claveInterna && claveInterna !== codigo ? { codigoExterno: claveInterna } : {})
+        codigoExterno: claveInterna && claveInterna !== codigo ? claveInterna : claveInterna || ''
       },
       $setOnInsert: {
         tenantId,
@@ -474,8 +479,7 @@ async function upsertConcepto(Concepto, tenantId, empresaId, c, subsidiariaId = 
         codigo,
         naturaleza: c.gravado > 0 && c.exento > 0 ? 'mixto' : c.exento > 0 ? 'exento' : 'gravado',
         ordenCalculo: 100,
-        ordenImpresion: 100,
-        codigoExterno: claveInterna || ''
+        ordenImpresion: 100
       }
     },
     { upsert: true }
@@ -542,6 +546,13 @@ async function resolveEmpleadoId(
 
   // Nunca reutilizar personal de otra empresa del mismo tenant (CURP/NSS globales).
   // Si el unique de numEmpleado es por tenant, al crear se genera un número libre.
+  const tipoEmpleadoFromSat =
+    emp.sindicalizado === true
+      ? 'sindicalizado'
+      : emp.sindicalizado === false
+        ? 'confianza'
+        : undefined;
+
   const payloadFull = {
     firstName: emp.firstName || 'SIN',
     lastName: emp.lastName || 'NOMBRE',
@@ -550,6 +561,11 @@ async function resolveEmpleadoId(
     curp: curp || undefined,
     nss: nss || undefined,
     tipoContrato: emp.tipoContrato || undefined,
+    tipoRegimen: emp.tipoRegimen || undefined,
+    tipoEmpleado: tipoEmpleadoFromSat,
+    ...(emp.sindicalizado === true || emp.sindicalizado === false
+      ? { sindicalizado: emp.sindicalizado }
+      : {}),
     'domicilio.codigoPostal': emp.codigoPostal || undefined,
     'domicilio.entidad': emp.entidadFederativa || undefined,
     entidadNacimiento: emp.entidadNacimiento || undefined,
@@ -939,8 +955,10 @@ async function aplicarJobCfdi(
           await applyInferenciaSatAConcepto(c, {
             tenantId,
             empresaId: job.empresaId,
-            subsidiariaId: subIdConceptos
+            subsidiariaId: subIdConceptos,
+            preferClaveInterna: true
           });
+          // Dedup por Clave CFDI (no por motor SAT): sueldo y séptimo día ambos SAT 001.
           const ck = `${c.tipo}|${String(c.conceptoCodigo || '').toUpperCase()}`;
           if (!c.conceptoCodigo || conceptoDone.has(ck)) continue;
           await upsertConcepto(Concepto, tenantId, job.empresaId, c, subIdConceptos);
@@ -958,7 +976,8 @@ async function aplicarJobCfdi(
           tenantId,
           job.empresaId,
           d.empleado.periodicidadPago,
-          tipoCache
+          tipoCache,
+          clasificacionLaboralFromEmpleado(d.empleado)
         );
         tipoPeriodoId = t?._id || null;
       }
@@ -1100,7 +1119,12 @@ async function aplicarJobCfdi(
           empleado: {
             numEmpleado: d.empleado.numEmpleado || '',
             nombre: d.empleado.nombre || '',
-            tipoEmpleado: '',
+            tipoEmpleado:
+              d.empleado.sindicalizado === true
+                ? 'sindicalizado'
+                : d.empleado.sindicalizado === false
+                  ? 'confianza'
+                  : '',
             tipoContrato: d.empleado.tipoContrato || '',
             departamentoId: depto?._id || null,
             departamentoNombre: deptoName || '',

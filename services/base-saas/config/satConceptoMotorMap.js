@@ -11,7 +11,6 @@
 
 /** Claves unívocas (1 SAT → 1 motor). */
 const SAT_MOTOR_UNICO = {
-  'percepcion|001': { codigo: 'SUELDO', categoria: 'ley' },
   'percepcion|002': { codigo: 'AGUINALDO', categoria: 'ley' },
   'percepcion|003': { codigo: 'PTU', categoria: 'ley' },
   'percepcion|005': { codigo: 'FONDO_AHORRO_EMPRESA', categoria: 'prestacion' },
@@ -37,6 +36,20 @@ const SAT_MOTOR_UNICO = {
  * `default: true` = fallback si ningún match de nombre aplica.
  */
 const SAT_MOTOR_AMBIGUO = {
+  // Misma clave SAT 001: sueldo ordinario vs séptimo día (Clave CFDI distinta).
+  'percepcion|001': [
+    {
+      codigo: 'SEPTIMO_DIA',
+      categoria: 'ley',
+      match: /s[eé]ptimo|7\s*mo|7mo|7[oº°]|descanso\s*pagad/i
+    },
+    {
+      codigo: 'SUELDO',
+      categoria: 'ley',
+      match: /sueldo|salario|ordinario|percepcion\s*ordin/i,
+      default: true
+    }
+  ],
   'percepcion|019': [
     { codigo: 'HORAS_EXTRA_TRIPLES', categoria: 'ley', match: /tripl|triple|het|hef/i },
     { codigo: 'HORAS_EXTRA_SENCILLAS', categoria: 'ley', match: /sencill|simple/i },

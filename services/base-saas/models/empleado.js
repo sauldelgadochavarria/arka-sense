@@ -62,6 +62,11 @@ const empleadoSchema = new mongoose.Schema(
     tipoContrato: { type: String, trim: true, default: 'indefinido' },
     /** Clasificación laboral (enum sistema: tipo_empleado) */
     tipoEmpleado: { type: String, trim: true, default: '' },
+    /**
+     * Atributo SAT NominaReceptor@Sindicalizado (Sí/No).
+     * null = no capturado; true/false = valor explícito (carga CFDI o ficha).
+     */
+    sindicalizado: { type: Boolean, default: null },
     /** Salario diario contratado (parte fija). */
     salarioDiario: { type: Number, min: 0 },
     /**

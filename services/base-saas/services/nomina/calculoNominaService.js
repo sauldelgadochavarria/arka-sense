@@ -26,7 +26,7 @@ const {
   mergeResolvedWithLegacy
 } = require('./conceptResolutionService');
 const { requireEmpresaForTenant } = require('../../libs/tenantScope');
-const { filterEmpleadosByTipoMotor } = require('../../libs/empleadoTipoPeriodo');
+const { filterEmpleadosForPeriodo } = require('../../libs/empleadoTipoPeriodo');
 const { conceptoAplicaEnCalculo } = require('../../libs/conceptoAplicabilidad');
 const { listTiposPeriodo } = require('../tipoPeriodoNominaService');
 const { archivarYAcumularCierre } = require('./nominaCierreService');
@@ -789,9 +789,12 @@ async function calcularPeriodo(tenantId, periodoId, options = {}) {
   const { mergePoliticaDescuentos } = require('../../libs/politicaDescuentosDefaults');
   const politicaDescuentos = mergePoliticaDescuentos(empresaDoc?.nominaDescuentos || {});
   const tipoPeriodoRef =
+    (periodo.tipoPeriodoId &&
+      (tiposPeriodo || []).find((t) => String(t._id) === String(periodo.tipoPeriodoId))) ||
     (tiposPeriodo || []).find(
       (t) => String(t.tipoMotor || '').toLowerCase() === String(periodo.tipoPeriodo || '').toLowerCase()
-    ) || null;
+    ) ||
+    null;
   const diasOpts = { politica: politicaDias, tipoPeriodoRef, politicaDescuentos };
 
   if (periodo.payrollPeriodId) {
@@ -814,12 +817,13 @@ async function calcularPeriodo(tenantId, periodoId, options = {}) {
     empleados = await Empleado.find(empleadosQuery).lean();
   }
 
-  empleados = filterEmpleadosByTipoMotor(empleados, tiposPeriodo, periodo.tipoPeriodo, {
+  empleados = filterEmpleadosForPeriodo(empleados, tiposPeriodo, periodo, {
     strict: false
   });
   if (!empleados.length) {
+    const etiqueta = tipoPeriodoRef?.nombre || periodo.tipoPeriodo;
     throw new Error(
-      `No hay empleados para tipo de período «${periodo.tipoPeriodo}». Asigna tipo de período en Personal → Empleado.`
+      `No hay empleados para tipo de período «${etiqueta}». Asigna tipo de período / sindicalizado en Personal → Empleado.`
     );
   }
 
