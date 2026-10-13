@@ -93,6 +93,18 @@
       <strong><%= empleado && empleado.rfc ? empleado.rfc : '—' %></strong>
     </div>
     <div>
+      <span class="label">Puesto</span>
+      <strong><%= empleado && (empleado.puestoNombre || empleado.puesto) ? (empleado.puestoNombre || empleado.puesto) : '—' %></strong>
+    </div>
+    <div>
+      <span class="label">Departamento</span>
+      <strong><%= empleado && (empleado.departamentoNombre || empleado.departamento) ? (empleado.departamentoNombre || empleado.departamento) : '—' %></strong>
+    </div>
+    <div>
+      <span class="label">Fecha de ingreso</span>
+      <strong><%= empleado && empleado.fechaIngreso ? fmtDate(empleado.fechaIngreso) : '—' %></strong>
+    </div>
+    <div>
       <span class="label">Días laborados</span>
       <strong><%= recibo.diasLaborados %></strong>
     </div>

@@ -264,13 +264,15 @@ async function applyJobAction(req, res) {
       // Solo rellena si el job no guardó subsidiaria al subir el ZIP
       subsidiariaIdFallback: sessionSubsidiariaId(req)
     });
-    const asyncMasivo =
-      job.tipo === 'cfdi_nomina_zip_masivo' &&
-      ['encolado', 'aplicando'].includes(job.estatus);
+    const asyncApply =
+      ['encolado', 'aplicando'].includes(job.estatus) &&
+      (job.tipo === 'cfdi_nomina_zip_masivo' ||
+        job.resumen?.applyAsync === true ||
+        job.tipo === 'cfdi_nomina_zip');
     req.flash(
-      asyncMasivo ? 'success' : job.estatus === 'ok' ? 'success' : 'error',
-      asyncMasivo
-        ? 'Apply encolado. El progreso se actualiza en esta página.'
+      asyncApply ? 'success' : job.estatus === 'ok' ? 'success' : 'error',
+      asyncApply
+        ? 'Apply encolado en segundo plano (lote grande). El progreso se actualiza en esta página; no cierres la pestaña si quieres verlo, el job sigue aunque salgas.'
         : `Aplicación: ${job.filasAplicadas || 0} fila(s) · estatus ${job.estatus}`
     );
     return res.redirect(`/config-empresa/cargas/jobs/${job._id}`);
@@ -440,6 +442,44 @@ async function religarXmlJobAction(req, res) {
   }
 }
 
+async function regenerarInformeConfigAction(req, res) {
+  try {
+    const job = await getJob(req.session.tenantId, req.params.id);
+    if (!job) {
+      req.flash('error', 'Job no encontrado');
+      return res.redirect('/config-empresa/cargas');
+    }
+    const isCfdi =
+      job.tipo === 'cfdi_nomina_zip' || job.tipo === 'cfdi_nomina_zip_masivo';
+    if (!isCfdi) {
+      req.flash('error', 'El informe de configuración solo aplica a cargas CFDI');
+      return res.redirect(`/config-empresa/cargas/jobs/${job._id}`);
+    }
+    const {
+      rebuildImportPostReportFromJob
+    } = require('../services/cargas/cfdiImportPostReportService');
+    const postReport = await rebuildImportPostReportFromJob(req.session.tenantId, job);
+    const Job = await getCargaInicialJobModel();
+    await Job.updateOne(
+      { _id: job._id, tenantId: req.session.tenantId },
+      {
+        $set: {
+          'resumen.postReport': postReport,
+          'resumen.conceptosTocados': postReport?.conceptos?.total || 0
+        }
+      }
+    );
+    req.flash(
+      'success',
+      `Informe actualizado · ${postReport?.contadores?.pendientes || 0} pendiente(s)`
+    );
+    return res.redirect(`/config-empresa/cargas/jobs/${job._id}#post-report`);
+  } catch (err) {
+    req.flash('error', err.message || 'No se pudo generar el informe');
+    return res.redirect(`/config-empresa/cargas/jobs/${req.params.id}`);
+  }
+}
+
 module.exports = {
   index,
   showTipo,
@@ -454,5 +494,6 @@ module.exports = {
   applyJobAction,
   organizarPeriodosJobAction,
   religarXmlJobAction,
+  regenerarInformeConfigAction,
   proximamenteCreditos
 };

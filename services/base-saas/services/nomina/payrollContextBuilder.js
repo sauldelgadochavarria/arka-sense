@@ -12,7 +12,8 @@ const CORE_INCIDENCIA_KEYS = [
   'minutosRetardo',
   'minutosSalidaAnticipada',
   'diasConRetardo',
-  'llegadasTarde'
+  'llegadasTarde',
+  'domingosTrabajados'
 ];
 
 function toNum(v, fallback = 0) {
@@ -48,6 +49,12 @@ function buildNamespacedContext({ empleado, periodo, incidencias, parametros, ex
     }
   }
 
+  const numEmpleado = String(emp.numEmpleado ?? emp.numeroEmpleado ?? '').trim();
+  const numEmpleadoNum = Number(numEmpleado);
+  const departamento = String(emp.departamento ?? emp.departamentoNombre ?? '').trim();
+  const departamentoCodigo = String(emp.departamentoCodigo ?? '').trim();
+  const departamentoCodigoNum = Number(departamentoCodigo);
+
   const EMPLEADO = {
     salarioDiario: toNum(emp.salarioDiario ?? emp.sueldoDiario),
     sueldoDiario: toNum(emp.salarioDiario ?? emp.sueldoDiario),
@@ -65,6 +72,16 @@ function buildNamespacedContext({ empleado, periodo, incidencias, parametros, ex
     sbc: toNum(emp.sbc),
     tipoSalario: String(emp.tipoSalario || 'fijo').trim() || 'fijo',
     tipoEmpleado: String(emp.tipoEmpleado || '').trim(),
+    // Útiles en condiciones: si(EMPLEADO.numEmpleado == "1234", …) / si(EMPLEADO.departamento == "Ventas", …)
+    numEmpleado,
+    numeroEmpleado: numEmpleado,
+    numero: Number.isFinite(numEmpleadoNum) ? numEmpleadoNum : 0,
+    departamento,
+    departamentoNombre: departamento,
+    // codigoExterno / legado del catálogo (p.ej. "20" para AC LINE I AC28)
+    departamentoCodigo,
+    departamentoCodigoNum: Number.isFinite(departamentoCodigoNum) ? departamentoCodigoNum : 0,
+    departamentoId: String(emp.departamentoId || '').trim(),
     atributos
   };
 
@@ -80,12 +97,14 @@ function buildNamespacedContext({ empleado, periodo, incidencias, parametros, ex
     diasProgramados: toNum(per.diasProgramados),
     diasDescanso: toNum(per.diasDescanso),
     diasDescansoPagados: toNum(per.diasDescansoPagados),
+    domingosEnPeriodo: toNum(per.domingosEnPeriodo),
     faltas: toNum(per.faltas ?? inc.faltas)
   };
 
   const minutosRetardo = toNum(inc.minutosRetardo);
   const diasConRetardo = toNum(inc.diasConRetardo ?? inc.llegadasTarde);
   const llegadasTarde = toNum(inc.llegadasTarde ?? diasConRetardo);
+  const domingosTrabajados = toNum(inc.domingosTrabajados);
 
   const INCIDENCIAS = {
     faltas: toNum(inc.faltas ?? per.faltas),
@@ -95,6 +114,7 @@ function buildNamespacedContext({ empleado, periodo, incidencias, parametros, ex
     minutosSalidaAnticipada: toNum(inc.minutosSalidaAnticipada),
     diasConRetardo,
     llegadasTarde,
+    domingosTrabajados,
     // Flags 0/1 útiles en condiciones (mathjs no tiene booleanos nativos cómodos)
     sinRetardo: minutosRetardo === 0 && llegadasTarde === 0 ? 1 : 0,
     sinFaltas: toNum(inc.faltas ?? per.faltas) === 0 ? 1 : 0,
@@ -119,6 +139,8 @@ function buildNamespacedContext({ empleado, periodo, incidencias, parametros, ex
     diasProgramados: PERIODO.diasProgramados,
     diasDescanso: PERIODO.diasDescanso,
     diasDescansoPagados: PERIODO.diasDescansoPagados,
+    domingosEnPeriodo: PERIODO.domingosEnPeriodo,
+    domingosTrabajados: INCIDENCIAS.domingosTrabajados,
     faltas: INCIDENCIAS.faltas,
     sueldoDiario: EMPLEADO.salarioDiario,
     salarioDiario: EMPLEADO.salarioDiario,
@@ -130,6 +152,13 @@ function buildNamespacedContext({ empleado, periodo, incidencias, parametros, ex
     sdi: EMPLEADO.sdi,
     sbc: EMPLEADO.sbc || Math.min(EMPLEADO.sdi || EMPLEADO.salarioDiario, PARAMETROS.uma * 25 || Infinity),
     tipoSalario: EMPLEADO.tipoSalario,
+    numEmpleado: EMPLEADO.numEmpleado,
+    numeroEmpleado: EMPLEADO.numEmpleado,
+    numero: EMPLEADO.numero,
+    departamento: EMPLEADO.departamento,
+    departamentoNombre: EMPLEADO.departamento,
+    departamentoCodigo: EMPLEADO.departamentoCodigo,
+    departamentoCodigoNum: EMPLEADO.departamentoCodigoNum,
     uma: PARAMETROS.uma,
     salarioMinimo: PARAMETROS.salarioMinimo,
     minutosRetardo: INCIDENCIAS.minutosRetardo,

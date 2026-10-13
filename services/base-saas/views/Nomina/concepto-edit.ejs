@@ -411,6 +411,8 @@
         <code>horas_extra_dobles</code>: 50% exento con tope de N×UMA semanales (campo tope arriba, default 5).
         <code>despensa</code>: exento hasta <strong>1 UMA mensual</strong> si el período paga despensa mensual;
         si es semanal sin pago mensual, <strong>7 × UMA diaria</strong>. El excedente grava ISR.
+        <code>prima_dominical</code>: exento hasta <strong>N × UMA × domingos trabajados</strong>
+        (tope UMA arriba, default 1). Fórmula típica: <code>sueldoDiario * 0.25 * domingosTrabajados</code>.
       </p>
     </fieldset>
 
@@ -606,6 +608,17 @@
         (o marca «aplicar a todos»).
       </p>
       <% } %>
+      <% if (/^\d/.test(String(concepto.codigo || ''))) { %>
+      <p class="muted small" style="margin-top:-0.35rem">
+        Concepto con clave CFDI. Condición y fórmula en sintaxis mathjs, p.ej.
+        condición <code>diasLaborados &gt; 3</code> ·
+        fórmula <code>sueldoDiario * 0.7</code> o <code>EMPLEADO.salarioDiario * 0.7</code>.
+        También: <code>EMPLEADO.numEmpleado == "1234"</code>,
+        <code>EMPLEADO.departamento == "Ventas"</code>,
+        <code>EMPLEADO.tipoEmpleado == "confianza"</code>.
+        Guarda en <strong>semanal / ordinaria</strong> (o «aplicar a todos»).
+      </p>
+      <% } %>
       <label>Fórmula <span class="muted">(Tab / Enter acepta sugerencia · Esc cierra)</span>
         <div class="ac-wrap">
           <textarea name="formula" id="field-formula" rows="3" required class="input-formula"
@@ -641,6 +654,29 @@
           <input type="number" name="redondeo" id="field-redondeo" min="0" max="6"
                  value="<%= fActiva ? fActiva.redondeo : 2 %>" />
         </label>
+      </div>
+
+      <%
+        function _toDateInput(d) {
+          if (!d) return '';
+          const x = new Date(d);
+          if (Number.isNaN(x.getTime())) return '';
+          // Las vigencias se guardan a medianoche; usar UTC para no correr un día en TZ -6.
+          return x.toISOString().slice(0, 10);
+        }
+        const _vigDefault = fActiva && fActiva.vigenciaDesde
+          ? _toDateInput(fActiva.vigenciaDesde)
+          : new Date().toISOString().slice(0, 10);
+      %>
+      <div class="form-row-2">
+        <label>Vigente desde
+          <input type="date" name="vigenciaDesde" id="field-vigencia-desde"
+                 value="<%= _vigDefault %>" required />
+        </label>
+        <p class="muted small" style="align-self:end;margin:0 0 0.35rem">
+          Fecha desde la que aplica <strong>esta versión</strong> de la fórmula (no es el alta del concepto).
+          Para períodos que ya empezaron, usa una fecha ≤ inicio del período (p.ej. 01/01/2026).
+        </p>
       </div>
 
       <label class="inline-check">
@@ -787,6 +823,20 @@
         tipo: 'funcion'
       });
     });
+    const _lits = (typeof formulaLiteralSuggestions !== 'undefined' && formulaLiteralSuggestions)
+      ? formulaLiteralSuggestions
+      : [];
+    _lits.forEach(function(lit) {
+      if (!lit || !lit.key || _acSeen[lit.key]) return;
+      _acSeen[lit.key] = true;
+      _acItems.push({
+        key: lit.key,
+        label: lit.label || lit.key,
+        descripcion: lit.descripcion || 'Valor para condición',
+        grupo: lit.grupo || 'Valores',
+        tipo: lit.tipo || 'literal'
+      });
+    });
   %>
   const formulaSuggestions = <%- JSON.stringify(_acItems) %>;
 
@@ -796,11 +846,19 @@
   const fieldFormula = document.getElementById('field-formula');
   const fieldDeps = document.getElementById('field-deps');
   const fieldRedondeo = document.getElementById('field-redondeo');
+  const fieldVigenciaDesde = document.getElementById('field-vigencia-desde');
   const metaEl = document.getElementById('formula-meta');
   const form = document.getElementById('formula-form');
 
   function keyOf(periodo, nomina) {
     return periodo + '|' + nomina;
+  }
+
+  function toDateInputValue(d) {
+    if (!d) return new Date().toISOString().slice(0, 10);
+    const x = new Date(d);
+    if (Number.isNaN(x.getTime())) return new Date().toISOString().slice(0, 10);
+    return x.toISOString().slice(0, 10);
   }
 
   function loadCombo(periodo, nomina, pushUrl) {
@@ -809,6 +867,9 @@
     fieldFormula.value = f ? (f.formula || '') : '';
     fieldDeps.value = f && f.dependencias ? f.dependencias.join(', ') : '';
     fieldRedondeo.value = f && f.redondeo != null ? f.redondeo : 2;
+    if (fieldVigenciaDesde) {
+      fieldVigenciaDesde.value = toDateInputValue(f && f.vigenciaDesde ? f.vigenciaDesde : null);
+    }
 
     const faseSel = form.querySelector('[name=fase]');
     const appSel = form.querySelector('[name=tipoAplicacion]');
@@ -825,7 +886,7 @@
           ' · ' + (f.tipoAplicacion || appDefault) +
           (f.empresaId ? ' · override empresa' : ' · plantilla');
       } else {
-        metaEl.textContent = 'Sin fórmula vigente para esta combinación — al guardar se crea la primera versión.';
+        metaEl.textContent = 'Sin fórmula vigente para esta combinación — al guardar se crea la primera versión. Elige «Vigente desde» (p.ej. inicio de año) si el período ya empezó.';
       }
     }
 
@@ -855,7 +916,18 @@
   selNomina.addEventListener('change', onSelectChange);
 
   const varsEjemplo = {
-    EMPLEADO: { salarioDiario: 500, horasJornada: 8, antiguedadAnios: 3, sbc: 500 },
+    EMPLEADO: {
+      salarioDiario: 500,
+      horasJornada: 8,
+      antiguedadAnios: 3,
+      sbc: 500,
+      tipoEmpleado: 'confianza',
+      numEmpleado: '1234',
+      numeroEmpleado: '1234',
+      numero: 1234,
+      departamento: 'Ventas',
+      departamentoNombre: 'Ventas'
+    },
     PERIODO: { diasPeriodo: 15, diasTrabajados: 15, diasLaborados: 15, faltas: 0 },
     INCIDENCIAS: {
       faltas: 0,
@@ -875,6 +947,8 @@
     minutosRetardo: 0, minutosSalidaAnticipada: 0,
     diasConRetardo: 0, llegadasTarde: 0, sinRetardo: 1, sinFaltas: 1,
     uma: 113.14, salarioMinimo: 278.8, sbc: 500,
+    numEmpleado: '1234', numeroEmpleado: '1234', numero: 1234,
+    departamento: 'Ventas', departamentoNombre: 'Ventas',
     SUELDO: 7000, PERCEPCIONES_GRAVADAS: 7500,
     // Fondo de ahorro — variables para fórmulas editables
     aplicaFondoAhorro: 1,

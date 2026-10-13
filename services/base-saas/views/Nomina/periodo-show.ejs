@@ -15,27 +15,106 @@
     return Number(p.value) === Number(periodo.periodicidadPagoSat);
   });
 %>
-<section class="panel" style="margin:1rem 0">
-  <h2 class="panel-title">Clasificación</h2>
+<%
+  const _estEdit = String(periodo.estatus || '').toLowerCase();
+  const _puedeEditarPeriodo = _canEdit && (_estEdit === 'abierto' || _estEdit === 'calculado');
+  const _optsTipo = typeof tiposPeriodoCatalogoOpts !== 'undefined' ? tiposPeriodoCatalogoOpts : [];
+  function _ymd(d) {
+    if (!d) return '';
+    try { return new Date(d).toISOString().slice(0, 10); } catch (_) { return ''; }
+  }
+%>
+<section class="panel" style="margin:1rem 0" id="editar-periodo">
+  <h2 class="panel-title">Tipo de período (catálogo) y parámetros</h2>
   <dl class="flag-labels" style="margin:0 0 .75rem">
-    <div>Tipo catálogo:
+    <div>Tipo catálogo vinculado:
       <strong>
         <% if (typeof tipoPeriodoCatalogo !== 'undefined' && tipoPeriodoCatalogo) { %>
         <%= tipoPeriodoCatalogo.nombre %>
-        <% if (tipoPeriodoCatalogo.clasificacionLabel) { %>
-        · <%= tipoPeriodoCatalogo.clasificacionLabel %>
+        <% if (tipoPeriodoCatalogo.clasificacionLabel) { %> · <%= tipoPeriodoCatalogo.clasificacionLabel %><% } %>
+        · <%= tipoPeriodoCatalogo.diasLaborables != null ? tipoPeriodoCatalogo.diasLaborables : '—' %> lab.
+        <% if (tipoPeriodoCatalogo.esSeptimo) { %> + 7º<% } %>
+        <% } else { %>
+        <span style="color:#b45309">Sin vincular</span>
         <% } %>
-        <% } else { %>—<% } %>
       </strong>
     </div>
     <div>Motor interno: <strong><%= periodo.tipoPeriodo %></strong></div>
     <div>Periodicidad SAT: <strong><%= satHit ? (satHit.code + ' · ' + satHit.label) : (periodo.periodicidadPagoSat != null ? periodo.periodicidadPagoSat : '—') %></strong></div>
-    <div>CFDI TipoNomina: <strong><%= periodo.tipoNominaCfdi || '—' %></strong> <span class="muted small">(O=ordinaria, E=extraordinaria)</span></div>
+    <div>CFDI TipoNomina: <strong><%= periodo.tipoNominaCfdi || '—' %></strong></div>
   </dl>
-  <% if (_canEdit) { %>
+
+  <% if (_puedeEditarPeriodo) { %>
+  <p class="muted small">
+    El cálculo (6+1 / 5+2, séptimo, SIND/CONF) parte del <strong>tipo de catálogo</strong> de la subsidiaria.
+    Tras cambiar, <strong>recalcula</strong> la nómina.
+  </p>
+  <form method="post" action="/nomina/periodos/<%= periodo._id %>/editar" class="form-grid">
+    <label>Tipo de período (catálogo) *
+      <select name="tipoPeriodoId" required>
+        <option value="">— Selecciona —</option>
+        <% _optsTipo.forEach(function(t) { %>
+        <option value="<%= t._id %>" <%= periodo.tipoPeriodoId && String(periodo.tipoPeriodoId) === String(t._id) ? 'selected' : '' %>>
+          <%= t.nombre %><% if (t.clasificacionLabel) { %> · <%= t.clasificacionLabel %><% } %>
+          (<%= t.diasLaborables != null ? t.diasLaborables : '—' %> lab.<% if (t.esSeptimo) { %> + 7º<% } %>
+          · <%= t.diasPeriodo != null ? t.diasPeriodo : '—' %> d · <%= t.tipoMotor %>)
+        </option>
+        <% }); %>
+      </select>
+    </label>
+    <label>Fecha inicio *
+      <input type="date" name="fechaInicio" id="edit-fecha-inicio" required value="<%= _ymd(periodo.fechaInicio) %>" />
+    </label>
+    <label>Fecha fin *
+      <input type="date" name="fechaFin" id="edit-fecha-fin" required value="<%= _ymd(periodo.fechaFin) %>" />
+    </label>
+    <p class="muted small" style="grid-column:1/-1;margin:0">
+      Ventana de nómina (define días del período y el 7º). Corrige aquí si el CFDI inferió mal el rango.
+    </p>
+    <label>Fecha de pago
+      <input type="date" name="fechaPago" value="<%= _ymd(periodo.fechaPago) %>" />
+    </label>
+    <label>Notas
+      <input name="notas" value="<%= periodo.notas || '' %>" placeholder="Opcional" />
+    </label>
+    <div class="checkbox-group" style="grid-column:1/-1">
+      <label>
+        <input type="hidden" name="pagaDespensa" value="0" />
+        <input type="checkbox" name="pagaDespensa" value="1" <%= (periodo.prestaciones && periodo.prestaciones.pagaDespensa) ? 'checked' : '' %> />
+        Paga despensa / vales en este período
+      </label>
+      <label>
+        <input type="hidden" name="despensaPagoMensual" value="0" />
+        <input type="checkbox" name="despensaPagoMensual" value="1" <%= !periodo.prestaciones || periodo.prestaciones.despensaPagoMensual !== false ? 'checked' : '' %> />
+        Despensa: pago mensual completo (tope IMSS mensual)
+      </label>
+      <label>
+        <input type="hidden" name="omitirDispersionBancaria" value="0" />
+        <input type="checkbox" name="omitirDispersionBancaria" value="1" <%= periodo.omitirDispersionBancaria ? 'checked' : '' %> />
+        Omitir dispersión bancaria (cheque / efectivo)
+      </label>
+    </div>
+    <label>Override monto despensa ($)
+      <input type="number" name="despensaMontoOverride" min="0" step="0.01"
+        value="<%= periodo.prestaciones && periodo.prestaciones.despensaMontoOverride > 0 ? periodo.prestaciones.despensaMontoOverride : '' %>"
+        placeholder="Vacío = política del empleado" />
+    </label>
+    <div style="grid-column:1/-1">
+      <button type="submit" class="btn btn-primary">Guardar período</button>
+      <a class="btn" href="/nomina/tipos-periodo">Ver catálogo de tipos</a>
+    </div>
+  </form>
+  <% } else { %>
+  <p class="banner-readonly">Solo consulta — el período está <strong><%= estatusLabels[periodo.estatus] || periodo.estatus %></strong>.</p>
+  <% } %>
+</section>
+
+<section class="panel" style="margin:1rem 0">
+  <h2 class="panel-title">Clasificación de nómina (negocio)</h2>
+  <% if (_canEdit && _estEdit !== 'calculando') { %>
   <form method="post" action="/nomina/periodos/<%= periodo._id %>/clasificacion" class="form-grid">
     <input type="hidden" name="returnTo" value="/nomina/periodos/<%= periodo._id %>" />
-    <label>Tipo de nómina (negocio — editable)
+    <label>Tipo de nómina
       <select name="tipoNomina" required>
         <% (typeof tiposNomina !== 'undefined' ? tiposNomina : []).forEach(function(t) { %>
         <option value="<%= t.value %>" <%= periodo.tipoNomina === t.value ? 'selected' : '' %>><%= t.label %></option>
@@ -44,7 +123,7 @@
     </label>
     <button type="submit" class="btn btn-primary">Guardar clasificación</button>
   </form>
-  <p class="muted small">Tras importar, ajusta aquí si el CFDI quedó como «extraordinaria» genérica y en realidad es aguinaldo, PTU, finiquito, fondo de ahorro, bono, etc.</p>
+  <p class="muted small">Ajusta si el CFDI quedó como «extraordinaria» genérica (aguinaldo, PTU, finiquito…).</p>
   <% } else { %>
   <p>Tipo de nómina: <strong><%= periodo.tipoNomina %></strong></p>
   <% } %>
@@ -274,15 +353,30 @@
 <% } %>
 
 <h2>Recibos<% if (typeof recibosTotal === 'number' && recibosTotal > 0) { %> <span class="muted small">(<%= recibosTotal.toLocaleString('es-MX') %>)</span><% } %></h2>
-<% const RF = typeof recibosFiltros !== 'undefined' && recibosFiltros ? recibosFiltros : { q: '', departamento: '', departamentos: [] }; %>
+<% const RF = typeof recibosFiltros !== 'undefined' && recibosFiltros ? recibosFiltros : { q: '', departamento: '', departamentos: [], sortBy: 'numEmpleado', sortDir: 'asc' }; %>
 <% 
   const qsBase = [];
   if (RF.q) qsBase.push('q=' + encodeURIComponent(RF.q));
   if (RF.departamento) qsBase.push('departamento=' + encodeURIComponent(RF.departamento));
+  if (RF.sortBy) qsBase.push('sortBy=' + encodeURIComponent(RF.sortBy));
+  if (RF.sortDir) qsBase.push('sortDir=' + encodeURIComponent(RF.sortDir));
   if (typeof recibosPageSize !== 'undefined' && recibosPageSize) qsBase.push('pageSize=' + recibosPageSize);
   const qsJoin = qsBase.length ? '&' + qsBase.join('&') : '';
+  function sortHref(col) {
+    const nextDir = (RF.sortBy === col && RF.sortDir === 'asc') ? 'desc' : 'asc';
+    const parts = [];
+    if (RF.q) parts.push('q=' + encodeURIComponent(RF.q));
+    if (RF.departamento) parts.push('departamento=' + encodeURIComponent(RF.departamento));
+    parts.push('sortBy=' + encodeURIComponent(col));
+    parts.push('sortDir=' + nextDir);
+    if (typeof recibosPageSize !== 'undefined' && recibosPageSize) parts.push('pageSize=' + recibosPageSize);
+    return '?' + parts.join('&');
+  }
+  function sortMark(col) {
+    if (RF.sortBy !== col) return '';
+    return RF.sortDir === 'desc' ? ' ↓' : ' ↑';
+  }
 %>
-<% if (typeof recibosDesdeHistorico !== 'undefined' && recibosDesdeHistorico) { %>
 <form method="get" action="/nomina/periodos/<%= periodo._id %>" class="filter-form form-grid" style="margin:0 0 1rem">
   <label>Buscar empleado
     <input type="search" name="q" value="<%= RF.q || '' %>" placeholder="No. o nombre" />
@@ -295,14 +389,31 @@
       <% }); %>
     </select>
   </label>
+  <label>Ordenar por
+    <select name="sortBy">
+      <option value="numEmpleado" <%= RF.sortBy === 'numEmpleado' ? 'selected' : '' %>>No. empleado</option>
+      <option value="empleado" <%= RF.sortBy === 'empleado' ? 'selected' : '' %>>Nombre</option>
+      <option value="departamento" <%= RF.sortBy === 'departamento' ? 'selected' : '' %>>Departamento</option>
+      <option value="neto" <%= RF.sortBy === 'neto' ? 'selected' : '' %>>Neto</option>
+      <option value="percepciones" <%= RF.sortBy === 'percepciones' ? 'selected' : '' %>>Percepciones</option>
+      <option value="deducciones" <%= RF.sortBy === 'deducciones' ? 'selected' : '' %>>Deducciones</option>
+      <option value="dias" <%= RF.sortBy === 'dias' ? 'selected' : '' %>>Días lab.</option>
+      <option value="faltas" <%= RF.sortBy === 'faltas' ? 'selected' : '' %>>Faltas</option>
+    </select>
+  </label>
+  <label>Dirección
+    <select name="sortDir">
+      <option value="asc" <%= RF.sortDir !== 'desc' ? 'selected' : '' %>>Ascendente</option>
+      <option value="desc" <%= RF.sortDir === 'desc' ? 'selected' : '' %>>Descendente</option>
+    </select>
+  </label>
   <input type="hidden" name="pageSize" value="<%= typeof recibosPageSize !== 'undefined' ? recibosPageSize : 50 %>" />
   <div style="align-self:end;display:flex;gap:.5rem">
-    <button type="submit" class="btn btn-primary">Filtrar</button>
+    <button type="submit" class="btn btn-primary">Aplicar</button>
     <a class="btn" href="/nomina/periodos/<%= periodo._id %>">Limpiar</a>
   </div>
 </form>
-<% } %>
-<% if (typeof recibosDesdeHistorico !== 'undefined' && recibosDesdeHistorico && typeof recibosPages === 'number' && recibosPages > 1) { %>
+<% if (typeof recibosPages === 'number' && recibosPages > 1) { %>
 <p class="muted small" style="margin:0 0 .75rem">
   Página <%= recibosPage %> de <%= recibosPages %>
   ·
@@ -318,16 +429,16 @@
 <table>
   <thead>
     <tr>
-      <th>No.</th>
-      <th>Empleado</th>
-      <th>Departamento</th>
+      <th><a href="<%= sortHref('numEmpleado') %>">No.<%= sortMark('numEmpleado') %></a></th>
+      <th><a href="<%= sortHref('empleado') %>">Empleado<%= sortMark('empleado') %></a></th>
+      <th><a href="<%= sortHref('departamento') %>">Departamento<%= sortMark('departamento') %></a></th>
       <th>ID cálculo</th>
-      <th>Días lab.</th>
-      <th>Faltas</th>
+      <th><a href="<%= sortHref('dias') %>">Días lab.<%= sortMark('dias') %></a></th>
+      <th><a href="<%= sortHref('faltas') %>">Faltas<%= sortMark('faltas') %></a></th>
       <th>Origen insumos</th>
-      <th>Percepciones</th>
-      <th>Deducciones</th>
-      <th>Neto</th>
+      <th><a href="<%= sortHref('percepciones') %>">Percepciones<%= sortMark('percepciones') %></a></th>
+      <th><a href="<%= sortHref('deducciones') %>">Deducciones<%= sortMark('deducciones') %></a></th>
+      <th><a href="<%= sortHref('neto') %>">Neto<%= sortMark('neto') %></a></th>
       <th>Dispersión</th>
       <th>Correo</th>
       <th>Cálculo</th>
@@ -396,7 +507,7 @@
     <% }); %>
   </tbody>
 </table>
-<% if (typeof recibosDesdeHistorico !== 'undefined' && recibosDesdeHistorico && typeof recibosPages === 'number' && recibosPages > 1) { %>
+<% if (typeof recibosPages === 'number' && recibosPages > 1) { %>
 <p class="muted small" style="margin:.75rem 0">
   Página <%= recibosPage %> / <%= recibosPages %> ·
   <% if (recibosPage > 1) { %><a href="?page=<%= recibosPage - 1 %><%= qsJoin %>">Anterior</a><% } %>

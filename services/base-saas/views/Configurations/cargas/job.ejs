@@ -5,7 +5,8 @@
   const pollStatuses = ['encolado', 'parseando', 'aplicando'];
   const shouldPoll = isMasivo && pollStatuses.includes(job.estatus);
   const isReligar = (job.progreso && String(job.progreso.fase || '').indexOf('religar_xml') === 0 && job.estatus === 'aplicando');
-  const shouldPollAny = shouldPoll || isReligar || job.estatus === 'aplicando';
+  const applyAsyncZip = !!(job.resumen && job.resumen.applyAsync) || (isCfdi && pollStatuses.includes(job.estatus));
+  const shouldPollAny = shouldPoll || isReligar || applyAsyncZip || job.estatus === 'aplicando';
   const P = job.progreso || {};
 %>
 <h1>Job de carga</h1>
@@ -46,6 +47,116 @@
   <% if (job.userLabel) { %> · por <%= job.userLabel %><% } %>
 </p>
 <p id="job-notas"><% if (job.notas) { %><%= job.notas %><% } %></p>
+
+<% if (isCfdi && (job.estatus === 'ok' || job.estatus === 'parcial' || job.aplicadoAt)) { %>
+<% const PR = (job.resumen && job.resumen.postReport) || null; %>
+<section class="panel" id="post-report">
+  <h2 class="panel-title">Resultados y sugerencias de configuración</h2>
+  <% if (!PR) { %>
+  <p class="muted">
+    Este job aún no tiene informe post-aplicación (cargas anteriores al feature).
+    Puedes generarlo ahora sin reaplicar.
+  </p>
+  <form method="post" action="/config-empresa/cargas/jobs/<%= job._id %>/informe-config">
+    <button type="submit" class="btn btn-primary">Generar informe</button>
+  </form>
+  <% } else {
+    const C = PR.contadores || {};
+    const sevBadge = function (s) {
+      if (s === 'bloqueante') return 'badge-baja';
+      if (s === 'revisar') return 'badge-suspendido';
+      return 'badge-activo';
+    };
+  %>
+  <div class="summary-cards" style="margin-bottom:.75rem">
+    <div class="card"><strong><%= C.recibosAplicados || 0 %></strong> recibos</div>
+    <div class="card"><strong><%= C.empleadosAfectados || 0 %></strong> empleados</div>
+    <div class="card"><strong><%= C.conceptosMapeados || 0 %></strong> conceptos mapeados</div>
+    <div class="card"><strong><%= C.conceptosPendientes || 0 %></strong> pendientes mapa</div>
+    <div class="card"><strong><%= C.sinCuentaContable || 0 %></strong> sin cuenta</div>
+    <div class="card"><strong><%= C.pendientes || 0 %></strong> pendientes</div>
+  </div>
+  <p class="muted small">
+    Generado <%= PR.generadoEn ? new Date(PR.generadoEn).toLocaleString('es-MX') : '—' %>
+    · <a href="/nomina/mapeo-sat">Mapeo SAT</a>
+    · <a href="/nomina/conceptos">Conceptos</a>
+    · <a href="/nomina/periodos">Períodos</a>
+  </p>
+
+  <% if (PR.sugerencias && PR.sugerencias.length) { %>
+  <h3 class="panel-title" style="font-size:1rem;margin-top:1rem">Sugerencias</h3>
+  <ul class="vars-list">
+    <% PR.sugerencias.forEach(function(s) { %>
+    <li style="margin-bottom:.65rem">
+      <span class="badge <%= sevBadge(s.severidad) %>"><%= s.severidad %></span>
+      <strong><%= s.titulo %></strong>
+      <div class="muted small"><%= s.detalle %></div>
+      <% if (s.link) { %>
+      <a href="<%= s.link %>"><%= s.linkLabel || 'Ir' %></a>
+      <% } %>
+      <% if (s.items && s.items.length) { %>
+      <details style="margin-top:.25rem">
+        <summary class="muted small"><%= s.items.length %> ítem(s)</summary>
+        <ul class="muted small">
+          <% s.items.slice(0, 25).forEach(function(it) { %>
+          <li>
+            <% if (it.link) { %><a href="<%= it.link %>"><%= it.label %></a><% } else { %><%= it.label %><% } %>
+          </li>
+          <% }); %>
+        </ul>
+      </details>
+      <% } %>
+    </li>
+    <% }); %>
+  </ul>
+  <% } else { %>
+  <p class="muted">Sin pendientes detectados. Revisa períodos y recalcula la nómina.</p>
+  <% } %>
+
+  <% if (PR.conceptos && PR.conceptos.mapeados && PR.conceptos.mapeados.length) { %>
+  <details style="margin-top:.75rem">
+    <summary>Conceptos mapeados (<%= PR.conceptos.mapeados.length %>)</summary>
+    <table>
+      <thead><tr><th>CFDI</th><th>Motor</th><th>Nombre</th><th>SAT</th></tr></thead>
+      <tbody>
+        <% PR.conceptos.mapeados.forEach(function(r) { %>
+        <tr>
+          <td><a href="<%= r.link %>"><code><%= r.codigo %></code></a></td>
+          <td><code><%= r.codigoMotor || '—' %></code></td>
+          <td><%= r.nombre %></td>
+          <td><%= r.claveSat || '—' %></td>
+        </tr>
+        <% }); %>
+      </tbody>
+    </table>
+  </details>
+  <% } %>
+
+  <% if (PR.conceptos && PR.conceptos.pendientesMapa && PR.conceptos.pendientesMapa.length) { %>
+  <details style="margin-top:.5rem" open>
+    <summary>Conceptos pendientes de mapear (<%= PR.conceptos.pendientesMapa.length %>)</summary>
+    <table>
+      <thead><tr><th>CFDI</th><th>Nombre</th><th>SAT</th><th></th></tr></thead>
+      <tbody>
+        <% PR.conceptos.pendientesMapa.forEach(function(r) { %>
+        <tr>
+          <td><code><%= r.codigo %></code></td>
+          <td><%= r.nombre %></td>
+          <td><%= r.claveSat || '—' %></td>
+          <td><a href="/nomina/mapeo-sat">Mapear</a> · <a href="<%= r.link %>">Editar</a></td>
+        </tr>
+        <% }); %>
+      </tbody>
+    </table>
+  </details>
+  <% } %>
+
+  <form method="post" action="/config-empresa/cargas/jobs/<%= job._id %>/informe-config" style="margin-top:1rem">
+    <button type="submit" class="btn">Actualizar informe</button>
+  </form>
+  <% } %>
+</section>
+<% } %>
 
 <% if (isCfdi && (job.estatus === 'ok' || job.estatus === 'parcial')) { %>
 <section class="panel">
@@ -230,7 +341,7 @@
 <% } %>
 
 <% if (job.errores && job.errores.length) { %>
-<section class="panel">
+<section class="panel" id="errores-job">
   <h2 class="panel-title">Errores</h2>
   <table>
     <thead><tr><th>Fila</th><th>Campo</th><th>Mensaje</th><th>Valor</th></tr></thead>

@@ -451,13 +451,18 @@ async function upsertConcepto(Concepto, tenantId, empresaId, c, subsidiariaId = 
     subsidiariaId,
     preferClaveInterna: true
   });
-  // Identidad = Clave CFDI (conceptoCodigo ya resuelto). Motor SAT es sugerencia aparte.
+  // Identidad = Clave CFDI (conceptoCodigo ya resuelto). Motor SAT se persiste para el cálculo.
   const codigo = String(inferred.codigo || c.conceptoCodigo || '').toUpperCase();
   if (!codigo) return null;
 
   const tipo = c.tipo === 'deduccion' ? 'deduccion' : c.tipo === 'otro_pago' ? 'otro_pago' : 'percepcion';
   const claveSat = inferred.claveSat || c.claveSat || '';
   const claveInterna = inferred.claveInterna || c.claveInterna || codigo;
+  const codigoMotor = String(
+    inferred.codigoMotor || c.codigoMotorSugerido || c._satInfer?.codigoMotor || ''
+  )
+    .trim()
+    .toUpperCase();
 
   // codigoExterno solo en $set (no repetir en $setOnInsert → conflicto Mongo)
   await Concepto.updateOne(
@@ -471,7 +476,13 @@ async function upsertConcepto(Concepto, tenantId, empresaId, c, subsidiariaId = 
         'sat.tipo': tipo,
         activo: true,
         aplicaEn: 'nomina',
-        codigoExterno: claveInterna && claveInterna !== codigo ? claveInterna : claveInterna || ''
+        codigoExterno: claveInterna && claveInterna !== codigo ? claveInterna : claveInterna || '',
+        ...(codigoMotor
+          ? {
+              'metadata.codigoMotor': codigoMotor,
+              'metadata.origen': inferred.inferred ? 'cfdi_sat' : 'cfdi'
+            }
+          : {})
       },
       $setOnInsert: {
         tenantId,
@@ -509,6 +520,7 @@ async function upsertConcepto(Concepto, tenantId, empresaId, c, subsidiariaId = 
       aliasNombre: c.nombre || '',
       claveSat,
       claveInternaCfdi: claveInterna,
+      codigoMotor: codigoMotor || undefined,
       tipo
     });
   } catch (err) {
@@ -817,6 +829,8 @@ async function aplicarJobCfdi(
   const puestoCache = new Map();
   const empCache = new Map();
   const conceptoDone = new Set();
+  /** @type {Map<string, object>} */
+  const conceptoMetaMap = new Map();
   const acumuladoMap = new Map();
   const altaDone = new Set();
   const bajaDone = new Set();
@@ -963,13 +977,29 @@ async function aplicarJobCfdi(
           if (!c.conceptoCodigo || conceptoDone.has(ck)) continue;
           await upsertConcepto(Concepto, tenantId, job.empresaId, c, subIdConceptos);
           conceptoDone.add(ck);
+          const codigoCfdi = String(c.conceptoCodigo || '')
+            .trim()
+            .toUpperCase();
+          if (codigoCfdi && !conceptoMetaMap.has(codigoCfdi)) {
+            const sat = c._satInfer || {};
+            conceptoMetaMap.set(codigoCfdi, {
+              codigo: codigoCfdi,
+              tipo: c.tipo || '',
+              nombre: c.nombre || '',
+              claveSat: c.claveSat || sat.claveSat || '',
+              codigoMotor: String(sat.codigoMotor || c.codigoMotorSugerido || '').toUpperCase(),
+              inferred: Boolean(sat.inferred),
+              source: sat.source || ''
+            });
+          }
         }
       }
 
+      const subIdJob = job.resumen?.subsidiariaId || null;
+      const tipoNominaClasificado = classifyTipoNominaFromCfdi(d);
       const periodoInfo = opciones.importPeriodos
-        ? lookupPeriodoForPayload(periodMap, tipoCache, d)
+        ? lookupPeriodoForPayload(periodMap, tipoCache, d, subIdJob)
         : null;
-
       let tipoPeriodoId = periodoInfo?.tipoPeriodoId || null;
       if (!tipoPeriodoId && opciones.importPeriodos && d.empleado?.periodicidadPago) {
         const t = await resolveTipoPeriodoPorSat(
@@ -977,13 +1007,13 @@ async function aplicarJobCfdi(
           job.empresaId,
           d.empleado.periodicidadPago,
           tipoCache,
-          clasificacionLaboralFromEmpleado(d.empleado)
+          clasificacionLaboralFromEmpleado(d.empleado),
+          subIdJob
         );
         tipoPeriodoId = t?._id || null;
       }
 
       let empleadoId = null;
-      const subIdJob = job.resumen?.subsidiariaId || null;
       if (needEmp) {
         const key = empKeyFromPayload(d.empleado) || d.uuid;
         if (!empCache.has(key)) {
@@ -1003,10 +1033,18 @@ async function aplicarJobCfdi(
             }
           );
           empCache.set(key, resolved.id);
-        } else if (tipoPeriodoId) {
-          // Asegura clasificación aunque el empleado ya estaba en cache
+        } else if (tipoPeriodoId && tipoNominaClasificado === 'ordinaria') {
+          // Recibos posteriores: corregir tipoPeriodoId si el primero fue SAT 99 / mal cacheado
           await Empleado.updateOne(
-            { _id: empCache.get(key), $or: [{ tipoPeriodoId: null }, { tipoPeriodoId: { $exists: false } }] },
+            { _id: empCache.get(key), tipoPeriodoId: { $ne: tipoPeriodoId } },
+            { $set: { tipoPeriodoId } }
+          ).catch(() => {});
+        } else if (tipoPeriodoId) {
+          await Empleado.updateOne(
+            {
+              _id: empCache.get(key),
+              $or: [{ tipoPeriodoId: null }, { tipoPeriodoId: { $exists: false } }]
+            },
             { $set: { tipoPeriodoId } }
           ).catch(() => {});
         }
@@ -1015,8 +1053,6 @@ async function aplicarJobCfdi(
           throw new Error('Empleado no encontrado y creación desactivada');
         }
       }
-
-      const tipoNominaClasificado = classifyTipoNominaFromCfdi(d);
 
       if (empleadoId && opciones.importHistorialLaboral && !altaDone.has(String(empleadoId))) {
         try {
@@ -1316,6 +1352,27 @@ async function aplicarJobCfdi(
   job.notas = `Aplicado (${lab.bloques.join(', ') || 'sin bloques'}): ${aplicadas} recibos · ${empCache.size} empleados · ${acumuladoMap.size} acumulados · altas ${altasRegistradas} · bajas ${bajasRegistradas}${
     periodoStats ? ` · ${periodoStats.ventanas} períodos` : ''
   }.`;
+
+  let postReport = null;
+  try {
+    const { buildImportPostReport } = require('./cfdiImportPostReportService');
+    postReport = await buildImportPostReport({
+      tenantId,
+      empresaId: job.empresaId,
+      subsidiariaId: job.resumen?.subsidiariaId || job.subsidiariaId || null,
+      empleadoIds: [...empCache.values()],
+      conceptosMeta: [...conceptoMetaMap.values()],
+      stats: {
+        aplicadas,
+        empleadosAfectados: empCache.size,
+        erroresApply: erroresApply.length,
+        periodos: periodoStats || null
+      }
+    });
+  } catch (err) {
+    console.warn('[cfdiImport] postReport:', err.message);
+  }
+
   job.resumen = {
     ...(job.resumen || {}),
     opciones,
@@ -1326,15 +1383,135 @@ async function aplicarJobCfdi(
     altasRegistradas,
     bajasRegistradas,
     erroresApply: erroresApply.length,
-    periodos: periodoStats || null
+    periodos: periodoStats || null,
+    conceptosTocados: conceptoMetaMap.size,
+    ...(postReport ? { postReport } : {})
   };
   await job.save();
   return job;
 }
 
+/**
+ * Apply en segundo plano para ZIP normales (evita timeout de proxy con ~20–40k CFDIs).
+ * Misma lógica que el flujo masivo: encola → setImmediate → aplicarJobCfdi + progreso.
+ */
+async function encolarApplyCfdiZip(
+  tenantId,
+  jobId,
+  { userId = '', userLabel = '', opcionesOverride = null, subsidiariaIdFallback = null } = {}
+) {
+  const Job = await getCargaInicialJobModel();
+  const Staging = await getCargaCfdiStagingModel();
+  const job = await Job.findOne({ _id: jobId, tenantId, tipo: 'cfdi_nomina_zip' });
+  if (!job) throw new Error('Job CFDI no encontrado');
+  if (!['validado', 'parcial', 'ok', 'error'].includes(job.estatus)) {
+    throw new Error(`El job no está listo para aplicar (estatus: ${job.estatus})`);
+  }
+  if (['encolado', 'aplicando'].includes(job.estatus) && job.modo === 'aplicar') {
+    throw new Error('Ya hay un apply en curso para este job');
+  }
+
+  const opciones = parseImportOptions(opcionesOverride || job.resumen?.opciones || {});
+  const totalStaging = await Staging.countDocuments({ jobId: job._id, estatus: 'ok' });
+
+  job.estatus = 'encolado';
+  job.modo = 'aplicar';
+  job.resumen = {
+    ...(job.resumen || {}),
+    opciones,
+    opcionesResumen: opcionesLabels(opciones),
+    applyAsync: true,
+    ...(!job.resumen?.subsidiariaId && subsidiariaIdFallback
+      ? { subsidiariaId: subsidiariaIdFallback }
+      : {})
+  };
+  if (!job.subsidiariaId && (job.resumen?.subsidiariaId || subsidiariaIdFallback)) {
+    job.subsidiariaId = job.resumen.subsidiariaId || subsidiariaIdFallback;
+  }
+  job.progreso = {
+    fase: 'espera_apply',
+    total: totalStaging || job.filasOk || 0,
+    procesados: 0,
+    exitos: 0,
+    errores: 0,
+    omitidos: 0,
+    mensaje: `Apply en cola (${totalStaging || job.filasOk || 0} CFDIs)`
+  };
+  job.notas = 'Encolado: apply CFDI en segundo plano (evita timeout HTTP)…';
+  job.userId = userId || job.userId;
+  job.userLabel = userLabel || job.userLabel;
+  await job.save();
+
+  const jid = job._id;
+  setImmediate(() => {
+    (async () => {
+      const claimed = await Job.findOneAndUpdate(
+        {
+          _id: jid,
+          tipo: 'cfdi_nomina_zip',
+          estatus: { $in: ['encolado', 'aplicando'] },
+          modo: 'aplicar'
+        },
+        {
+          $set: {
+            estatus: 'aplicando',
+            'progreso.fase': 'apply',
+            'progreso.mensaje': 'Aplicando…',
+            notas: 'Aplicando en segundo plano…'
+          }
+        },
+        { new: true }
+      );
+      if (!claimed) return;
+      try {
+        await aplicarJobCfdi(claimed.tenantId, claimed._id, {
+          userId: claimed.userId,
+          userLabel: claimed.userLabel,
+          opcionesOverride: claimed.resumen?.opciones || null,
+          allowTipos: ['cfdi_nomina_zip'],
+          allowEstatus: ['aplicando', 'encolado', 'validado', 'parcial', 'ok', 'error'],
+          subsidiariaIdFallback: claimed.resumen?.subsidiariaId || null,
+          onProgress: async (p) => {
+            await Job.updateOne(
+              { _id: jid },
+              {
+                $set: {
+                  'progreso.fase': 'apply',
+                  'progreso.total': p.total || 0,
+                  'progreso.procesados': p.procesados || 0,
+                  'progreso.exitos': p.exitos || 0,
+                  'progreso.errores': p.errores || 0,
+                  'progreso.omitidos': p.omitidos || 0,
+                  'progreso.mensaje': p.mensaje || 'Aplicando…'
+                }
+              }
+            );
+          }
+        });
+      } catch (err) {
+        console.error('[cfdi-zip apply async]', jid, err);
+        await Job.updateOne(
+          { _id: jid },
+          {
+            $set: {
+              estatus: 'error',
+              notas: err.message || 'Error en apply async',
+              'progreso.fase': 'error',
+              'progreso.mensaje': err.message || 'error'
+            }
+          }
+        );
+      }
+    })().catch((err) => console.error('[cfdi-zip apply async]', jid, err));
+  });
+
+  return job.toObject ? job.toObject() : job;
+}
+
 module.exports = {
   crearYValidarDesdeZip,
   aplicarJobCfdi,
+  encolarApplyCfdiZip,
   extractXmlEntries,
   parseImportOptions,
   opcionesLabels,

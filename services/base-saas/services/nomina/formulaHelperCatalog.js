@@ -9,6 +9,16 @@ const ARGS_COMUNES = [
   { key: 'sueldoDiario', label: 'sueldoDiario', descripcion: 'Salario diario' },
   { key: 'diasLaborados', label: 'diasLaborados', descripcion: 'Días laborados / pagados' },
   { key: 'diasPeriodo', label: 'diasPeriodo', descripcion: 'Días calendario del período' },
+  {
+    key: 'domingosTrabajados',
+    label: 'domingosTrabajados',
+    descripcion: 'Domingos con asistencia (prima dominical)'
+  },
+  {
+    key: 'domingosEnPeriodo',
+    label: 'domingosEnPeriodo',
+    descripcion: 'Domingos calendario del período'
+  },
   { key: 'porcentajeFondoAhorro', label: 'porcentajeFondoAhorro', descripcion: '% fondo' },
   { key: 'aplicaFondoAhorro', label: 'aplicaFondoAhorro', descripcion: '0/1' },
   { key: 'fondoAhorroTopeExento', label: 'fondoAhorroTopeExento', descripcion: 'Tope exento precalculado' },

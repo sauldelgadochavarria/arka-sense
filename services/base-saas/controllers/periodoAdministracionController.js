@@ -1,6 +1,6 @@
 'use strict';
 
-const { requireEmpresaForTenant, scopeEmpresaFilter } = require('../libs/tenantScope');
+const { requireEmpresaForTenant, scopeEmpresaFilter, sessionSubsidiariaId } = require('../libs/tenantScope');
 const { trimString, parseDate, parsePositiveNumber } = require('../libs/formHelpers');
 const { generarBloquesPeriodoAnio } = require('../libs/generarPeriodosAnio');
 const getPayrollPeriodModel = require('../models/payrollPeriod');
@@ -25,11 +25,12 @@ const {
 
 async function list(req, res) {
   const { empresa, error } = await requireEmpresaForTenant(req);
-  if (empresa) await ensureTiposPeriodoForTenant(req.session.tenantId, empresa._id);
+  const subId = sessionSubsidiariaId(req);
+  if (empresa) await ensureTiposPeriodoForTenant(req.session.tenantId, empresa._id, subId);
 
   const filtros = {
     empresaId: empresa ? empresa._id : undefined,
-    subsidiariaId: req.session.subsidiariaActiva?._id || undefined,
+    subsidiariaId: subId || undefined,
     tipoPeriodoId: trimString(req.query.tipoPeriodoId) || undefined,
     anio: req.query.anio ? Number(req.query.anio) : undefined,
     estatus: trimString(req.query.estatus) || undefined,
@@ -38,7 +39,7 @@ async function list(req, res) {
 
   const [periodos, tiposPeriodo] = await Promise.all([
     empresa ? listarPeriodos(req.session.tenantId, filtros) : [],
-    empresa ? listTiposPeriodo(req.session.tenantId, true, empresa._id) : []
+    empresa ? listTiposPeriodo(req.session.tenantId, true, empresa._id, subId || null) : []
   ]);
 
   const tipoMap = new Map(tiposPeriodo.map((t) => [String(t._id), t]));
@@ -69,8 +70,11 @@ async function list(req, res) {
 
 async function generarForm(req, res) {
   const { empresa, error } = await requireEmpresaForTenant(req);
-  if (empresa) await ensureTiposPeriodoForTenant(req.session.tenantId, empresa._id);
-  const tiposPeriodo = empresa ? await listTiposPeriodo(req.session.tenantId, true, empresa._id) : [];
+  const subId = sessionSubsidiariaId(req);
+  if (empresa) await ensureTiposPeriodoForTenant(req.session.tenantId, empresa._id, subId);
+  const tiposPeriodo = empresa
+    ? await listTiposPeriodo(req.session.tenantId, true, empresa._id, subId || null)
+    : [];
 
   res.render('Catalogos/periodos-generar', {
     tiposPeriodo,

@@ -24,15 +24,48 @@ function calendarioFromData(data = {}) {
   };
 }
 
-async function ensureTiposPeriodoForTenant(tenantId, empresaId) {
+function normalizeSubId(subsidiariaId) {
+  if (subsidiariaId === undefined) return undefined;
+  if (subsidiariaId === null || subsidiariaId === '') return null;
+  return subsidiariaId;
+}
+
+/** Filtro: solo empresa-wide (sin sub). */
+function empresaWideOr() {
+  return [{ subsidiariaId: null }, { subsidiariaId: { $exists: false } }];
+}
+
+/**
+ * Asegura defaults del catálogo compartido (prenómina + nómina) en el ámbito
+ * empresa o subsidiaria activa.
+ */
+async function ensureTiposPeriodoForTenant(tenantId, empresaId, subsidiariaId = null) {
+  if (!tenantId || !empresaId) return;
   const TipoPeriodoNomina = await getTipoPeriodoNominaModel();
+  const subId = normalizeSubId(subsidiariaId);
+  const scopeSub = subId === undefined ? null : subId;
+
   for (const t of TIPOS_PERIODO_DEFAULT) {
+    const filter = {
+      tenantId,
+      empresaId,
+      codigoLegado: t.codigoLegado,
+      ...(scopeSub ? { subsidiariaId: scopeSub } : { $or: empresaWideOr() })
+    };
+    // Match exacto con subsidiariaId null para upsert limpio
+    const upsertFilter = {
+      tenantId,
+      empresaId,
+      codigoLegado: t.codigoLegado,
+      subsidiariaId: scopeSub
+    };
     await TipoPeriodoNomina.updateOne(
-      { tenantId, empresaId, codigoLegado: t.codigoLegado },
+      upsertFilter,
       {
         $setOnInsert: {
           tenantId,
           empresaId,
+          subsidiariaId: scopeSub,
           codigoLegado: t.codigoLegado,
           nombre: t.nombre,
           tipoMotor: t.tipoMotor,
@@ -52,15 +85,42 @@ async function ensureTiposPeriodoForTenant(tenantId, empresaId) {
       },
       { upsert: true }
     );
+    // Evita warning lint unused
+    void filter;
   }
 }
 
-async function listTiposPeriodo(tenantId, soloActivos = false, empresaId = null) {
+/**
+ * Lista tipos del catálogo compartido.
+ * - Con subsidiariaId: tipos de esa sub; si aún no hay, fallback a empresa-wide.
+ * - Sin subsidiariaId (undefined): todos de la empresa (compat).
+ * - subsidiariaId null: solo empresa-wide.
+ */
+async function listTiposPeriodo(tenantId, soloActivos = false, empresaId = null, subsidiariaId = undefined) {
   const TipoPeriodoNomina = await getTipoPeriodoNominaModel();
-  const filter = { tenantId };
-  if (empresaId) filter.empresaId = empresaId;
-  if (soloActivos) filter.activo = true;
-  return TipoPeriodoNomina.find(filter).sort({ codigoLegado: 1 }).lean();
+  const base = { tenantId };
+  if (empresaId) base.empresaId = empresaId;
+  if (soloActivos) base.activo = true;
+
+  const subId = normalizeSubId(subsidiariaId);
+
+  if (subId) {
+    const subRows = await TipoPeriodoNomina.find({ ...base, subsidiariaId: subId })
+      .sort({ codigoLegado: 1 })
+      .lean();
+    if (subRows.length) return subRows;
+    return TipoPeriodoNomina.find({ ...base, $or: empresaWideOr() })
+      .sort({ codigoLegado: 1 })
+      .lean();
+  }
+
+  if (subId === null) {
+    return TipoPeriodoNomina.find({ ...base, $or: empresaWideOr() })
+      .sort({ codigoLegado: 1 })
+      .lean();
+  }
+
+  return TipoPeriodoNomina.find(base).sort({ codigoLegado: 1 }).lean();
 }
 
 async function getTipoPeriodoById(tenantId, id) {
@@ -73,7 +133,16 @@ async function crearTipoPeriodo(tenantId, empresaId, data) {
   const codigoLegado = Number(data.codigoLegado);
   if (!Number.isFinite(codigoLegado)) throw new Error('Código interno requerido');
 
-  const exists = await TipoPeriodoNomina.findOne({ tenantId, empresaId, codigoLegado }).lean();
+  const subId = normalizeSubId(data.subsidiariaId);
+  const scopeSub = subId === undefined ? null : subId;
+
+  const existsQ = {
+    tenantId,
+    empresaId,
+    codigoLegado,
+    ...(scopeSub ? { subsidiariaId: scopeSub } : { $or: empresaWideOr() })
+  };
+  const exists = await TipoPeriodoNomina.findOne(existsQ).lean();
   if (exists) {
     throw new Error(
       `El código interno ${codigoLegado} ya está asignado a «${exists.nombre}». Elige otro.`
@@ -85,6 +154,7 @@ async function crearTipoPeriodo(tenantId, empresaId, data) {
   return TipoPeriodoNomina.create({
     tenantId,
     empresaId,
+    subsidiariaId: scopeSub,
     codigoLegado,
     codigoExterno: String(data.codigoExterno || '').trim(),
     nombre: String(data.nombre || '').trim(),
@@ -120,11 +190,13 @@ async function actualizarTipoPeriodo(tenantId, id, data) {
   const codigoLegado = Number(data.codigoLegado);
   if (!Number.isFinite(codigoLegado)) throw new Error('Código interno requerido');
 
+  const subId = doc.subsidiariaId || null;
   const duplicado = await TipoPeriodoNomina.findOne({
     tenantId,
     empresaId: doc.empresaId,
     codigoLegado,
-    _id: { $ne: doc._id }
+    _id: { $ne: doc._id },
+    ...(subId ? { subsidiariaId: subId } : { $or: empresaWideOr() })
   }).lean();
   if (duplicado) {
     throw new Error(
@@ -156,10 +228,13 @@ async function actualizarTipoPeriodo(tenantId, id, data) {
   return doc.toObject();
 }
 
-async function nextCodigoLegado(tenantId, empresaId = null) {
+async function nextCodigoLegado(tenantId, empresaId = null, subsidiariaId = undefined) {
   const TipoPeriodoNomina = await getTipoPeriodoNominaModel();
   const q = { tenantId, codigoLegado: { $ne: null } };
   if (empresaId) q.empresaId = empresaId;
+  const subId = normalizeSubId(subsidiariaId);
+  if (subId) q.subsidiariaId = subId;
+  else if (subId === null) q.$or = empresaWideOr();
   const top = await TipoPeriodoNomina.find(q)
     .sort({ codigoLegado: -1 })
     .limit(1)
@@ -169,13 +244,31 @@ async function nextCodigoLegado(tenantId, empresaId = null) {
   return Number.isFinite(Number(max)) ? Number(max) + 1 : 1;
 }
 
-async function listCodigosLegadoOcupados(tenantId, excludeId = null, empresaId = null) {
+async function listCodigosLegadoOcupados(
+  tenantId,
+  excludeId = null,
+  empresaId = null,
+  subsidiariaId = undefined
+) {
   const TipoPeriodoNomina = await getTipoPeriodoNominaModel();
   const q = { tenantId, codigoLegado: { $ne: null } };
   if (empresaId) q.empresaId = empresaId;
+  const subId = normalizeSubId(subsidiariaId);
+  if (subId) q.subsidiariaId = subId;
+  else if (subId === null) q.$or = empresaWideOr();
   if (excludeId) q._id = { $ne: excludeId };
   const rows = await TipoPeriodoNomina.find(q).select('codigoLegado').lean();
   return rows.map((r) => Number(r.codigoLegado)).filter((n) => Number.isFinite(n));
+}
+
+/**
+ * Prefiere candidatos de la subsidiaria; si no hay, empresa-wide.
+ */
+function preferTiposDeSubsidiaria(candidatos, subsidiariaId) {
+  if (!subsidiariaId || !candidatos?.length) return candidatos || [];
+  const sub = candidatos.filter((c) => c.subsidiariaId && String(c.subsidiariaId) === String(subsidiariaId));
+  if (sub.length) return sub;
+  return candidatos.filter((c) => !c.subsidiariaId);
 }
 
 module.exports = {
@@ -187,5 +280,6 @@ module.exports = {
   toggleTipoPeriodo,
   nextCodigoLegado,
   listCodigosLegadoOcupados,
+  preferTiposDeSubsidiaria,
   parseCalendarioFromBody
 };

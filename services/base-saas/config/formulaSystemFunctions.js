@@ -17,6 +17,13 @@ const FORMULA_SYSTEM_FUNCTIONS = [
     ejemplo: 'si(aplicaFondoAhorro == 1, fondoAhorroEmpresa, 0)'
   },
   {
+    name: 'igualTexto',
+    signature: 'igualTexto(a, b)',
+    descripcion:
+      'Compara textos (sin distinguir mayúsculas/acentos simples). Devuelve 1 si son iguales, 0 si no. Útil con EMPLEADO.departamento / numEmpleado / tipoEmpleado. También puedes escribir == "texto" y se normaliza a esta función.',
+    ejemplo: 'si(igualTexto(EMPLEADO.departamento, "Ventas"), 500, 0)'
+  },
+  {
     name: 'redondear',
     signature: 'redondear(valor, decimales?)',
     descripcion: 'Redondeo bancario a N decimales (default 2). Preferir sobre round().',
@@ -112,6 +119,15 @@ function buildSystemFunctionImplementations(parametros = {}, tablaFns = {}) {
           ? condicion
           : Number(condicion) !== 0 && condicion != null && condicion !== '';
       return ok ? siVerdadero : siFalso;
+    },
+    igualTexto: (a, b) => {
+      const norm = (v) =>
+        String(v ?? '')
+          .trim()
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .toLowerCase();
+      return norm(a) === norm(b) ? 1 : 0;
     },
     redondear: (valor, decimales = 2) => {
       const n = Number(valor);

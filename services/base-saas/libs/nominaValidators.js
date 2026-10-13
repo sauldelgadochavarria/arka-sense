@@ -24,7 +24,11 @@ const codigoConcepto = z
   .trim()
   .min(1)
   .max(32)
-  .regex(/^[A-Z][A-Z0-9_]*$/, 'Código en MAYÚSCULAS: letras, números y guión bajo');
+  // Incluye claves CFDI numéricas (001, 132…) además de códigos motor (SUELDO…).
+  .regex(
+    /^[A-Z0-9][A-Z0-9_]*$/,
+    'Código en MAYÚSCULAS: letras, números y guión bajo (puede iniciar con dígito)'
+  );
 
 const formulaPayloadSchema = z.object({
   conceptoCodigo: codigoConcepto,

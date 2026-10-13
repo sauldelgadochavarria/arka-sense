@@ -25,10 +25,11 @@ const {
   resolveConceptosParaEmpresa,
   mergeResolvedWithLegacy
 } = require('./conceptResolutionService');
+const { prepareFormulasConAliasesCfdi, mergeCfdiOwnFormulas } = require('./cfdiConceptAliasService');
 const { requireEmpresaForTenant } = require('../../libs/tenantScope');
 const { filterEmpleadosForPeriodo } = require('../../libs/empleadoTipoPeriodo');
 const { conceptoAplicaEnCalculo } = require('../../libs/conceptoAplicabilidad');
-const { listTiposPeriodo } = require('../tipoPeriodoNominaService');
+const { listTiposPeriodo, getTipoPeriodoById } = require('../tipoPeriodoNominaService');
 const { archivarYAcumularCierre } = require('./nominaCierreService');
 const { registrarAuditoriaNomina } = require('./nominaAuditoriaService');
 const { calcularDiasPagados, mergePolitica } = require('../../libs/diasPagadosMotor');
@@ -145,9 +146,29 @@ async function calcularReciboEmpleado(
     periodo.payrollPeriodId
   );
 
+  const { contarDomingosTrabajados, contarDomingosEnRango } = require('../../libs/domingosTrabajados');
+  const [domingosTrabajadosRaw, domingosEnPeriodo] = await Promise.all([
+    contarDomingosTrabajados(
+      periodo.tenantId,
+      empleado._id,
+      periodo.fechaInicio,
+      periodo.fechaFin
+    ),
+    Promise.resolve(contarDomingosEnRango(periodo.fechaInicio, periodo.fechaFin))
+  ]);
+  // Sin asistencia diaria: no inventar domingos; la fórmula puede usar domingosEnPeriodo si aplica.
+  const domingosTrabajados = Number(domingosTrabajadosRaw) || 0;
+
   const diasPeriodo = periodo.diasPeriodo || diasEntre(periodo.fechaInicio, periodo.fechaFin);
+  // Sin pre-nómina: asumir días laborables del tipo (6), no toda la ventana calendario (7).
+  const diasDefaultSinPrenomina =
+    diasOpts.tipoPeriodoRef && Number(diasOpts.tipoPeriodoRef.diasLaborables) > 0
+      ? Number(diasOpts.tipoPeriodoRef.diasLaborables)
+      : diasPeriodo;
   const diasLaborados =
-    insumos.diasTrabajados != null ? insumos.diasTrabajados : diasPeriodo - (insumos.faltas || 0);
+    insumos.diasTrabajados != null
+      ? insumos.diasTrabajados
+      : Math.max(0, diasDefaultSinPrenomina - (insumos.faltas || 0));
 
   const faltasInjustificadas = Number(insumos.faltas) || 0;
   const faltasJustificadas = Number(insumos.faltasJustificadas) || 0;
@@ -252,6 +273,10 @@ async function calcularReciboEmpleado(
       sbc: sbcEmpleado,
       tipoSalario: baseImss.tipoSalario,
       tipoEmpleado: empleado.tipoEmpleado || '',
+      numEmpleado: empleado.numEmpleado || '',
+      departamento: empleado.departamentoNombre || empleado.departamento || '',
+      departamentoCodigo: empleado.departamentoCodigo || '',
+      departamentoId: empleado.departamentoId || null,
       atributos: { horasJornada, valorHora },
       nominaConfig: cfgNomina
     },
@@ -264,6 +289,7 @@ async function calcularReciboEmpleado(
       diasProgramados: diasPago.diasProgramados,
       diasDescanso: diasPago.diasDescanso,
       diasDescansoPagados: diasPago.diasDescansoPagados,
+      domingosEnPeriodo,
       faltas: faltasInjustificadas,
       esSegundaQuincena: flagsCal.esSegundaQuincena,
       semanaDelMes: flagsCal.semanaDelMes,
@@ -285,6 +311,7 @@ async function calcularReciboEmpleado(
       minutosSalidaAnticipada: insumos.minutosSalidaAnticipada || 0,
       diasConRetardo: insumos.diasConRetardo || 0,
       llegadasTarde: insumos.llegadasTarde || insumos.diasConRetardo || 0,
+      domingosTrabajados,
       sinRetardo:
         (insumos.minutosRetardo || 0) === 0 &&
         (insumos.diasConRetardo || insumos.llegadasTarde || 0) === 0
@@ -343,9 +370,15 @@ async function calcularReciboEmpleado(
   const detalle = [];
   let tieneRevision = false;
 
+  const aliasByMotor =
+    diasOpts.cfdiAliasByMotor instanceof Map ? diasOpts.cfdiAliasByMotor : new Map();
+
   for (const formula of ordenCalculo) {
+    const motorCodigo = formula.conceptoCodigo;
+    const displayCodigo = aliasByMotor.get(motorCodigo) || motorCodigo;
     const esEventual = String(formula.tipoAplicacion || 'FIJO').toUpperCase() === 'EVENTUAL';
-    const conceptoMeta = conceptosByCodigo.get(formula.conceptoCodigo) || {};
+    const conceptoMeta =
+      conceptosByCodigo.get(displayCodigo) || conceptosByCodigo.get(motorCodigo) || {};
     const fiscalCfg = resolveFiscalConfig(conceptoMeta);
     try {
       if (
@@ -355,19 +388,24 @@ async function calcularReciboEmpleado(
           tipoNomina: periodo.tipoNomina
         })
       ) {
-        contexto[formula.conceptoCodigo] = 0;
+        contexto[motorCodigo] = 0;
+        if (displayCodigo !== motorCodigo) contexto[displayCodigo] = 0;
         continue;
       }
       const aplica = evaluateCondicion(formula.condicion, contexto, scope);
       if (!aplica) {
-        contexto[formula.conceptoCodigo] = 0;
+        contexto[motorCodigo] = 0;
+        if (displayCodigo !== motorCodigo) contexto[displayCodigo] = 0;
         if (esEventual) continue;
         continue;
       }
 
       const valorCrudo = evaluateExpression(formula.formula, contexto, scope);
       const valor = redondear(valorCrudo, formula.redondeo ?? 2);
-      contexto[formula.conceptoCodigo] = valor;
+      // Mantener código motor en contexto (ISR/NETO dependen de SUELDO, etc.)
+      // y exponer también la clave CFDI ligada.
+      contexto[motorCodigo] = valor;
+      if (displayCodigo !== motorCodigo) contexto[displayCodigo] = valor;
 
       const parted = desglosarImporte(valor, fiscalCfg, {
         uma: parametros.uma,
@@ -381,7 +419,8 @@ async function calcularReciboEmpleado(
       });
 
       detalle.push({
-        conceptoCodigo: formula.conceptoCodigo,
+        conceptoCodigo: displayCodigo,
+        codigoMotor: displayCodigo !== motorCodigo ? motorCodigo : undefined,
         formulaUsada: formula.formula,
         condicionUsada: formula.condicion || '',
         variablesUsadas: extractVariablesUsadas(formula.formula, contexto),
@@ -393,16 +432,22 @@ async function calcularReciboEmpleado(
         desgloseModo: parted.modo,
         claveSAT: conceptoMeta.claveSAT || conceptoMeta.sat?.clave || '',
         fiscal: fiscalCfg,
-        tipo: tiposPorCodigo.get(formula.conceptoCodigo) || conceptoMeta.tipo || 'percepcion',
+        tipo:
+          tiposPorCodigo.get(displayCodigo) ||
+          tiposPorCodigo.get(motorCodigo) ||
+          conceptoMeta.tipo ||
+          'percepcion',
         requiereRevision: false,
         errorCalculo: '',
         versionFormula: formula.version || 1
       });
     } catch (err) {
       tieneRevision = true;
-      contexto[formula.conceptoCodigo] = null;
+      contexto[motorCodigo] = null;
+      if (displayCodigo !== motorCodigo) contexto[displayCodigo] = null;
       detalle.push({
-        conceptoCodigo: formula.conceptoCodigo,
+        conceptoCodigo: displayCodigo,
+        codigoMotor: displayCodigo !== motorCodigo ? motorCodigo : undefined,
         formulaUsada: formula.formula,
         condicionUsada: formula.condicion || '',
         variablesUsadas: {},
@@ -414,7 +459,10 @@ async function calcularReciboEmpleado(
         desgloseModo: '',
         claveSAT: conceptoMeta.claveSAT || '',
         fiscal: fiscalCfg,
-        tipo: tiposPorCodigo.get(formula.conceptoCodigo) || 'percepcion',
+        tipo:
+          tiposPorCodigo.get(displayCodigo) ||
+          tiposPorCodigo.get(motorCodigo) ||
+          'percepcion',
         requiereRevision: true,
         errorCalculo: err.message,
         versionFormula: formula.version || 1
@@ -428,7 +476,11 @@ async function calcularReciboEmpleado(
   // ISR del recibo desde BASE_ISR (desglose por concepto), aunque la fórmula haya fallado.
   // La fórmula puede haber usado PERCEPCIONES_GRAVADAS "cruda" (sumando importes, no gravado);
   // aquí se recalcula con la base fiscal real y se actualizan variablesUsadas para la trazabilidad.
-  let isrLineSync = detalle.find((d) => d.conceptoCodigo === 'ISR');
+  const findLineaMotor = (codigo) =>
+    detalle.find(
+      (d) => d.conceptoCodigo === codigo || d.codigoMotor === codigo
+    );
+  let isrLineSync = findLineaMotor('ISR');
   if (isrLineSync && fiscalCtx?.rangosIsr?.length) {
     const isrDesdeBases = isrDelPeriodo(
       bases.BASE_ISR,
@@ -448,6 +500,9 @@ async function calcularReciboEmpleado(
     isrLineSync.requiereRevision = false;
     isrLineSync.errorCalculo = '';
     contexto.ISR = isrDesdeBases;
+    if (isrLineSync.conceptoCodigo && isrLineSync.conceptoCodigo !== 'ISR') {
+      contexto[isrLineSync.conceptoCodigo] = isrDesdeBases;
+    }
   } else if (!isrLineSync && fiscalCtx?.rangosIsr?.length && bases.BASE_ISR > 0) {
     const isrDesdeBases = isrDelPeriodo(
       bases.BASE_ISR,
@@ -481,7 +536,10 @@ async function calcularReciboEmpleado(
   }
 
   let isrMotor = null;
-  const isrLine = detalle.find((d) => d.conceptoCodigo === 'ISR' && !d.requiereRevision);
+  const isrLine = detalle.find(
+    (d) =>
+      (d.conceptoCodigo === 'ISR' || d.codigoMotor === 'ISR') && !d.requiereRevision
+  );
   const isrSatVal = isrLine ? Number(isrLine.importe) || 0 : 0;
   const gravadoPeriodo =
     Number(bases.PERCEPCIONES_GRAVADAS) ||
@@ -596,6 +654,7 @@ async function calcularReciboEmpleado(
       tenantId: periodo.tenantId,
       reciboId: recibo._id,
       conceptoCodigo: d.conceptoCodigo,
+      codigoMotor: d.codigoMotor || '',
       formulaUsada: d.formulaUsada,
       condicionUsada: d.condicionUsada,
       variablesUsadas: d.variablesUsadas,
@@ -670,8 +729,35 @@ async function calcularPeriodo(tenantId, periodoId, options = {}) {
     console.warn('[calculoNomina] resolveConceptos:', err.message);
   }
 
-  const formulas = mergeResolvedWithLegacy(resolved, legacyFormulas);
+  let formulas = mergeResolvedWithLegacy(resolved, legacyFormulas);
   if (!formulas.length) throw new Error('No hay fórmulas vigentes para este tipo de período y nómina');
+
+  // Ligar claves CFDI importadas (001, 003…) con fórmulas del motor (SUELDO, SEPTIMO_DIA…)
+  // y ajustar SUELDO/séptimo según exista línea CFDI de 7º día.
+  let cfdiAliasByMotor = new Map();
+  try {
+    const prepared = await prepareFormulasConAliasesCfdi(
+      tenantId,
+      periodo.empresaId,
+      periodo.subsidiariaId || null,
+      formulas
+    );
+    formulas = prepared.formulas;
+    cfdiAliasByMotor = prepared.aliasByMotor;
+    const mergedOwn = await mergeCfdiOwnFormulas({
+      tenantId,
+      periodo,
+      formulas,
+      aliasByMotor: cfdiAliasByMotor,
+      motorByCfdi: prepared.motorByCfdi,
+      cfdiCodigos: prepared.cfdiCodigos,
+      fecha: fechaFormula
+    });
+    formulas = mergedOwn.formulas;
+    cfdiAliasByMotor = mergedOwn.aliasByMotor;
+  } catch (err) {
+    console.warn('[calculoNomina] aliases CFDI:', err.message);
+  }
 
   const ordenCalculo = ordenarPorDependencias(formulas);
   const parametros = await obtenerParametrosVigentes(periodo.fechaInicio);
@@ -783,19 +869,40 @@ async function calcularPeriodo(tenantId, periodoId, options = {}) {
   }
 
   let empleados;
-  const tiposPeriodo = await listTiposPeriodo(tenantId, false, periodo.empresaId);
+  const tiposPeriodo = await listTiposPeriodo(
+    tenantId,
+    false,
+    periodo.empresaId,
+    periodo.subsidiariaId || undefined
+  );
 
   const politicaDias = mergePolitica(empresaDoc?.nominaDias || {});
   const { mergePoliticaDescuentos } = require('../../libs/politicaDescuentosDefaults');
   const politicaDescuentos = mergePoliticaDescuentos(empresaDoc?.nominaDescuentos || {});
-  const tipoPeriodoRef =
-    (periodo.tipoPeriodoId &&
-      (tiposPeriodo || []).find((t) => String(t._id) === String(periodo.tipoPeriodoId))) ||
-    (tiposPeriodo || []).find(
-      (t) => String(t.tipoMotor || '').toLowerCase() === String(periodo.tipoPeriodo || '').toLowerCase()
-    ) ||
-    null;
-  const diasOpts = { politica: politicaDias, tipoPeriodoRef, politicaDescuentos };
+  let tipoPeriodoRef = null;
+  if (periodo.tipoPeriodoId) {
+    try {
+      tipoPeriodoRef = await getTipoPeriodoById(tenantId, periodo.tipoPeriodoId);
+    } catch (_) {
+      tipoPeriodoRef = null;
+    }
+  }
+  if (!tipoPeriodoRef) {
+    tipoPeriodoRef =
+      (periodo.tipoPeriodoId &&
+        (tiposPeriodo || []).find((t) => String(t._id) === String(periodo.tipoPeriodoId))) ||
+      (tiposPeriodo || []).find(
+        (t) =>
+          String(t.tipoMotor || '').toLowerCase() === String(periodo.tipoPeriodo || '').toLowerCase()
+      ) ||
+      null;
+  }
+  const diasOpts = {
+    politica: politicaDias,
+    tipoPeriodoRef,
+    politicaDescuentos,
+    cfdiAliasByMotor
+  };
 
   if (periodo.payrollPeriodId) {
     // Con pre-nómina vinculada: solo quien tuvo días/HE/percepciones (no “solo faltas”)
@@ -825,6 +932,35 @@ async function calcularPeriodo(tenantId, periodoId, options = {}) {
     throw new Error(
       `No hay empleados para tipo de período «${etiqueta}». Asigna tipo de período / sindicalizado en Personal → Empleado.`
     );
+  }
+
+  // Resolver nombre de departamento para condiciones EMPLEADO.departamento == "…"
+  try {
+    const deptoIds = [
+      ...new Set(empleados.map((e) => e.departamentoId).filter(Boolean).map(String))
+    ];
+    if (deptoIds.length) {
+      const getDepartamentoModel = require('../../models/departamento');
+      const Departamento = await getDepartamentoModel();
+      const deptos = await Departamento.find({
+        tenantId,
+        _id: { $in: deptoIds }
+      })
+        .select({ nombre: 1, codigoExterno: 1, codigoLegado: 1 })
+        .lean();
+      const byId = new Map(deptos.map((d) => [String(d._id), d]));
+      empleados = empleados.map((e) => {
+        const d = e.departamentoId ? byId.get(String(e.departamentoId)) : null;
+        if (!d) return e;
+        return {
+          ...e,
+          departamentoNombre: d.nombre || '',
+          departamentoCodigo: d.codigoExterno || (d.codigoLegado != null ? String(d.codigoLegado) : '')
+        };
+      });
+    }
+  } catch (err) {
+    console.warn('[calculoNomina] departamentos:', err.message);
   }
 
   const total = empleados.length;

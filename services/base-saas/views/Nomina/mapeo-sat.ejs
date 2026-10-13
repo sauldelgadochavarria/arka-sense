@@ -10,6 +10,7 @@
   <a class="btn" href="/nomina/conceptos">Conceptos</a>
   <a class="btn" href="/nomina/configuracion">Configuración fiscal</a>
   <a class="btn" href="/config-empresa/cargas/cfdi_nomina_zip_masivo">Carga históricos CFDI</a>
+  <a class="btn" href="/nomina/catalogos/sat">Catálogo SAT</a>
   <a class="btn" href="/ayuda/importacion-historicos-cfdi">Ayuda</a>
 </div>
 
@@ -28,6 +29,12 @@
 <% } %>
 
 <% if (_canEdit) { %>
+<%
+  const _satPorTipo = (typeof opcionesSatPorTipo !== 'undefined' && opcionesSatPorTipo)
+    ? opcionesSatPorTipo
+    : { percepcion: [], deduccion: [], otro_pago: [] };
+  const _satInicial = _satPorTipo.percepcion || [];
+%>
 <section class="panel">
   <h2 class="panel-title">Agregar / reemplazar override</h2>
   <p class="muted small">
@@ -36,14 +43,24 @@
   </p>
   <form method="post" action="/nomina/mapeo-sat" class="form-grid">
     <label>Tipo SAT
-      <select name="tipo" required>
+      <select name="tipo" id="mapeo-tipo" required>
         <option value="percepcion">Percepción</option>
         <option value="deduccion">Deducción</option>
         <option value="otro_pago">Otro pago</option>
       </select>
     </label>
     <label>Clave SAT
-      <input name="claveSat" required maxlength="3" pattern="[0-9]{1,3}" placeholder="001" />
+      <select name="claveSat" id="mapeo-clave-sat" required>
+        <option value="">— Selecciona —</option>
+        <% _satInicial.forEach(function(e) { %>
+        <option value="<%= e.clave %>" data-desc="<%= (e.descripcion || '').replace(/"/g, '&quot;') %>">
+          <%= e.clave %> — <%= e.descripcion || '' %>
+        </option>
+        <% }); %>
+      </select>
+    </label>
+    <label>Descripción SAT
+      <input type="text" id="mapeo-sat-desc" readonly placeholder="Se completa al elegir la clave" />
     </label>
     <label>Código motor
       <select name="conceptoCodigo" required>
@@ -65,7 +82,56 @@
     </label>
     <button type="submit" class="btn btn-primary">Guardar override</button>
   </form>
+  <% if (!_satInicial.length) { %>
+  <p class="muted small">No hay claves SAT cargadas.
+    <a href="/nomina/catalogos/sat">Administrar catálogo SAT</a>
+  </p>
+  <% } else { %>
+  <p class="muted small">Claves del catálogo SAT filtradas por tipo.
+    <a href="/nomina/catalogos/sat">Ver catálogo completo</a>
+  </p>
+  <% } %>
 </section>
+<script>
+(function () {
+  var porTipo = <%- JSON.stringify(_satPorTipo) %>;
+  var tipoSel = document.getElementById('mapeo-tipo');
+  var satSel = document.getElementById('mapeo-clave-sat');
+  var satDesc = document.getElementById('mapeo-sat-desc');
+  if (!tipoSel || !satSel) return;
+
+  function fillSat(tipo) {
+    var rows = porTipo[tipo] || [];
+    var prev = satSel.value;
+    satSel.innerHTML = '';
+    var empty = document.createElement('option');
+    empty.value = '';
+    empty.textContent = '— Selecciona —';
+    satSel.appendChild(empty);
+    rows.forEach(function (e) {
+      var opt = document.createElement('option');
+      opt.value = e.clave;
+      opt.setAttribute('data-desc', e.descripcion || '');
+      opt.textContent = e.clave + (e.descripcion ? ' — ' + e.descripcion : '');
+      if (String(prev) === String(e.clave)) opt.selected = true;
+      satSel.appendChild(opt);
+    });
+    if (satDesc) {
+      var opt = satSel.options[satSel.selectedIndex];
+      satDesc.value = (opt && opt.value) ? (opt.getAttribute('data-desc') || '') : '';
+    }
+  }
+
+  tipoSel.addEventListener('change', function () {
+    fillSat(tipoSel.value || 'percepcion');
+  });
+  satSel.addEventListener('change', function () {
+    if (!satDesc) return;
+    var opt = satSel.options[satSel.selectedIndex];
+    satDesc.value = (opt && opt.value) ? (opt.getAttribute('data-desc') || '') : '';
+  });
+})();
+</script>
 <% } %>
 
 <section class="panel">

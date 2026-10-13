@@ -17,7 +17,8 @@ const { requireEmpresaForTenant, sessionSubsidiariaId } = require('../libs/tenan
 const { listPeriodosNominaScoped } = require('../libs/periodosNominaScope');
 const {
   listTiposPeriodo,
-  ensureTiposPeriodoForTenant
+  ensureTiposPeriodoForTenant,
+  getTipoPeriodoById
 } = require('../services/tipoPeriodoNominaService');
 const { clasificacionFromTipoPeriodo } = require('../libs/empleadoTipoPeriodo');
 const { tenantHasFeature } = require('../libs/tenantFeatureFlags');
@@ -33,7 +34,8 @@ const {
   rangoSiguienteTrasUltimo,
   diasPeriodoUtc,
   startOfUtcDay,
-  endOfUtcDay
+  endOfUtcDay,
+  ymdUtc
 } = require('../libs/periodoNumero');
 const { startOfDay, endOfDay, diasCalendarioInclusive } = require('../libs/timeHelpers');
 const { sugerirPagaDespensa } = require('../libs/periodoPrestacionesFlags');
@@ -169,6 +171,21 @@ async function periodos(req, res) {
     await ensureNumerosPeriodoTenant(PeriodoNomina, tenantId);
   }
 
+  const SORT_ALLOWED = new Set([
+    'fechaInicio',
+    'fechaFin',
+    'numero',
+    'anio',
+    'estatus',
+    'tipo',
+    'clasificacion',
+    'empleados',
+    'neto'
+  ]);
+  const sortByRaw = trimString(req.query.sort) || 'fechaInicio';
+  const sortBy = SORT_ALLOWED.has(sortByRaw) ? sortByRaw : 'fechaInicio';
+  const sortDir = String(req.query.dir || 'desc').toLowerCase() === 'asc' ? 1 : -1;
+
   const filtros = {
     anio: trimString(req.query.anio),
     tipoPeriodo: trimString(req.query.tipoPeriodo),
@@ -176,8 +193,29 @@ async function periodos(req, res) {
     estatus: trimString(req.query.estatus),
     tipoNominaCfdi: trimString(req.query.tipoNominaCfdi).toUpperCase(),
     periodicidadPagoSat: trimString(req.query.periodicidadPagoSat),
-    q: trimString(req.query.q)
+    clasificacionLaboral: trimString(req.query.clasificacionLaboral).toLowerCase(),
+    q: trimString(req.query.q),
+    sort: sortBy,
+    dir: sortDir === 1 ? 'asc' : 'desc'
   };
+
+  let tiposPeriodoCatalogo = [];
+  if (empresa) {
+    await ensureTiposPeriodoForTenant(tenantId, empresa._id, subId);
+    tiposPeriodoCatalogo = (await listTiposPeriodo(tenantId, true, empresa._id, subId || null)).map(
+      (t) => {
+        const clasif = clasificacionFromTipoPeriodo(t);
+        return {
+          ...t,
+          clasificacion: clasif,
+          clasificacionLabel:
+            clasif === 'sindicalizado' ? 'Sindicalizado' : clasif === 'confianza' ? 'Confianza' : ''
+        };
+      }
+    );
+  }
+  const tiposPeriodoById = {};
+  for (const t of tiposPeriodoCatalogo) tiposPeriodoById[String(t._id)] = t;
 
   const filter = {};
   if (filtros.anio && /^\d{4}$/.test(filtros.anio)) filter.anio = Number(filtros.anio);
@@ -190,6 +228,15 @@ async function periodos(req, res) {
   if (filtros.periodicidadPagoSat && /^\d+$/.test(filtros.periodicidadPagoSat)) {
     filter.periodicidadPagoSat = Number(filtros.periodicidadPagoSat);
   }
+  if (
+    filtros.clasificacionLaboral === 'sindicalizado' ||
+    filtros.clasificacionLaboral === 'confianza'
+  ) {
+    const ids = tiposPeriodoCatalogo
+      .filter((t) => t.clasificacion === filtros.clasificacionLaboral)
+      .map((t) => t._id);
+    filter.tipoPeriodoId = ids.length ? { $in: ids } : { $in: [] };
+  }
   if (filtros.q) {
     const rx = new RegExp(filtros.q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
     filter.$or = [{ notas: rx }, { cerradoPorLabel: rx }, { calculadoPorLabel: rx }];
@@ -201,6 +248,9 @@ async function periodos(req, res) {
         empresaId: empresa._id,
         subsidiariaId: subId,
         filter,
+        sortBy,
+        sortDir,
+        tiposById: tiposPeriodoById,
         limit: 200
       })
     : [];
@@ -209,22 +259,6 @@ async function periodos(req, res) {
   const prenominaPeriodos = empresa
     ? await PayrollPeriod.find(prenominaQ).sort({ fechaInicio: -1 }).limit(80).lean()
     : [];
-
-  let tiposPeriodoCatalogo = [];
-  if (empresa) {
-    await ensureTiposPeriodoForTenant(tenantId, empresa._id);
-    tiposPeriodoCatalogo = (await listTiposPeriodo(tenantId, true, empresa._id)).map((t) => {
-      const clasif = clasificacionFromTipoPeriodo(t);
-      return {
-        ...t,
-        clasificacion: clasif,
-        clasificacionLabel:
-          clasif === 'sindicalizado' ? 'Sindicalizado' : clasif === 'confianza' ? 'Confianza' : ''
-      };
-    });
-  }
-  const tiposPeriodoById = {};
-  for (const t of tiposPeriodoCatalogo) tiposPeriodoById[String(t._id)] = t;
 
   const openCreate = String(req.query.nuevo || '') === '1';
 
@@ -256,13 +290,19 @@ async function periodos(req, res) {
       const prev = byKey.get(key);
       if (!prev || new Date(p.fechaFin) > new Date(prev.fechaFin)) byKey.set(key, p);
     }
-    const { ymdUtc } = require('../libs/periodoNumero');
     for (const [key, ultimo] of byKey) {
       const tipoPeriodo = ultimo.tipoPeriodo;
       const tipoNomina = ultimo.tipoNomina || 'ordinaria';
-      const { ref, range, diasPeriodo } = rangoSiguienteTrasUltimo(tipoPeriodo, ultimo.fechaFin, null, {
+      const tipoRef = ultimo.tipoPeriodoId
+        ? tiposPeriodoCatalogo.find((t) => String(t._id) === String(ultimo.tipoPeriodoId))
+        : tiposPeriodoCatalogo.find((t) => t.tipoMotor === tipoPeriodo && !t.clasificacion) ||
+          tiposPeriodoCatalogo.find((t) => t.tipoMotor === tipoPeriodo);
+      const diasTipo = Number(tipoRef?.diasPeriodo) || 0;
+      const { ref, range, diasPeriodo } = rangoSiguienteTrasUltimo(tipoPeriodo, ultimo.fechaFin, tipoRef || null, {
         fechaInicioUltimo: ultimo.fechaInicio,
-        diasPeriodo: ultimo.diasPeriodo
+        // Preferir días del catálogo (parámetro del tipo); si falta, duración del último
+        diasPeriodo: diasTipo || Number(ultimo.diasPeriodo) || 0,
+        continuarConsecutivo: diasTipo > 0
       });
       const anio = range.fechaInicio.getUTCFullYear();
       const sameYear = scopedForSug.filter((p) => {
@@ -361,11 +401,12 @@ async function createPeriodo(req, res) {
       return res.redirect('/nomina/periodos');
     }
 
+    const subId = sessionSubsidiariaId(req);
     const tipoPeriodoIdBody = trimString(req.body.tipoPeriodoId);
     let tipoCatalogo = null;
     if (tipoPeriodoIdBody) {
-      await ensureTiposPeriodoForTenant(tenantId, empresa._id);
-      const tipos = await listTiposPeriodo(tenantId, true, empresa._id);
+      await ensureTiposPeriodoForTenant(tenantId, empresa._id, subId);
+      const tipos = await listTiposPeriodo(tenantId, true, empresa._id, subId || null);
       tipoCatalogo = tipos.find((t) => String(t._id) === tipoPeriodoIdBody) || null;
       if (!tipoCatalogo) {
         req.flash('error', 'El tipo de período seleccionado no existe o está inactivo');
@@ -388,7 +429,6 @@ async function createPeriodo(req, res) {
         ? Number(tipoCatalogo.periodicidadPagoSat)
         : periodicidadSatDesdeMotor(tipoPeriodo);
     const ref = parseDate(req.body.fechaReferencia) || new Date();
-    const subId = sessionSubsidiariaId(req);
     const PeriodoNomina = await getPeriodoNominaModel();
 
     // Continuar secuencia del último período de la misma sub + catálogo (SIND/CONF)
@@ -405,10 +445,12 @@ async function createPeriodo(req, res) {
     if (subId) ultimoQ.subsidiariaId = subId;
     else ultimoQ.$or = [{ subsidiariaId: null }, { subsidiariaId: { $exists: false } }];
     const ultimo = await PeriodoNomina.findOne(ultimoQ).sort({ fechaFin: -1, numeroPeriodo: -1 }).lean();
+    const diasTipo = Number(tipoCatalogo?.diasPeriodo) || 0;
     if (ultimo?.fechaFin) {
-      const next = rangoSiguienteTrasUltimo(tipoPeriodo, ultimo.fechaFin, null, {
+      const next = rangoSiguienteTrasUltimo(tipoPeriodo, ultimo.fechaFin, tipoCatalogo, {
         fechaInicioUltimo: ultimo.fechaInicio,
-        diasPeriodo: ultimo.diasPeriodo
+        diasPeriodo: diasTipo || Number(ultimo.diasPeriodo) || 0,
+        continuarConsecutivo: diasTipo > 0
       });
       fechaInicio = next.range.fechaInicio;
       fechaFin = next.range.fechaFin;
@@ -417,6 +459,19 @@ async function createPeriodo(req, res) {
       ({ fechaInicio, fechaFin } = resolvePeriodRange(tipoPeriodo, ref, tipoCatalogo));
     }
     let fechaPago = null;
+
+    // Override manual desde el formulario (defaults ya vienen del último + diasPeriodo del tipo)
+    const bodyIni = parseDate(req.body.fechaInicio);
+    const bodyFin = parseDate(req.body.fechaFin);
+    if (bodyIni && bodyFin) {
+      fechaInicio = startOfUtcDay(bodyIni);
+      fechaFin = endOfUtcDay(bodyFin);
+      if (fechaFin.getTime() < fechaInicio.getTime()) {
+        req.flash('error', 'La fecha fin no puede ser anterior al inicio');
+        return res.redirect('/nomina/periodos?nuevo=1#nuevo-periodo');
+      }
+      diasPeriodoCalc = diasPeriodoUtc(fechaInicio, fechaFin);
+    }
 
     await ensureNominaConceptsForTenant(tenantId, empresa._id);
 
@@ -736,6 +791,165 @@ async function updatePeriodoPrestacionesAction(req, res) {
   }
 }
 
+/**
+ * Edita parámetros del período abierto/calculado: tipo de catálogo, despensa, fecha pago, notas.
+ */
+async function updatePeriodoEditAction(req, res) {
+  if (requireNominaEditOrRedirect(req, res) === false) return;
+  const redirectTo = `/nomina/periodos/${req.params.id}#editar-periodo`;
+  try {
+    const tenantId = req.session.tenantId;
+    const subId = sessionSubsidiariaId(req);
+    const PeriodoNomina = await getPeriodoNominaModel();
+    const periodo = await PeriodoNomina.findOne({ tenantId, _id: req.params.id });
+    if (!periodo) {
+      req.flash('error', 'Período no encontrado');
+      return res.redirect('/nomina/periodos');
+    }
+    const est = String(periodo.estatus || '').toLowerCase();
+    if (est === 'cerrado' || est === 'calculando') {
+      req.flash(
+        'error',
+        est === 'cerrado'
+          ? 'Período cerrado: no se puede editar'
+          : 'Espera a que termine el cálculo'
+      );
+      return res.redirect(`/nomina/periodos/${periodo._id}`);
+    }
+    if (est !== 'abierto' && est !== 'calculado') {
+      req.flash('error', `No se puede editar en estatus «${periodo.estatus}»`);
+      return res.redirect(`/nomina/periodos/${periodo._id}`);
+    }
+
+    const bodyVal = (name) => {
+      const v = req.body[name];
+      if (Array.isArray(v)) return v[v.length - 1];
+      return v;
+    };
+
+    const tipoPeriodoIdBody = trimString(req.body.tipoPeriodoId);
+    let tipoCat = null;
+    if (tipoPeriodoIdBody) {
+      await ensureTiposPeriodoForTenant(tenantId, periodo.empresaId, subId || periodo.subsidiariaId);
+      tipoCat = await getTipoPeriodoById(tenantId, tipoPeriodoIdBody);
+      if (!tipoCat || !tipoCat.activo) {
+        req.flash('error', 'El tipo de período seleccionado no existe o está inactivo');
+        return res.redirect(redirectTo);
+      }
+      if (
+        periodo.empresaId &&
+        tipoCat.empresaId &&
+        String(tipoCat.empresaId) !== String(periodo.empresaId)
+      ) {
+        req.flash('error', 'El tipo de período no pertenece a esta empresa');
+        return res.redirect(redirectTo);
+      }
+      periodo.tipoPeriodoId = tipoCat._id;
+      periodo.tipoPeriodo = tipoCat.tipoMotor || periodo.tipoPeriodo;
+      if (tipoCat.periodicidadPagoSat != null) {
+        periodo.periodicidadPagoSat = Number(tipoCat.periodicidadPagoSat);
+      }
+    } else if (!periodo.tipoPeriodoId) {
+      req.flash('error', 'Debes vincular un tipo de período del catálogo (p.ej. SEMANAL CONF.)');
+      return res.redirect(redirectTo);
+    }
+
+    const fechaInicioRaw = trimString(req.body.fechaInicio);
+    const fechaFinRaw = trimString(req.body.fechaFin);
+    if (fechaInicioRaw || fechaFinRaw) {
+      const fi = fechaInicioRaw ? parseDate(fechaInicioRaw) : periodo.fechaInicio;
+      const ff = fechaFinRaw ? parseDate(fechaFinRaw) : periodo.fechaFin;
+      if (!fi || !ff) {
+        req.flash('error', 'Fechas de inicio/fin inválidas');
+        return res.redirect(redirectTo);
+      }
+      const ini = startOfUtcDay(fi);
+      const fin = endOfUtcDay(ff);
+      if (fin.getTime() < ini.getTime()) {
+        req.flash('error', 'La fecha fin no puede ser anterior al inicio');
+        return res.redirect(redirectTo);
+      }
+      periodo.fechaInicio = ini;
+      periodo.fechaFin = fin;
+      periodo.diasPeriodo = diasPeriodoUtc(ini, fin);
+      if (periodo.anio == null || Number(periodo.anio) !== fin.getUTCFullYear()) {
+        periodo.anio = fin.getUTCFullYear();
+      }
+    }
+
+    const fechaPagoRaw = trimString(req.body.fechaPago);
+    if (fechaPagoRaw) {
+      const fp = parseDate(fechaPagoRaw);
+      periodo.fechaPago = fp ? startOfUtcDay(fp) : periodo.fechaPago;
+    } else if (req.body.fechaPago === '') {
+      periodo.fechaPago = null;
+    }
+
+    periodo.notas = trimString(req.body.notas);
+    periodo.omitirDispersionBancaria =
+      bodyVal('omitirDispersionBancaria') === '1' || bodyVal('omitirDispersionBancaria') === 'on';
+
+    const pagaDespensa = bodyVal('pagaDespensa') === '1' || bodyVal('pagaDespensa') === 'on';
+    const despensaPagoMensual =
+      bodyVal('despensaPagoMensual') === '1' || bodyVal('despensaPagoMensual') === 'on';
+    const despensaMontoOverride = parsePositiveNumber(req.body.despensaMontoOverride) ?? 0;
+    periodo.set('prestaciones.pagaDespensa', !!pagaDespensa);
+    periodo.set('prestaciones.despensaPagoMensual', !!despensaPagoMensual);
+    periodo.set('prestaciones.despensaMontoOverride', despensaMontoOverride);
+
+    await periodo.save();
+
+    if (periodo.payrollPeriodId) {
+      const PayrollPeriod = await getPayrollPeriodModel();
+      const setPayroll = {
+        fechaInicio: periodo.fechaInicio,
+        fechaFin: periodo.fechaFin,
+        diasPeriodo: periodo.diasPeriodo
+      };
+      if (tipoCat) {
+        setPayroll.tipoPeriodoId = tipoCat._id;
+        setPayroll.tipo = tipoCat.tipoMotor || periodo.tipoPeriodo;
+      }
+      if (periodo.fechaPago) setPayroll.fechaPago = periodo.fechaPago;
+      await PayrollPeriod.updateOne(
+        { _id: periodo.payrollPeriodId, tenantId },
+        { $set: setPayroll }
+      ).catch(() => {});
+    }
+
+    await registrarAuditoriaNomina({
+      tenantId,
+      accion: 'PERIODO_EDITAR',
+      entidad: 'periodo',
+      periodoId: periodo._id,
+      ...sessionActor(req),
+      mensaje: `Período editado · tipo ${tipoCat?.nombre || periodo.tipoPeriodoId || '—'} · ${ymdUtc(periodo.fechaInicio)}–${ymdUtc(periodo.fechaFin)} (${periodo.diasPeriodo} d)`,
+      detalle: {
+        tipoPeriodoId: periodo.tipoPeriodoId ? String(periodo.tipoPeriodoId) : null,
+        tipoPeriodo: periodo.tipoPeriodo,
+        fechaInicio: periodo.fechaInicio,
+        fechaFin: periodo.fechaFin,
+        diasPeriodo: periodo.diasPeriodo,
+        pagaDespensa: !!pagaDespensa,
+        fechaPago: periodo.fechaPago,
+        omitirDispersionBancaria: !!periodo.omitirDispersionBancaria
+      },
+      ip: req.ip,
+      userAgent: req.get('user-agent') || ''
+    }).catch(() => {});
+
+    req.flash(
+      'success',
+      `Período actualizado (${periodo.diasPeriodo || '—'} días). Recalcula la nómina para aplicar días/7º/despensa.`
+    );
+    res.redirect(`/nomina/periodos/${periodo._id}`);
+  } catch (err) {
+    console.error('[nomina]', err);
+    req.flash('error', err.message || 'Error al editar período');
+    res.redirect(`/nomina/periodos/${req.params.id}`);
+  }
+}
+
 async function showPeriodo(req, res) {
   if (requireNominaViewOrRedirect(req, res) === false) return;
   const tenantId = req.session.tenantId;
@@ -756,34 +970,172 @@ async function showPeriodo(req, res) {
   let recibosPage = 1;
   let recibosPageSize = 50;
   let recibosPages = 1;
-  let recibosFiltros = { q: '', departamento: '', departamentos: [] };
+  let recibosFiltros = {
+    q: '',
+    departamento: '',
+    departamentos: [],
+    sortBy: 'numEmpleado',
+    sortDir: 'asc'
+  };
+
+  const qEmp = trimString(req.query.q);
+  const deptoFiltro = trimString(req.query.departamento);
+  const sortByRaw = trimString(req.query.sortBy) || 'numEmpleado';
+  const sortByAllowed = new Set([
+    'numEmpleado',
+    'empleado',
+    'departamento',
+    'neto',
+    'percepciones',
+    'deducciones',
+    'dias',
+    'faltas'
+  ]);
+  const sortBy = sortByAllowed.has(sortByRaw) ? sortByRaw : 'numEmpleado';
+  const sortDir = String(req.query.sortDir || 'asc').toLowerCase() === 'desc' ? 'desc' : 'asc';
+  const sortMul = sortDir === 'desc' ? -1 : 1;
+
+  async function resolveDeptoNombreByEmpleadoIds(empleadoIds) {
+    const ids = [...new Set((empleadoIds || []).filter(Boolean).map(String))];
+    if (!ids.length) return { empMap: new Map(), deptoNombreByEmpId: new Map() };
+    const empleados = await Empleado.find({ _id: { $in: ids } })
+      .select('numEmpleado firstName lastName departamentoId')
+      .lean();
+    const empMap = new Map(empleados.map((e) => [String(e._id), e]));
+    const deptoIds = [
+      ...new Set(empleados.map((e) => e.departamentoId).filter(Boolean).map(String))
+    ];
+    const deptoNombreByEmpId = new Map();
+    if (deptoIds.length) {
+      const getDepartamentoModel = require('../models/departamento');
+      const Departamento = await getDepartamentoModel();
+      const deptos = await Departamento.find({ tenantId, _id: { $in: deptoIds } })
+        .select('nombre')
+        .lean();
+      const deptoById = new Map(deptos.map((d) => [String(d._id), d.nombre || '']));
+      for (const e of empleados) {
+        const nom = e.departamentoId ? deptoById.get(String(e.departamentoId)) || '' : '';
+        deptoNombreByEmpId.set(String(e._id), nom);
+      }
+    }
+    return { empMap, deptoNombreByEmpId };
+  }
+
+  function cmpRecibo(a, b) {
+    let va;
+    let vb;
+    switch (sortBy) {
+      case 'empleado':
+        va = String(a.empleadoNombre || '').toLowerCase();
+        vb = String(b.empleadoNombre || '').toLowerCase();
+        break;
+      case 'departamento':
+        va = String(a.departamentoNombre || '').toLowerCase();
+        vb = String(b.departamentoNombre || '').toLowerCase();
+        break;
+      case 'neto':
+        va = Number(a.netoPagar) || 0;
+        vb = Number(b.netoPagar) || 0;
+        break;
+      case 'percepciones':
+        va = Number(a.totalPercepciones) || 0;
+        vb = Number(b.totalPercepciones) || 0;
+        break;
+      case 'deducciones':
+        va = Number(a.totalDeducciones) || 0;
+        vb = Number(b.totalDeducciones) || 0;
+        break;
+      case 'dias':
+        va = Number(a.diasLaborados) || 0;
+        vb = Number(b.diasLaborados) || 0;
+        break;
+      case 'faltas':
+        va = Number(a.faltas) || 0;
+        vb = Number(b.faltas) || 0;
+        break;
+      case 'numEmpleado':
+      default:
+        va = String(a.numEmpleado || '');
+        vb = String(b.numEmpleado || '');
+        break;
+    }
+    if (va < vb) return -1 * sortMul;
+    if (va > vb) return 1 * sortMul;
+    const na = String(a.numEmpleado || '');
+    const nb = String(b.numEmpleado || '');
+    if (na < nb) return -1;
+    if (na > nb) return 1;
+    return 0;
+  }
+
+  function countDepartamentos(rows) {
+    const m = new Map();
+    for (const r of rows) {
+      const n = String(r.departamentoNombre || '').trim();
+      if (!n) continue;
+      m.set(n, (m.get(n) || 0) + 1);
+    }
+    return [...m.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0], 'es'))
+      .map(([nombre, n]) => ({ nombre, n }));
+  }
 
   if (periodo.estatus === 'cerrado') {
     // Cierre formal + importación CFDI (ambos viven en histórico)
-    const histFilter = {
+    const histBase = {
       tenantId,
       empresaId: periodo.empresaId,
       periodoId: periodo._id
     };
-    const qEmp = trimString(req.query.q);
-    const deptoFiltro = trimString(req.query.departamento);
+
+    // Catálogo de deptos: snapshot + fallback expediente (por si el cierre/import no trajo nombre)
+    const empIdsPeriodo = await Historico.distinct('empleadoId', histBase);
+    const { deptoNombreByEmpId } = await resolveDeptoNombreByEmpleadoIds(empIdsPeriodo);
+
+    const histFilter = { ...histBase };
     if (deptoFiltro) {
-      histFilter['empleado.departamentoNombre'] = deptoFiltro;
+      const empIdsDepto = empIdsPeriodo.filter(
+        (id) => deptoNombreByEmpId.get(String(id)) === deptoFiltro
+      );
+      histFilter.$or = [
+        { 'empleado.departamentoNombre': deptoFiltro },
+        ...(empIdsDepto.length ? [{ empleadoId: { $in: empIdsDepto } }] : [])
+      ];
     }
     if (qEmp) {
       const rx = new RegExp(qEmp.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-      histFilter.$or = [{ 'empleado.numEmpleado': rx }, { 'empleado.nombre': rx }];
+      const qOr = [{ 'empleado.numEmpleado': rx }, { 'empleado.nombre': rx }];
+      if (histFilter.$or) {
+        histFilter.$and = [{ $or: histFilter.$or }, { $or: qOr }];
+        delete histFilter.$or;
+      } else {
+        histFilter.$or = qOr;
+      }
     }
 
     recibosDesdeHistorico = true;
     recibosPage = Math.max(1, Number(req.query.page) || 1);
     recibosPageSize = Math.min(200, Math.max(20, Number(req.query.pageSize) || 50));
-    recibosTotal = await Historico.countDocuments(histFilter);
-    recibosPages = Math.max(1, Math.ceil(recibosTotal / recibosPageSize));
-    if (recibosPage > recibosPages) recibosPage = recibosPages;
 
-    const [hist, deptosAgg] = await Promise.all([
-      Historico.find(histFilter)
+    // Orden Mongo limitado; departamento/empleado se reordenan en memoria de la página
+    // si hay pocos resultados; con filtros fuertes cargamos el set filtrado completo.
+    const sortMongo =
+      sortBy === 'neto'
+        ? { netoPagar: sortMul }
+        : sortBy === 'percepciones'
+          ? { totalPercepciones: sortMul }
+          : sortBy === 'deducciones'
+            ? { totalDeducciones: sortMul }
+            : sortBy === 'dias'
+              ? { diasLaborados: sortMul }
+              : sortBy === 'faltas'
+                ? { faltas: sortMul }
+                : { 'empleado.numEmpleado': sortMul, netoPagar: -1 };
+
+    const needsInMemorySort = sortBy === 'departamento' || sortBy === 'empleado';
+    let hist;
+    if (needsInMemorySort) {
+      hist = await Historico.find(histFilter)
         .select(
           [
             'empleadoId',
@@ -804,54 +1156,110 @@ async function showPeriodo(req, res) {
             'origen'
           ].join(' ')
         )
-        .sort({ 'empleado.numEmpleado': 1, netoPagar: -1 })
+        .lean();
+      recibosTotal = hist.length;
+    } else {
+      recibosTotal = await Historico.countDocuments(histFilter);
+      hist = await Historico.find(histFilter)
+        .select(
+          [
+            'empleadoId',
+            'empleado',
+            'diasLaborados',
+            'faltas',
+            'totalPercepciones',
+            'totalDeducciones',
+            'netoPagar',
+            'insumosFuente',
+            'calculoId',
+            'calculoLoteId',
+            'fechaCalculo',
+            'fechaCierre',
+            'layoutBancario',
+            'timbrado',
+            'correo',
+            'origen'
+          ].join(' ')
+        )
+        .sort(sortMongo)
         .skip((recibosPage - 1) * recibosPageSize)
         .limit(recibosPageSize)
-        .lean(),
-      Historico.aggregate([
-        {
-          $match: {
-            tenantId,
-            empresaId: periodo.empresaId,
-            periodoId: periodo._id,
-            'empleado.departamentoNombre': { $exists: true, $nin: [null, ''] }
-          }
-        },
-        { $group: { _id: '$empleado.departamentoNombre', n: { $sum: 1 } } },
-        { $sort: { _id: 1 } }
-      ])
-    ]);
+        .lean();
+    }
 
+    recibos = hist.map((h) => {
+      const empId = String(h.empleadoId || '');
+      const deptoSnap = String(h.empleado?.departamentoNombre || '').trim();
+      const deptoLive = deptoNombreByEmpId.get(empId) || '';
+      return {
+        _id: h._id,
+        empleadoId: h.empleadoId,
+        diasLaborados: h.diasLaborados,
+        faltas: h.faltas,
+        totalPercepciones: h.totalPercepciones,
+        totalDeducciones: h.totalDeducciones,
+        netoPagar: h.netoPagar,
+        insumosFuente: h.insumosFuente || (h.origen === 'importacion' ? 'importacion_cfdi' : 'default'),
+        calculoId: h.calculoId,
+        calculoLoteId: h.calculoLoteId,
+        fechaCalculo: h.fechaCalculo,
+        fechaCierre: h.fechaCierre,
+        cerrado: true,
+        desdeHistorico: true,
+        layoutBancario: h.layoutBancario || null,
+        timbrado: h.timbrado || null,
+        correo: h.correo || null,
+        numEmpleado: h.empleado?.numEmpleado || '',
+        empleadoNombre: h.empleado?.nombre || '—',
+        departamentoNombre: deptoSnap || deptoLive,
+        archivoXmlId: h.timbrado?.archivoXmlId || null,
+        cfdiUuid: h.timbrado?.uuid || ''
+      };
+    });
+
+    if (needsInMemorySort) {
+      recibos.sort(cmpRecibo);
+      recibosPages = Math.max(1, Math.ceil(recibosTotal / recibosPageSize));
+      if (recibosPage > recibosPages) recibosPage = recibosPages;
+      recibos = recibos.slice(
+        (recibosPage - 1) * recibosPageSize,
+        recibosPage * recibosPageSize
+      );
+    } else {
+      recibosPages = Math.max(1, Math.ceil(recibosTotal / recibosPageSize));
+      if (recibosPage > recibosPages) recibosPage = recibosPages;
+    }
+
+    // Opciones de filtro: snapshot + live
+    const deptoCounts = new Map();
+    const snapAgg = await Historico.aggregate([
+      { $match: histBase },
+      {
+        $group: {
+          _id: {
+            snap: '$empleado.departamentoNombre',
+            empId: '$empleadoId'
+          },
+          n: { $sum: 1 }
+        }
+      }
+    ]);
+    for (const row of snapAgg) {
+      const snap = String(row._id?.snap || '').trim();
+      const live = deptoNombreByEmpId.get(String(row._id?.empId || '')) || '';
+      const nombre = snap || live;
+      if (!nombre) continue;
+      deptoCounts.set(nombre, (deptoCounts.get(nombre) || 0) + row.n);
+    }
     recibosFiltros = {
       q: qEmp,
       departamento: deptoFiltro,
-      departamentos: deptosAgg.map((d) => ({ nombre: d._id, n: d.n }))
+      departamentos: [...deptoCounts.entries()]
+        .sort((a, b) => a[0].localeCompare(b[0], 'es'))
+        .map(([nombre, n]) => ({ nombre, n })),
+      sortBy,
+      sortDir
     };
-
-    recibos = hist.map((h) => ({
-      _id: h._id,
-      empleadoId: h.empleadoId,
-      diasLaborados: h.diasLaborados,
-      faltas: h.faltas,
-      totalPercepciones: h.totalPercepciones,
-      totalDeducciones: h.totalDeducciones,
-      netoPagar: h.netoPagar,
-      insumosFuente: h.insumosFuente || (h.origen === 'importacion' ? 'importacion_cfdi' : 'default'),
-      calculoId: h.calculoId,
-      calculoLoteId: h.calculoLoteId,
-      fechaCalculo: h.fechaCalculo,
-      fechaCierre: h.fechaCierre,
-      cerrado: true,
-      desdeHistorico: true,
-      layoutBancario: h.layoutBancario || null,
-      timbrado: h.timbrado || null,
-      correo: h.correo || null,
-      numEmpleado: h.empleado?.numEmpleado || '',
-      empleadoNombre: h.empleado?.nombre || '—',
-      departamentoNombre: h.empleado?.departamentoNombre || '',
-      archivoXmlId: h.timbrado?.archivoXmlId || null,
-      cfdiUuid: h.timbrado?.uuid || ''
-    }));
 
     // Resuelve XML guardado por historicoId/uuid cuando el snapshot no trae archivoXmlId
     const needLookup = recibos.filter((r) => !r.archivoXmlId && (r._id || r.cfdiUuid));
@@ -884,22 +1292,53 @@ async function showPeriodo(req, res) {
       });
     }
   } else {
-    recibos = await ReciboNomina.find({ tenantId, periodoId: periodo._id }).lean();
-    recibosTotal = recibos.length;
-    const empleadoIds = recibos.map((r) => r.empleadoId);
-    const empleados = await Empleado.find({ _id: { $in: empleadoIds } }).lean();
-    const empleadoMap = new Map(empleados.map((e) => [String(e._id), e]));
-    recibos = recibos.map((r) => {
-      const emp = empleadoMap.get(String(r.empleadoId));
+    recibosPage = Math.max(1, Number(req.query.page) || 1);
+    recibosPageSize = Math.min(200, Math.max(20, Number(req.query.pageSize) || 50));
+
+    let rows = await ReciboNomina.find({ tenantId, periodoId: periodo._id }).lean();
+    const empleadoIds = rows.map((r) => r.empleadoId);
+    const { empMap, deptoNombreByEmpId } = await resolveDeptoNombreByEmpleadoIds(empleadoIds);
+
+    rows = rows.map((r) => {
+      const emp = empMap.get(String(r.empleadoId));
       return {
         ...r,
-        empleadoNombre: emp ? `${emp.firstName} ${emp.lastName}` : '—',
+        empleadoNombre: emp
+          ? `${emp.firstName || ''} ${emp.lastName || ''}`.trim() || '—'
+          : '—',
         numEmpleado: emp?.numEmpleado || '',
+        departamentoNombre: deptoNombreByEmpId.get(String(r.empleadoId)) || '',
         desdeHistorico: false,
         archivoXmlId: r.timbrado?.archivoXmlId || null,
         cfdiUuid: r.timbrado?.uuid || ''
       };
     });
+
+    const departamentosOpts = countDepartamentos(rows);
+
+    if (qEmp) {
+      const rx = new RegExp(qEmp.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      rows = rows.filter(
+        (r) => rx.test(String(r.numEmpleado || '')) || rx.test(String(r.empleadoNombre || ''))
+      );
+    }
+    if (deptoFiltro) {
+      rows = rows.filter((r) => String(r.departamentoNombre || '') === deptoFiltro);
+    }
+
+    rows.sort(cmpRecibo);
+    recibosTotal = rows.length;
+    recibosPages = Math.max(1, Math.ceil(recibosTotal / recibosPageSize) || 1);
+    if (recibosPage > recibosPages) recibosPage = recibosPages;
+    recibos = rows.slice((recibosPage - 1) * recibosPageSize, recibosPage * recibosPageSize);
+
+    recibosFiltros = {
+      q: qEmp,
+      departamento: deptoFiltro,
+      departamentos: departamentosOpts,
+      sortBy,
+      sortDir
+    };
   }
 
   const preflight =
@@ -972,10 +1411,27 @@ async function showPeriodo(req, res) {
   }
 
   let tipoPeriodoCatalogo = null;
-  if (periodo.tipoPeriodoId && periodo.empresaId) {
-    try {
-      const tipos = await listTiposPeriodo(tenantId, false, periodo.empresaId);
-      const hit = tipos.find((t) => String(t._id) === String(periodo.tipoPeriodoId));
+  let tiposPeriodoCatalogoOpts = [];
+  try {
+    const subForTipos = sessionSubsidiariaId(req) || periodo.subsidiariaId || null;
+    if (periodo.empresaId) {
+      await ensureTiposPeriodoForTenant(tenantId, periodo.empresaId, subForTipos);
+      tiposPeriodoCatalogoOpts = (
+        await listTiposPeriodo(tenantId, true, periodo.empresaId, subForTipos || null)
+      ).map((t) => {
+        const clasif = clasificacionFromTipoPeriodo(t);
+        return {
+          ...t,
+          clasificacion: clasif,
+          clasificacionLabel:
+            clasif === 'sindicalizado' ? 'Sindicalizado' : clasif === 'confianza' ? 'Confianza' : ''
+        };
+      });
+    }
+    if (periodo.tipoPeriodoId) {
+      const hit =
+        tiposPeriodoCatalogoOpts.find((t) => String(t._id) === String(periodo.tipoPeriodoId)) ||
+        (await getTipoPeriodoById(tenantId, periodo.tipoPeriodoId));
       if (hit) {
         const clasif = clasificacionFromTipoPeriodo(hit);
         tipoPeriodoCatalogo = {
@@ -984,15 +1440,20 @@ async function showPeriodo(req, res) {
           clasificacionLabel:
             clasif === 'sindicalizado' ? 'Sindicalizado' : clasif === 'confianza' ? 'Confianza' : ''
         };
+        // Asegura que el tipo ligado aparezca en el select aunque sea legado empresa-wide
+        if (!tiposPeriodoCatalogoOpts.some((t) => String(t._id) === String(hit._id))) {
+          tiposPeriodoCatalogoOpts = [tipoPeriodoCatalogo, ...tiposPeriodoCatalogoOpts];
+        }
       }
-    } catch (_) {
-      /* opcional */
     }
+  } catch (_) {
+    /* opcional */
   }
 
   res.render('Nomina/periodo-show', {
     periodo,
     tipoPeriodoCatalogo,
+    tiposPeriodoCatalogoOpts,
     recibos,
     recibosDesdeHistorico,
     recibosTotal,
@@ -1061,6 +1522,17 @@ async function vincularPrenominaAction(req, res) {
       );
       return res.redirect(`/nomina/periodos/${periodo._id}`);
     }
+    if (
+      periodo.tipoPeriodoId &&
+      pre.tipoPeriodoId &&
+      String(periodo.tipoPeriodoId) !== String(pre.tipoPeriodoId)
+    ) {
+      req.flash(
+        'error',
+        'No se puede vincular: pre-nómina y nómina deben compartir el mismo tipo de período del catálogo (p.ej. SEMANAL CONF.).'
+      );
+      return res.redirect(`/nomina/periodos/${periodo._id}`);
+    }
 
     const yaUsada = await PeriodoNomina.findOne({
       tenantId,
@@ -1095,6 +1567,9 @@ async function vincularPrenominaAction(req, res) {
     }
 
     periodo.payrollPeriodId = pre._id;
+    if (!periodo.tipoPeriodoId && pre.tipoPeriodoId) {
+      periodo.tipoPeriodoId = pre.tipoPeriodoId;
+    }
     periodo.fechaInicio = fechaInicio;
     periodo.fechaFin = fechaFin;
     periodo.diasPeriodo = diasCalendarioInclusive(fechaInicio, fechaFin);
@@ -1317,12 +1792,32 @@ async function showRecibo(req, res) {
     ? { tenantId, empresaId: empScope.empresa._id }
     : { tenantId };
 
-  const [empleado, catalogo] = await Promise.all([
+  let [empleado, catalogo] = await Promise.all([
     Empleado.findOne({ _id: recibo.empleadoId }).lean(),
     ConceptoNomina.find(catalogoQ)
       .select('codigo nombre naturaleza tipo claveSAT sat metadata ordenImpresion ordenCalculo')
       .lean()
   ]);
+
+  // Nombres de puesto/depto (+ fecha ingreso) para el encabezado del recibo
+  try {
+    const { enrichEmpleadoPdf } = require('../services/reciboPdfService');
+    const snap = histDoc?.empleado || null;
+    const enriched = await enrichEmpleadoPdf(empleado || {});
+    empleado = {
+      ...(empleado || {}),
+      ...enriched,
+      departamentoNombre:
+        enriched.departamentoNombre ||
+        snap?.departamentoNombre ||
+        enriched.departamento ||
+        '',
+      puestoNombre: enriched.puestoNombre || enriched.puesto || '',
+      fechaIngreso: (empleado && empleado.fechaIngreso) || snap?.fechaIngreso || null
+    };
+  } catch (_) {
+    /* keep raw empleado */
+  }
 
   let periodo = null;
   if (recibo.periodoId) {
@@ -1620,11 +2115,50 @@ async function newConcepto(req, res) {
       { value: 'otro', label: 'Otro' }
     ];
   }
+
+  const satCatalogoMap = {
+    percepcion: 'c_TipoPercepcion',
+    deduccion: 'c_TipoDeduccion',
+    otro_pago: 'c_TipoOtroPago'
+  };
+  let opcionesSat = [];
+  let opcionesSatPorTipo = { percepcion: [], deduccion: [], otro_pago: [] };
+  try {
+    const { listCatalogoSat } = require('../services/nomina/catalogosNominaService');
+    for (const [tipo, catalogo] of Object.entries(satCatalogoMap)) {
+      const rows = await listCatalogoSat(catalogo);
+      opcionesSatPorTipo[tipo] = (rows || [])
+        .filter((e) => e.activo !== false)
+        .map((e) => ({
+          clave: e.clave,
+          descripcion: e.descripcion || ''
+        }));
+    }
+    opcionesSat = opcionesSatPorTipo.percepcion;
+  } catch (_) {
+    opcionesSat = [];
+  }
+
+  const { IMSS_DESGLOSE_MODOS, NATURALEZA_SDI_OPTS } = require('../models/fiscalConceptoShared');
+  const desgloseModos = [
+    { value: 'todo_gravado', label: 'Todo gravado' },
+    { value: 'todo_exento', label: 'Todo exento' },
+    { value: 'tope_uma', label: 'Tope en UMAs' },
+    { value: 'tope_monto', label: 'Tope en monto' },
+    { value: 'formula', label: 'Fórmula' },
+    { value: 'regla_ley', label: 'Regla de ley' }
+  ];
+
   res.render('Nomina/concepto-nuevo', {
     tiposConcepto: TIPOS_CONCEPTO,
     naturalezas: NATURALEZAS_CONCEPTO,
     categoriasConcepto,
     ...ambitoEnums,
+    opcionesSat,
+    opcionesSatPorTipo,
+    desgloseModos,
+    imssDesgloseModos: IMSS_DESGLOSE_MODOS,
+    naturalezaSdiOpts: NATURALEZA_SDI_OPTS,
     empresa,
     error: error || null,
     session: req.session
@@ -1861,6 +2395,48 @@ async function showConcepto(req, res) {
   const { listFormulaFunctionsForAutocomplete } = require('../services/nomina/formulaFunctionsService');
   const formulaSystemFunctions = await listFormulaFunctionsForAutocomplete();
 
+  // Literales para condiciones: departamentos del catálogo + valores tipo_empleado
+  const formulaLiteralSuggestions = [];
+  try {
+    if (empresa?._id) {
+      const getDepartamentoModel = require('../models/departamento');
+      const Departamento = await getDepartamentoModel();
+      const deptos = await Departamento.find({
+        tenantId,
+        empresaId: empresa._id,
+        activo: { $ne: false }
+      })
+        .select({ nombre: 1 })
+        .sort({ nombre: 1 })
+        .limit(200)
+        .lean();
+      for (const d of deptos) {
+        const nombre = String(d.nombre || '').trim();
+        if (!nombre) continue;
+        formulaLiteralSuggestions.push({
+          key: JSON.stringify(nombre),
+          label: nombre,
+          descripcion: 'Departamento — inserta el texto entre comillas para EMPLEADO.departamento == …',
+          grupo: 'Departamentos',
+          tipo: 'literal'
+        });
+      }
+    }
+  } catch (_) {
+    /* catálogo opcional */
+  }
+  for (const te of tiposEmpleadoOpts || []) {
+    const val = String(te.value || '').trim();
+    if (!val) continue;
+    formulaLiteralSuggestions.push({
+      key: JSON.stringify(val),
+      label: te.label || val,
+      descripcion: 'tipo_empleado — para EMPLEADO.tipoEmpleado == …',
+      grupo: 'Tipo empleado',
+      tipo: 'literal'
+    });
+  }
+
   const desgloseModos = [
     { value: 'todo_gravado', label: 'Todo gravado' },
     { value: 'todo_exento', label: 'Todo exento' },
@@ -1914,6 +2490,7 @@ async function showConcepto(req, res) {
     tiposPeriodoOpts,
     tiposNominaOpts,
     formulaSystemFunctions,
+    formulaLiteralSuggestions,
     canEdit,
     modoVista,
     modo,
@@ -2023,6 +2600,19 @@ async function saveFormulaAction(req, res) {
       empresaIdOverride = empresa?._id || null;
     }
 
+    let vigenciaDesde = null;
+    const rawVig = trimString(req.body.vigenciaDesde);
+    if (rawVig) {
+      // input type=date → YYYY-MM-DD (medianoche UTC, alineado con fórmulas sembradas)
+      const m = rawVig.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (m) {
+        vigenciaDesde = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 0, 0, 0, 0));
+      } else {
+        const d = new Date(rawVig);
+        if (!Number.isNaN(d.getTime())) vigenciaDesde = d;
+      }
+    }
+
     const payloadBase = {
       conceptoCodigo: codigo,
       tipoNomina,
@@ -2032,7 +2622,8 @@ async function saveFormulaAction(req, res) {
       redondeo: Number(req.body.redondeo) || 2,
       fase: Number(req.body.fase) || 1,
       tipoAplicacion: trimString(req.body.tipoAplicacion) || 'FIJO',
-      empresaId: empresaIdOverride
+      empresaId: empresaIdOverride,
+      vigenciaDesde
     };
 
     const periodos =
@@ -2415,9 +3006,31 @@ async function mapeoSat(req, res) {
     codigosMotor = [...set].filter(Boolean).sort();
   }
 
+  let opcionesSatPorTipo = { percepcion: [], deduccion: [], otro_pago: [] };
+  try {
+    const { listCatalogoSat } = require('../services/nomina/catalogosNominaService');
+    const satCatalogoMap = {
+      percepcion: 'c_TipoPercepcion',
+      deduccion: 'c_TipoDeduccion',
+      otro_pago: 'c_TipoOtroPago'
+    };
+    for (const [tipo, catalogo] of Object.entries(satCatalogoMap)) {
+      const rowsSat = await listCatalogoSat(catalogo);
+      opcionesSatPorTipo[tipo] = (rowsSat || [])
+        .filter((e) => e.activo !== false)
+        .map((e) => ({
+          clave: String(e.clave || '').padStart(3, '0').slice(-3),
+          descripcion: e.descripcion || ''
+        }));
+    }
+  } catch (_) {
+    /* catálogo opcional */
+  }
+
   res.render('Nomina/mapeo-sat', {
     mapa,
     codigosMotor,
+    opcionesSatPorTipo,
     empresa,
     subsidiariaId: subId || null,
     canEdit,
@@ -2483,6 +3096,7 @@ module.exports = {
   createPeriodo,
   organizarPeriodosAction,
   updatePeriodoPrestacionesAction,
+  updatePeriodoEditAction,
   updatePeriodoClasificacionAction,
   showPeriodo,
   vincularPrenominaAction,

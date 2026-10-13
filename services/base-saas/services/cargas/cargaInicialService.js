@@ -7,8 +7,11 @@ const empleadosH = require('./handlers/empleados');
 const historialH = require('./handlers/historialLaboral');
 const acumuladosH = require('./handlers/acumulados');
 const historicoH = require('./handlers/historicoRecibos');
-const { aplicarJobCfdi } = require('./cfdiNominaImportService');
+const { aplicarJobCfdi, encolarApplyCfdiZip } = require('./cfdiNominaImportService');
 const { encolarApplyMasivo } = require('./cfdiNominaMasivoService');
+
+/** A partir de este tamaño el apply ZIP va en background (proxy/HTTP timeout). */
+const CFDI_ZIP_APPLY_ASYNC_MIN = Number(process.env.CFDI_ZIP_APPLY_ASYNC_MIN || 1500);
 
 const MAX_CSV_CHARS = 1_500_000;
 const MAX_ERRORES_UI = 80;
@@ -124,6 +127,28 @@ async function aplicarJob(
   const Job = await getCargaInicialJobModel();
   const jobMeta = await Job.findOne({ _id: jobId, tenantId }).select('tipo').lean();
   if (jobMeta?.tipo === 'cfdi_nomina_zip') {
+    // ~28k CFDIs/mes (DEMOS) tarda ~10–15 min: no bloquear la petición HTTP.
+    const Job = await getCargaInicialJobModel();
+    const Staging = await require('../../models/cargaCfdiStaging')();
+    const meta = await Job.findOne({ _id: jobId, tenantId })
+      .select('filasOk')
+      .lean();
+    let n = Number(meta?.filasOk) || 0;
+    if (!n) {
+      try {
+        n = await Staging.countDocuments({ jobId, estatus: 'ok' });
+      } catch (_) {
+        n = 0;
+      }
+    }
+    if (n >= CFDI_ZIP_APPLY_ASYNC_MIN) {
+      return encolarApplyCfdiZip(tenantId, jobId, {
+        userId,
+        userLabel,
+        opcionesOverride,
+        subsidiariaIdFallback
+      });
+    }
     return aplicarJobCfdi(tenantId, jobId, {
       userId,
       userLabel,

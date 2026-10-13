@@ -1,11 +1,16 @@
 <%- include('../Partials/layout-top', { title: 'Nuevo tipo de período', session }) %>
-<p><a href="/prenomina/tipos-periodo">← Volver a lista</a></p>
+<% const _base = typeof catalogBase !== 'undefined' && catalogBase ? catalogBase : '/prenomina/tipos-periodo'; %>
+<p><a href="<%= _base %>">← Volver a lista</a></p>
 <h1>Nuevo tipo de período</h1>
 <% if (!empresa) { %>
 <p>No hay empresa vinculada.</p>
 <% } else { %>
-<p class="muted">Define un tipo (semanal, quincenal, mensual…) con su código interno y parámetros de pago.</p>
-<form method="post" action="/prenomina/tipos-periodo" class="form-grid form-wide">
+<p class="muted">
+  Catálogo compartido prenómina/nómina
+  <% if (typeof subsidiariaId !== 'undefined' && subsidiariaId) { %>· subsidiaria activa<% } %>.
+  Define días del período, laborables y séptimo día.
+</p>
+<form method="post" action="<%= _base %>" class="form-grid form-wide">
   <%- include('partials/tipo-periodo-fields', { tipo: null, tiposMotor, periodicidadSat, sugeridoCodigoLegado, codigosOcupadosJson, diasSemanaOpts, modosCalendario }) %>
   <button type="submit">Crear tipo</button>
 </form>

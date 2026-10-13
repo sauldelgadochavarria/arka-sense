@@ -359,6 +359,7 @@ async function upsertSubsidiaryConceptConfig({
   aliasNombre = '',
   claveSat = '',
   claveInternaCfdi = '',
+  codigoMotor = '',
   tipo = '',
   activo = true
 }) {
@@ -366,6 +367,10 @@ async function upsertSubsidiaryConceptConfig({
     .trim()
     .toUpperCase();
   if (!tenantId || !empresaId || !codigo) return null;
+
+  const motor = String(codigoMotor || '')
+    .trim()
+    .toUpperCase();
 
   const Config = await getSubsidiaryConceptConfigModel();
   const filter = {
@@ -386,6 +391,7 @@ async function upsertSubsidiaryConceptConfig({
         ...(claveInternaCfdi
           ? { claveInternaCfdi: String(claveInternaCfdi).trim().toUpperCase() }
           : {}),
+        ...(motor ? { codigoMotor: motor } : {}),
         ...(tipo ? { tipo: String(tipo).trim() } : {})
       },
       $setOnInsert: {

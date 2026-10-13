@@ -34,17 +34,25 @@ function coversDate(p, when = new Date()) {
 
 const ESTATUS_ACTIVOS = ['abierto', 'calculando', 'calculado'];
 
+function scopeSubsidiaria(q, subsidiariaId) {
+  if (!subsidiariaId) return q;
+  q.subsidiariaId = subsidiariaId;
+  return q;
+}
+
 /**
  * Períodos para el selector del flujo (activos primero, luego cerrados recientes).
+ * Acota a la subsidiaria de sesión para no mezclar Demos REM con Janeth, etc.
  */
-async function listPeriodosParaFlujo({ tenantId, empresaId, limit = 25 }) {
+async function listPeriodosParaFlujo({ tenantId, empresaId, subsidiariaId = null, limit = 25 }) {
   if (!tenantId || !empresaId) return [];
   const PeriodoNomina = await getPeriodoNominaModel();
-  const rows = await PeriodoNomina.find({ tenantId, empresaId })
+  const filter = scopeSubsidiaria({ tenantId, empresaId }, subsidiariaId);
+  const rows = await PeriodoNomina.find(filter)
     .sort({ fechaFin: -1, numeroPeriodo: -1 })
     .limit(Math.max(limit * 2, 40))
     .select(
-      'tipoPeriodo numeroPeriodo fechaInicio fechaFin estatus flujoProceso layoutBancario omitirDispersionBancaria'
+      'tipoPeriodo numeroPeriodo fechaInicio fechaFin estatus flujoProceso layoutBancario omitirDispersionBancaria subsidiariaId'
     )
     .lean();
 
@@ -74,20 +82,24 @@ async function listPeriodosParaFlujo({ tenantId, empresaId, limit = 25 }) {
     }));
 }
 
-async function resolverPeriodo({ tenantId, empresaId, periodoId }) {
+async function resolverPeriodo({ tenantId, empresaId, subsidiariaId = null, periodoId }) {
   const PeriodoNomina = await getPeriodoNominaModel();
   if (periodoId) {
-    const byId = await PeriodoNomina.findOne({ _id: periodoId, tenantId, empresaId }).lean();
+    const byIdQ = scopeSubsidiaria({ _id: periodoId, tenantId, empresaId }, subsidiariaId);
+    const byId = await PeriodoNomina.findOne(byIdQ).lean();
     if (byId) return byId;
+    // Si el id es de otra subsidiaria, ignóralo (evita “#41 de Janeth” en Demos REM).
   }
 
-  const activos = await PeriodoNomina.find({
-    tenantId,
-    empresaId,
-    estatus: { $in: ESTATUS_ACTIVOS }
-  })
-    .sort({ fechaFin: -1 })
-    .lean();
+  const activosQ = scopeSubsidiaria(
+    {
+      tenantId,
+      empresaId,
+      estatus: { $in: ESTATUS_ACTIVOS }
+    },
+    subsidiariaId
+  );
+  const activos = await PeriodoNomina.find(activosQ).sort({ fechaFin: -1 }).lean();
 
   if (activos.length) {
     const hoy = activos.find((p) => coversDate(p));
@@ -104,6 +116,7 @@ async function resolverPeriodo({ tenantId, empresaId, periodoId }) {
 async function getFlujoNominaActual({
   tenantId,
   empresaId,
+  subsidiariaId = null,
   hasNomina = true,
   periodoId = null
 } = {}) {
@@ -123,16 +136,19 @@ async function getFlujoNominaActual({
   const PayrollPeriod = await getPayrollPeriodModel();
   const Incidencia = await getIncidenciaModel();
 
-  const [periodo, prenominaAbierta, periodos] = await Promise.all([
-    resolverPeriodo({ tenantId, empresaId, periodoId }),
-    PayrollPeriod.findOne({
+  const prenominaQ = scopeSubsidiaria(
+    {
       tenantId,
       empresaId,
       estatus: { $in: ['abierto', 'borrador'] }
-    })
-      .sort({ fechaFin: -1 })
-      .lean(),
-    listPeriodosParaFlujo({ tenantId, empresaId })
+    },
+    subsidiariaId
+  );
+
+  const [periodo, prenominaAbierta, periodos] = await Promise.all([
+    resolverPeriodo({ tenantId, empresaId, subsidiariaId, periodoId }),
+    PayrollPeriod.findOne(prenominaQ).sort({ fechaFin: -1 }).lean(),
+    listPeriodosParaFlujo({ tenantId, empresaId, subsidiariaId })
   ]);
 
   // Incidencias pendientes que cruzan el período de nómina formal (no todo el histórico)

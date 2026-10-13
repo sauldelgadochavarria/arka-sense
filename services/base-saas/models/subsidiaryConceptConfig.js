@@ -32,6 +32,8 @@ const subsidiaryConceptConfigSchema = new mongoose.Schema(
     claveSat: { type: String, trim: true, default: '' },
     /** Clave interna del XML (Clave=) cuando se mapeó a código motor. */
     claveInternaCfdi: { type: String, trim: true, default: '' },
+    /** Código canónico del motor (SUELDO, SEPTIMO_DIA, ISR…) inferido al importar CFDI. */
+    codigoMotor: { type: String, trim: true, uppercase: true, default: '' },
     tipo: {
       type: String,
       enum: ['percepcion', 'deduccion', 'otro_pago', ''],

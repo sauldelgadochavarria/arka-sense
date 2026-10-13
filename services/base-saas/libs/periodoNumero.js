@@ -325,5 +325,6 @@ module.exports = {
   diasPeriodoUtc,
   ymdUtc,
   startOfUtcDay,
-  endOfUtcDay
+  endOfUtcDay,
+  addUtcDays
 };

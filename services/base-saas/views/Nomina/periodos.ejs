@@ -14,6 +14,39 @@
     });
     return hit ? (hit.code + ' · ' + hit.label) : String(code);
   }
+  function buildPeriodosQs(extra) {
+    const base = {
+      anio: F.anio || '',
+      tipoPeriodo: F.tipoPeriodo || '',
+      tipoNomina: F.tipoNomina || '',
+      estatus: F.estatus || '',
+      tipoNominaCfdi: F.tipoNominaCfdi || '',
+      periodicidadPagoSat: F.periodicidadPagoSat || '',
+      clasificacionLaboral: F.clasificacionLaboral || '',
+      q: F.q || '',
+      sort: F.sort || 'fechaInicio',
+      dir: F.dir || 'desc'
+    };
+    if (extra) Object.keys(extra).forEach(function (k) { base[k] = extra[k]; });
+    const qs = [];
+    Object.keys(base).forEach(function (k) {
+      if (base[k] !== '' && base[k] != null) qs.push(encodeURIComponent(k) + '=' + encodeURIComponent(base[k]));
+    });
+    return qs.length ? ('?' + qs.join('&')) : '';
+  }
+  function sortHref(col) {
+    const cur = F.sort || 'fechaInicio';
+    const curDir = F.dir || 'desc';
+    const nextDir = cur === col && curDir === 'asc' ? 'desc' : 'asc';
+    // primera vez en columna: fechas/números desc; texto asc
+    const firstDesc = ['fechaInicio', 'fechaFin', 'numero', 'anio', 'empleados', 'neto'].indexOf(col) >= 0;
+    const dir = cur === col ? nextDir : (firstDesc ? 'desc' : 'asc');
+    return '/nomina/periodos' + buildPeriodosQs({ sort: col, dir: dir });
+  }
+  function sortMark(col) {
+    if ((F.sort || 'fechaInicio') !== col) return '';
+    return (F.dir || 'desc') === 'asc' ? ' ↑' : ' ↓';
+  }
 %>
 <h1>Períodos de nómina</h1>
 <div class="toolbar">
@@ -60,10 +93,11 @@
           data-motor="<%= t.tipoMotor %>"
           data-sat="<%= t.periodicidadPagoSat != null ? t.periodicidadPagoSat : '' %>"
           data-clasif="<%= t.clasificacion || '' %>"
+          data-dias="<%= t.diasPeriodo != null ? t.diasPeriodo : '' %>"
           <%= String(t._id) === String(_defTipoId) ? 'selected' : '' %>
         >
           <%= t.nombre %><% if (t.clasificacionLabel) { %> · <%= t.clasificacionLabel %><% } %>
-          (<%= t.tipoMotor %>)
+          (<%= t.tipoMotor %><% if (t.diasPeriodo) { %> · <%= t.diasPeriodo %> d<% } %>)
         </option>
         <% }); %>
       </select>
@@ -105,7 +139,8 @@
         Último: #<%= _sug.ultimo.numeroPeriodo %>/<%= _sug.ultimo.anio %>
         (<%= _sug.ultimo.fechaInicio %> – <%= _sug.ultimo.fechaFin %>).
         Propuesto: <strong>#<%= _sug.numeroPeriodo %>/<%= _sug.anio %></strong>
-        · <%= _sug.fechaInicio %> – <%= _sug.fechaFin %>.
+        · <%= _sug.fechaInicio %> – <%= _sug.fechaFin %>
+        <% if (_sug.diasPeriodo) { %>(<%= _sug.diasPeriodo %> d)<% } %>.
         <% } else if (_sug) { %>
         Sin histórico para esta combinación. Ventana sugerida:
         <strong>#<%= _sug.numeroPeriodo %>/<%= _sug.anio %></strong>
@@ -114,8 +149,21 @@
         Se calculará al elegir tipo de período y nómina.
         <% } %>
       </p>
+      <p class="muted small" style="margin:.35rem 0 0">
+        Default = día siguiente al fin del último período +
+        <strong>días del tipo</strong> (Pre-nómina → Tipos de período → «Días del período»).
+        Puedes ajustar inicio/fin abajo.
+      </p>
     </div>
 
+    <label>Fecha inicio *
+      <input type="date" name="fechaInicio" id="nuevo-fecha-inicio" required
+        value="<%= _sug && _sug.fechaInicio ? _sug.fechaInicio : '' %>" />
+    </label>
+    <label>Fecha fin *
+      <input type="date" name="fechaFin" id="nuevo-fecha-fin" required
+        value="<%= _sug && _sug.fechaFin ? _sug.fechaFin : '' %>" />
+    </label>
     <label>Fecha de referencia
       <input type="date" name="fechaReferencia" id="nuevo-fecha-ref" value="<%= _defFecha %>" />
     </label>
@@ -188,6 +236,8 @@
   var tipoMotorHid = form.querySelector('#nuevo-tipo-periodo');
   var nominaSel = form.querySelector('#nuevo-tipo-nomina');
   var fechaInp = form.querySelector('[name=fechaReferencia]');
+  var fechaIniInp = form.querySelector('#nuevo-fecha-inicio');
+  var fechaFinInp = form.querySelector('#nuevo-fecha-fin');
   var chk = form.querySelector('#pagaDespensa');
   var hidSat = form.querySelector('#nuevo-periodicidad-sat');
   var hidCfdi = form.querySelector('#nuevo-tipo-nomina-cfdi');
@@ -197,6 +247,7 @@
   var infoClasif = document.getElementById('info-clasif-texto');
   var infoSig = document.getElementById('info-siguiente-texto');
   var fechaTouched = false;
+  var fechasTouched = false;
 
   function selectedTipoOpt() {
     if (!tipoIdSel) return null;
@@ -228,7 +279,8 @@
           'Último: #' + s.ultimo.numeroPeriodo + '/' + s.ultimo.anio +
           ' (' + s.ultimo.fechaInicio + ' – ' + s.ultimo.fechaFin + '). ' +
           'Propuesto: <strong>#' + s.numeroPeriodo + '/' + s.anio + '</strong>' +
-          ' · ' + s.fechaInicio + ' – ' + s.fechaFin + '.';
+          ' · ' + s.fechaInicio + ' – ' + s.fechaFin +
+          (s.diasPeriodo ? ' (' + s.diasPeriodo + ' d)' : '') + '.';
       } else if (s) {
         infoSig.innerHTML =
           'Sin histórico para esta combinación. Ventana sugerida: ' +
@@ -239,8 +291,10 @@
           'Sin propuesta cargada para esta combinación; se usará la fecha de referencia y el siguiente # libre.';
       }
     }
-    if (applyFecha && s && s.fechaReferencia && fechaInp && !fechaTouched) {
-      fechaInp.value = s.fechaReferencia;
+    if (applyFecha && s && !fechasTouched) {
+      if (s.fechaReferencia && fechaInp && !fechaTouched) fechaInp.value = s.fechaReferencia;
+      if (s.fechaInicio && fechaIniInp) fechaIniInp.value = s.fechaInicio;
+      if (s.fechaFin && fechaFinInp) fechaFinInp.value = s.fechaFin;
     }
   }
 
@@ -310,13 +364,24 @@
     refreshCfdi();
   }
 
-  if (tipoIdSel) tipoIdSel.addEventListener('change', function () { fechaTouched = false; refreshAll(true); });
-  if (nominaSel) nominaSel.addEventListener('change', function () { fechaTouched = false; refreshAll(true); });
+  if (tipoIdSel) tipoIdSel.addEventListener('change', function () {
+    fechaTouched = false;
+    fechasTouched = false;
+    refreshAll(true);
+  });
+  if (nominaSel) nominaSel.addEventListener('change', function () {
+    fechaTouched = false;
+    fechasTouched = false;
+    refreshAll(true);
+  });
   if (fechaInp) fechaInp.addEventListener('change', function () {
     fechaTouched = true;
     refreshDespensa();
   });
-  refreshAll(false);
+  function markFechasTouched() { fechasTouched = true; }
+  if (fechaIniInp) fechaIniInp.addEventListener('change', markFechasTouched);
+  if (fechaFinInp) fechaFinInp.addEventListener('change', markFechasTouched);
+  refreshAll(true);
 })();
 </script>
 <% } %>
@@ -360,12 +425,19 @@
     <label>Año
       <input type="number" name="anio" min="2020" max="2100" value="<%= F.anio || '' %>" placeholder="Todos" />
     </label>
-    <label>Tipo período
+    <label>Tipo período (motor)
       <select name="tipoPeriodo">
         <option value="">Todos</option>
         <% tiposPeriodo.forEach(function(t) { %>
         <option value="<%= t.value %>" <%= F.tipoPeriodo === t.value ? 'selected' : '' %>><%= t.label %></option>
         <% }); %>
+      </select>
+    </label>
+    <label>Clasificación laboral
+      <select name="clasificacionLaboral">
+        <option value="">Todas</option>
+        <option value="sindicalizado" <%= F.clasificacionLaboral === 'sindicalizado' ? 'selected' : '' %>>Sindicalizado</option>
+        <option value="confianza" <%= F.clasificacionLaboral === 'confianza' ? 'selected' : '' %>>Confianza</option>
       </select>
     </label>
     <label>Tipo nómina (negocio)
@@ -400,6 +472,25 @@
         <% }); %>
       </select>
     </label>
+    <label>Ordenar por
+      <select name="sort">
+        <option value="fechaInicio" <%= (F.sort || 'fechaInicio') === 'fechaInicio' ? 'selected' : '' %>>Fecha inicio</option>
+        <option value="fechaFin" <%= F.sort === 'fechaFin' ? 'selected' : '' %>>Fecha fin</option>
+        <option value="numero" <%= F.sort === 'numero' ? 'selected' : '' %>>Número de período</option>
+        <option value="anio" <%= F.sort === 'anio' ? 'selected' : '' %>>Año</option>
+        <option value="clasificacion" <%= F.sort === 'clasificacion' ? 'selected' : '' %>>Clasificación (SIND/CONF)</option>
+        <option value="tipo" <%= F.sort === 'tipo' ? 'selected' : '' %>>Motor</option>
+        <option value="estatus" <%= F.sort === 'estatus' ? 'selected' : '' %>>Estatus</option>
+        <option value="empleados" <%= F.sort === 'empleados' ? 'selected' : '' %>>Empleados</option>
+        <option value="neto" <%= F.sort === 'neto' ? 'selected' : '' %>>Neto</option>
+      </select>
+    </label>
+    <label>Dirección
+      <select name="dir">
+        <option value="desc" <%= (F.dir || 'desc') === 'desc' ? 'selected' : '' %>>Descendente</option>
+        <option value="asc" <%= F.dir === 'asc' ? 'selected' : '' %>>Ascendente</option>
+      </select>
+    </label>
     <label>Buscar
       <input type="search" name="q" value="<%= F.q || '' %>" placeholder="Notas / usuario…" />
     </label>
@@ -414,19 +505,19 @@
 <table>
   <thead>
     <tr>
-      <th>#</th>
-      <th>Año</th>
-      <th>Tipo / clasif.</th>
-      <th>Motor</th>
+      <th><a href="<%= sortHref('numero') %>">#<%= sortMark('numero') %></a></th>
+      <th><a href="<%= sortHref('anio') %>">Año<%= sortMark('anio') %></a></th>
+      <th><a href="<%= sortHref('clasificacion') %>">Tipo / clasif.<%= sortMark('clasificacion') %></a></th>
+      <th><a href="<%= sortHref('tipo') %>">Motor<%= sortMark('tipo') %></a></th>
       <th>Periodicidad SAT</th>
       <th>CFDI</th>
       <th>Tipo nómina</th>
-      <th>Inicio</th>
-      <th>Fin</th>
-      <th>Estatus</th>
+      <th><a href="<%= sortHref('fechaInicio') %>">Inicio<%= sortMark('fechaInicio') %></a></th>
+      <th><a href="<%= sortHref('fechaFin') %>">Fin<%= sortMark('fechaFin') %></a></th>
+      <th><a href="<%= sortHref('estatus') %>">Estatus<%= sortMark('estatus') %></a></th>
       <th>Dispersión</th>
-      <th>Empleados</th>
-      <th>Neto</th>
+      <th><a href="<%= sortHref('empleados') %>">Empleados<%= sortMark('empleados') %></a></th>
+      <th><a href="<%= sortHref('neto') %>">Neto<%= sortMark('neto') %></a></th>
       <th></th>
     </tr>
   </thead>
@@ -463,7 +554,7 @@
       <td>
         <% if (_canEdit) { %>
         <form method="post" action="/nomina/periodos/<%= p._id %>/clasificacion" class="inline-form" style="display:flex;gap:.35rem;align-items:center">
-          <input type="hidden" name="returnTo" value="/nomina/periodos<%= (function(){ const qs=[]; if(F.anio) qs.push('anio='+encodeURIComponent(F.anio)); if(F.tipoPeriodo) qs.push('tipoPeriodo='+encodeURIComponent(F.tipoPeriodo)); if(F.tipoNomina) qs.push('tipoNomina='+encodeURIComponent(F.tipoNomina)); if(F.estatus) qs.push('estatus='+encodeURIComponent(F.estatus)); if(F.tipoNominaCfdi) qs.push('tipoNominaCfdi='+encodeURIComponent(F.tipoNominaCfdi)); if(F.periodicidadPagoSat) qs.push('periodicidadPagoSat='+encodeURIComponent(F.periodicidadPagoSat)); if(F.q) qs.push('q='+encodeURIComponent(F.q)); return qs.length?'?'+qs.join('&'):''; })() %>" />
+          <input type="hidden" name="returnTo" value="/nomina/periodos<%= buildPeriodosQs() %>" />
           <select name="tipoNomina" onchange="this.form.submit()" title="Clasificación de negocio (editable)">
             <% tiposNomina.forEach(function(t) { %>
             <option value="<%= t.value %>" <%= p.tipoNomina === t.value ? 'selected' : '' %>><%= t.label %></option>
@@ -486,7 +577,12 @@
       </td>
       <td><%= p.totales?.empleados || 0 %></td>
       <td>$<%= (p.totales?.neto || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></td>
-      <td><a href="/nomina/periodos/<%= p._id %>">Ver</a></td>
+      <td style="white-space:nowrap">
+        <a href="/nomina/periodos/<%= p._id %>">Ver</a>
+        <% if (_canEdit && (p.estatus === 'abierto' || p.estatus === 'calculado')) { %>
+        · <a href="/nomina/periodos/<%= p._id %>#editar-periodo">Editar</a>
+        <% } %>
+      </td>
     </tr>
     <% }); %>
   </tbody>

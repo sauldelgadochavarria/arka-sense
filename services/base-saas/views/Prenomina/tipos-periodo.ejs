@@ -1,8 +1,20 @@
 <%- include('../Partials/layout-top', { title: 'Tipos de período', session }) %>
+<%
+  const _base = typeof catalogBase !== 'undefined' && catalogBase ? catalogBase : '/prenomina/tipos-periodo';
+  const _sub = typeof subsidiariaId !== 'undefined' && subsidiariaId ? subsidiariaId : null;
+%>
 <h1>Catálogo de tipos de período</h1>
-<p class="muted">Cada tipo tiene un <strong>código interno único</strong>. El motor ISR y el calendario (día de inicio / pago) se configuran por separado.</p>
+<p class="muted">
+  Catálogo <strong>compartido</strong> entre pre-nómina y nómina.
+  Define días del período, laborables y séptimo día (6+1 / 5+2); el cálculo parte de aquí.
+  <% if (_sub) { %>
+  Ámbito: subsidiaria activa <code><%= _sub %></code>.
+  <% } else { %>
+  Ámbito: empresa (sin subsidiaria en sesión).
+  <% } %>
+</p>
 <div class="toolbar">
-  <a class="btn btn-primary" href="/prenomina/tipos-periodo/nuevo">+ Nuevo</a>
+  <a class="btn btn-primary" href="<%= _base %>/nuevo">+ Nuevo</a>
 </div>
 <% if (!empresa) { %>
 <p>No hay empresa vinculada.</p>
@@ -13,9 +25,10 @@
 <table>
   <thead>
     <tr>
-      <th>Cód. interno</th><th>Nombre</th><th>Motor</th><th>Días</th>
+      <th>Cód. interno</th><th>Nombre</th><th>Motor</th>
+      <th>Días per.</th><th>Laborables</th><th>7º</th>
       <th>Inicio sem.</th><th>Pago</th><th>Modo</th>
-      <th>Asist.</th><th>Nómina</th><th>Activo</th><th></th>
+      <th>Asist.</th><th>Nómina</th><th>Ámbito</th><th>Activo</th><th></th>
     </tr>
   </thead>
   <tbody>
@@ -25,16 +38,19 @@
       <td><%= t.nombre %><% if (t.leyenda) { %><br /><span class="muted"><%= t.leyenda %></span><% } %></td>
       <td><%= t.tipoMotor %></td>
       <td><%= t.diasPeriodo %></td>
+      <td><%= t.diasLaborables != null ? t.diasLaborables : '—' %></td>
+      <td><%= t.esSeptimo ? 'Sí' : 'No' %></td>
       <td><%= diaLabel[t.diaInicioSemana != null ? t.diaInicioSemana : 1] || 'Lun' %></td>
       <td><%= t.diaPago != null ? (diaLabel[t.diaPago] || t.diaPago) : '—' %></td>
       <td class="muted small"><%= t.modoCalendario || 'calendario_fijo' %></td>
       <td><%= t.aplicaAsistenciaPrenomina ? 'Sí' : 'No' %></td>
       <td><%= t.compartirConNomina ? 'Sí' : 'No' %></td>
+      <td class="muted small"><%= t.subsidiariaId ? 'Sub' : 'Empresa' %></td>
       <td><%= t.activo ? 'Sí' : 'No' %></td>
       <td class="actions">
-        <a href="/prenomina/tipos-periodo/<%= t._id %>/edit">Editar</a>
+        <a href="<%= _base %>/<%= t._id %>/edit">Editar</a>
         <a href="/nomina/recibos-pdf/nuevo?tipoPeriodoId=<%= t._id %>">Plantilla PDF</a>
-        <form method="post" action="/prenomina/tipos-periodo/<%= t._id %>/toggle" class="inline-form">
+        <form method="post" action="<%= _base %>/<%= t._id %>/toggle" class="inline-form">
           <button type="submit"><%= t.activo ? 'Desactivar' : 'Activar' %></button>
         </form>
       </td>

@@ -531,6 +531,49 @@ const VARIABLES_CONTEXTO = [
     ejemplo: 'confianza'
   },
   {
+    key: 'EMPLEADO.numEmpleado',
+    label: 'EMPLEADO.numEmpleado',
+    tipo: 'string',
+    categoria: 'salario',
+    descripcion:
+      'Número de empleado (texto). Condición: EMPLEADO.numEmpleado == "1234" (o igualTexto(...)). Alias: numEmpleado. Numérico: EMPLEADO.numero.',
+    ejemplo: '1234'
+  },
+  {
+    key: 'EMPLEADO.numero',
+    label: 'EMPLEADO.numero',
+    tipo: 'number',
+    categoria: 'salario',
+    descripcion: 'Número de empleado como número (si el # es numérico). Ej: EMPLEADO.numero == 1234',
+    ejemplo: 1234
+  },
+  {
+    key: 'EMPLEADO.departamento',
+    label: 'EMPLEADO.departamento',
+    tipo: 'string',
+    categoria: 'salario',
+    descripcion:
+      'Nombre del departamento (catálogo Personal). Condición: EMPLEADO.departamento == "Ventas" o igualTexto(EMPLEADO.departamento, "Ventas").',
+    ejemplo: 'Ventas'
+  },
+  {
+    key: 'EMPLEADO.departamentoCodigo',
+    label: 'EMPLEADO.departamentoCodigo',
+    tipo: 'string',
+    categoria: 'salario',
+    descripcion:
+      'Código externo del departamento (codigoExterno). Ej. "20" para AC LINE I AC28. Condición: EMPLEADO.departamentoCodigo == "20" o departamentoCodigoNum == 20.',
+    ejemplo: '20'
+  },
+  {
+    key: 'EMPLEADO.departamentoCodigoNum',
+    label: 'EMPLEADO.departamentoCodigoNum',
+    tipo: 'number',
+    categoria: 'salario',
+    descripcion: 'Código de departamento como número. Ej: EMPLEADO.departamentoCodigoNum == 20',
+    ejemplo: 20
+  },
+  {
     key: 'PERIODO.diasTrabajados',
     label: 'PERIODO.diasTrabajados',
     tipo: 'number',
@@ -561,6 +604,39 @@ const VARIABLES_CONTEXTO = [
     categoria: 'horas_extra',
     descripcion: 'Namespace: horas extra triples.',
     ejemplo: 0
+  },
+  {
+    key: 'domingosTrabajados',
+    label: 'domingosTrabajados',
+    tipo: 'number',
+    categoria: 'periodo',
+    descripcion:
+      'Domingos con asistencia (presente/retardo/incompleto). Usar en prima dominical: sueldoDiario * 0.25 * domingosTrabajados.',
+    ejemplo: 1
+  },
+  {
+    key: 'INCIDENCIAS.domingosTrabajados',
+    label: 'INCIDENCIAS.domingosTrabajados',
+    tipo: 'number',
+    categoria: 'periodo',
+    descripcion: 'Namespace: igual que domingosTrabajados.',
+    ejemplo: 1
+  },
+  {
+    key: 'domingosEnPeriodo',
+    label: 'domingosEnPeriodo',
+    tipo: 'number',
+    categoria: 'periodo',
+    descripcion: 'Domingos calendario dentro del período (sin validar asistencia).',
+    ejemplo: 2
+  },
+  {
+    key: 'PERIODO.domingosEnPeriodo',
+    label: 'PERIODO.domingosEnPeriodo',
+    tipo: 'number',
+    categoria: 'periodo',
+    descripcion: 'Namespace: domingos calendario del período.',
+    ejemplo: 2
   },
   {
     key: 'PARAMETROS.uma',

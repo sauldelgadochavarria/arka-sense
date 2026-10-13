@@ -1,8 +1,12 @@
 <%- include('../Partials/layout-top', { title: 'Editar tipo de período', session }) %>
-<p><a href="/prenomina/tipos-periodo">← Volver a lista</a></p>
+<% const _base = typeof catalogBase !== 'undefined' && catalogBase ? catalogBase : '/prenomina/tipos-periodo'; %>
+<p><a href="<%= _base %>">← Volver a lista</a></p>
 <h1>Editar tipo de período</h1>
-<p class="muted">Configura cómo se comporta la quincena/semana en pre-nómina y CFDI.</p>
-<form method="post" action="/prenomina/tipos-periodo/<%= tipo._id %>" class="form-grid form-wide">
+<p class="muted">
+  Configura cómo se comporta la semana/quincena en pre-nómina y nómina
+  (días laborables, séptimo, calendario).
+</p>
+<form method="post" action="<%= _base %>/<%= tipo._id %>" class="form-grid form-wide">
   <%- include('partials/tipo-periodo-fields', { tipo, tiposMotor, periodicidadSat, sugeridoCodigoLegado, codigosOcupadosJson, diasSemanaOpts, modosCalendario }) %>
   <button type="submit">Guardar</button>
 </form>

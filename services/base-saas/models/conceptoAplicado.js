@@ -7,6 +7,8 @@ const conceptoAplicadoSchema = new mongoose.Schema(
     tenantId: { type: String, required: true, trim: true, index: true },
     reciboId: { type: mongoose.Schema.Types.ObjectId, ref: 'ReciboNomina', required: true, index: true },
     conceptoCodigo: { type: String, required: true, trim: true, uppercase: true },
+    /** Código motor cuando conceptoCodigo es clave CFDI ligada (p.ej. 001 → SUELDO). */
+    codigoMotor: { type: String, trim: true, uppercase: true, default: '' },
     formulaUsada: { type: String, default: '' },
     condicionUsada: { type: String, default: '' },
     variablesUsadas: { type: mongoose.Schema.Types.Mixed, default: {} },

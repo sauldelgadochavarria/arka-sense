@@ -46,7 +46,7 @@ const { tableroCumplimiento } = require('../services/gestionDocumentalService');
 const { getFlujoNominaActual, confirmarRevisionPeriodo, omitirDispersionPeriodo } = require('../services/flujoNominaDashboardService');
 const { parseOptionalObjectId } = require('../libs/formHelpers');
 const { tenantHasFeature, tenantHasAnyFeature } = require('../libs/tenantFeatureFlags');
-const { requireEmpresaForTenant } = require('../libs/tenantScope');
+const { requireEmpresaForTenant, sessionSubsidiariaId } = require('../libs/tenantScope');
 const { requirePortalEmpleado } = require('../middleware/requirePortalEmpleado');
 const { requireAdminAccess } = require('../middleware/requireAdminAccess');
 const { requireReportesAccess } = require('../middleware/requireReportesAccess');
@@ -115,6 +115,7 @@ router.get(['/', '/dashboard', '/inicio', '/nomina/flujo'], async (req, res) => 
       flujoNomina = await getFlujoNominaActual({
         tenantId: req.session.tenantId,
         empresaId: empresa._id,
+        subsidiariaId: sessionSubsidiariaId(req),
         hasNomina,
         periodoId
       });
@@ -228,6 +229,10 @@ router.post(
 router.post(
   '/config-empresa/cargas/jobs/:id/organizar-periodos',
   cargasInicialesController.organizarPeriodosJobAction
+);
+router.post(
+  '/config-empresa/cargas/jobs/:id/informe-config',
+  cargasInicialesController.regenerarInformeConfigAction
 );
 router.post('/config-empresa/cargas/:tipo/validar', cargasInicialesController.dryRun);
 
@@ -493,6 +498,7 @@ router.get('/nomina/periodos', nominaController.periodos);
 router.post('/nomina/periodos', nominaController.createPeriodo);
 router.post('/nomina/periodos/organizar', nominaController.organizarPeriodosAction);
 router.get('/nomina/periodos/:id', nominaController.showPeriodo);
+router.post('/nomina/periodos/:id/editar', nominaController.updatePeriodoEditAction);
 router.post('/nomina/periodos/:id/prestaciones', nominaController.updatePeriodoPrestacionesAction);
 router.post('/nomina/periodos/:id/clasificacion', nominaController.updatePeriodoClasificacionAction);
 router.post('/nomina/periodos/:id/vincular-prenomina', nominaController.vincularPrenominaAction);
@@ -581,12 +587,16 @@ router.get('/prenomina-conceptos/:id/edit', prenominaController.editConcepto);
 router.post('/prenomina-conceptos/:id', prenominaController.updateConcepto);
 router.post('/prenomina-conceptos/:id/toggle', prenominaController.toggleConcepto);
 
-router.get('/prenomina/tipos-periodo', tipoPeriodoNominaController.list);
-router.get('/prenomina/tipos-periodo/nuevo', tipoPeriodoNominaController.newForm);
-router.post('/prenomina/tipos-periodo', tipoPeriodoNominaController.create);
-router.get('/prenomina/tipos-periodo/:id/edit', tipoPeriodoNominaController.edit);
-router.post('/prenomina/tipos-periodo/:id', tipoPeriodoNominaController.update);
-router.post('/prenomina/tipos-periodo/:id/toggle', tipoPeriodoNominaController.toggle);
+function mountTiposPeriodoRoutes(prefix) {
+  router.get(`${prefix}/tipos-periodo`, tipoPeriodoNominaController.list);
+  router.get(`${prefix}/tipos-periodo/nuevo`, tipoPeriodoNominaController.newForm);
+  router.post(`${prefix}/tipos-periodo`, tipoPeriodoNominaController.create);
+  router.get(`${prefix}/tipos-periodo/:id/edit`, tipoPeriodoNominaController.edit);
+  router.post(`${prefix}/tipos-periodo/:id`, tipoPeriodoNominaController.update);
+  router.post(`${prefix}/tipos-periodo/:id/toggle`, tipoPeriodoNominaController.toggle);
+}
+mountTiposPeriodoRoutes('/prenomina');
+mountTiposPeriodoRoutes('/nomina');
 
 router.get('/catalogos/periodos', periodoAdministracionController.list);
 router.get('/catalogos/periodos/generar', periodoAdministracionController.generarForm);

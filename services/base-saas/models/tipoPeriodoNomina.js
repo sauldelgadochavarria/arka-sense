@@ -6,6 +6,16 @@ const tipoPeriodoNominaSchema = new mongoose.Schema(
   {
     tenantId: { type: String, required: true, trim: true, index: true },
     empresaId: { type: mongoose.Schema.Types.ObjectId, ref: 'Empresa', required: true },
+    /**
+     * Catálogo compartido prenómina + nómina, particionado por subsidiaria.
+     * null = legado / ámbito empresa (fallback si la sub aún no tiene copia).
+     */
+    subsidiariaId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Subsidiaria',
+      default: null,
+      index: true
+    },
     codigoLegado: { type: Number, required: true },
     codigoExterno: { type: String, trim: true, default: '' },
     nombre: { type: String, required: true, trim: true },
@@ -45,7 +55,11 @@ const tipoPeriodoNominaSchema = new mongoose.Schema(
   { timestamps: true, collection: COLLECTION_TIPOS_PERIODO_NOMINA }
 );
 
-tipoPeriodoNominaSchema.index({ tenantId: 1, empresaId: 1, codigoLegado: 1 }, { unique: true });
+// Único por empresa + subsidiaria + código (null subsidiaria = ámbito empresa).
+tipoPeriodoNominaSchema.index(
+  { tenantId: 1, empresaId: 1, subsidiariaId: 1, codigoLegado: 1 },
+  { unique: true, name: 'uniq_tipo_periodo_empresa_sub_codigo' }
+);
 
 async function getTipoPeriodoNominaModel() {
   const conn = await getFixedMongooseConnection(FIXED_CONNECTIONS.CONFIG);

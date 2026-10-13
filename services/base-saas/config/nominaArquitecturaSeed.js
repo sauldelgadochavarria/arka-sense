@@ -217,6 +217,34 @@ const SYSTEM_ENUMS_SEED = [
         meta: { namespace: 'EMPLEADO', categoria: 'salario', ejemplo: 8 }
       },
       {
+        value: 'EMPLEADO.tipoEmpleado',
+        label: 'Tipo de empleado',
+        descripcion: 'Enum tipo_empleado (p.ej. confianza / sindicalizado)',
+        orden: 42,
+        meta: { namespace: 'EMPLEADO', categoria: 'salario', ejemplo: 'confianza' }
+      },
+      {
+        value: 'EMPLEADO.numEmpleado',
+        label: 'Número de empleado',
+        descripcion: 'Clave # empleado (texto). Condición: EMPLEADO.numEmpleado == "1234"',
+        orden: 43,
+        meta: { namespace: 'EMPLEADO', categoria: 'salario', ejemplo: '1234' }
+      },
+      {
+        value: 'EMPLEADO.numero',
+        label: 'Número de empleado (numérico)',
+        descripcion: '# empleado como número. Condición: EMPLEADO.numero == 1234',
+        orden: 44,
+        meta: { namespace: 'EMPLEADO', categoria: 'salario', ejemplo: 1234 }
+      },
+      {
+        value: 'EMPLEADO.departamento',
+        label: 'Departamento',
+        descripcion: 'Nombre del departamento. Condición: EMPLEADO.departamento == "Ventas"',
+        orden: 45,
+        meta: { namespace: 'EMPLEADO', categoria: 'salario', ejemplo: 'Ventas' }
+      },
+      {
         value: 'PERIODO.diasTrabajados',
         label: 'Días trabajados',
         descripcion: 'Días laborados del período',
@@ -608,7 +636,18 @@ const DEFAULT_FORMULA_TEMPLATES = [
     tipoAplicacion: 'FIJO',
     tipoPeriodo: 'quincenal',
     tipoNomina: 'ordinaria',
-    formula: 'EMPLEADO.salarioDiario * (PERIODO.diasTrabajados - INCIDENCIAS.faltas)',
+    // diasPagados = laborados + descanso (6+1). Si hay CFDI de séptimo día aparte, el motor ajusta a diasLaborados.
+    formula: 'sueldoDiario * diasPagados',
+    condicion: '',
+    dependencias: []
+  },
+  {
+    conceptoCodigo: 'SEPTIMO_DIA',
+    fase: 1,
+    tipoAplicacion: 'FIJO',
+    tipoPeriodo: 'quincenal',
+    tipoNomina: 'ordinaria',
+    formula: 'sueldoDiario * diasDescansoPagados',
     condicion: '',
     dependencias: []
   },
@@ -661,6 +700,18 @@ const DEFAULT_FORMULA_TEMPLATES = [
     tipoPeriodo: 'quincenal',
     tipoNomina: 'aguinaldo',
     formula: 'EMPLEADO.salarioDiario * 15',
+    condicion: '',
+    dependencias: []
+  },
+  {
+    conceptoCodigo: 'PRIMA_DOMINICAL',
+    fase: 1,
+    tipoAplicacion: 'EVENTUAL',
+    tipoPeriodo: 'quincenal',
+    tipoNomina: 'ordinaria',
+    // LFT: ≥25% del salario diario por cada domingo trabajado.
+    // Exento ISR: regla_ley prima_dominical → 1 UMA × domingosTrabajados.
+    formula: 'sueldoDiario * 0.25 * domingosTrabajados',
     condicion: '',
     dependencias: []
   }

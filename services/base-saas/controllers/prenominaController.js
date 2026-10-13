@@ -33,7 +33,8 @@ const { parsePositiveNumber } = require('../libs/formHelpers');
 async function listPeriodos(req, res) {
   const { empresa, error } = await requireEmpresaForTenant(req);
   const PayrollPeriod = await getPayrollPeriodModel();
-  if (empresa) await ensureTiposPeriodoForTenant(req.session.tenantId, empresa._id);
+  const subId = sessionSubsidiariaId(req);
+  if (empresa) await ensureTiposPeriodoForTenant(req.session.tenantId, empresa._id, subId);
 
   const anioActual = new Date().getFullYear();
   const anioFiltro = req.query.anio ? Number(req.query.anio) : anioActual;
@@ -68,7 +69,9 @@ async function listPeriodos(req, res) {
     }
   }
 
-  const tiposPeriodoCatalogo = empresa ? await listTiposPeriodo(req.session.tenantId, true, empresa._id) : [];
+  const tiposPeriodoCatalogo = empresa
+    ? await listTiposPeriodo(req.session.tenantId, true, empresa._id, subId || null)
+    : [];
 
   res.render('Prenomina/periodos', {
     periodos,

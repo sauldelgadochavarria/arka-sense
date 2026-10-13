@@ -957,8 +957,25 @@ async function guardarFormula(tenantId, payload) {
   );
 
   const FormulaConcepto = await getFormulaConceptoModel();
-  const vigenciaDesde = new Date();
-  vigenciaDesde.setHours(0, 0, 0, 0);
+  // Vigencia editable: si viene en el payload se usa; si no, hoy (inicio del día UTC).
+  // No es la fecha de alta del concepto: es desde cuándo aplica esta versión de fórmula.
+  let vigenciaDesde = null;
+  if (payload.vigenciaDesde) {
+    const parsed = new Date(payload.vigenciaDesde);
+    if (!Number.isNaN(parsed.getTime())) vigenciaDesde = parsed;
+  }
+  if (!vigenciaDesde) {
+    const now = new Date();
+    vigenciaDesde = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  } else {
+    vigenciaDesde = new Date(
+      Date.UTC(
+        vigenciaDesde.getUTCFullYear(),
+        vigenciaDesde.getUTCMonth(),
+        vigenciaDesde.getUTCDate()
+      )
+    );
+  }
 
   const closeFilter = {
     tenantId,

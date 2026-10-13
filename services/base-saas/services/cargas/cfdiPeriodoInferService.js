@@ -7,7 +7,8 @@ const getSubsidiariaModel = require('../../models/subsidiaria');
 const {
   crearTipoPeriodo,
   nextCodigoLegado,
-  ensureTiposPeriodoForTenant
+  ensureTiposPeriodoForTenant,
+  preferTiposDeSubsidiaria
 } = require('../tipoPeriodoNominaService');
 const {
   mapPeriodicidadSat,
@@ -88,7 +89,8 @@ async function resolveTipoPeriodoPorSat(
   empresaId,
   satCode,
   cache,
-  clasificacionLaboral = null
+  clasificacionLaboral = null,
+  subsidiariaId = null
 ) {
   const code = normalizePeriodicidadSat(satCode);
   const mapped = mapPeriodicidadSat(code);
@@ -98,42 +100,48 @@ async function resolveTipoPeriodoPorSat(
     clasificacionLaboral === 'sindicalizado' || clasificacionLaboral === 'confianza'
       ? clasificacionLaboral
       : null;
-  const key = tipoPeriodoCacheKey(mapped.code, clasif);
+  const key = `${tipoPeriodoCacheKey(mapped.code, clasif)}|${subsidiariaId || ''}`;
   if (cache.has(key)) return cache.get(key);
 
-  await ensureTiposPeriodoForTenant(tenantId, empresaId);
+  await ensureTiposPeriodoForTenant(tenantId, empresaId, subsidiariaId);
   const Tipo = await getTipoPeriodoNominaModel();
 
   // Match exacto por clave SAT; si hay SIND y CONF, elige según trabajador.
-  let candidatos = await Tipo.find({
-    tenantId,
-    empresaId,
-    periodicidadPagoSat: mapped.code,
-    activo: true
-  })
-    .sort({ codigoLegado: 1 })
-    .lean();
+  let candidatos = preferTiposDeSubsidiaria(
+    await Tipo.find({
+      tenantId,
+      empresaId,
+      periodicidadPagoSat: mapped.code,
+      activo: true
+    })
+      .sort({ codigoLegado: 1 })
+      .lean(),
+    subsidiariaId
+  );
   let tipo = pickTipoPorClasificacion(candidatos, clasif);
 
   if (!tipo && !mapped.evitarFallbackMotor) {
-    candidatos = await Tipo.find({
-      tenantId,
-      empresaId,
-      tipoMotor: mapped.tipoMotor,
-      activo: true,
-      $or: [
-        { periodicidadPagoSat: null },
-        { periodicidadPagoSat: { $exists: false } },
-        { periodicidadPagoSat: mapped.code }
-      ]
-    })
-      .sort({ codigoLegado: 1 })
-      .lean();
+    candidatos = preferTiposDeSubsidiaria(
+      await Tipo.find({
+        tenantId,
+        empresaId,
+        tipoMotor: mapped.tipoMotor,
+        activo: true,
+        $or: [
+          { periodicidadPagoSat: null },
+          { periodicidadPagoSat: { $exists: false } },
+          { periodicidadPagoSat: mapped.code }
+        ]
+      })
+        .sort({ codigoLegado: 1 })
+        .lean(),
+      subsidiariaId
+    );
     tipo = pickTipoPorClasificacion(candidatos, clasif);
   }
 
   if (!tipo) {
-    const codigoLegado = await nextCodigoLegado(tenantId, empresaId);
+    const codigoLegado = await nextCodigoLegado(tenantId, empresaId, subsidiariaId || null);
     const sufijo =
       clasif === 'sindicalizado' ? ' · Sindicalizado' : clasif === 'confianza' ? ' · Confianza' : '';
     const leyenda =
@@ -165,7 +173,8 @@ async function resolveTipoPeriodoPorSat(
       diaInicioSemana: 1,
       modoCalendario: mapped.diasPeriodo > 0 ? 'por_dias' : 'calendario_fijo',
       aplicaAsistenciaPrenomina: false,
-      compartirConNomina: true
+      compartirConNomina: true,
+      subsidiariaId: subsidiariaId || null
     });
     tipo = created.toObject ? created.toObject() : created;
   }
@@ -401,13 +410,21 @@ async function buildPeriodosFromStaging({
       empresaId,
       d.empleado?.periodicidadPago,
       tipoCache,
-      clasifLab
+      clasifLab,
+      subsidiariaId
     );
     const tipoNomina = classifyTipoNominaFromCfdi(d);
     // Extraordinarias / finiquitos suelen traer PeriodicidadPago=99 u otros códigos;
     // si no hay tipo, caemos a "otra periodicidad" (99) para no perder la ventana.
     if (!tipo && tipoNomina !== 'ordinaria') {
-      tipo = await resolveTipoPeriodoPorSat(tenantId, empresaId, '99', tipoCache, clasifLab);
+      tipo = await resolveTipoPeriodoPorSat(
+        tenantId,
+        empresaId,
+        '99',
+        tipoCache,
+        clasifLab,
+        subsidiariaId
+      );
     }
     if (!tipo) continue;
 
@@ -993,7 +1010,14 @@ async function buildPeriodosFromStaging({
   };
 }
 
-function lookupPeriodoForPayload(periodMap, tipoCache, payload) {
+/**
+ * Enlaza un payload CFDI al PeriodoNomina del mapa.
+ * La clave de tipoCache debe coincidir con resolveTipoPeriodoPorSat:
+ *   `${sat}|${clasif}|${subsidiariaId}`
+ * Antes se buscaba sin subsidiariaId y el fallback tomaba el primer tipo SAT
+ * (casi siempre SIND), mezclando confianza en períodos sindicalizados.
+ */
+function lookupPeriodoForPayload(periodMap, tipoCache, payload, subsidiariaId = null) {
   if (!periodMap || !periodMap.size) return null;
   let mapped = mapPeriodicidadSat(payload?.empleado?.periodicidadPago);
   const tipoNomina = classifyTipoNominaFromCfdi(payload);
@@ -1002,16 +1026,29 @@ function lookupPeriodoForPayload(periodMap, tipoCache, payload) {
   }
   if (!mapped?.soportado) return null;
   const clasif = clasificacionLaboralFromEmpleado(payload?.empleado);
-  const cacheKey = tipoPeriodoCacheKey(mapped.code, clasif);
-  let tipo = tipoCache.get(cacheKey);
-  if (!tipo && clasif) tipo = tipoCache.get(String(mapped.code));
+  const subKey = subsidiariaId ? String(subsidiariaId) : '';
+  const baseKey = tipoPeriodoCacheKey(mapped.code, clasif);
+  let tipo =
+    tipoCache.get(`${baseKey}|${subKey}`) ||
+    tipoCache.get(baseKey) ||
+    null;
+  if (!tipo && clasif) {
+    // Compat: clave corta solo-código (cuando se resolvió sin clasificación)
+    tipo = tipoCache.get(`${mapped.code}|${subKey}`) || tipoCache.get(String(mapped.code));
+  }
   if (!tipo) {
-    // Último recurso: cualquier tipo cacheado para esa periodicidad SAT
+    // Último recurso: misma periodicidad SAT + misma clasificación (si hay)
+    const needleClasif = clasif ? `|${clasif}|` : null;
     for (const [k, v] of tipoCache.entries()) {
-      if (String(k) === String(mapped.code) || String(k).startsWith(`${mapped.code}|`)) {
-        tipo = v;
-        break;
+      const ks = String(k);
+      if (!ks.startsWith(`${mapped.code}|`) && ks !== String(mapped.code)) continue;
+      if (needleClasif && !ks.includes(needleClasif) && !ks.endsWith(`|${clasif}`)) continue;
+      if (subKey && ks.includes('|') && !ks.endsWith(`|${subKey}`) && ks !== baseKey) {
+        // Preferir misma sub si la clave la trae
+        if (!ks.endsWith(`|${subKey}`)) continue;
       }
+      tipo = v;
+      break;
     }
   }
   if (!tipo) return null;

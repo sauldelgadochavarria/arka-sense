@@ -87,8 +87,19 @@ function aplicarReglaLey(codigoRegla, importe, { uma = 0, contexto = {}, topeExe
   }
 
   if (regla === 'prima_dominical') {
-    const tope = Number(uma) || 0; // 1 UMA por domingo (simplificado)
-    const exento = Math.min(monto, tope);
+    // LISR: exento hasta 1 UMA por cada domingo trabajado (topeExentoUMA, default 1).
+    const veces = Number(topeExentoUMA) > 0 ? Number(topeExentoUMA) : 1;
+    let domingos = Number(
+      contexto.domingosTrabajados ??
+        contexto.INCIDENCIAS?.domingosTrabajados ??
+        pickCtx(contexto, ['domingosTrabajados', 'INCIDENCIAS.domingosTrabajados'], NaN)
+    );
+    if (!Number.isFinite(domingos) || domingos < 0) domingos = 0;
+    // Si hay importe pero aún no hay conteo (p.ej. fórmula fija antigua), no dejar exento en 0:
+    // asumir al menos 1 domingo para no gravar de más por falta de asistencia.
+    if (domingos === 0 && monto > 0) domingos = 1;
+    const tope = (Number(uma) || 0) * veces * domingos;
+    const exento = Math.min(monto, Math.max(0, tope));
     return { gravado: redondear(monto - exento), exento: redondear(exento), regla };
   }
 
@@ -558,7 +569,9 @@ function calcularTotalesDesdeConfig(detalle = [], informativos = new Set()) {
  */
 function sincronizarAcumuladoresDesdeConfig(detalle, contexto, { bases, totales }) {
   const patchLine = (codigo, importe, formulaUsada, extra = {}) => {
-    const line = detalle.find((d) => d.conceptoCodigo === codigo);
+    const line = detalle.find(
+      (d) => d.conceptoCodigo === codigo || d.codigoMotor === codigo
+    );
     if (!line) return;
     const val = redondear(Number(importe) || 0);
     line.importe = val;
