@@ -1,17 +1,20 @@
 # Codemagic — monorepo ArkaSense
-# La app Flutter NO está en la raíz: apps/arka_sense_asistencia
+# App Flutter: apps/arka_sense_asistencia
 #
-# IMPORTANTE en la UI de Codemagic:
-# 1) "Switch to YAML configuration" y elige este archivo, O
-# 2) Si usas Workflow Editor → Build → Project path = apps/arka_sense_asistencia
-#    (botón Rescan junto al dropdown si no aparece)
+# OBLIGATORIO en Codemagic (aunque uses YAML):
+#   App settings → Build → Project path → Rescan → elegir
+#   apps/arka_sense_asistencia
+# Si Project path queda en ".", el paso automático
+# "== Install Flutter dependencies ==" falla en /Users/builder/clone
+#
+# Al iniciar build: selecciona el workflow YAML
+# "ArkaSense Asistencia (iOS)" (no el workflow del Editor).
 
 workflows:
   arka-sense-asistencia-ios:
     name: ArkaSense Asistencia (iOS)
     instance_type: mac_mini_m2
     max_build_duration: 60
-    # Clave monorepo: todo corre dentro de la app Flutter
     working_directory: apps/arka_sense_asistencia
     environment:
       flutter: stable
@@ -20,17 +23,26 @@ workflows:
       vars:
         API_BASE_URL: http://192.168.1.11:4003
     scripts:
+      - name: Verify Flutter project path
+        script: |
+          set -e
+          echo "CM_BUILD_DIR=$CM_BUILD_DIR"
+          echo "PWD=$(pwd)"
+          test -f pubspec.yaml
+          test -d ios
+          head -5 pubspec.yaml
       - name: Get Flutter packages
         script: |
-          echo "PWD=$(pwd)"
-          ls -la pubspec.yaml
+          set -e
           flutter pub get
       - name: Install CocoaPods
-        working_directory: apps/arka_sense_asistencia/ios
         script: |
+          set -e
+          cd ios
           pod install
       - name: Flutter build iOS (no codesign)
         script: |
+          set -e
           flutter build ios --release --no-codesign \
             --dart-define=API_BASE_URL="$API_BASE_URL"
     artifacts:
@@ -55,9 +67,11 @@ workflows:
     scripts:
       - name: Get Flutter packages
         script: |
+          set -e
           flutter pub get
       - name: Flutter build APK
         script: |
+          set -e
           flutter build apk --release \
             --dart-define=API_BASE_URL="$API_BASE_URL"
     artifacts:
