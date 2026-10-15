@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../config/api_config.dart';
 import '../services/api_client.dart';
 import '../services/auth_state.dart';
+import '../services/reminder_scheduler.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -28,19 +30,27 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _loadSaved() async {
-    final saved = await context.read<AuthState>().loadSavedCredentials();
-    if (!mounted) return;
-    if (saved != null) {
-      _account.text = saved.account.isNotEmpty ? saved.account : 'empresa-demo';
-      _email.text = saved.email;
-      _rememberPassword = saved.rememberPassword;
-      if (saved.rememberPassword && (saved.password?.isNotEmpty ?? false)) {
-        _password.text = saved.password!;
+    try {
+      final saved = await context
+          .read<AuthState>()
+          .loadSavedCredentials()
+          .timeout(const Duration(seconds: 5));
+      if (!mounted) return;
+      if (saved != null) {
+        _account.text = saved.account.isNotEmpty ? saved.account : 'empresa-demo';
+        _email.text = saved.email;
+        _rememberPassword = saved.rememberPassword;
+        if (saved.rememberPassword && (saved.password?.isNotEmpty ?? false)) {
+          _password.text = saved.password!;
+        }
+      } else {
+        _account.text = 'empresa-demo';
       }
-    } else {
-      _account.text = 'empresa-demo';
+    } catch (_) {
+      if (mounted) _account.text = 'empresa-demo';
+    } finally {
+      if (mounted) setState(() => _loadingCreds = false);
     }
-    setState(() => _loadingCreds = false);
   }
 
   @override
@@ -57,12 +67,16 @@ class _LoginScreenState extends State<LoginScreen> {
       _error = null;
     });
     try {
-      await context.read<AuthState>().login(
+      final auth = context.read<AuthState>();
+      auth.clearSessionEndedMessage();
+      await auth.login(
             account: _account.text,
             email: _email.text,
             password: _password.text,
             rememberPassword: _rememberPassword,
           );
+      // Programa recordatorios del turno (online → caché offline)
+      await ReminderScheduler.instance.syncFromApi(auth);
     } on ApiException catch (e) {
       setState(() => _error = e.message);
     } catch (e) {
@@ -74,6 +88,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final auth = context.watch<AuthState>();
+    final endedMsg = auth.sessionEndedMessage;
     return Scaffold(
       body: SafeArea(
         child: Center(
@@ -104,6 +120,35 @@ class _LoginScreenState extends State<LoginScreen> {
                               color: Colors.white70,
                             ),
                       ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'API ${ApiConfig.baseUrl}',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontSize: 11, color: Colors.white38),
+                      ),
+                      if (endedMsg != null && endedMsg.isNotEmpty) ...[
+                        const SizedBox(height: 20),
+                        Material(
+                          color: const Color(0x33FF9800),
+                          borderRadius: BorderRadius.circular(12),
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Icon(Icons.lock_outline, color: Colors.orangeAccent),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    endedMsg,
+                                    style: const TextStyle(color: Colors.orangeAccent),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 32),
                       TextField(
                         controller: _account,

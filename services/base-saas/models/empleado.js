@@ -209,8 +209,9 @@ const empleadoSchema = new mongoose.Schema(
       clabe: { type: String, trim: true, default: '' }
     },
     /**
-     * Plantilla facial 1:1 (FaceNet 128-d). Solo RRHH enrolla;
-     * la app móvil verifica liveness + match.
+     * Plantilla facial 1:1 (FaceNet 128-d).
+     * RRHH enrolla en ficha; si autoEnrolamiento=true la app puede autoenrolar
+     * y, con autoMejoraPlantilla, refinar la plantilla tras matches de alta calidad.
      */
     biometriaFacial: {
       enrolled: { type: Boolean, default: false },
@@ -219,7 +220,15 @@ const empleadoSchema = new mongoose.Schema(
       modelVersion: { type: String, trim: true, default: '' },
       embedding: { type: [Number], default: undefined },
       distanceThreshold: { type: Number, default: 0.62 },
-      detectionScore: { type: Number, default: 0 }
+      detectionScore: { type: Number, default: 0 },
+      /** Permite que el empleado se enrolé desde la app (liveness + calidad). */
+      autoEnrolamiento: { type: Boolean, default: false },
+      /** Tras un match bueno, mezcla el descriptor nuevo para mejorar tasa futura. */
+      autoMejoraPlantilla: { type: Boolean, default: true },
+      /** Muestras acumuladas en el embedding (promedio / blend). */
+      samplesCount: { type: Number, default: 0, min: 0 },
+      lastAutoUpdateAt: { type: Date, default: null },
+      autoEnrolCount: { type: Number, default: 0, min: 0 }
     }
   },
   { timestamps: true, collection: COLLECTION_EMPLEADOS }

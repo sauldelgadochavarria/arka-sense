@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -21,7 +22,10 @@ class SavedCredentials {
 
 class AuthState extends ChangeNotifier {
   AuthState({FlutterSecureStorage? storage, ApiClient? client})
-      : _storage = storage ?? const FlutterSecureStorage(),
+      : _storage = storage ??
+            const FlutterSecureStorage(
+              aOptions: AndroidOptions(encryptedSharedPreferences: true),
+            ),
         _client = client ?? ApiClient();
 
   final FlutterSecureStorage _storage;
@@ -33,54 +37,113 @@ class AuthState extends ChangeNotifier {
   static const _kEmail = 'aska_remember_email';
   static const _kPassword = 'aska_remember_password';
   static const _kRememberPassword = 'aska_remember_password_flag';
+  static const _storageTimeout = Duration(seconds: 4);
 
   bool loading = true;
   String? token;
   Map<String, dynamic>? session;
+  String? bootstrapError;
+  String? sessionEndedMessage;
 
   bool get isAuthenticated => token != null && token!.isNotEmpty;
 
   ApiClient get api {
     _client.token = token;
+    _client.onAuthFailure = _handleAuthFailure;
     return _client;
+  }
+
+  Future<void> _handleAuthFailure(ApiException error) async {
+    if (!isAuthenticated) return;
+    sessionEndedMessage = error.message.isNotEmpty
+        ? error.message
+        : 'Tu acceso fue revocado. Contacta a RRHH.';
+    // No esperar cancelación de notificaciones: debe salir de inmediato.
+    await logout(keepEndedMessage: true);
+  }
+
+  Future<String?> _readSafe(String key) async {
+    try {
+      return await _storage.read(key: key).timeout(_storageTimeout);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _writeSafe(String key, String? value) async {
+    try {
+      if (value == null) {
+        await _storage.delete(key: key).timeout(_storageTimeout);
+      } else {
+        await _storage.write(key: key, value: value).timeout(_storageTimeout);
+      }
+    } catch (_) {
+      /* no bloquear UI */
+    }
   }
 
   Future<void> bootstrap() async {
     loading = true;
+    bootstrapError = null;
     notifyListeners();
-    token = await _storage.read(key: _kToken);
-    final raw = await _storage.read(key: _kSession);
-    if (raw != null) {
-      try {
-        session = jsonDecode(raw) as Map<String, dynamic>;
-      } catch (_) {
-        session = null;
+    try {
+      token = await _readSafe(_kToken);
+      final raw = await _readSafe(_kSession);
+      if (raw != null) {
+        try {
+          session = jsonDecode(raw) as Map<String, dynamic>;
+        } catch (_) {
+          session = null;
+        }
       }
-    }
-    _client.token = token;
-    if (token != null) {
-      try {
-        await api.get('/me');
-      } catch (_) {
-        await logout();
+      _client.token = token;
+      _client.onAuthFailure = _handleAuthFailure;
+      if (token != null && token!.isNotEmpty) {
+        try {
+          await api.get('/me');
+        } on ApiException catch (e) {
+          if (e.isSessionRevoked) {
+            sessionEndedMessage = e.message;
+          } else {
+            bootstrapError = e.message;
+          }
+          token = null;
+          session = null;
+          _client.token = null;
+          await _writeSafe(_kToken, null);
+          await _writeSafe(_kSession, null);
+        } catch (e) {
+          // API inalcanzable → ir a login, no spinner eterno
+          bootstrapError = e.toString();
+          token = null;
+          session = null;
+          _client.token = null;
+          await _writeSafe(_kToken, null);
+          await _writeSafe(_kSession, null);
+        }
       }
+    } catch (e) {
+      bootstrapError = e.toString();
+      token = null;
+      session = null;
+    } finally {
+      loading = false;
+      notifyListeners();
     }
-    loading = false;
-    notifyListeners();
   }
 
   /// Credenciales para precargar el formulario (tras logout o primer uso).
   Future<SavedCredentials?> loadSavedCredentials() async {
-    final account = await _storage.read(key: _kAccount);
-    final email = await _storage.read(key: _kEmail);
+    final account = await _readSafe(_kAccount);
+    final email = await _readSafe(_kEmail);
     if ((account == null || account.isEmpty) && (email == null || email.isEmpty)) {
       return null;
     }
-    final rememberFlag = await _storage.read(key: _kRememberPassword);
+    final rememberFlag = await _readSafe(_kRememberPassword);
     final rememberPassword = rememberFlag == '1';
     String? password;
     if (rememberPassword) {
-      password = await _storage.read(key: _kPassword);
+      password = await _readSafe(_kPassword);
     }
     return SavedCredentials(
       account: account ?? '',
@@ -96,13 +159,13 @@ class AuthState extends ChangeNotifier {
     required String password,
     required bool rememberPassword,
   }) async {
-    await _storage.write(key: _kAccount, value: account.trim());
-    await _storage.write(key: _kEmail, value: email.trim());
-    await _storage.write(key: _kRememberPassword, value: rememberPassword ? '1' : '0');
+    await _writeSafe(_kAccount, account.trim());
+    await _writeSafe(_kEmail, email.trim());
+    await _writeSafe(_kRememberPassword, rememberPassword ? '1' : '0');
     if (rememberPassword) {
-      await _storage.write(key: _kPassword, value: password);
+      await _writeSafe(_kPassword, password);
     } else {
-      await _storage.delete(key: _kPassword);
+      await _writeSafe(_kPassword, null);
     }
   }
 
@@ -123,8 +186,8 @@ class AuthState extends ChangeNotifier {
       'empleado': data['empleado'],
       'tenant': data['tenant'],
     };
-    await _storage.write(key: _kToken, value: token);
-    await _storage.write(key: _kSession, value: jsonEncode(session));
+    await _writeSafe(_kToken, token);
+    await _writeSafe(_kSession, jsonEncode(session));
     await _persistLoginHints(
       account: account,
       email: email,
@@ -132,25 +195,37 @@ class AuthState extends ChangeNotifier {
       rememberPassword: rememberPassword,
     );
     _client.token = token;
+    _client.onAuthFailure = _handleAuthFailure;
+    bootstrapError = null;
+    sessionEndedMessage = null;
     notifyListeners();
   }
 
   /// Cierra sesión JWT; conserva cuenta/email (y contraseña si estaba marcada).
-  Future<void> logout() async {
+  Future<void> logout({bool keepEndedMessage = false}) async {
     token = null;
     session = null;
     _client.token = null;
-    await _storage.delete(key: _kToken);
-    await _storage.delete(key: _kSession);
+    _client.onAuthFailure = null;
+    if (!keepEndedMessage) sessionEndedMessage = null;
+    // Notificar UI de inmediato; el storage puede ir después.
+    notifyListeners();
+    await _writeSafe(_kToken, null);
+    await _writeSafe(_kSession, null);
+  }
+
+  void clearSessionEndedMessage() {
+    if (sessionEndedMessage == null) return;
+    sessionEndedMessage = null;
     notifyListeners();
   }
 
   /// Olvida también las credenciales guardadas (útil desde ajustes futuros).
   Future<void> clearSavedCredentials() async {
-    await _storage.delete(key: _kAccount);
-    await _storage.delete(key: _kEmail);
-    await _storage.delete(key: _kPassword);
-    await _storage.delete(key: _kRememberPassword);
+    await _writeSafe(_kAccount, null);
+    await _writeSafe(_kEmail, null);
+    await _writeSafe(_kPassword, null);
+    await _writeSafe(_kRememberPassword, null);
   }
 
   String get displayName {
@@ -169,5 +244,15 @@ class AuthState extends ChangeNotifier {
   String get tenantLabel {
     final t = session?['tenant'] as Map<String, dynamic>?;
     return (t?['displayName'] as String?) ?? (t?['slug'] as String?) ?? '';
+  }
+
+  String get tenantSlug {
+    final t = session?['tenant'] as Map<String, dynamic>?;
+    return (t?['slug'] as String?) ?? '';
+  }
+
+  String get userEmail {
+    final user = session?['user'] as Map<String, dynamic>?;
+    return (user?['email'] as String?) ?? '';
   }
 }

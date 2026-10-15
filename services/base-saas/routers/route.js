@@ -288,6 +288,10 @@ router.post(
   uploadBiometriaMem.single('rostro'),
   biometriaFacialController.enrollAction
 );
+router.post(
+  '/personal-empleados/:id/biometria-facial/config',
+  biometriaFacialController.configAction
+);
 router.post('/personal-empleados/:id/biometria-facial/eliminar', biometriaFacialController.clearAction);
 
 

@@ -27,7 +27,18 @@ class ArkaSenseApp extends StatelessWidget {
         ),
       ),
       home: auth.loading
-          ? const Scaffold(body: Center(child: CircularProgressIndicator()))
+          ? const Scaffold(
+              body: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(),
+                    SizedBox(height: 16),
+                    Text('Conectando…', style: TextStyle(color: Colors.white54)),
+                  ],
+                ),
+              ),
+            )
           : (auth.isAuthenticated ? const HomeScreen() : const LoginScreen()),
     );
   }

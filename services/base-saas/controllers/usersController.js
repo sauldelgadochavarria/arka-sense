@@ -4,6 +4,7 @@ const getRoleModel = require('../models/role');
 const getEmpleadoModel = require('../models/empleado');
 const { findOneByTenant, findOneDocByTenant } = require('../libs/tenantScope');
 const { trimString, parseOptionalObjectId } = require('../libs/formHelpers');
+const { revokeMobileAccessForUser } = require('../services/mobileAccessService');
 
 async function loadUserCatalogs(tenantId) {
   const Role = await getRoleModel();
@@ -110,6 +111,7 @@ async function updateUser(req, res) {
     user.roles = roleId ? [roleId] : [];
     user.empleadoId = empleadoId;
 
+    const wasActive = user.activo !== false;
     if (req.body.activo === 'on' || req.body.activo === 'true') {
       user.activo = true;
     } else if (String(user._id) !== String(req.session.userid)) {
@@ -124,10 +126,14 @@ async function updateUser(req, res) {
       user.password = await bcrypt.hash(newPassword, 10);
       if (String(user._id) !== String(req.session.userid)) {
         user.activeSessionToken = '';
+        user.mobileTokenVersion = Number(user.mobileTokenVersion || 0) + 1;
       }
     }
 
     await user.save();
+    if (wasActive && user.activo === false) {
+      await revokeMobileAccessForUser(user._id);
+    }
     req.flash('success', 'Usuario actualizado');
     res.redirect('/config-users');
   } catch (err) {
@@ -151,10 +157,13 @@ async function toggleUser(req, res) {
   }
 
   user.activo = !user.activo;
-  if (!user.activo) user.activeSessionToken = '';
+  if (!user.activo) {
+    user.activeSessionToken = '';
+    user.mobileTokenVersion = Number(user.mobileTokenVersion || 0) + 1;
+  }
   await user.save();
 
-  req.flash('success', user.activo ? 'Usuario activado' : 'Usuario desactivado');
+  req.flash('success', user.activo ? 'Usuario activado' : 'Usuario desactivado (acceso app revocado)');
   res.redirect('/config-users');
 }
 

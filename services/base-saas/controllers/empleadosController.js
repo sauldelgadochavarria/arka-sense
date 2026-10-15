@@ -31,6 +31,7 @@ const {
 } = require('../config/empleadoCatalogos');
 const { resolverBaseImss } = require('../libs/sdiHelpers');
 const { getEnumItems, ensureSystemEnums } = require('../services/nomina/systemEnumService');
+const { revokeMobileAccessForEmpleado } = require('../services/mobileAccessService');
 
 async function loadUmaVigente(tenantId) {
   try {
@@ -608,6 +609,10 @@ async function updateEmpleado(req, res) {
       registradoPor: req.session.username || req.session.userName || ''
     });
 
+    if (antes.estatus !== 'baja' && empleado.estatus === 'baja') {
+      await revokeMobileAccessForEmpleado(empleado._id, { tenantId: req.session.tenantId });
+    }
+
     if (issues.length) {
       req.flash('success', 'Empleado actualizado');
       req.flash(
@@ -638,6 +643,7 @@ async function bajaEmpleado(req, res) {
     empleado.fechaBaja = new Date();
     empleado.motivoBaja = String(req.body.motivoBaja || '').trim() || 'Baja registrada';
     await empleado.save();
+    await revokeMobileAccessForEmpleado(empleado._id, { tenantId: req.session.tenantId });
     if (empresa) {
       await registrarCambioAutomatico(req.session.tenantId, empresa._id, antes, empleado.toObject(), {
         observaciones: empleado.motivoBaja,
@@ -645,7 +651,7 @@ async function bajaEmpleado(req, res) {
       });
     }
 
-    req.flash('success', 'Empleado dado de baja');
+    req.flash('success', 'Empleado dado de baja (acceso app revocado)');
     res.redirect('/personal-empleados?estatus=baja');
   } catch (err) {
     console.error('[empleados]', err);

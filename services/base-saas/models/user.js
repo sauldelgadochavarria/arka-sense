@@ -19,7 +19,9 @@ const userSchema = new mongoose.Schema(
     tenantId: { type: String, trim: true, default: '' },
     empleadoId: { type: mongoose.Schema.Types.ObjectId, ref: 'Empleado', default: null },
     activo: { type: Boolean, default: true },
-    activeSessionToken: { type: String, default: '' }
+    activeSessionToken: { type: String, default: '' },
+    /** Incrementar para invalidar JWT de la app móvil (baja / desactivar). */
+    mobileTokenVersion: { type: Number, default: 0 }
   },
   { timestamps: true, collection: COLLECTION_USERS }
 );

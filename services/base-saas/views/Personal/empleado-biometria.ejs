@@ -19,10 +19,18 @@
     <dd><% if (bio.enrolled) { %><strong class="ok">Registrada</strong><% } else { %><span class="muted">Pendiente</span><% } %></dd>
     <dt>Fecha</dt>
     <dd><%= bio.enrolledAt ? new Date(bio.enrolledAt).toLocaleString('es-MX') : '—' %></dd>
+    <dt>Enrolado por</dt>
+    <dd><%= bio.enrolledBy || '—' %></dd>
     <dt>Modelo</dt>
     <dd><%= bio.modelVersion || '—' %></dd>
-    <dt>Umbral distancia</dt>
-    <dd><%= bio.distanceThreshold != null ? bio.distanceThreshold : 0.62 %></dd>
+    <dt>Score detección</dt>
+    <dd><%= bio.detectionScore != null ? Number(bio.detectionScore).toFixed(2) : '—' %></dd>
+    <dt>Muestras en plantilla</dt>
+    <dd><%= bio.samplesCount || (bio.enrolled ? 1 : 0) %></dd>
+    <dt>Última auto-mejora</dt>
+    <dd><%= bio.lastAutoUpdateAt ? new Date(bio.lastAutoUpdateAt).toLocaleString('es-MX') : '—' %></dd>
+    <dt>Autoenrolamientos</dt>
+    <dd><%= bio.autoEnrolCount || 0 %></dd>
   </dl>
   <% if (bio.enrolled) { %>
   <form method="post" action="/personal-empleados/<%= empleado._id %>/biometria-facial/eliminar"
@@ -30,6 +38,40 @@
     <button type="submit" class="btn-danger">Eliminar plantilla</button>
   </form>
   <% } %>
+</section>
+
+<section class="card-block">
+  <h2>Autoenrolamiento y calidad</h2>
+  <p class="muted">
+    Con <strong>autoenrolamiento</strong>, la app móvil puede crear la plantilla la primera vez
+    (reto de vida + calidad mínima). Con <strong>mejora automática</strong>, tras un match bueno
+    se mezcla el descriptor nuevo para subir la tasa de validación sin rehacer el enroll en RRHH.
+  </p>
+  <form method="post" action="/personal-empleados/<%= empleado._id %>/biometria-facial/config" class="form-grid">
+    <div class="checkbox-group" style="grid-column:1/-1">
+      <label>
+        <input type="hidden" name="autoEnrolamiento" value="0" />
+        <input type="checkbox" name="autoEnrolamiento" value="1"
+          <%= bio.autoEnrolamiento ? 'checked' : '' %> />
+        Permitir autoenrolamiento desde la app
+      </label>
+    </div>
+    <div class="checkbox-group" style="grid-column:1/-1">
+      <label>
+        <input type="hidden" name="autoMejoraPlantilla" value="0" />
+        <input type="checkbox" name="autoMejoraPlantilla" value="1"
+          <%= bio.autoMejoraPlantilla !== false ? 'checked' : '' %> />
+        Mejorar plantilla automáticamente tras matches de alta calidad
+      </label>
+    </div>
+    <label>Umbral distancia (match)
+      <input type="number" name="distanceThreshold" min="0.45" max="0.85" step="0.01"
+        value="<%= bio.distanceThreshold != null ? bio.distanceThreshold : 0.62 %>" />
+    </label>
+    <div style="align-self:end">
+      <button type="submit" class="btn btn-primary">Guardar configuración</button>
+    </div>
+  </form>
 </section>
 
 <section class="card-block">

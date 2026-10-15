@@ -22,13 +22,20 @@ const {
 const { TIPOS_MARCACION, ESTATUS_DIARIO } = require('../config/asistencia');
 const { validatePunchLocation } = require('../services/geofence/geofenceService');
 const { registrarIntento } = require('../services/attendanceAttemptService');
+const {
+  buildHorarioRecordatorios,
+  programacionDelDia
+} = require('../services/horarioRecordatorioService');
+const { resolveTurnoVigente } = require('../services/turnoResolverService');
 
 const router = express.Router();
 
 const TIPOS_OK = new Set(TIPOS_MARCACION.map((t) => t.value));
 
-function jsonError(res, status, error) {
-  return res.status(status).json({ ok: false, error });
+function jsonError(res, status, error, code) {
+  const body = { ok: false, error };
+  if (code) body.code = code;
+  return res.status(status).json(body);
 }
 
 function normalizeEmail(v) {
@@ -111,7 +118,7 @@ router.post('/auth/login', async (req, res) => {
       estatus: 'activo'
     }).lean();
     if (!empleado) {
-      return jsonError(res, 403, 'Empleado no encontrado o inactivo');
+      return jsonError(res, 403, 'Empleado no encontrado o inactivo', 'EMPLEADO_BAJA');
     }
 
     const Role = await getRoleModel();
@@ -126,7 +133,8 @@ router.post('/auth/login', async (req, res) => {
       tenantSlug: tenant.slug,
       empleadoId: String(empleado._id),
       email: user.email,
-      name
+      name,
+      mtv: Number(user.mobileTokenVersion || 0)
     });
 
     return res.json({
@@ -188,6 +196,14 @@ router.get('/asistencia/hoy', requireMobileAuth, async (req, res) => {
     const ahora = new Date();
     const fecha = startOfDay(ahora);
     const AttendanceRecord = await getAttendanceRecordModel();
+    const Empleado = await getEmpleadoModel();
+    const empleado = await Empleado.findOne({
+      _id: req.mobileAuth.empleadoId,
+      tenantId: req.mobileAuth.tenantId
+    })
+      .select('turnoId firstName lastName numEmpleado')
+      .lean();
+
     const marcaciones = await AttendanceRecord.find({
       tenantId: req.mobileAuth.tenantId,
       empleadoId: req.mobileAuth.empleadoId,
@@ -200,6 +216,32 @@ router.get('/asistencia/hoy', requireMobileAuth, async (req, res) => {
     const tiposHoy = marcaciones.map((m) => m.tipoMarcacion);
     const sugerido = sugerirTipoMarcacion(tiposHoy);
 
+    let horarioHoy = null;
+    if (empleado) {
+      const resolved = await resolveTurnoVigente(req.mobileAuth.tenantId, empleado, fecha);
+      const turno = resolved.turno;
+      const esDescanso = Boolean(resolved.esDescansoForzado) || !turno;
+      if (!esDescanso && turno) {
+        const prog = programacionDelDia(fecha, turno);
+        horarioHoy = {
+          esDescanso: false,
+          origen: resolved.origen,
+          turno: {
+            id: String(turno._id),
+            nombre: turno.nombre,
+            horaEntrada: turno.horaEntrada,
+            horaSalida: turno.horaSalida
+          },
+          entradaProgramada: prog.entradaProgramada
+            ? prog.entradaProgramada.toISOString()
+            : null,
+          salidaProgramada: prog.salidaProgramada ? prog.salidaProgramada.toISOString() : null
+        };
+      } else {
+        horarioHoy = { esDescanso: true, origen: resolved.origen || 'ninguno', turno: null };
+      }
+    }
+
     return res.json({
       ok: true,
       fecha: fecha.toISOString().slice(0, 10),
@@ -207,6 +249,7 @@ router.get('/asistencia/hoy', requireMobileAuth, async (req, res) => {
       sugerido,
       jornadaCompleta: sugerido == null,
       tiposMarcacion: TIPOS_MARCACION,
+      horario: horarioHoy,
       marcaciones: marcaciones.map((m) => ({
         id: String(m._id),
         tipoMarcacion: m.tipoMarcacion,
@@ -218,6 +261,27 @@ router.get('/asistencia/hoy', requireMobileAuth, async (req, res) => {
   } catch (err) {
     console.error('[api/v1/asistencia/hoy]', err);
     return jsonError(res, 500, 'Error al consultar asistencia del día');
+  }
+});
+
+/**
+ * GET /api/v1/asistencia/horario?dias=7
+ * Horario asignado + recordatorios de entrada/salida para programar en el dispositivo
+ * (offline local notifications) y refrescar cuando hay red.
+ */
+router.get('/asistencia/horario', requireMobileAuth, async (req, res) => {
+  try {
+    const dias = Number(req.query.dias) || undefined;
+    const payload = await buildHorarioRecordatorios({
+      tenantId: req.mobileAuth.tenantId,
+      empleadoId: req.mobileAuth.empleadoId,
+      dias
+    });
+    return res.json(payload);
+  } catch (err) {
+    console.error('[api/v1/asistencia/horario]', err);
+    const status = err.status || 500;
+    return jsonError(res, status, err.message || 'Error al consultar horario');
   }
 });
 

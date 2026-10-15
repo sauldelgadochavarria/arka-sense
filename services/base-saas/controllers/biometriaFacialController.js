@@ -2,11 +2,29 @@
 
 const getEmpleadoModel = require('../models/empleado');
 const { findOneByTenant } = require('../libs/tenantScope');
+const { parseCheckbox } = require('../libs/formHelpers');
 const {
   enrollFromImage,
-  clearEnrollment
+  clearEnrollment,
+  updateBiometriaConfig
 } = require('../services/biometrics/biometricsService');
 const { getStatus, ensureReady } = require('../services/biometrics/faceApiService');
+
+function mapBioView(bio = {}) {
+  return {
+    enrolled: Boolean(bio.enrolled && bio.embedding?.length),
+    enrolledAt: bio.enrolledAt,
+    enrolledBy: bio.enrolledBy || '',
+    modelVersion: bio.modelVersion,
+    detectionScore: bio.detectionScore,
+    distanceThreshold: bio.distanceThreshold,
+    autoEnrolamiento: Boolean(bio.autoEnrolamiento),
+    autoMejoraPlantilla: bio.autoMejoraPlantilla !== false,
+    samplesCount: Number(bio.samplesCount) || 0,
+    autoEnrolCount: Number(bio.autoEnrolCount) || 0,
+    lastAutoUpdateAt: bio.lastAutoUpdateAt || null
+  };
+}
 
 async function showBiometria(req, res) {
   try {
@@ -28,19 +46,46 @@ async function showBiometria(req, res) {
     res.render('Personal/empleado-biometria', {
       title: `Biometría · ${empleado.firstName} ${empleado.lastName}`,
       empleado,
-      bio: {
-        enrolled: Boolean(bio.enrolled && bio.embedding?.length),
-        enrolledAt: bio.enrolledAt,
-        modelVersion: bio.modelVersion,
-        detectionScore: bio.detectionScore,
-        distanceThreshold: bio.distanceThreshold
-      },
+      bio: mapBioView(bio),
       engine
     });
   } catch (err) {
     console.error('[biometriaFacial.show]', err);
     req.flash('error', err.message || 'Error al cargar biometría');
     res.redirect(`/personal-empleados/${req.params.id}`);
+  }
+}
+
+async function configAction(req, res) {
+  try {
+    const Empleado = await getEmpleadoModel();
+    const empleado = await findOneByTenant(Empleado, req.session.tenantId, req.params.id);
+    if (!empleado) {
+      req.flash('error', 'Empleado no encontrado');
+      return res.redirect('/personal-empleados');
+    }
+    const checkOn = (name) => {
+      const v = req.body[name];
+      if (Array.isArray(v)) return v.includes('1') || v.includes('on') || v.includes(true);
+      return parseCheckbox(req.body, name);
+    };
+    const result = await updateBiometriaConfig({
+      tenantId: String(empleado.tenantId),
+      empleadoId: String(empleado._id),
+      autoEnrolamiento: checkOn('autoEnrolamiento'),
+      autoMejoraPlantilla: checkOn('autoMejoraPlantilla'),
+      distanceThreshold: req.body.distanceThreshold
+    });
+    if (!result.success) {
+      req.flash('error', result.message || 'No se pudo guardar');
+    } else {
+      req.flash('success', 'Configuración biométrica actualizada.');
+    }
+    res.redirect(`/personal-empleados/${empleado._id}/biometria-facial`);
+  } catch (err) {
+    console.error('[biometriaFacial.config]', err);
+    req.flash('error', err.message || 'Error al guardar configuración');
+    res.redirect(`/personal-empleados/${req.params.id}/biometria-facial`);
   }
 }
 
@@ -97,5 +142,6 @@ async function clearAction(req, res) {
 module.exports = {
   showBiometria,
   enrollAction,
-  clearAction
+  clearAction,
+  configAction
 };

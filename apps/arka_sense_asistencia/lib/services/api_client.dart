@@ -1,22 +1,44 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
 import '../config/api_config.dart';
 
 class ApiException implements Exception {
-  ApiException(this.message, {this.statusCode});
+  ApiException(this.message, {this.statusCode, this.reasonCode});
   final String message;
   final int? statusCode;
+  final String? reasonCode;
+
+  bool get isSessionRevoked {
+    // Cualquier 401 en API autenticada = sesión inválida / revocada.
+    if (statusCode == 401) return true;
+    if (statusCode != 403) return false;
+    const codes = {
+      'SESSION_REVOKED',
+      'EMPLEADO_BAJA',
+      'USER_INACTIVE',
+      'TOKEN_INVALID',
+      'TOKEN_INCOMPLETE',
+      'TENANT_MISMATCH',
+    };
+    return reasonCode != null && codes.contains(reasonCode);
+  }
 
   @override
   String toString() => message;
 }
 
+typedef AuthFailureHandler = Future<void> Function(ApiException error);
+
 class ApiClient {
-  ApiClient({this.token});
+  ApiClient({this.token, this.timeout = const Duration(seconds: 12)});
 
   String? token;
+  final Duration timeout;
+  AuthFailureHandler? onAuthFailure;
 
   Map<String, String> get _headers => {
         'Content-Type': 'application/json',
@@ -24,21 +46,46 @@ class ApiClient {
         if (token != null && token!.isNotEmpty) 'Authorization': 'Bearer $token',
       };
 
+  Future<T> _withTimeout<T>(Future<T> future) => future.timeout(
+        timeout,
+        onTimeout: () => throw ApiException(
+          'Tiempo de espera agotado al contactar ${ApiConfig.baseUrl}. '
+          'Revisa Wi‑Fi y que el SaaS esté en esa IP:4003.',
+        ),
+      );
+
   Future<Map<String, dynamic>> post(String path, Map<String, dynamic> body) async {
-    final res = await http.post(
-      Uri.parse('${ApiConfig.apiBase}$path'),
-      headers: _headers,
-      body: jsonEncode(body),
-    );
-    return _decode(res);
+    try {
+      final res = await _withTimeout(http.post(
+        Uri.parse('${ApiConfig.apiBase}$path'),
+        headers: _headers,
+        body: jsonEncode(body),
+      ));
+      return await _decode(res);
+    } on SocketException catch (e) {
+      throw ApiException(
+        'Sin conexión a ${ApiConfig.baseUrl} (${e.message}). '
+        'En el teléfono usa la IP LAN del PC, no 127.0.0.1.',
+      );
+    } on TimeoutException {
+      throw ApiException('Tiempo de espera agotado (${ApiConfig.baseUrl}).');
+    }
   }
 
   Future<Map<String, dynamic>> get(String path) async {
-    final res = await http.get(
-      Uri.parse('${ApiConfig.apiBase}$path'),
-      headers: _headers,
-    );
-    return _decode(res);
+    try {
+      final res = await _withTimeout(http.get(
+        Uri.parse('${ApiConfig.apiBase}$path'),
+        headers: _headers,
+      ));
+      return await _decode(res);
+    } on SocketException catch (e) {
+      throw ApiException(
+        'Sin conexión a ${ApiConfig.baseUrl} (${e.message}).',
+      );
+    } on TimeoutException {
+      throw ApiException('Tiempo de espera agotado (${ApiConfig.baseUrl}).');
+    }
   }
 
   /// Multipart (biometría): no fija Content-Type JSON.
@@ -47,22 +94,28 @@ class ApiClient {
     required Map<String, String> fields,
     required Map<String, List<int>> files,
   }) async {
-    final uri = Uri.parse('${ApiConfig.apiBase}$path');
-    final req = http.MultipartRequest('POST', uri);
-    req.headers['Accept'] = 'application/json';
-    if (token != null && token!.isNotEmpty) {
-      req.headers['Authorization'] = 'Bearer $token';
+    try {
+      final uri = Uri.parse('${ApiConfig.apiBase}$path');
+      final req = http.MultipartRequest('POST', uri);
+      req.headers['Accept'] = 'application/json';
+      if (token != null && token!.isNotEmpty) {
+        req.headers['Authorization'] = 'Bearer $token';
+      }
+      req.fields.addAll(fields);
+      files.forEach((name, bytes) {
+        req.files.add(http.MultipartFile.fromBytes(name, bytes, filename: '$name.jpg'));
+      });
+      final streamed = await _withTimeout(req.send());
+      final res = await http.Response.fromStream(streamed);
+      return await _decode(res, acceptSuccessFlag: true);
+    } on SocketException catch (e) {
+      throw ApiException('Sin conexión a ${ApiConfig.baseUrl} (${e.message}).');
+    } on TimeoutException {
+      throw ApiException('Tiempo de espera agotado (${ApiConfig.baseUrl}).');
     }
-    req.fields.addAll(fields);
-    files.forEach((name, bytes) {
-      req.files.add(http.MultipartFile.fromBytes(name, bytes, filename: '$name.jpg'));
-    });
-    final streamed = await req.send();
-    final res = await http.Response.fromStream(streamed);
-    return _decode(res, acceptSuccessFlag: true);
   }
 
-  Map<String, dynamic> _decode(http.Response res, {bool acceptSuccessFlag = false}) {
+  Future<Map<String, dynamic>> _decode(http.Response res, {bool acceptSuccessFlag = false}) async {
     Map<String, dynamic> data = {};
     try {
       final decoded = jsonDecode(res.body);
@@ -74,12 +127,21 @@ class ApiClient {
         data['ok'] == false ||
         (acceptSuccessFlag && data['success'] == false);
     if (failed) {
-      throw ApiException(
+      final ex = ApiException(
         (data['error'] as String?) ??
             (data['message'] as String?) ??
             'Error HTTP ${res.statusCode}',
         statusCode: res.statusCode,
+        reasonCode: data['code'] as String?,
       );
+      if (ex.isSessionRevoked && onAuthFailure != null) {
+        try {
+          await onAuthFailure!(ex);
+        } catch (_) {
+          /* ignore */
+        }
+      }
+      throw ex;
     }
     return data;
   }

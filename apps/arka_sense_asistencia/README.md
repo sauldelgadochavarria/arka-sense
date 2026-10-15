@@ -24,6 +24,13 @@ Edita `lib/config/api_config.dart` (Windows/desktop: `http://127.0.0.1:4003`).
 2. GPS
 3. `POST /asistencia/marcar`
 
+## Recordatorios de checada (turno asignado)
+
+- **Online:** al login / al abrir o refrescar inicio, la app llama `GET /api/v1/asistencia/horario` y programa notificaciones locales de entrada/salida (minutos antes configurables en servidor).
+- **Offline:** si no hay red, reusa la última descarga en caché (`SharedPreferences`) y las alarmas ya programadas en el SO siguen disparando.
+- Resuelve turno con la misma lógica del SaaS: override → rotación → turno fijo del empleado.
+- Variables de entorno SaaS: `RECORDATORIO_MINUTOS_ANTES_ENTRADA` (15), `RECORDATORIO_MINUTOS_ANTES_SALIDA` (10), `RECORDATORIO_DIAS_ADELANTE` (7).
+
 ## API biométrica
 
 | Método | Ruta | Descripción |
