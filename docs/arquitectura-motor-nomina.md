@@ -412,6 +412,7 @@ Pendiente: mapping CFDI 4.0 completo (todas las percepciones/deducciones ordinar
 - [ ] Plantillas por industria
 - [ ] Timbrado CFDI payload completo + cancelación  
 - [x] Evidencia móvil: intentos bio/geo + detalle marcación (`docs/evidencia-checado-asistencia.md`)
+- [x] App ArkaSense Asistencia: home UX, recordatorios por turno, bandeja 2 meses, sync offline, revocación por baja (`docs/arka-sense-asistencia-app.md`)
 - [x] Sprint 1 jornada 2027: esquema en turno, valor hora semanal/46, HE pipeline única (ver `docs/esquema-jornada-valor-hora.md`)
 - [x] Sprint 2–3: semáforo 46h/12h, preflight cierre 422, hora servidor manual, disclaimer HE→bono (ver `docs/sprint-2-3-jornada-preflight.md`)
 - [ ] REJL fase 2 (export STPS, calendario 40 h, sellado/inmutabilidad fuerte)
