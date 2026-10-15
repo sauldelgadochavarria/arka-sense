@@ -1,0 +1,75 @@
+# Codemagic — monorepo PayPilot / ArkaSense
+# App Flutter: apps/arka_sense_asistencia
+#
+# En la UI: Application → Switch to YAML configuration → usar este archivo.
+# Variable opcional: API_BASE_URL (ej. http://192.168.1.11:4003)
+
+workflows:
+  arka-sense-asistencia-ios:
+    name: ArkaSense Asistencia (iOS)
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment:
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+      vars:
+        # Sobrescribe en Codemagic → Environment variables si cambia tu IP/LAN
+        API_BASE_URL: http://192.168.1.11:4003
+      # Descomenta cuando tengas code signing configurado en Codemagic:
+      # ios_signing:
+      #   distribution_type: ad_hoc # o app_store
+      #   bundle_identifier: com.arkasense.arkaSenseAsistencia
+    scripts:
+      - name: Get Flutter packages
+        script: |
+          cd apps/arka_sense_asistencia
+          flutter pub get
+      - name: Install CocoaPods
+        script: |
+          cd apps/arka_sense_asistencia/ios
+          pod install
+      - name: Flutter build iOS
+        script: |
+          cd apps/arka_sense_asistencia
+          # Sin firma Apple: compila para validar. Con signing en Codemagic usa:
+          # flutter build ipa --release --dart-define=API_BASE_URL="$API_BASE_URL"
+          flutter build ios --release --no-codesign \
+            --dart-define=API_BASE_URL="$API_BASE_URL"
+    artifacts:
+      - apps/arka_sense_asistencia/build/ios/iphoneos/*.app
+    publishing:
+      email:
+        recipients:
+          - saul_dc@hotmail.com
+        notify:
+          success: true
+          failure: true
+
+  arka-sense-asistencia-android:
+    name: ArkaSense Asistencia (Android)
+    instance_type: mac_mini_m2
+    max_build_duration: 45
+    environment:
+      flutter: stable
+      vars:
+        API_BASE_URL: http://192.168.1.11:4003
+    scripts:
+      - name: Get Flutter packages
+        working_directory: apps/arka_sense_asistencia
+        script: |
+          flutter pub get
+      - name: Flutter build APK
+        working_directory: apps/arka_sense_asistencia
+        script: |
+          flutter build apk --release \
+            --dart-define=API_BASE_URL=$API_BASE_URL
+    artifacts:
+      - apps/arka_sense_asistencia/build/app/outputs/flutter-apk/*.apk
+    publishing:
+      email:
+        recipients:
+          - saul_dc@hotmail.com
+        notify:
+          success: true
+          failure: true
