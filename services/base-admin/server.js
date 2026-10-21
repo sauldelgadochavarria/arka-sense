@@ -76,7 +76,7 @@ app.post('/admin/tenants', adminAccessControl, async (req, res) => {
   if (!slug) slug = crypto.randomUUID().replace(/-/g, '').slice(0, 10);
   const tenantId = crypto.randomUUID();
 
-  const fromForm = normalizeIncomingFeatureFlags(req.body.featureFlags || req.body);
+  const fromForm = parseFeatureFlagsFromForm(req.body);
 
   await Tenant.create({
     tenantId,

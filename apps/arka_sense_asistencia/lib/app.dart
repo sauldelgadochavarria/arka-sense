@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'screens/device_register_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'services/auth_state.dart';
@@ -39,7 +40,11 @@ class ArkaSenseApp extends StatelessWidget {
                 ),
               ),
             )
-          : (auth.isAuthenticated ? const HomeScreen() : const LoginScreen()),
+          : !auth.isAuthenticated
+              ? const LoginScreen()
+              : auth.needsDeviceRegistration
+                  ? const DeviceRegisterScreen()
+                  : const HomeScreen(),
     );
   }
 }

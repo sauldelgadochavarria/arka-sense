@@ -1,5 +1,9 @@
 <%- include('../Partials/layout-top', { title: 'Vacaciones', session }) %>
-<p><a href="/incidencias">← Incidencias</a></p>
+<p>
+  <a href="/incidencias">← Incidencias</a>
+  · <a href="/incidencias/vacaciones/solicitudes">Solicitudes (RRHH)</a>
+  · <a href="/incidencias/dias-inhabiles">Días inhábiles</a>
+</p>
 <h1>Saldos de vacaciones <%= anio %></h1>
 
 <form method="post" action="/incidencias/vacaciones/recalcular" class="toolbar inline-form">
@@ -9,7 +13,7 @@
 
 <table>
   <thead>
-    <tr><th>Empleado</th><th>Antigüedad</th><th>Corresponden</th><th>Tomados</th><th>Pendientes</th><th>Prima %</th></tr>
+    <tr><th>Empleado</th><th>Antigüedad</th><th>Corresponden</th><th>Tomados</th><th>Reservados</th><th>Disponibles</th><th>Prima %</th></tr>
   </thead>
   <tbody>
     <% filas.forEach(function(f) { %>
@@ -18,6 +22,7 @@
       <td><%= f.anios %> año(s)</td>
       <td><%= f.saldo.diasCorresponden %></td>
       <td><%= f.saldo.diasTomados %></td>
+      <td><%= f.saldo.diasCongelados || 0 %></td>
       <td><strong><%= f.saldo.diasPendientes %></strong></td>
       <td><%= f.saldo.primaVacacionalPct %>%</td>
     </tr>

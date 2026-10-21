@@ -2,19 +2,37 @@ const getIncidenciaModel = require('../models/incidencia');
 const getDailyAttendanceModel = require('../models/dailyAttendance');
 const getTurnoModel = require('../models/turno');
 const getTipoIncidenciaModel = require('../models/tipoIncidencia');
-const getVacacionSaldoModel = require('../models/vacacionSaldo');
+const getEmpleadoModel = require('../models/empleado');
 const { requireEmpresaForTenant } = require('../libs/tenantScope');
 const { ensureTiposIncidenciaForTenant } = require('../services/tiposIncidenciaService');
-const { recalcularSaldoEmpleado, calcularDiasSolicitud } = require('../services/vacacionesService');
+const {
+  calcularDiasSolicitud,
+  crearSolicitudVacaciones,
+  cancelarSolicitud,
+  resolverSolicitud,
+  listSolicitudesEmpleado,
+  listPendientesSupervisor,
+  obtenerSaldoDisponible
+} = require('../services/vacacionesService');
+const { contarDiasVacaciones } = require('../services/calendarioLaboralService');
 const { parseOptionalObjectId, trimString, parseDate, toDateInputValue } = require('../libs/formHelpers');
-const { startOfDay, endOfDay, formatTimeHHMM } = require('../libs/timeHelpers');
+const { startOfDay, endOfDay, formatTimeHHMM, DEFAULT_TZ } = require('../libs/timeHelpers');
 const { ESTATUS_INCIDENCIA } = require('../config/incidenciasCatalog');
 const { ESTATUS_DIARIO } = require('../config/asistencia');
 const { getAsignacionActiva } = require('../services/turnoResolverService');
 const getPlantillaRotacionModel = require('../models/plantillaRotacion');
+const { tenantHasFeature } = require('../libs/tenantFeatureFlags');
+const { buildEmpleadoCapabilities } = require('../services/portalCapabilitiesService');
+const VAC_STATUS_LABEL = {
+  PENDING: 'Pendiente',
+  APPROVED: 'Aprobada',
+  REJECTED: 'Rechazada',
+  CANCELLED: 'Cancelada'
+};
 
 async function portalHome(req, res) {
   const empleado = req.empleado;
+  const flags = res.locals.featureFlags || req.session.featureFlags || {};
   const Incidencia = await getIncidenciaModel();
   const pendientes = await Incidencia.countDocuments({
     tenantId: req.session.tenantId,
@@ -22,7 +40,22 @@ async function portalHome(req, res) {
     estatus: 'pendiente'
   });
 
-  res.render('Portal/index', { empleado, pendientes, session: req.session });
+  const capabilities = await buildEmpleadoCapabilities({
+    tenantId: req.session.tenantId,
+    empleado,
+    featureFlags: flags
+  });
+  res.locals.capabilities = capabilities;
+  req.session.capabilities = capabilities;
+
+  res.render('Portal/index', {
+    empleado,
+    pendientes,
+    vacPendientesEquipo: capabilities.pendientesAprobacionVacaciones,
+    capabilities,
+    featureFlags: flags,
+    session: req.session
+  });
 }
 
 async function portalAsistencia(req, res) {
@@ -224,20 +257,17 @@ async function portalCrearSolicitud(req, res) {
     const dias = calcularDiasSolicitud(fechaInicio, fechaFin);
 
     if (tipo.clave === 'VAC') {
-      const VacacionSaldo = await getVacacionSaldoModel();
-      const anio = new Date(fechaInicio).getFullYear();
-      let saldo = await VacacionSaldo.findOne({
+      // Flujo unificado: VacacionSolicitud + saldo congelado
+      await crearSolicitudVacaciones({
         tenantId: req.session.tenantId,
-        empleadoId: empleado._id,
-        anio
-      }).lean();
-      if (!saldo) {
-        saldo = await recalcularSaldoEmpleado(req.session.tenantId, empleado._id, anio);
-      }
-      if (saldo && dias > saldo.diasPendientes) {
-        req.flash('error', `Solo tienes ${saldo.diasPendientes} día(s) de vacaciones disponibles`);
-        return res.redirect('/portal/solicitudes/nueva');
-      }
+        empleado,
+        fechaInicio,
+        fechaFin,
+        motivo: trimString(req.body.motivo),
+        userId: req.session.userid || ''
+      });
+      req.flash('success', 'Solicitud de vacaciones enviada (saldo reservado).');
+      return res.redirect('/portal/vacaciones');
     }
 
     const Incidencia = await getIncidenciaModel();
@@ -266,30 +296,175 @@ async function portalCrearSolicitud(req, res) {
 }
 
 async function portalVacaciones(req, res) {
-  const empleado = req.empleado;
-  const anio = Number(req.query.anio) || new Date().getFullYear();
-  const VacacionSaldo = await getVacacionSaldoModel();
-
-  let saldo = await VacacionSaldo.findOne({
-    tenantId: req.session.tenantId,
-    empleadoId: empleado._id,
-    anio
-  }).lean();
-
-  if (!saldo) {
-    saldo = await recalcularSaldoEmpleado(req.session.tenantId, empleado._id, anio);
+  const flags = res.locals.featureFlags || req.session.featureFlags || {};
+  if (!tenantHasFeature(flags, 'vacaciones')) {
+    req.flash('error', 'El módulo de vacaciones no está activo para tu subsidiaria.');
+    return res.redirect('/portal');
   }
 
-  const Incidencia = await getIncidenciaModel();
-  const solicitudesVac = await Incidencia.find({
+  const empleado = req.empleado;
+  const anio = Number(req.query.anio) || new Date().getFullYear();
+  let saldo = await obtenerSaldoDisponible(req.session.tenantId, empleado._id, anio);
+  const solicitudesVac = await listSolicitudesEmpleado(req.session.tenantId, empleado._id);
+
+  res.render('Portal/vacaciones', {
+    empleado,
+    saldo,
+    anio,
+    solicitudesVac,
+    vacStatusLabel: VAC_STATUS_LABEL,
+    toDateInputValue,
+    session: req.session
+  });
+}
+
+async function portalSolicitarVacaciones(req, res) {
+  const flags = res.locals.featureFlags || req.session.featureFlags || {};
+  if (!tenantHasFeature(flags, 'vacaciones')) {
+    req.flash('error', 'Vacaciones no disponibles');
+    return res.redirect('/portal');
+  }
+  try {
+    const fechaInicio = parseDate(req.body.fechaInicio);
+    const fechaFin = parseDate(req.body.fechaFin) || fechaInicio;
+    await crearSolicitudVacaciones({
+      tenantId: req.session.tenantId,
+      empleado: req.empleado,
+      fechaInicio,
+      fechaFin,
+      motivo: trimString(req.body.motivo),
+      userId: req.session.userid || ''
+    });
+    req.flash('success', 'Solicitud de vacaciones enviada. El saldo queda reservado hasta la resolución.');
+    res.redirect('/portal/vacaciones');
+  } catch (err) {
+    console.error('[portal vacaciones]', err);
+    req.flash('error', err.message || 'No se pudo solicitar');
+    res.redirect('/portal/vacaciones');
+  }
+}
+
+async function portalCancelarVacacion(req, res) {
+  try {
+    await cancelarSolicitud({
+      tenantId: req.session.tenantId,
+      empleadoId: req.empleado._id,
+      solicitudId: req.params.id,
+      userId: req.session.userid || ''
+    });
+    req.flash('success', 'Solicitud cancelada');
+  } catch (err) {
+    req.flash('error', err.message || 'No se pudo cancelar');
+  }
+  res.redirect('/portal/vacaciones');
+}
+
+async function portalPreviewDiasVacacion(req, res) {
+  try {
+    const fechaInicio = parseDate(req.query.inicio || req.query.fechaInicio);
+    const fechaFin = parseDate(req.query.fin || req.query.fechaFin) || fechaInicio;
+    if (!fechaInicio) return res.json({ ok: false, error: 'Fechas requeridas' });
+    const emp = req.empleado;
+    const { dias, detalle } = await contarDiasVacaciones({
+      tenantId: req.session.tenantId,
+      empresaId: emp.empresaId || null,
+      subsidiariaId: emp.subsidiariaId || null,
+      fechaInicio,
+      fechaFin,
+      timeZone: DEFAULT_TZ
+    });
+    return res.json({ ok: true, dias, detalle });
+  } catch (err) {
+    return res.status(400).json({ ok: false, error: err.message });
+  }
+}
+
+async function portalAprobacionesVacaciones(req, res) {
+  const flags = res.locals.featureFlags || req.session.featureFlags || {};
+  if (!tenantHasFeature(flags, 'vacaciones')) {
+    req.flash('error', 'Vacaciones no disponibles');
+    return res.redirect('/portal');
+  }
+  const caps =
+    res.locals.capabilities ||
+    (await buildEmpleadoCapabilities({
+      tenantId: req.session.tenantId,
+      empleado: req.empleado,
+      featureFlags: flags
+    }));
+  if (!caps.esSupervisor) {
+    req.flash('error', 'No tienes subordinados asignados. RRHH debe marcar tu equipo con supervisor.');
+    return res.redirect('/portal');
+  }
+  const pendientes = await listPendientesSupervisor(req.session.tenantId, req.empleado._id);
+  const Empleado = await getEmpleadoModel();
+  const ids = pendientes.map((p) => p.empleadoId);
+  const emps = ids.length
+    ? await Empleado.find({ _id: { $in: ids } })
+        .select('firstName lastName numEmpleado')
+        .lean()
+    : [];
+  const empMap = new Map(emps.map((e) => [String(e._id), e]));
+
+  res.render('Portal/aprobaciones-vacaciones', {
+    empleado: req.empleado,
+    pendientes,
+    empMap,
+    vacStatusLabel: VAC_STATUS_LABEL,
+    session: req.session
+  });
+}
+
+async function portalResolverVacacion(req, res) {
+  try {
+    const status = String(req.body.status || '').toUpperCase();
+    await resolverSolicitud({
+      tenantId: req.session.tenantId,
+      solicitudId: req.params.id,
+      status,
+      userId: req.session.userid || '',
+      motivoRechazo: trimString(req.body.motivoRechazo),
+      actorEmpleadoId: req.empleado._id,
+      allowRrhh: false
+    });
+    req.flash('success', status === 'APPROVED' ? 'Vacaciones aprobadas' : 'Solicitud rechazada');
+  } catch (err) {
+    req.flash('error', err.message || 'No se pudo resolver');
+  }
+  res.redirect('/portal/aprobaciones-vacaciones');
+}
+
+async function portalRecibos(req, res) {
+  const flags = res.locals.featureFlags || req.session.featureFlags || {};
+  if (!tenantHasFeature(flags, 'recibos')) {
+    req.flash('error', 'La consulta de recibos no está activa para tu subsidiaria.');
+    return res.redirect('/portal');
+  }
+  const getNominaHistoricoReciboModel = require('../models/nominaHistoricoRecibo');
+  const Historico = await getNominaHistoricoReciboModel();
+  const rows = await Historico.find({
     tenantId: req.session.tenantId,
-    empleadoId: empleado._id,
-    codigo: 'VAC'
+    empleadoId: req.empleado._id
   })
-    .sort({ fechaInicio: -1 })
+    .sort({ anio: -1, mes: -1, createdAt: -1 })
+    .limit(36)
+    .select('anio mes periodo totalPercepciones totalDeducciones netoPagar origen fechaCierre')
     .lean();
 
-  res.render('Portal/vacaciones', { empleado, saldo, anio, solicitudesVac, session: req.session });
+  const recibos = rows.map((r) => ({
+    ...r,
+    periodoLabel:
+      r.periodo?.numeroPeriodo != null
+        ? `${r.anio}-${String(r.mes).padStart(2, '0')} · P${r.periodo.numeroPeriodo}`
+        : `${r.anio}-${String(r.mes).padStart(2, '0')}`,
+    neto: r.netoPagar
+  }));
+
+  res.render('Portal/recibos', {
+    empleado: req.empleado,
+    recibos,
+    session: req.session
+  });
 }
 
 module.exports = {
@@ -298,5 +473,11 @@ module.exports = {
   portalSolicitudes,
   portalNuevaSolicitud,
   portalCrearSolicitud,
-  portalVacaciones
+  portalVacaciones,
+  portalSolicitarVacaciones,
+  portalCancelarVacacion,
+  portalPreviewDiasVacacion,
+  portalAprobacionesVacaciones,
+  portalResolverVacacion,
+  portalRecibos
 };

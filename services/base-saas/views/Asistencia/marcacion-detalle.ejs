@@ -35,7 +35,10 @@
   <h2>Resumen</h2>
   <dl class="dl-grid">
     <dt>Hora registrada</dt>
-    <dd><%= formatTimeHHMM(marcacion.timestamp) %><% if (marcacion.origen === 'ajuste') { %> <span class="badge">ajuste</span><% } %></dd>
+    <dd>
+      <%= formatTimeHHMM(marcacion.timestamp) %><% if (marcacion.origen === 'ajuste') { %> <span class="badge">ajuste</span><% } %>
+      <span class="muted small"> (<%= typeof zonaHoraria !== 'undefined' ? zonaHoraria : 'America/Mexico_City' %>)</span>
+    </dd>
     <dt>Hora original</dt>
     <dd class="muted"><%= formatTimeHHMM(marcacion.timestampOriginal || marcacion.timestamp) %></dd>
     <dt>Estado</dt>
@@ -132,6 +135,21 @@
 <section class="card-block">
   <h2>Dispositivo</h2>
   <dl class="dl-grid">
+    <dt>UUID móvil</dt>
+    <dd>
+      <% if (dev.deviceUuid) { %>
+      <code class="small"><%= dev.deviceUuid %></code>
+      <% } else { %>
+      <span class="muted">— (marcación sin UUID; reinstala app reciente y vuelve a checar)</span>
+      <% } %>
+    </dd>
+    <dt>Teléfono</dt>
+    <dd>
+      <%= dev.telefono || (empleado && empleado.telefono) || '—' %>
+      <% if (!dev.telefono && empleado && empleado.telefono) { %>
+      <span class="muted small">(del expediente)</span>
+      <% } %>
+    </dd>
     <dt>Plataforma</dt><dd><%= dev.plataforma || '—' %></dd>
     <dt>Modelo</dt><dd><%= dev.modelo || '—' %></dd>
     <dt>App</dt><dd><%= dev.appVersion || '—' %></dd>

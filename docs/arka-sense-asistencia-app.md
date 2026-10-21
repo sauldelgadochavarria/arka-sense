@@ -20,6 +20,8 @@ App de checado para empleados (Android / iOS / desktop) contra PayPilot / ArkaSe
 | Historial con check sincronizado / pendiente | ✅ |
 | Cola offline de marcaciones | ✅ |
 | Revocación inmediata al dar de baja al empleado | ✅ |
+| Registro de dispositivo (SMS + UUID) configurable por subsidiaria | ✅ |
+| Marcación con `deviceUuid` + GPS (+ bio) | ✅ |
 | Recibos PDF/XML en app | ⏳ placeholder |
 | Avisos HR 1→N desde servidor / FCM | ⏳ local + placeholders |
 
@@ -168,7 +170,51 @@ Permisos Android: notificaciones + boot (reprogramación).
 
 ---
 
-## 6. Seguridad de sesión (baja de empleado)
+## 6. Registro de dispositivo (SMS + UUID)
+
+Estilo WhatsApp: vincular el teléfono del empleado a un **UUID estable** generado por la app (no IMEI).
+
+### Configuración (web)
+
+1. **Subsidiaria** → *Zona horaria* (`America/Mexico_City` por defecto)  
+   → horas en detalle de marcación y día laboral de checadas  
+2. **Subsidiaria** → checkbox *Exigir registro de dispositivo (SMS + UUID)*  
+   → `subsidiaria.seguridadMovil.exigirRegistroDispositivo`
+3. **Empleado** (excepción RRHH) → checkbox *Exento de registro de dispositivo*  
+   → `empleado.exentoRegistroDispositivo`
+
+Cada checada guarda en `dispositivo`: `deviceUuid`, `telefono` (del registro SMS o expediente), plataforma, modelo y versión de app.
+
+Regla efectiva:
+
+`exige = subsidiaria.ON && !empleado.exento`
+
+### Comportamiento
+
+| Subsidiaria | Empleado exento | Login | Marcación |
+|-------------|-----------------|-------|-----------|
+| OFF | — | Normal | `deviceUuid` + GPS (audita; no bloquea registro) |
+| ON | No | SMS si UUID no vinculado | Rechaza si UUID no registrado |
+| ON | Sí | Sin pantalla SMS | Checa sin exigir registro (igual envía UUID) |
+
+### API
+
+| Método | Ruta | Uso |
+|--------|------|-----|
+| POST | `/auth/login` (+ `deviceUuid`) | Devuelve `seguridadMovil` |
+| GET | `/me?deviceUuid=` | Estado de registro |
+| POST | `/auth/dispositivo/solicitar-otp` | Envía SMS (6 dígitos) |
+| POST | `/auth/dispositivo/verificar-otp` | Vincula UUID ↔ empleado |
+| POST | `/asistencia/marcar` | Body incluye `deviceUuid` |
+
+### SMS
+
+- Default `SMS_PROVIDER=console` → log en servidor; en respuesta OTP incluye `devCode` para QA.
+- Producción: `SMS_PROVIDER=twilio` + `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` / `TWILIO_FROM` (+ `npm i twilio`).
+
+---
+
+## 7. Seguridad de sesión (baja de empleado)
 
 Problema: el JWT móvil es de larga vida (~30d). Dar de baja al empleado bloqueaba login nuevo, pero **no** invalidaba la sesión ya abierta.
 
@@ -197,7 +243,7 @@ Archivos clave:
 
 ---
 
-## 7. API móvil (`/api/v1`)
+## 8. API móvil (`/api/v1`)
 
 Prefijo: `{API_BASE_URL}/api/v1`  
 Auth: `Authorization: Bearer <jwt>`
@@ -217,7 +263,7 @@ Login exige empleado `estatus: 'activo'` y usuario `activo: true` con `empleadoI
 
 ---
 
-## 8. Biometría (resumen)
+## 9. Biometría (resumen)
 
 Ver [biometria-facial.md](./biometria-facial.md).
 
@@ -227,7 +273,7 @@ Ver [biometria-facial.md](./biometria-facial.md).
 
 ---
 
-## 9. Build y despliegue de la app
+## 10. Build y despliegue de la app
 
 ```bash
 cd apps/arka_sense_asistencia
@@ -251,7 +297,7 @@ Tras cambios de middleware de revocación: **reiniciar / redeploy `base-saas`**.
 
 ---
 
-## 10. Roadmap corto (app)
+## 11. Roadmap corto (app)
 
 | Prioridad | Ítem |
 |-----------|------|
@@ -263,7 +309,7 @@ Tras cambios de middleware de revocación: **reiniciar / redeploy `base-saas`**.
 
 ---
 
-## 11. Mapa de archivos
+## 12. Mapa de archivos
 
 ### App Flutter
 

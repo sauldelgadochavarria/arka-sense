@@ -197,7 +197,7 @@ async function seedIncidenciasMenus(Menu, adminRoleId) {
   const items = [
     { menuPrincipal: 'Incidencias', rutaApp: '/incidencias', orden: 36, requiredFeatureKeys: ['incidencias'] },
     { menuPrincipal: 'Pendientes', rutaApp: '/incidencias/pendientes', orden: 37, requiredFeatureKeys: ['incidencias'] },
-    { menuPrincipal: 'Vacaciones', rutaApp: '/incidencias/vacaciones', orden: 38, requiredFeatureKeys: ['incidencias'] },
+    { menuPrincipal: 'Vacaciones', rutaApp: '/incidencias/vacaciones', orden: 38, requiredFeatureKeys: ['vacaciones'] },
     { menuPrincipal: 'Tipos de incidencia', rutaApp: '/incidencias/tipos', orden: 39, requiredFeatureKeys: ['incidencias'] },
     { menuPrincipal: 'Portal empleado', rutaApp: '/portal', orden: 40, requiredFeatureKeys: ['core'], activo: false }
   ];

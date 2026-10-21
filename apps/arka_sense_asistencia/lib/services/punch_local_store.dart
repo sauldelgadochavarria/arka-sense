@@ -119,15 +119,34 @@ class PunchLocalStore {
     await ensureLoaded();
     final out = <Map<String, dynamic>>[];
     for (final p in _pending) {
+      final body = p.pendingBody;
       out.add({
         'id': p.localId,
         'tipoMarcacion': p.tipoMarcacion,
         'timestamp': p.timestamp.toIso8601String(),
         'synced': false,
         'pending': true,
+        'metodo': 'movil',
+        'estado': 'pendiente_local',
         'ubicacion': (p.lat != null && p.lng != null)
-            ? {'lat': p.lat, 'lng': p.lng}
+            ? {
+                'lat': p.lat,
+                'lng': p.lng,
+                'accuracyMeters': body['accuracyMeters'],
+                'isMocked': body['isMocked'] == true,
+              }
             : null,
+        'dispositivo': {
+          'plataforma': body['plataforma']?.toString() ?? '',
+          'modelo': body['modelo']?.toString() ?? '',
+          'appVersion': body['appVersion']?.toString() ?? '',
+          'deviceUuid': body['deviceUuid']?.toString() ?? '',
+        },
+        'biometria': {
+          'ok': body['biometriaOk'] == true,
+          'score': body['biometriaScore'],
+          'challengeId': body['biometriaChallengeId']?.toString() ?? '',
+        },
       });
     }
     for (final m in _serverCache) {

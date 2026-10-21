@@ -29,7 +29,8 @@ const dailyAttendanceSchema = new mongoose.Schema(
         'incompleto',
         'descanso',
         'registro_parcial',
-        'fuera_de_rango'
+        'fuera_de_rango',
+        'vacaciones'
       ],
       default: 'falta'
     },

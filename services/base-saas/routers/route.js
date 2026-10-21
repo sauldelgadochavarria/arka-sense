@@ -45,7 +45,11 @@ const { getDashboardKpis } = require('../services/dashboardKpiService');
 const { tableroCumplimiento } = require('../services/gestionDocumentalService');
 const { getFlujoNominaActual, confirmarRevisionPeriodo, omitirDispersionPeriodo } = require('../services/flujoNominaDashboardService');
 const { parseOptionalObjectId } = require('../libs/formHelpers');
-const { tenantHasFeature, tenantHasAnyFeature } = require('../libs/tenantFeatureFlags');
+const {
+  tenantHasFeature,
+  tenantHasAnyFeature,
+  effectiveFeatureFlagsFromReq
+} = require('../libs/tenantFeatureFlags');
 const { requireEmpresaForTenant, sessionSubsidiariaId } = require('../libs/tenantScope');
 const { requirePortalEmpleado } = require('../middleware/requirePortalEmpleado');
 const { requireAdminAccess } = require('../middleware/requireAdminAccess');
@@ -73,12 +77,22 @@ router.get('/portal/solicitudes', requirePortalEmpleado, portalController.portal
 router.get('/portal/solicitudes/nueva', requirePortalEmpleado, portalController.portalNuevaSolicitud);
 router.post('/portal/solicitudes', requirePortalEmpleado, portalController.portalCrearSolicitud);
 router.get('/portal/vacaciones', requirePortalEmpleado, portalController.portalVacaciones);
+router.post('/portal/vacaciones/solicitar', requirePortalEmpleado, portalController.portalSolicitarVacaciones);
+router.post('/portal/vacaciones/:id/cancelar', requirePortalEmpleado, portalController.portalCancelarVacacion);
+router.get('/portal/vacaciones/preview-dias', requirePortalEmpleado, portalController.portalPreviewDiasVacacion);
+router.get('/portal/aprobaciones-vacaciones', requirePortalEmpleado, portalController.portalAprobacionesVacaciones);
+router.post(
+  '/portal/aprobaciones-vacaciones/:id/resolver',
+  requirePortalEmpleado,
+  portalController.portalResolverVacacion
+);
+router.get('/portal/recibos', requirePortalEmpleado, portalController.portalRecibos);
 
 router.use(requireAdminAccess);
 
 router.get(['/', '/dashboard', '/inicio', '/nomina/flujo'], async (req, res) => {
   const { empresa } = await requireEmpresaForTenant(req);
-  const featureFlags = req.tenant?.featureFlags || req.session?.featureFlags || {};
+  const featureFlags = effectiveFeatureFlagsFromReq(req);
   const hasNomina = tenantHasFeature(featureFlags, 'nomina');
   const hasAsistenciaPkg = tenantHasAnyFeature(featureFlags, [
     'asistencia',
@@ -492,6 +506,16 @@ router.post('/incidencias/tipos/:id', incidenciasController.updateTipo);
 router.post('/incidencias/tipos/:id/toggle', incidenciasController.toggleTipo);
 router.get('/incidencias/vacaciones', vacacionesController.listVacaciones);
 router.post('/incidencias/vacaciones/recalcular', vacacionesController.recalcularVacaciones);
+const vacacionesAdminController = require('../controllers/vacacionesAdminController');
+router.get('/incidencias/vacaciones/solicitudes', vacacionesAdminController.listSolicitudesRrhh);
+router.post(
+  '/incidencias/vacaciones/solicitudes/:id/resolver',
+  vacacionesAdminController.resolverSolicitudRrhh
+);
+const diasInhabilesController = require('../controllers/diasInhabilesController');
+router.get('/incidencias/dias-inhabiles', diasInhabilesController.listDiasInhabiles);
+router.post('/incidencias/dias-inhabiles', diasInhabilesController.createDiaInhabil);
+router.post('/incidencias/dias-inhabiles/:id/eliminar', diasInhabilesController.deleteDiaInhabil);
 router.post('/incidencias/aprobar-masivo', incidenciasController.aprobarMasivo);
 router.post('/incidencias/rechazar-masivo', incidenciasController.rechazarMasivo);
 router.post('/incidencias/:id/aprobar', incidenciasController.aprobarIncidencia);

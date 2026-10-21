@@ -20,6 +20,7 @@ Documentación completa de funcionalidades y mejoras:
 | **Recordatorios** | Avisos locales según turno asignado (online + caché offline) |
 | **Perfil** | Datos del empleado separados de versión / empresa / URL del servidor |
 | **Baja RRHH** | Al dar de baja al empleado se revoca el JWT; la app cierra sesión |
+| **Dispositivo** | UUID estable en cada marcación; registro SMS opcional por subsidiaria |
 
 Pendiente en app: recibos PDF/XML, avisos HR desde API / FCM.
 
@@ -47,6 +48,22 @@ flutter build apk --release --dart-define=API_BASE_URL=http://TU_IP_LAN:4003
 | Emulador Android | `http://10.0.2.2:4003` |
 | Desktop / iOS sim | `http://127.0.0.1:4003` |
 | Teléfono físico | `http://<IP-LAN-del-PC>:4003` (no uses `127.0.0.1`) |
+
+IP LAN actual de desarrollo (Wi‑Fi): **`192.168.1.11`** — si cambia la red, actualiza `ApiConfig` o el `--dart-define`.
+
+### Probar en iPhone
+
+En este PC (Windows) **no se puede generar IPA**; hace falta un Mac con Xcode:
+
+```bash
+cd apps/arka_sense_asistencia
+flutter pub get
+flutter run -d <udid-iphone> --dart-define=API_BASE_URL=http://192.168.1.11:4003
+# o
+flutter build ipa --dart-define=API_BASE_URL=http://192.168.1.11:4003
+```
+
+El iPhone y el PC deben estar en la **misma Wi‑Fi**. En Safari del iPhone puedes verificar: `http://192.168.1.11:4003/api/v1/health` → `{"ok":true,...}`.
 
 ---
 

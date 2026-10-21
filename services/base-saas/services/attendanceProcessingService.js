@@ -291,6 +291,21 @@ async function recalculateDailyAttendance(tenantId, empleadoId, fechaInput) {
   }
 
   if (!turno) {
+    let estatus = records.length ? 'incompleto' : 'falta';
+    let incidenciasAutomaticas = records.length ? [] : ['FI'];
+    let notas = 'Sin turno asignado';
+    if (estatus === 'falta') {
+      try {
+        const { empleadoEnVacacionesAprobadas } = require('./calendarioLaboralService');
+        if (await empleadoEnVacacionesAprobadas(tenantId, empleadoId, fecha)) {
+          estatus = 'vacaciones';
+          incidenciasAutomaticas = ['VAC'];
+          notas = 'De vacaciones (solicitud aprobada)';
+        }
+      } catch (_) {
+        /* ignore */
+      }
+    }
     const daily = await DailyAttendance.findOneAndUpdate(
       { tenantId, empleadoId, fecha },
       {
@@ -299,9 +314,9 @@ async function recalculateDailyAttendance(tenantId, empleadoId, fechaInput) {
           empleadoId,
           fecha,
           turnoId: null,
-          estatus: records.length ? 'incompleto' : 'falta',
-          incidenciasAutomaticas: records.length ? [] : ['FI'],
-          notas: 'Sin turno asignado'
+          estatus,
+          incidenciasAutomaticas,
+          notas
         }
       },
       { upsert: true, new: true }
@@ -314,6 +329,27 @@ async function recalculateDailyAttendance(tenantId, empleadoId, fechaInput) {
   if (resolved.origen === 'rotacion' && plantilla) {
     const rotNota = `Rotación: ${plantilla.nombre}${asignacion?.fechaAncla ? ` (ancla ${new Date(asignacion.fechaAncla).toLocaleDateString('es-MX')})` : ''}`;
     metrics.notas = metrics.notas ? `${rotNota} · ${metrics.notas}` : rotNota;
+  }
+
+  // Vacaciones aprobadas: no marcar falta si no checó
+  if (metrics.estatus === 'falta' || metrics.incidenciasAutomaticas?.includes('FI')) {
+    try {
+      const { empleadoEnVacacionesAprobadas } = require('./calendarioLaboralService');
+      if (await empleadoEnVacacionesAprobadas(tenantId, empleadoId, fecha)) {
+        metrics.estatus = 'vacaciones';
+        metrics.incidenciasAutomaticas = (metrics.incidenciasAutomaticas || []).filter(
+          (c) => c !== 'FI'
+        );
+        if (!metrics.incidenciasAutomaticas.includes('VAC')) {
+          metrics.incidenciasAutomaticas.push('VAC');
+        }
+        metrics.notas = metrics.notas
+          ? `${metrics.notas} · De vacaciones`
+          : 'De vacaciones (solicitud aprobada)';
+      }
+    } catch (e) {
+      console.warn('[attendance] vacaciones check', e.message);
+    }
   }
 
   const daily = await DailyAttendance.findOneAndUpdate(

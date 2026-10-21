@@ -14,7 +14,25 @@ const subsidiariaSchema = new mongoose.Schema(
     lng: { type: Number },
     geocercaRadioMetros: { type: Number, min: 0 },
     codigoLegado: { type: Number, default: null },
-    activo: { type: Boolean, default: true }
+    activo: { type: Boolean, default: true },
+    /**
+     * Zona IANA para mostrar/checar jornada (Docker suele ir en UTC).
+     * Ej. America/Mexico_City, America/Tijuana, America/Cancun.
+     */
+    zonaHoraria: { type: String, trim: true, default: 'America/Mexico_City' },
+    /** Seguridad app móvil (registro de dispositivo estilo WhatsApp). */
+    seguridadMovil: {
+      exigirRegistroDispositivo: { type: Boolean, default: false }
+    },
+    /**
+     * Subconjunto de módulos (AND con featureFlags del tenant).
+     * true/omitido = habilitado si el tenant lo tiene; false = apagado en esta sub.
+     */
+    modulos: {
+      asistencia: { type: Boolean, default: true },
+      recibos: { type: Boolean, default: true },
+      vacaciones: { type: Boolean, default: true }
+    }
   },
   { timestamps: true, collection: 'subsidiarias' }
 );

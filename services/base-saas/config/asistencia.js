@@ -31,7 +31,8 @@ const ESTATUS_DIARIO = {
   incompleto: 'Incompleto',
   descanso: 'Descanso',
   registro_parcial: 'Registro parcial',
-  fuera_de_rango: 'Fuera de rango'
+  fuera_de_rango: 'Fuera de rango',
+  vacaciones: 'De vacaciones'
 };
 
 const MODOS_TOLERANCIA = [

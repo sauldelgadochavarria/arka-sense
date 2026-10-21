@@ -39,8 +39,14 @@ const FEATURE_FLAG_KEYS = [
   },
   {
     key: 'incidencias',
-    label: 'Incidencias y vacaciones',
-    description: 'Solicitudes, aprobaciones, catálogo de incidencias y vacaciones.',
+    label: 'Incidencias',
+    description: 'Solicitudes, aprobaciones y catálogo de incidencias.',
+    packageId: 'asistencia_prenomina'
+  },
+  {
+    key: 'vacaciones',
+    label: 'Vacaciones',
+    description: 'Saldo LFT, solicitudes y aprobación (portal / app móvil / RRHH). Independiente de Incidencias.',
     packageId: 'asistencia_prenomina'
   },
   {
@@ -59,6 +65,12 @@ const FEATURE_FLAG_KEYS = [
     key: 'nomina',
     label: 'Nómina',
     description: 'Cálculo fiscal, períodos, pago-dispersión, timbrado y cumplimiento.',
+    packageId: 'nomina'
+  },
+  {
+    key: 'recibos',
+    label: 'Recibos (portal / app)',
+    description: 'Consulta de recibos por el empleado en portal y app móvil (puede ir sin full nómina).',
     packageId: 'nomina'
   },
   {
@@ -87,14 +99,14 @@ const FEATURE_PACKAGES = [
     label: 'Asistencia-Prenómina',
     description: 'Control de tiempo, incidencias y pre-nómina.',
     alwaysOn: false,
-    flagKeys: ['asistencia', 'incidencias', 'prenomina', 'reportes']
+    flagKeys: ['asistencia', 'incidencias', 'vacaciones', 'prenomina', 'reportes']
   },
   {
     id: 'nomina',
     label: 'Nómina',
     description: 'Cálculo fiscal, timbrado, dispersión y cumplimiento.',
     alwaysOn: false,
-    flagKeys: ['nomina', 'gestion_documental']
+    flagKeys: ['nomina', 'recibos', 'gestion_documental']
   }
 ];
 
@@ -188,9 +200,11 @@ function defaultFeatureFlagsForNewTenant() {
     integraciones: true,
     asistencia: true,
     incidencias: true,
+    vacaciones: true,
     prenomina: true,
     reportes: true,
     nomina: false,
+    recibos: false,
     gestion_documental: false
   };
 }

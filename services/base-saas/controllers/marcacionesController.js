@@ -5,7 +5,15 @@ const getTurnoModel = require('../models/turno');
 const getAttendanceRecordModel = require('../models/attendanceRecord');
 const { requireEmpresaForTenant, scopeEmpleadosFromReq, sessionSubsidiariaId } = require('../libs/tenantScope');
 const { parseOptionalObjectId, trimString } = require('../libs/formHelpers');
-const { parseDateTimeLocal, startOfDay, endOfDay, formatTimeHHMM } = require('../libs/timeHelpers');
+const {
+  parseDateTimeLocal,
+  startOfDay,
+  endOfDay,
+  formatTimeHHMM,
+  DEFAULT_TZ,
+  ymdInTimeZone
+} = require('../libs/timeHelpers');
+const getSubsidiariaModel = require('../models/subsidiaria');
 const { TIPOS_MARCACION, METODOS_REGISTRO } = require('../config/asistencia');
 const { recalculateDailyAttendance } = require('../services/attendanceProcessingService');
 const {
@@ -175,8 +183,17 @@ async function showMarcacionDetalle(req, res) {
     })
   ]);
 
+  let zonaHoraria = DEFAULT_TZ;
+  const subId = marcacion.subsidiariaId || empleado?.subsidiariaId;
+  if (subId) {
+    const Subsidiaria = await getSubsidiariaModel();
+    const sub = await Subsidiaria.findById(subId).select('zonaHoraria nombre').lean();
+    if (sub?.zonaHoraria) zonaHoraria = sub.zonaHoraria;
+  }
+  const formatTime = (d) => formatTimeHHMM(d, zonaHoraria);
+
   const fechaStr = marcacion.fecha
-    ? new Date(marcacion.fecha).toISOString().slice(0, 10)
+    ? ymdInTimeZone(marcacion.fecha, zonaHoraria)
     : defaultFechaQuery(req);
 
   res.render('Asistencia/marcacion-detalle', {
@@ -189,8 +206,9 @@ async function showMarcacionDetalle(req, res) {
     intentos,
     bitacora,
     fecha: fechaStr,
+    zonaHoraria,
     estatusDiarioLabels: ESTATUS_DIARIO,
-    formatTimeHHMM
+    formatTimeHHMM: formatTime
   });
 }
 

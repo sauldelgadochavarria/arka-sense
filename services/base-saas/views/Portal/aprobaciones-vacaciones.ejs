@@ -1,0 +1,50 @@
+<%- include('partials/layout-top', { title: 'Aprobar vacaciones', session }) %>
+<section class="page-header">
+  <h1>Aprobaciones de vacaciones</h1>
+  <p class="muted">Solicitudes pendientes de tu equipo.</p>
+</section>
+
+<% if (!pendientes.length) { %>
+<p class="muted">No hay solicitudes pendientes.</p>
+<% } else { %>
+<table>
+  <thead>
+    <tr>
+      <th>Empleado</th>
+      <th>Periodo</th>
+      <th>Días</th>
+      <th>Motivo</th>
+      <th>Decisión</th>
+    </tr>
+  </thead>
+  <tbody>
+    <% pendientes.forEach(function(p) {
+      const e = empMap.get(String(p.empleadoId));
+      const nombre = e ? (e.firstName + ' ' + e.lastName + ' (' + e.numEmpleado + ')') : String(p.empleadoId);
+    %>
+    <tr>
+      <td><%= nombre %></td>
+      <td>
+        <%= new Date(p.fechaInicio).toLocaleDateString('es-MX') %>
+        –
+        <%= new Date(p.fechaFin).toLocaleDateString('es-MX') %>
+      </td>
+      <td><%= p.diasSolicitados %></td>
+      <td class="muted small"><%= p.motivo || '—' %></td>
+      <td>
+        <form method="post" action="/portal/aprobaciones-vacaciones/<%= p._id %>/resolver" class="inline-form" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;">
+          <input type="hidden" name="status" value="APPROVED" />
+          <button type="submit" class="btn btn-sm btn-primary">Aprobar</button>
+        </form>
+        <form method="post" action="/portal/aprobaciones-vacaciones/<%= p._id %>/resolver" class="inline-form" style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;">
+          <input type="hidden" name="status" value="REJECTED" />
+          <input name="motivoRechazo" placeholder="Motivo rechazo" maxlength="500" style="min-width:140px;" />
+          <button type="submit" class="btn btn-sm">Rechazar</button>
+        </form>
+      </td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<% } %>
+<%- include('partials/layout-bottom') %>

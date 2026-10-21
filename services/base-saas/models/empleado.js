@@ -115,6 +115,11 @@ const empleadoSchema = new mongoose.Schema(
       ],
       default: 'open_with_flag'
     },
+    /**
+     * Excepción: no exigir registro SMS+UUID aunque la subsidiaria lo tenga activo.
+     * Solo RRHH; la marcación igual puede enviar deviceUuid para auditoría.
+     */
+    exentoRegistroDispositivo: { type: Boolean, default: false },
     /** Puntos de acceso fijos autorizados (además de asignaciones temporales). */
     puntoAccesoIds: {
       type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'PuntoAcceso' }],

@@ -6,7 +6,9 @@
 <div class="toolbar">
   <a class="btn" href="/incidencias/pendientes">Bandeja pendientes</a>
   <a class="btn" href="/incidencias/tipos">Catálogo de tipos</a>
+  <% if (typeof featureFlags !== 'undefined' && featureFlags.vacaciones) { %>
   <a class="btn" href="/incidencias/vacaciones">Vacaciones</a>
+  <% } %>
 </div>
 
 <form method="get" action="/incidencias" class="toolbar inline-form">

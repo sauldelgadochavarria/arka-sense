@@ -1,0 +1,35 @@
+<%- include('partials/layout-top', { title: 'Mis recibos', session }) %>
+<section class="page-header">
+  <h1>Mis recibos</h1>
+  <p class="muted">Histórico de nómina disponible para consulta.</p>
+</section>
+
+<table>
+  <thead>
+    <tr>
+      <th>Periodo / pago</th>
+      <th>Percepciones</th>
+      <th>Deducciones</th>
+      <th>Neto</th>
+      <th>Origen</th>
+    </tr>
+  </thead>
+  <tbody>
+    <% if (!recibos.length) { %>
+    <tr><td colspan="5" class="muted">No hay recibos publicados aún.</td></tr>
+    <% } %>
+    <% recibos.forEach(function(r) {
+      const label = r.periodoLabel || (r.fechaPago ? new Date(r.fechaPago).toLocaleDateString('es-MX') : '—');
+      const neto = r.neto != null ? r.neto : (r.totalNeto != null ? r.totalNeto : null);
+    %>
+    <tr>
+      <td><%= label %></td>
+      <td><%= r.totalPercepciones != null ? Number(r.totalPercepciones).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' }) : '—' %></td>
+      <td><%= r.totalDeducciones != null ? Number(r.totalDeducciones).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' }) : '—' %></td>
+      <td><strong><%= neto != null ? Number(neto).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' }) : '—' %></strong></td>
+      <td class="muted"><%= r.origen || '—' %></td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<%- include('partials/layout-bottom') %>

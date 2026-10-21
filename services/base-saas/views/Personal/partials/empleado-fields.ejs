@@ -376,6 +376,13 @@
     <label><input type="checkbox" name="exportarFaltas" value="1" <%= !empleado || empleado.exportarFaltas !== false ? 'checked' : '' %> /> Exportar faltas a nómina</label>
     <label><input type="checkbox" name="exportarRetardos" value="1" <%= !empleado || empleado.exportarRetardos !== false ? 'checked' : '' %> /> Exportar retardos a nómina</label>
     <label><input type="checkbox" name="exportarHorasExtra" value="1" <%= !empleado || empleado.exportarHorasExtra !== false ? 'checked' : '' %> /> Exportar horas extra a nómina</label>
+    <label>
+      <input type="checkbox" name="exentoRegistroDispositivo" value="1" <%= empleado && empleado.exentoRegistroDispositivo ? 'checked' : '' %> />
+      Exento de registro de dispositivo (SMS + UUID)
+      <span class="muted small" style="display:block;font-weight:normal;">
+        Solo aplica si la subsidiaria exige el registro. Este empleado podrá checar sin verificar el móvil.
+      </span>
+    </label>
   </div>
 </fieldset>
 

@@ -71,9 +71,10 @@ class LocationService {
     return defaultTargetPlatform.name;
   }
 
-  static Map<String, dynamic> deviceMeta() => {
+  static Map<String, dynamic> deviceMeta({String? deviceUuid}) => {
         'plataforma': plataforma(),
         'modelo': defaultTargetPlatform.name,
         'appVersion': ApiConfig.appVersion,
+        if (deviceUuid != null && deviceUuid.isNotEmpty) 'deviceUuid': deviceUuid,
       };
 }

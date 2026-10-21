@@ -9,6 +9,9 @@ const vacacionSaldoSchema = new mongoose.Schema(
     anio: { type: Number, required: true },
     diasCorresponden: { type: Number, default: 0, min: 0 },
     diasTomados: { type: Number, default: 0, min: 0 },
+    /** Días en solicitudes PENDING (congelados). */
+    diasCongelados: { type: Number, default: 0, min: 0 },
+    /** Disponibles = corresponden − tomados − congelados. */
     diasPendientes: { type: Number, default: 0, min: 0 },
     primaVacacionalPct: { type: Number, default: 25 }
   },

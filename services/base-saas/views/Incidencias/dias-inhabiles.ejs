@@ -1,0 +1,51 @@
+<%- include('../Partials/layout-top', { title: 'Días inhábiles', session }) %>
+<section class="page-header">
+  <h1>Calendario de días inhábiles</h1>
+  <p class="muted">Festivos / inhábiles para el conteo de días de vacaciones (<%= anio %>).</p>
+</section>
+
+<% if (error) { %><p class="flash error"><%= error %></p><% } %>
+
+<form method="get" class="toolbar">
+  <label>Año <input type="number" name="anio" value="<%= anio %>" min="2020" max="2100" /></label>
+  <button type="submit" class="btn">Filtrar</button>
+  <% if (typeof featureFlags !== 'undefined' && featureFlags.vacaciones) { %>
+  <a class="btn" href="/incidencias/vacaciones">Saldos vacaciones</a>
+  <% } %>
+</form>
+
+<form method="post" action="/incidencias/dias-inhabiles" class="form-grid form-wide card-block">
+  <h2>Agregar día</h2>
+  <input type="date" name="fecha" required />
+  <input name="nombre" placeholder="Nombre (ej. Día de la Independencia)" />
+  <label style="display:flex;gap:8px;align-items:center;">
+    <input type="checkbox" name="soloSubsidiaria" value="true" />
+    Solo esta subsidiaria (si no, aplica a toda la empresa)
+  </label>
+  <button type="submit" class="btn btn-primary">Guardar</button>
+</form>
+
+<table>
+  <thead>
+    <tr><th>Fecha</th><th>Nombre</th><th>Alcance</th><th></th></tr>
+  </thead>
+  <tbody>
+    <% if (!rows.length) { %>
+    <tr><td colspan="4" class="muted">Sin días registrados para este año.</td></tr>
+    <% } %>
+    <% rows.forEach(function(r) { %>
+    <tr>
+      <td><%= new Date(r.fecha).toLocaleDateString('es-MX') %></td>
+      <td><%= r.nombre || '—' %></td>
+      <td><%= r.tipo || (r.subsidiariaId ? 'subsidiaria' : 'empresa') %></td>
+      <td>
+        <form method="post" action="/incidencias/dias-inhabiles/<%= r._id %>/eliminar" style="display:inline"
+          onsubmit="return confirm('¿Eliminar este día?');">
+          <button type="submit" class="btn btn-sm">Eliminar</button>
+        </form>
+      </td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<%- include('../Partials/layout-bottom') %>

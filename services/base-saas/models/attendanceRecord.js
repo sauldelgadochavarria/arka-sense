@@ -76,7 +76,11 @@ const attendanceRecordSchema = new mongoose.Schema(
     dispositivo: {
       plataforma: { type: String, default: '' },
       modelo: { type: String, default: '' },
-      appVersion: { type: String, default: '' }
+      appVersion: { type: String, default: '' },
+      /** UUID estable de la app (registro de dispositivo). */
+      deviceUuid: { type: String, default: '', index: true },
+      /** Celular asociado (expediente o verificado por SMS). */
+      telefono: { type: String, default: '' }
     },
     /** Evidencia facial ligada al checado (si aplica). */
     biometria: {

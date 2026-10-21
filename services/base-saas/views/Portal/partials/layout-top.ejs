@@ -21,10 +21,22 @@
   <header class="topbar portal-bar">
     <div class="brand"><a href="/portal">Arka-Presence · Portal</a></div>
     <nav class="nav" aria-label="Portal">
+      <%
+        var ff = (typeof featureFlags !== 'undefined' && featureFlags) ? featureFlags : (session.featureFlags || {});
+      %>
       <a href="/portal">Inicio</a>
-      <a href="/portal/asistencia">Mi asistencia</a>
+      <% if (ff.asistencia !== false) { %><a href="/portal/asistencia">Mi asistencia</a><% } %>
       <a href="/portal/solicitudes">Mis solicitudes</a>
+      <% if (ff.vacaciones) { %>
       <a href="/portal/vacaciones">Vacaciones</a>
+      <%
+        var caps = (typeof capabilities !== 'undefined' && capabilities) ? capabilities : (session.capabilities || {});
+        if (caps.esSupervisor) {
+      %>
+      <a href="/portal/aprobaciones-vacaciones">Aprobaciones<% if (caps.pendientesAprobacionVacaciones) { %> (<%= caps.pendientesAprobacionVacaciones %>)<% } %></a>
+      <% } %>
+      <% } %>
+      <% if (ff.recibos) { %><a href="/portal/recibos">Recibos</a><% } %>
       <% if (session.empleadoId && !soloPortal) { %><a href="/dashboard">Administración</a><% } %>
     </nav>
     <div class="user"><%= session.user %> · <a href="/logout">Salir</a></div>

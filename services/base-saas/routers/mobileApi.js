@@ -13,7 +13,13 @@ const getTenantModel = require('../models/tenant');
 const getEmpleadoModel = require('../models/empleado');
 const getAttendanceRecordModel = require('../models/attendanceRecord');
 const { signMobileToken, requireMobileAuth } = require('../middleware/mobileAuth');
-const { startOfDay, endOfDay } = require('../libs/timeHelpers');
+const {
+  startOfDay,
+  endOfDay,
+  calendarDateInTimeZone,
+  DEFAULT_TZ
+} = require('../libs/timeHelpers');
+const getSubsidiariaModel = require('../models/subsidiaria');
 const { recalculateDailyAttendance } = require('../services/attendanceProcessingService');
 const {
   snapshotMarcacion,
@@ -27,6 +33,40 @@ const {
   programacionDelDia
 } = require('../services/horarioRecordatorioService');
 const { resolveTurnoVigente } = require('../services/turnoResolverService');
+const {
+  buildSeguridadMovilStatus,
+  solicitarOtp,
+  verificarOtp,
+  assertDispositivoParaMarcacion,
+  findDispositivoActivo
+} = require('../services/dispositivoMovilService');
+const { buildEmpleadoCapabilities } = require('../services/portalCapabilitiesService');
+const {
+  resolveEffectiveFeatureFlags,
+  tenantHasFeature
+} = require('../libs/tenantFeatureFlags');
+const {
+  obtenerSaldoDisponible,
+  crearSolicitudVacaciones,
+  cancelarSolicitud,
+  resolverSolicitud,
+  listSolicitudesEmpleado,
+  listPendientesSupervisor
+} = require('../services/vacacionesService');
+const { contarDiasVacaciones } = require('../services/calendarioLaboralService');
+const { registerPushToken } = require('../services/pushNotificationService');
+
+async function resolveMobileFeatureFlags(tenantId, empleado) {
+  const Tenant = await getTenantModel();
+  const tenant = await Tenant.findOne({ tenantId }).select('featureFlags').lean();
+  let subModulos = null;
+  if (empleado?.subsidiariaId) {
+    const Subsidiaria = await getSubsidiariaModel();
+    const sub = await Subsidiaria.findById(empleado.subsidiariaId).select('modulos').lean();
+    subModulos = sub?.modulos || null;
+  }
+  return resolveEffectiveFeatureFlags(tenant?.featureFlags || {}, subModulos);
+}
 
 const router = express.Router();
 
@@ -137,6 +177,19 @@ router.post('/auth/login', async (req, res) => {
       mtv: Number(user.mobileTokenVersion || 0)
     });
 
+    const deviceUuid = String(req.body.deviceUuid || '').trim();
+    const seguridadMovil = await buildSeguridadMovilStatus({
+      tenantId: tenant.tenantId,
+      empleado,
+      deviceUuid
+    });
+    const featureFlags = await resolveMobileFeatureFlags(tenant.tenantId, empleado);
+    const capabilities = await buildEmpleadoCapabilities({
+      tenantId: tenant.tenantId,
+      empleado,
+      featureFlags
+    });
+
     return res.json({
       ok: true,
       token,
@@ -156,7 +209,10 @@ router.post('/auth/login', async (req, res) => {
         id: tenant.tenantId,
         slug: tenant.slug,
         displayName: tenant.displayName || tenant.slug
-      }
+      },
+      seguridadMovil,
+      featureFlags,
+      capabilities
     });
   } catch (err) {
     console.error('[api/v1/auth/login]', err);
@@ -171,6 +227,24 @@ router.get('/me', requireMobileAuth, async (req, res) => {
       _id: req.mobileAuth.empleadoId,
       tenantId: req.mobileAuth.tenantId
     }).lean();
+    const deviceUuid = String(req.query.deviceUuid || req.headers['x-device-uuid'] || '').trim();
+    const seguridadMovil = empleado
+      ? await buildSeguridadMovilStatus({
+          tenantId: req.mobileAuth.tenantId,
+          empleado,
+          deviceUuid
+        })
+      : null;
+    const featureFlags = empleado
+      ? await resolveMobileFeatureFlags(req.mobileAuth.tenantId, empleado)
+      : {};
+    const capabilities = empleado
+      ? await buildEmpleadoCapabilities({
+          tenantId: req.mobileAuth.tenantId,
+          empleado,
+          featureFlags
+        })
+      : null;
     return res.json({
       ok: true,
       auth: req.mobileAuth,
@@ -180,11 +254,58 @@ router.get('/me', requireMobileAuth, async (req, res) => {
             numEmpleado: empleado.numEmpleado || '',
             nombre: [empleado.firstName, empleado.lastName].filter(Boolean).join(' ').trim()
           }
-        : null
+        : null,
+      seguridadMovil,
+      featureFlags,
+      capabilities
     });
   } catch (err) {
     console.error('[api/v1/me]', err);
     return jsonError(res, 500, 'Error al cargar perfil');
+  }
+});
+
+/**
+ * POST /api/v1/auth/dispositivo/solicitar-otp
+ * body: { deviceUuid, telefono?, plataforma?, modelo?, appVersion? }
+ */
+router.post('/auth/dispositivo/solicitar-otp', requireMobileAuth, async (req, res) => {
+  try {
+    const result = await solicitarOtp({
+      tenantId: req.mobileAuth.tenantId,
+      empleadoId: req.mobileAuth.empleadoId,
+      deviceUuid: req.body.deviceUuid,
+      telefono: req.body.telefono,
+      plataforma: req.body.plataforma,
+      modelo: req.body.modelo,
+      appVersion: req.body.appVersion
+    });
+    return res.json(result);
+  } catch (err) {
+    console.error('[api/v1/auth/dispositivo/solicitar-otp]', err);
+    return jsonError(res, err.status || 500, err.message || 'Error al enviar código', err.code);
+  }
+});
+
+/**
+ * POST /api/v1/auth/dispositivo/verificar-otp
+ * body: { deviceUuid, codigo, plataforma?, modelo?, appVersion? }
+ */
+router.post('/auth/dispositivo/verificar-otp', requireMobileAuth, async (req, res) => {
+  try {
+    const result = await verificarOtp({
+      tenantId: req.mobileAuth.tenantId,
+      empleadoId: req.mobileAuth.empleadoId,
+      deviceUuid: req.body.deviceUuid,
+      codigo: req.body.codigo,
+      plataforma: req.body.plataforma,
+      modelo: req.body.modelo,
+      appVersion: req.body.appVersion
+    });
+    return res.json(result);
+  } catch (err) {
+    console.error('[api/v1/auth/dispositivo/verificar-otp]', err);
+    return jsonError(res, err.status || 500, err.message || 'Error al verificar código', err.code);
   }
 });
 
@@ -296,13 +417,30 @@ router.get('/asistencia/horario', requireMobileAuth, async (req, res) => {
 router.post('/asistencia/marcar', requireMobileAuth, async (req, res) => {
   try {
     const ahora = new Date();
-    const fecha = startOfDay(ahora);
     const AttendanceRecord = await getAttendanceRecordModel();
+    const Empleado = await getEmpleadoModel();
+    const empleado = await Empleado.findOne({
+      _id: req.mobileAuth.empleadoId,
+      tenantId: req.mobileAuth.tenantId,
+      estatus: 'activo'
+    }).lean();
+    if (!empleado) {
+      return jsonError(res, 403, 'Empleado no encontrado o inactivo');
+    }
+
+    let zonaHoraria = DEFAULT_TZ;
+    if (empleado.subsidiariaId) {
+      const Subsidiaria = await getSubsidiariaModel();
+      const sub = await Subsidiaria.findById(empleado.subsidiariaId).select('zonaHoraria').lean();
+      if (sub?.zonaHoraria) zonaHoraria = sub.zonaHoraria;
+    }
+    // Día laboral según zona de la subsidiaria (no UTC del contenedor)
+    const fecha = calendarDateInTimeZone(ahora, zonaHoraria);
 
     const existentes = await AttendanceRecord.find({
       tenantId: req.mobileAuth.tenantId,
       empleadoId: req.mobileAuth.empleadoId,
-      fecha: { $gte: fecha, $lte: endOfDay(fecha) },
+      fecha: { $gte: startOfDay(fecha), $lte: endOfDay(fecha) },
       $or: [{ estado: 'activa' }, { estado: { $exists: false } }, { estado: null }]
     })
       .select('tipoMarcacion')
@@ -358,16 +496,6 @@ router.post('/asistencia/marcar', requireMobileAuth, async (req, res) => {
       return jsonError(res, 400, 'Coordenadas GPS fuera de rango');
     }
 
-    const Empleado = await getEmpleadoModel();
-    const empleado = await Empleado.findOne({
-      _id: req.mobileAuth.empleadoId,
-      tenantId: req.mobileAuth.tenantId,
-      estatus: 'activo'
-    }).lean();
-    if (!empleado) {
-      return jsonError(res, 403, 'Empleado no encontrado o inactivo');
-    }
-
     const accuracyMeters = parseNum(req.body.accuracyMeters);
     const isMocked =
       req.body.isMocked === true ||
@@ -383,10 +511,52 @@ router.post('/asistencia/marcar', requireMobileAuth, async (req, res) => {
     const bioScore = parseNum(req.body.biometriaScore);
     const bioChallengeId = String(req.body.biometriaChallengeId || '').trim();
 
+    let deviceCheck;
+    try {
+      deviceCheck = await assertDispositivoParaMarcacion({
+        tenantId: req.mobileAuth.tenantId,
+        empleado,
+        deviceUuid: req.body.deviceUuid
+      });
+    } catch (err) {
+      await registrarIntento({
+        tenantId: req.mobileAuth.tenantId,
+        empleadoId: empleado._id,
+        userId: req.mobileAuth.userId,
+        etapa: 'device_check',
+        resultado: 'rechazado',
+        tipoMarcacion,
+        mensaje: err.message || 'Dispositivo no autorizado',
+        reasonCode: err.code || 'DEVICE_BLOCKED',
+        fechaJornada: fecha,
+        dispositivo: {
+          plataforma: String(req.body.plataforma || '').trim().slice(0, 40),
+          modelo: String(req.body.modelo || '').trim().slice(0, 80),
+          appVersion: String(req.body.appVersion || '').trim().slice(0, 40),
+          deviceUuid: String(req.body.deviceUuid || '').trim().slice(0, 80)
+        },
+        ip: req.ip || '',
+        userAgent: req.get('user-agent') || ''
+      }).catch(() => {});
+      return jsonError(res, err.status || 403, err.message || 'Dispositivo no autorizado', err.code);
+    }
+
+    const regDevice = await findDispositivoActivo({
+      tenantId: req.mobileAuth.tenantId,
+      empleadoId: empleado._id,
+      deviceUuid: deviceCheck.deviceUuid
+    });
+    const telefonoPunch = String(
+      regDevice?.telefono || empleado.telefono || req.body.telefono || ''
+    )
+      .trim()
+      .slice(0, 20);
     const dispositivo = {
       plataforma: String(req.body.plataforma || '').trim().slice(0, 40),
       modelo: String(req.body.modelo || '').trim().slice(0, 80),
-      appVersion: String(req.body.appVersion || '').trim().slice(0, 40)
+      appVersion: String(req.body.appVersion || '').trim().slice(0, 40),
+      deviceUuid: deviceCheck.deviceUuid,
+      telefono: telefonoPunch
     };
     const ubicacionPayload = {
       lat,
@@ -597,12 +767,36 @@ router.post('/asistencia/marcar', requireMobileAuth, async (req, res) => {
 
 /**
  * GET /api/v1/asistencia/historial?dias=14
+ * o ?desde=YYYY-MM-DD&hasta=YYYY-MM-DD (máx. 90 días)
+ * Incluye GPS, dispositivo (UUID), geocerca y biometría para detalle en app.
  */
 router.get('/asistencia/historial', requireMobileAuth, async (req, res) => {
   try {
-    const dias = Math.min(90, Math.max(1, Number(req.query.dias) || 14));
-    const hasta = endOfDay(new Date());
-    const desde = startOfDay(new Date(Date.now() - (dias - 1) * 24 * 60 * 60 * 1000));
+    let desde;
+    let hasta;
+    const desdeQ = String(req.query.desde || '').trim();
+    const hastaQ = String(req.query.hasta || '').trim();
+    if (desdeQ && hastaQ) {
+      const d0 = new Date(`${desdeQ}T00:00:00`);
+      const d1 = new Date(`${hastaQ}T00:00:00`);
+      if (Number.isNaN(d0.getTime()) || Number.isNaN(d1.getTime())) {
+        return jsonError(res, 400, 'Fechas inválidas (usa YYYY-MM-DD)', 'BAD_DATES');
+      }
+      desde = startOfDay(d0);
+      hasta = endOfDay(d1);
+      const spanMs = hasta.getTime() - desde.getTime();
+      if (spanMs < 0) {
+        return jsonError(res, 400, 'desde no puede ser mayor que hasta', 'BAD_RANGE');
+      }
+      if (spanMs > 90 * 24 * 60 * 60 * 1000) {
+        return jsonError(res, 400, 'El rango máximo es 90 días', 'RANGE_TOO_LONG');
+      }
+    } else {
+      const dias = Math.min(90, Math.max(1, Number(req.query.dias) || 14));
+      hasta = endOfDay(new Date());
+      desde = startOfDay(new Date(Date.now() - (dias - 1) * 24 * 60 * 60 * 1000));
+    }
+
     const AttendanceRecord = await getAttendanceRecordModel();
     const rows = await AttendanceRecord.find({
       tenantId: req.mobileAuth.tenantId,
@@ -611,7 +805,7 @@ router.get('/asistencia/historial', requireMobileAuth, async (req, res) => {
       $or: [{ estado: 'activa' }, { estado: { $exists: false } }, { estado: null }]
     })
       .sort({ timestamp: -1 })
-      .limit(200)
+      .limit(300)
       .lean();
 
     return res.json({
@@ -623,13 +817,266 @@ router.get('/asistencia/historial', requireMobileAuth, async (req, res) => {
         fecha: m.fecha,
         tipoMarcacion: m.tipoMarcacion,
         timestamp: m.timestamp,
+        timestampOriginal: m.timestampOriginal || null,
+        servidorRegisteredAt: m.servidorRegisteredAt || null,
         metodo: m.metodo,
-        ubicacion: m.ubicacion || null
+        estado: m.estado || 'activa',
+        origen: m.origen || 'original',
+        notas: m.notas || '',
+        ubicacion: m.ubicacion
+          ? {
+              lat: m.ubicacion.lat,
+              lng: m.ubicacion.lng,
+              accuracyMeters: m.ubicacion.accuracyMeters,
+              capturedAt: m.ubicacion.capturedAt,
+              isMocked: Boolean(m.ubicacion.isMocked)
+            }
+          : null,
+        geocerca: m.geocerca
+          ? {
+              politica: m.geocerca.politica || '',
+              skipped: Boolean(m.geocerca.skipped),
+              fueraDeZona: Boolean(m.geocerca.fueraDeZona),
+              allowed: m.geocerca.allowed !== false,
+              siteNombre: m.geocerca.siteNombre || '',
+              siteSource: m.geocerca.siteSource || '',
+              distanceMeters: m.geocerca.distanceMeters,
+              radioMetros: m.geocerca.radioMetros,
+              justificacionFueraZona: m.geocerca.justificacionFueraZona || ''
+            }
+          : null,
+        dispositivo: m.dispositivo
+          ? {
+              plataforma: m.dispositivo.plataforma || '',
+              modelo: m.dispositivo.modelo || '',
+              appVersion: m.dispositivo.appVersion || '',
+              deviceUuid: m.dispositivo.deviceUuid || '',
+              telefono: m.dispositivo.telefono || ''
+            }
+          : null,
+        biometria: m.biometria
+          ? {
+              ok: m.biometria.ok,
+              score: m.biometria.score,
+              challengeId: m.biometria.challengeId || '',
+              verifiedAt: m.biometria.verifiedAt || null
+            }
+          : null
       }))
     });
   } catch (err) {
     console.error('[api/v1/asistencia/historial]', err);
     return jsonError(res, 500, 'Error al cargar historial');
+  }
+});
+
+/** POST /api/v1/push/register — body: { token, plataforma?, deviceUuid? } */
+router.post('/push/register', requireMobileAuth, async (req, res) => {
+  try {
+    const result = await registerPushToken({
+      tenantId: req.mobileAuth.tenantId,
+      empleadoId: req.mobileAuth.empleadoId,
+      userId: req.mobileAuth.userId,
+      token: req.body.token || req.body.fcmToken,
+      plataforma: req.body.plataforma,
+      deviceUuid: req.body.deviceUuid
+    });
+    return res.json(result);
+  } catch (err) {
+    return jsonError(res, err.status || 500, err.message || 'Error al registrar push', err.code);
+  }
+});
+
+async function assertVacacionesMobile(req) {
+  const Empleado = await getEmpleadoModel();
+  const empleado = await Empleado.findOne({
+    _id: req.mobileAuth.empleadoId,
+    tenantId: req.mobileAuth.tenantId,
+    estatus: 'activo'
+  }).lean();
+  if (!empleado) {
+    const err = new Error('Empleado no encontrado');
+    err.status = 403;
+    throw err;
+  }
+  const flags = await resolveMobileFeatureFlags(req.mobileAuth.tenantId, empleado);
+  if (!tenantHasFeature(flags, 'vacaciones')) {
+    const err = new Error('Módulo de vacaciones no activo');
+    err.status = 403;
+    err.code = 'FEATURE_DISABLED';
+    throw err;
+  }
+  return empleado;
+}
+
+router.get('/vacaciones/saldo', requireMobileAuth, async (req, res) => {
+  try {
+    const empleado = await assertVacacionesMobile(req);
+    const anio = Number(req.query.anio) || new Date().getFullYear();
+    const saldo = await obtenerSaldoDisponible(req.mobileAuth.tenantId, empleado._id, anio);
+    const solicitudes = await listSolicitudesEmpleado(req.mobileAuth.tenantId, empleado._id);
+    return res.json({ ok: true, anio, saldo, solicitudes });
+  } catch (err) {
+    return jsonError(res, err.status || 500, err.message || 'Error', err.code);
+  }
+});
+
+router.get('/vacaciones/preview-dias', requireMobileAuth, async (req, res) => {
+  try {
+    const empleado = await assertVacacionesMobile(req);
+    const inicio = new Date(req.query.inicio || req.query.fechaInicio);
+    const fin = new Date(req.query.fin || req.query.fechaFin || req.query.inicio);
+    if (Number.isNaN(inicio.getTime())) return jsonError(res, 400, 'Fechas inválidas');
+    const { dias, detalle } = await contarDiasVacaciones({
+      tenantId: req.mobileAuth.tenantId,
+      empresaId: empleado.empresaId || null,
+      subsidiariaId: empleado.subsidiariaId || null,
+      fechaInicio: inicio,
+      fechaFin: fin,
+      timeZone: DEFAULT_TZ
+    });
+    return res.json({ ok: true, dias, detalle });
+  } catch (err) {
+    return jsonError(res, err.status || 500, err.message || 'Error', err.code);
+  }
+});
+
+router.post('/vacaciones/solicitar', requireMobileAuth, async (req, res) => {
+  try {
+    const empleado = await assertVacacionesMobile(req);
+    const doc = await crearSolicitudVacaciones({
+      tenantId: req.mobileAuth.tenantId,
+      empleado,
+      fechaInicio: new Date(req.body.fechaInicio),
+      fechaFin: new Date(req.body.fechaFin || req.body.fechaInicio),
+      motivo: req.body.motivo,
+      userId: req.mobileAuth.userId
+    });
+    return res.status(201).json({ ok: true, solicitud: doc });
+  } catch (err) {
+    return jsonError(res, err.status || 500, err.message || 'Error', err.code);
+  }
+});
+
+router.post('/vacaciones/:id/cancelar', requireMobileAuth, async (req, res) => {
+  try {
+    await assertVacacionesMobile(req);
+    const doc = await cancelarSolicitud({
+      tenantId: req.mobileAuth.tenantId,
+      empleadoId: req.mobileAuth.empleadoId,
+      solicitudId: req.params.id,
+      userId: req.mobileAuth.userId
+    });
+    return res.json({ ok: true, solicitud: doc });
+  } catch (err) {
+    return jsonError(res, err.status || 500, err.message || 'Error', err.code);
+  }
+});
+
+router.get('/vacaciones/aprobaciones', requireMobileAuth, async (req, res) => {
+  try {
+    const empleado = await assertVacacionesMobile(req);
+    const flags = await resolveMobileFeatureFlags(req.mobileAuth.tenantId, empleado);
+    const caps = await buildEmpleadoCapabilities({
+      tenantId: req.mobileAuth.tenantId,
+      empleado,
+      featureFlags: flags
+    });
+    if (!caps.esSupervisor) {
+      return jsonError(res, 403, 'No tienes equipo a cargo', 'NOT_SUPERVISOR');
+    }
+    const pendientes = await listPendientesSupervisor(req.mobileAuth.tenantId, empleado._id);
+    const Empleado = await getEmpleadoModel();
+    const ids = pendientes.map((p) => p.empleadoId);
+    const emps = ids.length
+      ? await Empleado.find({ _id: { $in: ids } })
+          .select('firstName lastName numEmpleado')
+          .lean()
+      : [];
+    const empMap = Object.fromEntries(
+      emps.map((e) => [
+        String(e._id),
+        {
+          id: String(e._id),
+          nombre: `${e.firstName || ''} ${e.lastName || ''}`.trim(),
+          numEmpleado: e.numEmpleado || ''
+        }
+      ])
+    );
+    return res.json({
+      ok: true,
+      pendientes: pendientes.map((p) => ({
+        ...p,
+        id: String(p._id),
+        empleado: empMap[String(p.empleadoId)] || null
+      }))
+    });
+  } catch (err) {
+    return jsonError(res, err.status || 500, err.message || 'Error', err.code);
+  }
+});
+
+router.post('/vacaciones/aprobaciones/:id/resolver', requireMobileAuth, async (req, res) => {
+  try {
+    const empleado = await assertVacacionesMobile(req);
+    const status = String(req.body.status || '').toUpperCase();
+    const doc = await resolverSolicitud({
+      tenantId: req.mobileAuth.tenantId,
+      solicitudId: req.params.id,
+      status,
+      userId: req.mobileAuth.userId,
+      motivoRechazo: req.body.motivoRechazo,
+      actorEmpleadoId: empleado._id,
+      allowRrhh: false
+    });
+    return res.json({ ok: true, solicitud: doc });
+  } catch (err) {
+    return jsonError(res, err.status || 500, err.message || 'Error', err.code);
+  }
+});
+
+/** GET /api/v1/recibos — histórico de nómina del empleado */
+router.get('/recibos', requireMobileAuth, async (req, res) => {
+  try {
+    const Empleado = await getEmpleadoModel();
+    const empleado = await Empleado.findOne({
+      _id: req.mobileAuth.empleadoId,
+      tenantId: req.mobileAuth.tenantId,
+      estatus: 'activo'
+    }).lean();
+    if (!empleado) return jsonError(res, 403, 'Empleado no encontrado');
+    const flags = await resolveMobileFeatureFlags(req.mobileAuth.tenantId, empleado);
+    if (!tenantHasFeature(flags, 'recibos')) {
+      return jsonError(res, 403, 'Módulo de recibos no activo', 'FEATURE_DISABLED');
+    }
+    const getNominaHistoricoReciboModel = require('../models/nominaHistoricoRecibo');
+    const Historico = await getNominaHistoricoReciboModel();
+    const rows = await Historico.find({
+      tenantId: req.mobileAuth.tenantId,
+      empleadoId: empleado._id
+    })
+      .sort({ anio: -1, mes: -1, createdAt: -1 })
+      .limit(36)
+      .select('anio mes periodo totalPercepciones totalDeducciones netoPagar origen fechaCierre')
+      .lean();
+    const recibos = rows.map((r) => ({
+      id: String(r._id),
+      anio: r.anio,
+      mes: r.mes,
+      periodoLabel:
+        r.periodo?.numeroPeriodo != null
+          ? `${r.anio}-${String(r.mes).padStart(2, '0')} · P${r.periodo.numeroPeriodo}`
+          : `${r.anio}-${String(r.mes).padStart(2, '0')}`,
+      totalPercepciones: r.totalPercepciones,
+      totalDeducciones: r.totalDeducciones,
+      neto: r.netoPagar,
+      origen: r.origen || '',
+      fechaCierre: r.fechaCierre || null
+    }));
+    return res.json({ ok: true, recibos });
+  } catch (err) {
+    console.error('[api/v1/recibos]', err);
+    return jsonError(res, 500, err.message || 'Error al cargar recibos');
   }
 });
 

@@ -68,7 +68,9 @@ const attendanceAttemptSchema = new mongoose.Schema(
     dispositivo: {
       plataforma: { type: String, default: '' },
       modelo: { type: String, default: '' },
-      appVersion: { type: String, default: '' }
+      appVersion: { type: String, default: '' },
+      deviceUuid: { type: String, default: '' },
+      telefono: { type: String, default: '' }
     },
     detalle: { type: mongoose.Schema.Types.Mixed, default: {} },
     ip: { type: String, default: '' },

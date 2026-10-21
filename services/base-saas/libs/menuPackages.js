@@ -18,14 +18,14 @@ const MENU_PACKAGES = [
     label: 'Asistencia-Prenómina',
     description: 'Tiempo, incidencias y pre-nómina',
     alwaysAvailable: false,
-    featureKeysAny: ['asistencia', 'incidencias', 'prenomina', 'reportes']
+    featureKeysAny: ['asistencia', 'incidencias', 'vacaciones', 'prenomina', 'reportes']
   },
   {
     id: 'nomina',
     label: 'Nómina',
     description: 'Cálculo, timbrado y cumplimiento',
     alwaysAvailable: false,
-    featureKeysAny: ['nomina', 'gestion_documental']
+    featureKeysAny: ['nomina', 'recibos', 'gestion_documental']
   }
 ];
 

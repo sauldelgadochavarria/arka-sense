@@ -121,7 +121,7 @@
       <p>Solicitudes, vacaciones y portal empleado.</p>
       <ul>
         <li><a href="/incidencias/pendientes">Bandeja pendientes</a></li>
-        <li><a href="/incidencias/vacaciones">Vacaciones</a></li>
+        <% if (ff.vacaciones) { %><li><a href="/incidencias/vacaciones">Vacaciones</a></li><% } %>
         <li><a href="/portal">Portal empleado</a></li>
       </ul>
     </div>

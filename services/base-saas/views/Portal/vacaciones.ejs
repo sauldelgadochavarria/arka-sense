@@ -1,27 +1,114 @@
 <%- include('partials/layout-top', { title: 'Vacaciones', session }) %>
-<h1>Mis vacaciones <%= anio %></h1>
+<%
+  const disponibles = saldo ? (saldo.diasPendientes || 0) : 0;
+  const congelados = saldo ? (saldo.diasCongelados || 0) : 0;
+%>
+<section class="page-header">
+  <h1>Mis vacaciones <%= anio %></h1>
+  <p class="muted">Saldo según antigüedad (LFT) · días laborables (sin fines de semana ni inhábiles).</p>
+</section>
 
-<% if (saldo) { %>
 <div class="stats-grid">
-  <div class="stat-card"><strong><%= saldo.diasCorresponden %></strong><span>Corresponden</span></div>
-  <div class="stat-card warn"><strong><%= saldo.diasTomados %></strong><span>Tomados</span></div>
-  <div class="stat-card ok"><strong><%= saldo.diasPendientes %></strong><span>Disponibles</span></div>
+  <div class="stat-card ok">
+    <strong><%= disponibles %></strong>
+    <span>Días disponibles</span>
+  </div>
+  <div class="stat-card">
+    <strong><%= saldo ? saldo.diasCorresponden : 0 %></strong>
+    <span>Corresponden</span>
+  </div>
+  <div class="stat-card warn">
+    <strong><%= saldo ? saldo.diasTomados : 0 %></strong>
+    <span>Tomados</span>
+  </div>
+  <div class="stat-card">
+    <strong><%= congelados %></strong>
+    <span>Reservados (pendientes)</span>
+  </div>
 </div>
-<% } %>
 
-<p><a class="btn" href="/portal/solicitudes/nueva">Solicitar vacaciones</a></p>
+<section class="card-block">
+  <h2>Solicitar periodo</h2>
+  <form method="post" action="/portal/vacaciones/solicitar" class="form-grid" id="form-vac">
+    <label>Inicio
+      <input type="date" name="fechaInicio" id="vac-inicio" required min="<%= new Date().toISOString().slice(0,10) %>" />
+    </label>
+    <label>Fin
+      <input type="date" name="fechaFin" id="vac-fin" required min="<%= new Date().toISOString().slice(0,10) %>" />
+    </label>
+    <label style="grid-column:1/-1;">Motivo (opcional)
+      <input name="motivo" maxlength="500" placeholder="Ej. viaje familiar" />
+    </label>
+    <p class="muted" id="vac-preview">Selecciona un rango para ver cuántos días se descontarán.</p>
+    <button type="submit" class="btn btn-primary">Enviar solicitud</button>
+  </form>
+</section>
 
-<h2>Historial de solicitudes de vacaciones</h2>
+<h2>Historial</h2>
 <table>
-  <thead><tr><th>Periodo</th><th>Días</th><th>Estatus</th></tr></thead>
-  <tbody>
-    <% solicitudesVac.forEach(function(s) { %>
+  <thead>
     <tr>
-      <td><%= new Date(s.fechaInicio).toLocaleDateString('es-MX') %> – <%= new Date(s.fechaFin).toLocaleDateString('es-MX') %></td>
-      <td><%= s.diasAfectados %></td>
-      <td><%= s.estatus %></td>
+      <th>Periodo</th>
+      <th>Días</th>
+      <th>Estado</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <% if (!solicitudesVac.length) { %>
+    <tr><td colspan="4" class="muted">Aún no hay solicitudes.</td></tr>
+    <% } %>
+    <% solicitudesVac.forEach(function(s) {
+      const st = s.status || s.estatus || '';
+      const badge =
+        st === 'APPROVED' || st === 'aprobada' ? 'badge-activo' :
+        st === 'REJECTED' || st === 'rechazada' ? 'badge-suspendido' :
+        st === 'PENDING' || st === 'pendiente' ? '' : 'muted';
+      const label = vacStatusLabel[st] || st;
+      const canCancel = st === 'PENDING' || st === 'APPROVED';
+    %>
+    <tr>
+      <td>
+        <%= new Date(s.fechaInicio).toLocaleDateString('es-MX') %>
+        –
+        <%= new Date(s.fechaFin).toLocaleDateString('es-MX') %>
+      </td>
+      <td><%= s.diasSolicitados != null ? s.diasSolicitados : s.diasAfectados %></td>
+      <td><span class="badge <%= badge %>"><%= label %></span>
+        <% if (s.motivoRechazo) { %><br /><small class="muted"><%= s.motivoRechazo %></small><% } %>
+      </td>
+      <td>
+        <% if (canCancel) { %>
+        <form method="post" action="/portal/vacaciones/<%= s._id %>/cancelar"
+          onsubmit="return confirm('¿Cancelar esta solicitud?');">
+          <button type="submit" class="btn btn-sm">Cancelar</button>
+        </form>
+        <% } %>
+      </td>
     </tr>
     <% }); %>
   </tbody>
 </table>
+
+<script>
+(function () {
+  var inicio = document.getElementById('vac-inicio');
+  var fin = document.getElementById('vac-fin');
+  var preview = document.getElementById('vac-preview');
+  function sync() {
+    if (inicio.value && !fin.value) fin.value = inicio.value;
+    if (inicio.value && fin.value && fin.value < inicio.value) fin.value = inicio.value;
+    if (!inicio.value || !fin.value) return;
+    fetch('/portal/vacaciones/preview-dias?inicio=' + encodeURIComponent(inicio.value) + '&fin=' + encodeURIComponent(fin.value))
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d.ok) { preview.textContent = d.error || 'No se pudo calcular'; return; }
+        preview.textContent = 'Se descontarán ' + d.dias + ' día(s) laborable(s).';
+      })
+      .catch(function () { preview.textContent = 'No se pudo calcular'; });
+  }
+  if (inicio) inicio.addEventListener('change', sync);
+  if (fin) fin.addEventListener('change', sync);
+})();
+</script>
 <%- include('partials/layout-bottom') %>

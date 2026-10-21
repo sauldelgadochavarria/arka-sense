@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import '../config/api_config.dart';
 import '../services/api_client.dart';
 import '../services/auth_state.dart';
+import '../services/device_id_service.dart';
 import '../services/location_service.dart';
 import '../services/notification_inbox.dart';
 import '../services/punch_local_store.dart';
@@ -15,6 +16,8 @@ import '../services/reminder_scheduler.dart';
 import 'history_screen.dart';
 import 'liveness_screen.dart';
 import 'notifications_screen.dart';
+import 'recibos_screen.dart';
+import 'vacaciones_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -25,6 +28,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final _location = LocationService();
+  final _deviceIds = DeviceIdService();
   Map<String, dynamic>? _hoy;
   bool _loading = true;
   bool _punching = false;
@@ -71,6 +75,11 @@ class _HomeScreenState extends State<HomeScreen> {
       _error = null;
     });
     final auth = context.read<AuthState>();
+    try {
+      await auth.refreshCapabilities();
+    } catch (_) {
+      /* la sesión revocada ya cierra desde el cliente API */
+    }
     try {
       await PunchLocalStore.instance.flushPending(auth);
     } catch (_) {
@@ -208,6 +217,7 @@ class _HomeScreenState extends State<HomeScreen> {
         );
         return;
       }
+      final deviceUuid = await _deviceIds.getDeviceUuid();
       final body = {
         'tipoMarcacion': tipo,
         'lat': geo.lat,
@@ -217,7 +227,7 @@ class _HomeScreenState extends State<HomeScreen> {
         'biometriaOk': true,
         'biometriaScore': live.confidenceScore,
         'biometriaChallengeId': live.challengeId,
-        ...LocationService.deviceMeta(),
+        ...LocationService.deviceMeta(deviceUuid: deviceUuid),
       };
       if (!mounted) return;
       try {
@@ -299,6 +309,10 @@ class _HomeScreenState extends State<HomeScreen> {
     await _bootstrapInbox();
   }
 
+  /// Índices: Inicio(0), Historial(1), [Vacaciones], [Recibos], Perfil.
+  int get _idxVacaciones => 2;
+  int get _idxRecibos => context.read<AuthState>().vacacionesEnabled ? 3 : 2;
+
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthState>();
@@ -307,34 +321,72 @@ class _HomeScreenState extends State<HomeScreen> {
     final turno = horario?['turno'] as Map<String, dynamic>?;
     final fechaTxt = DateFormat('EEE d MMM y').format(DateTime.now());
 
+    final pages = <Widget>[
+      _buildInicio(auth, firstName, fechaTxt, horario, turno),
+      const HistoryScreen(),
+      if (auth.vacacionesEnabled) const VacacionesScreen(),
+      if (auth.recibosEnabled) const RecibosScreen(),
+      if (!auth.vacacionesEnabled && !auth.recibosEnabled)
+        _buildPlaceholder(
+          'Módulos',
+          'Vacaciones y recibos se habilitan por licencia del tenant y subsidiaria.',
+          Icons.apps_outlined,
+        ),
+      _buildPerfil(auth),
+    ];
+
+    final destinations = <NavigationDestination>[
+      const NavigationDestination(
+        icon: Icon(Icons.home_outlined),
+        selectedIcon: Icon(Icons.home),
+        label: 'Inicio',
+      ),
+      const NavigationDestination(
+        icon: Icon(Icons.calendar_month_outlined),
+        selectedIcon: Icon(Icons.calendar_month),
+        label: 'Historial',
+      ),
+      if (auth.vacacionesEnabled)
+        const NavigationDestination(
+          icon: Icon(Icons.beach_access_outlined),
+          selectedIcon: Icon(Icons.beach_access),
+          label: 'Vacaciones',
+        ),
+      if (auth.recibosEnabled)
+        const NavigationDestination(
+          icon: Icon(Icons.payments_outlined),
+          selectedIcon: Icon(Icons.payments),
+          label: 'Recibos',
+        ),
+      if (!auth.vacacionesEnabled && !auth.recibosEnabled)
+        const NavigationDestination(
+          icon: Icon(Icons.apps_outlined),
+          selectedIcon: Icon(Icons.apps),
+          label: 'Más',
+        ),
+      const NavigationDestination(
+        icon: Icon(Icons.person_outline),
+        selectedIcon: Icon(Icons.person),
+        label: 'Perfil',
+      ),
+    ];
+
+    final safeTab = _tab.clamp(0, pages.length - 1);
+
     return Scaffold(
       backgroundColor: const Color(0xFF0A1518),
       body: SafeArea(
         child: IndexedStack(
-          index: _tab,
-          children: [
-            _buildInicio(auth, firstName, fechaTxt, horario, turno),
-            const HistoryScreen(),
-            _buildPlaceholder(
-              'Mis recibos',
-              'Pronto podrás ver y descargar PDF/XML de nómina aquí.',
-              Icons.receipt_long,
-            ),
-            _buildPerfil(auth),
-          ],
+          index: safeTab,
+          children: pages,
         ),
       ),
       bottomNavigationBar: NavigationBar(
-        selectedIndex: _tab,
+        selectedIndex: safeTab,
         onDestinationSelected: (i) => setState(() => _tab = i),
         backgroundColor: const Color(0xFF0D2228),
         indicatorColor: const Color(0xFF2FD4A1).withValues(alpha: 0.25),
-        destinations: const [
-          NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: 'Inicio'),
-          NavigationDestination(icon: Icon(Icons.calendar_month_outlined), selectedIcon: Icon(Icons.calendar_month), label: 'Historial'),
-          NavigationDestination(icon: Icon(Icons.payments_outlined), selectedIcon: Icon(Icons.payments), label: 'Recibos'),
-          NavigationDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: 'Perfil'),
-        ],
+        destinations: destinations,
       ),
     );
   }
@@ -539,14 +591,26 @@ class _HomeScreenState extends State<HomeScreen> {
                     onTap: () => setState(() => _tab = 1),
                   ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _quickTile(
-                    icon: Icons.receipt_long,
-                    label: 'Recibos',
-                    onTap: () => setState(() => _tab = 2),
+                if (auth.vacacionesEnabled) ...[
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _quickTile(
+                      icon: Icons.beach_access,
+                      label: 'Vacaciones',
+                      onTap: () => setState(() => _tab = _idxVacaciones),
+                    ),
                   ),
-                ),
+                ],
+                if (auth.recibosEnabled) ...[
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _quickTile(
+                      icon: Icons.receipt_long,
+                      label: 'Recibos',
+                      onTap: () => setState(() => _tab = _idxRecibos),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),

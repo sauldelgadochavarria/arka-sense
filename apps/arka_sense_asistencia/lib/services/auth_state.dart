@@ -5,6 +5,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import 'api_client.dart';
+import 'device_id_service.dart';
+import 'location_service.dart';
 
 class SavedCredentials {
   const SavedCredentials({
@@ -46,6 +48,40 @@ class AuthState extends ChangeNotifier {
   String? sessionEndedMessage;
 
   bool get isAuthenticated => token != null && token!.isNotEmpty;
+
+  Map<String, dynamic>? get seguridadMovil {
+    final s = session?['seguridadMovil'];
+    if (s is Map<String, dynamic>) return s;
+    if (s is Map) return Map<String, dynamic>.from(s);
+    return null;
+  }
+
+  /// Subsidiaria exige SMS+UUID y este teléfono aún no está vinculado.
+  bool get needsDeviceRegistration {
+    final s = seguridadMovil;
+    if (s == null) return false;
+    return s['exigirRegistroDispositivo'] == true && s['dispositivoRegistrado'] != true;
+  }
+
+  Map<String, dynamic>? get capabilities {
+    final c = session?['capabilities'];
+    if (c is Map<String, dynamic>) return c;
+    if (c is Map) return Map<String, dynamic>.from(c);
+    return null;
+  }
+
+  Map<String, dynamic>? get featureFlags {
+    final f = session?['featureFlags'];
+    if (f is Map<String, dynamic>) return f;
+    if (f is Map) return Map<String, dynamic>.from(f);
+    return null;
+  }
+
+  bool get vacacionesEnabled => featureFlags?['vacaciones'] == true;
+  bool get recibosEnabled => featureFlags?['recibos'] == true;
+  bool get esSupervisor => capabilities?['esSupervisor'] == true;
+
+  final _deviceIds = DeviceIdService();
 
   ApiClient get api {
     _client.token = token;
@@ -100,7 +136,18 @@ class AuthState extends ChangeNotifier {
       _client.onAuthFailure = _handleAuthFailure;
       if (token != null && token!.isNotEmpty) {
         try {
-          await api.get('/me');
+          final uuid = await _deviceIds.getDeviceUuid();
+          final me = await api.get('/me?deviceUuid=${Uri.encodeQueryComponent(uuid)}');
+          session = {
+            ...?session,
+            if (me['seguridadMovil'] is Map)
+              'seguridadMovil': Map<String, dynamic>.from(me['seguridadMovil'] as Map),
+            if (me['capabilities'] is Map)
+              'capabilities': Map<String, dynamic>.from(me['capabilities'] as Map),
+            if (me['featureFlags'] is Map)
+              'featureFlags': Map<String, dynamic>.from(me['featureFlags'] as Map),
+          };
+          await _writeSafe(_kSession, jsonEncode(session));
         } on ApiException catch (e) {
           if (e.isSessionRevoked) {
             sessionEndedMessage = e.message;
@@ -175,16 +222,25 @@ class AuthState extends ChangeNotifier {
     required String password,
     bool rememberPassword = false,
   }) async {
+    final uuid = await _deviceIds.getDeviceUuid();
     final data = await ApiClient().post('/auth/login', {
       'account': account.trim(),
       'email': email.trim(),
       'password': password,
+      'deviceUuid': uuid,
+      ...LocationService.deviceMeta(deviceUuid: uuid),
     });
     token = data['token'] as String?;
     session = {
       'user': data['user'],
       'empleado': data['empleado'],
       'tenant': data['tenant'],
+      if (data['seguridadMovil'] is Map)
+        'seguridadMovil': Map<String, dynamic>.from(data['seguridadMovil'] as Map),
+      if (data['capabilities'] is Map)
+        'capabilities': Map<String, dynamic>.from(data['capabilities'] as Map),
+      if (data['featureFlags'] is Map)
+        'featureFlags': Map<String, dynamic>.from(data['featureFlags'] as Map),
     };
     await _writeSafe(_kToken, token);
     await _writeSafe(_kSession, jsonEncode(session));
@@ -200,6 +256,25 @@ class AuthState extends ChangeNotifier {
     sessionEndedMessage = null;
     notifyListeners();
   }
+
+  Future<void> refreshSeguridadMovil() async {
+    if (!isAuthenticated) return;
+    final uuid = await _deviceIds.getDeviceUuid();
+    final me = await api.get('/me?deviceUuid=${Uri.encodeQueryComponent(uuid)}');
+    session = {
+      ...?session,
+      if (me['seguridadMovil'] is Map)
+        'seguridadMovil': Map<String, dynamic>.from(me['seguridadMovil'] as Map),
+      if (me['capabilities'] is Map)
+        'capabilities': Map<String, dynamic>.from(me['capabilities'] as Map),
+      if (me['featureFlags'] is Map)
+        'featureFlags': Map<String, dynamic>.from(me['featureFlags'] as Map),
+    };
+    await _writeSafe(_kSession, jsonEncode(session));
+    notifyListeners();
+  }
+
+  Future<void> refreshCapabilities() => refreshSeguridadMovil();
 
   /// Cierra sesión JWT; conserva cuenta/email (y contraseña si estaba marcada).
   Future<void> logout({bool keepEndedMessage = false}) async {

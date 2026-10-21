@@ -4,7 +4,7 @@
 <p>No hay empresa vinculada a este tenant. Activa el tenant desde Arka-Presence Admin.</p>
 <% } else { %>
 <table>
-  <thead><tr><th>Código</th><th>Cód. legado</th><th>Nombre</th><th>Ciudad</th><th>Geocerca</th><th>Activo</th><th></th></tr></thead>
+  <thead><tr><th>Código</th><th>Cód. legado</th><th>Nombre</th><th>Ciudad</th><th>Módulos app</th><th>Geocerca</th><th>Activo</th><th></th></tr></thead>
   <tbody>
     <% subsidiarias.forEach(function(s) { %>
     <tr class="<%= !s.activo ? 'row-muted' : '' %>">
@@ -12,6 +12,11 @@
       <td><%= s.codigoLegado != null ? s.codigoLegado : '—' %></td>
       <td><%= s.nombre %></td>
       <td><%= s.ciudad || '—' %></td>
+      <td>
+        <% (s.modulosUi || []).forEach(function(m) { %>
+        <div class="<%= m.checked ? '' : 'muted' %>"><%= m.label %>: <%= m.checked ? 'Sí' : 'No' %></div>
+        <% }); %>
+      </td>
       <td><%= s.geocercaRadioMetros ? s.geocercaRadioMetros + ' m' : '—' %></td>
       <td><%= s.activo ? 'Sí' : 'No' %></td>
       <td class="actions">

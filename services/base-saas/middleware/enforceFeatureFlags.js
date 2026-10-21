@@ -1,10 +1,14 @@
 'use strict';
 
-const { tenantHasFeature, tenantHasAnyFeature } = require('../libs/tenantFeatureFlags');
+const {
+  tenantHasFeature,
+  tenantHasAnyFeature,
+  effectiveFeatureFlagsFromReq
+} = require('../libs/tenantFeatureFlags');
 const { isAllowlisted, matchFeatureRule } = require('../libs/featureRouteMap');
 
 function featureFlagsFromReq(req) {
-  return req.tenant?.featureFlags || req.session?.featureFlags || {};
+  return effectiveFeatureFlagsFromReq(req);
 }
 
 function deny(req, res, message) {

@@ -89,6 +89,8 @@
       <dt>Email personal</dt><dd><%= empleado.emailPersonal || '—' %></dd>
       <dt>Celular</dt><dd><%= empleado.telefono || '—' %></dd>
       <dt>Teléfono fijo</dt><dd><%= empleado.telefonoFijo || '—' %></dd>
+      <dt>Registro dispositivo (SMS)</dt>
+      <dd><%= empleado.exentoRegistroDispositivo ? 'Exento (aunque la subsidiaria lo exija)' : 'Según política de subsidiaria' %></dd>
     </dl>
   </section>
 

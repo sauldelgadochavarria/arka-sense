@@ -1,14 +1,33 @@
 <%- include('partials/layout-top', { title: 'Inicio', session }) %>
+<%
+  var flags = typeof featureFlags !== 'undefined' ? featureFlags : (session.featureFlags || {});
+%>
 <h1>Hola, <%= empleado.firstName %></h1>
 <p class="muted">No. empleado: <code><%= empleado.numEmpleado %></code></p>
 
 <div class="stats-grid">
   <div class="stat-card"><strong><%= pendientes %></strong><span>Solicitudes pendientes</span></div>
+  <% if (flags.vacaciones && vacPendientesEquipo) { %>
+  <div class="stat-card warn"><strong><%= vacPendientesEquipo %></strong><span>Vacaciones por aprobar</span></div>
+  <% } %>
 </div>
 
 <ul>
+  <% if (flags.asistencia !== false) { %>
   <li><a href="/portal/asistencia">Consultar mi asistencia del mes</a></li>
-  <li><a href="/portal/solicitudes/nueva">Nueva solicitud (permiso, vacaciones…)</a></li>
-  <li><a href="/portal/vacaciones">Ver saldo de vacaciones</a></li>
+  <% } %>
+  <li><a href="/portal/solicitudes/nueva">Nueva solicitud (permiso, incapacidad…)</a></li>
+  <% if (flags.vacaciones) { %>
+  <li><a href="/portal/vacaciones">Vacaciones — saldo y solicitud</a></li>
+  <% if (typeof capabilities !== 'undefined' && capabilities && capabilities.esSupervisor) { %>
+  <li>
+    <a href="/portal/aprobaciones-vacaciones">Aprobar vacaciones de mi equipo</a>
+    <% if (vacPendientesEquipo) { %> <span class="badge"><%= vacPendientesEquipo %> pendiente(s)</span><% } %>
+  </li>
+  <% } %>
+  <% } %>
+  <% if (flags.recibos) { %>
+  <li><a href="/portal/recibos">Mis recibos de nómina</a></li>
+  <% } %>
 </ul>
 <%- include('partials/layout-bottom') %>

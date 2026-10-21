@@ -67,17 +67,63 @@ function parseDateTimeLocal(value) {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-function formatTimeHHMM(date) {
+/**
+ * HH:mm en zona laboral (default America/Mexico_City).
+ * Evita el bug de Docker/UTC donde getHours() mostraba 21–23 en vez de 15 local.
+ */
+function formatTimeHHMM(date, timeZone = DEFAULT_TZ) {
   if (!date) return '';
-  const d = new Date(date);
-  const h = String(d.getHours()).padStart(2, '0');
-  const m = String(d.getMinutes()).padStart(2, '0');
-  return `${h}:${m}`;
+  try {
+    return new Intl.DateTimeFormat('es-MX', {
+      timeZone: timeZone || DEFAULT_TZ,
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23'
+    }).format(new Date(date));
+  } catch {
+    const d = new Date(date);
+    const h = String(d.getUTCHours()).padStart(2, '0');
+    const m = String(d.getUTCMinutes()).padStart(2, '0');
+    return `${h}:${m}`;
+  }
 }
 
-function formatDateMX(date) {
+function formatDateTimeMX(date, timeZone = DEFAULT_TZ) {
   if (!date) return '—';
-  return new Date(date).toLocaleDateString('es-MX');
+  try {
+    return new Intl.DateTimeFormat('es-MX', {
+      timeZone: timeZone || DEFAULT_TZ,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hourCycle: 'h23'
+    }).format(new Date(date));
+  } catch {
+    return new Date(date).toISOString();
+  }
+}
+
+function formatDateMX(date, timeZone = DEFAULT_TZ) {
+  if (!date) return '—';
+  try {
+    return new Intl.DateTimeFormat('es-MX', {
+      timeZone: timeZone || DEFAULT_TZ,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).format(new Date(date));
+  } catch {
+    return new Date(date).toLocaleDateString('es-MX');
+  }
+}
+
+/** Medianoche conceptual del día laboral (UTC noon del YMD en esa zona). */
+function calendarDateInTimeZone(date, timeZone = DEFAULT_TZ) {
+  const ymd = ymdInTimeZone(date, timeZone);
+  return new Date(`${ymd}T12:00:00.000Z`);
 }
 
 module.exports = {
@@ -90,6 +136,8 @@ module.exports = {
   minutesDiff,
   parseDateTimeLocal,
   formatTimeHHMM,
+  formatDateTimeMX,
   formatDateMX,
+  calendarDateInTimeZone,
   DEFAULT_TZ
 };

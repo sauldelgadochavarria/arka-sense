@@ -182,6 +182,7 @@ function buildEmpleadoPayload(body, tenantId, empresaId) {
     exportarFaltas: parseCheckbox(body, 'exportarFaltas'),
     exportarRetardos: parseCheckbox(body, 'exportarRetardos'),
     exportarHorasExtra: parseCheckbox(body, 'exportarHorasExtra'),
+    exentoRegistroDispositivo: parseCheckbox(body, 'exentoRegistroDispositivo'),
     datosBancarios: {
       bancoCodigo: trimString(body.banco_bancoCodigo).replace(/\D/g, '').slice(0, 5),
       bancoNombre: trimString(body.banco_bancoNombre),

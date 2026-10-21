@@ -13,6 +13,73 @@
   <input name="lat" type="number" step="any" value="<%= subsidiaria.lat != null ? subsidiaria.lat : '' %>" placeholder="Latitud" />
   <input name="lng" type="number" step="any" value="<%= subsidiaria.lng != null ? subsidiaria.lng : '' %>" placeholder="Longitud" />
   <input name="geocercaRadioMetros" type="number" min="0" value="<%= subsidiaria.geocercaRadioMetros != null ? subsidiaria.geocercaRadioMetros : '' %>" placeholder="Radio geocerca (m)" />
+  <label style="grid-column:1/-1;">
+    Zona horaria (IANA)
+    <select name="zonaHoraria">
+      <%
+        const tzActual = (subsidiaria.zonaHoraria || 'America/Mexico_City');
+        const zonas = [
+          'America/Mexico_City',
+          'America/Cancun',
+          'America/Merida',
+          'America/Monterrey',
+          'America/Mazatlan',
+          'America/Chihuahua',
+          'America/Tijuana',
+          'America/Hermosillo',
+          'America/Bahia_Banderas'
+        ];
+      %>
+      <% zonas.forEach(function(z) { %>
+      <option value="<%= z %>" <%= tzActual === z ? 'selected' : '' %>><%= z %></option>
+      <% }); %>
+      <% if (zonas.indexOf(tzActual) < 0) { %>
+      <option value="<%= tzActual %>" selected><%= tzActual %></option>
+      <% } %>
+    </select>
+    <small class="muted">Define cómo se muestran las horas de checado (el servidor Docker suele estar en UTC).</small>
+  </label>
+  <label style="display:flex;align-items:flex-start;gap:8px;grid-column:1/-1;margin-top:8px;">
+    <input
+      type="checkbox"
+      name="exigirRegistroDispositivo"
+      value="true"
+      <%= subsidiaria.seguridadMovil && subsidiaria.seguridadMovil.exigirRegistroDispositivo ? 'checked' : '' %>
+    />
+    <span>
+      <strong>Exigir registro de dispositivo (SMS + UUID)</strong><br />
+      <small>
+        Si está activo, el empleado debe verificar el móvil con código SMS antes de checar.
+        La marcación siempre envía <code>deviceUuid</code> + GPS; con esta opción además debe estar registrado.
+      </small>
+    </span>
+  </label>
+
+  <fieldset style="grid-column:1/-1;margin-top:12px;border:1px solid var(--border, #ddd);padding:12px;border-radius:8px;">
+    <legend><strong>Módulos en esta subsidiaria</strong></legend>
+    <input type="hidden" name="modulosForm" value="1" />
+    <p class="muted small">
+      La app usa <strong>licencia del tenant y esta subsidiaria</strong>.
+      Si Vacaciones o Recibos están apagados en el tenant, quedan desactivados aquí y en Arka Sense.
+    </p>
+    <% (modulosUi || []).forEach(function(m) { %>
+    <label style="display:flex;align-items:flex-start;gap:8px;margin:8px 0;<%= m.tenantOn ? '' : 'opacity:.72' %>">
+      <input
+        type="checkbox"
+        name="modulos[<%= m.key %>]"
+        value="true"
+        <%= m.checked ? 'checked' : '' %>
+        <%= m.tenantOn ? '' : 'disabled' %>
+      />
+      <span>
+        <strong><%= m.label %></strong>
+        <% if (!m.tenantOn) { %> <span class="muted">— desactivado en la licencia del tenant</span><% } %>
+        <br /><small class="muted"><%= m.hint %></small>
+      </span>
+    </label>
+    <% }); %>
+  </fieldset>
+
   <button type="submit">Guardar</button>
 </form>
 <%- include('../Partials/layout-bottom') %>

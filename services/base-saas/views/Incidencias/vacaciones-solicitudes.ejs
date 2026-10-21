@@ -1,0 +1,63 @@
+<%- include('../Partials/layout-top', { title: 'Solicitudes de vacaciones', session }) %>
+<section class="page-header">
+  <h1>Solicitudes de vacaciones (RRHH)</h1>
+  <p class="muted">Bandeja de la empresa / subsidiaria activa. El supervisor también aprueba desde el portal.</p>
+</section>
+
+<% if (error) { %><p class="flash error"><%= error %></p><% } %>
+
+<form method="get" class="toolbar">
+  <select name="status">
+    <% ['PENDING','APPROVED','REJECTED','CANCELLED','todos'].forEach(function(s) { %>
+    <option value="<%= s %>" <%= status === s ? 'selected' : '' %>><%= s %></option>
+    <% }); %>
+  </select>
+  <button type="submit" class="btn">Filtrar</button>
+  <a class="btn" href="/incidencias/vacaciones">Saldos</a>
+  <a class="btn" href="/incidencias/dias-inhabiles">Días inhábiles</a>
+</form>
+
+<table>
+  <thead>
+    <tr>
+      <th>Empleado</th>
+      <th>Periodo</th>
+      <th>Días</th>
+      <th>Estado</th>
+      <th>Motivo</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <% if (!rows.length) { %>
+    <tr><td colspan="6" class="muted">Sin solicitudes.</td></tr>
+    <% } %>
+    <% rows.forEach(function(r) { %>
+    <tr>
+      <td><%= empMap.get(String(r.empleadoId)) || r.empleadoId %></td>
+      <td>
+        <%= new Date(r.fechaInicio).toLocaleDateString('es-MX') %>
+        –
+        <%= new Date(r.fechaFin).toLocaleDateString('es-MX') %>
+      </td>
+      <td><%= r.diasSolicitados %></td>
+      <td><span class="badge"><%= r.status %></span></td>
+      <td class="muted small"><%= r.motivo || r.motivoRechazo || '—' %></td>
+      <td>
+        <% if (r.status === 'PENDING') { %>
+        <form method="post" action="/incidencias/vacaciones/solicitudes/<%= r._id %>/resolver" class="inline-form">
+          <input type="hidden" name="status" value="APPROVED" />
+          <button type="submit" class="btn btn-sm btn-primary">Aprobar</button>
+        </form>
+        <form method="post" action="/incidencias/vacaciones/solicitudes/<%= r._id %>/resolver" class="inline-form" style="margin-top:4px;">
+          <input type="hidden" name="status" value="REJECTED" />
+          <input name="motivoRechazo" placeholder="Motivo" />
+          <button type="submit" class="btn btn-sm">Rechazar</button>
+        </form>
+        <% } %>
+      </td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<%- include('../Partials/layout-bottom') %>

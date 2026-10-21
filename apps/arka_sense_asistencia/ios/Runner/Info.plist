@@ -51,6 +51,16 @@
 	<string>ArkaSense necesita la cámara para la prueba de vida e identificación facial.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>ArkaSense usa tu ubicación al registrar asistencia.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>ArkaSense se conecta al servidor de asistencia en tu red local.</string>
+	<!-- Dev: HTTP claro hacia SaaS en LAN (sin TLS). Quitar o restringir en producción. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
