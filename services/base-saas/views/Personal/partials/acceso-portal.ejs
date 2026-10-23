@@ -1,0 +1,56 @@
+<%
+  const acc = acceso || {};
+  const est = acc.estado || 'sin_cuenta';
+  const ext = !!acc.externo;
+  const emailVal = acc.emailCuenta || acc.emailSugerido || '';
+  const formAttr = ext ? ' form="form-acceso-portal"' : '';
+  const etiquetas = {
+    sin_cuenta: 'Sin cuenta',
+    pendiente: 'Invitación enviada',
+    activo: 'Activo',
+    inactivo: 'Desactivado'
+  };
+  const boton = {
+    sin_cuenta: 'Enviar correo para activar',
+    pendiente: 'Reenviar correo',
+    activo: 'Enviar enlace de nueva contraseña',
+    inactivo: 'Enviar correo para reactivar'
+  };
+%>
+<fieldset class="form-section">
+  <legend>Acceso al portal y a la app</legend>
+  <p class="hint">
+    Se envía un enlace al correo para que la persona defina su contraseña (en el celular o en una computadora).
+    Con la cuenta activa entra a la app y al portal con ese correo y esa contraseña.
+    La cuenta de la app es el identificador de la empresa.
+  </p>
+  <p>
+    Estado:
+    <span class="badge badge-<%= est === 'activo' ? 'activo' : (est === 'pendiente' ? 'suspendido' : 'baja') %>"><%= etiquetas[est] || est %></span>
+    <% if (acc.user && acc.user.email) { %>
+    · Correo de la cuenta: <strong><%= acc.user.email %></strong>
+    <% } %>
+  </p>
+  <% if (acc.inviteSentAt && est === 'pendiente') { %>
+  <p class="muted small">
+    Enviado <%= new Date(acc.inviteSentAt).toLocaleString('es-MX') %>
+    <% if (acc.inviteExpiresAt) { %> · vence <%= new Date(acc.inviteExpiresAt).toLocaleString('es-MX') %><% } %>
+  </p>
+  <% } %>
+  <% if (!ext) { %>
+  <form method="post" action="/personal-empleados/<%= empleado._id %>/acceso-portal" id="form-acceso-portal">
+  <% } %>
+    <label style="grid-column:1/-1">Correo para el enlace
+      <input type="email" name="emailAcceso" required<%- formAttr %> value="<%= emailVal %>" placeholder="correo@dominio.com" />
+    </label>
+    <p class="hint">Se propone el correo personal y, si no hay, el corporativo. Puedes cambiarlo: ese será el usuario de entrada.</p>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+      <button type="submit"<%- formAttr %>><%= boton[est] || 'Enviar correo' %></button>
+      <% if (acc.user && est !== 'inactivo' && est !== 'sin_cuenta') { %>
+      <button type="submit" class="btn-danger"<%- formAttr %> formnovalidate formaction="/personal-empleados/<%= empleado._id %>/acceso-portal/revocar" onclick="return confirm('¿Desactivar el acceso de este empleado?');">Desactivar acceso</button>
+      <% } %>
+    </div>
+  <% if (!ext) { %>
+  </form>
+  <% } %>
+</fieldset>

@@ -79,6 +79,11 @@ const TIPOS_DOCUMENTO = [
   { codigo: 'EMP_RFC', nombre: 'RFC / Constancia SAT', ambito: 'empleado', carpeta: 'RFC_SAT', grupo: 'trabajador', obligatorio: true },
   { codigo: 'EMP_NSS', nombre: 'NSS / Alta IMSS', ambito: 'empleado', carpeta: 'NSS', grupo: 'trabajador', obligatorio: true },
   { codigo: 'EMP_COMP_DOMICILIO', nombre: 'Comprobante de domicilio', ambito: 'empleado', carpeta: 'Comprobante_domicilio', grupo: 'trabajador', obligatorio: false, vigencia: true },
+  { codigo: 'EMP_ACTA_NAC', nombre: 'Acta de nacimiento del empleado', ambito: 'empleado', carpeta: 'Acta_nacimiento', grupo: 'trabajador', obligatorio: false },
+  { codigo: 'EMP_CURP', nombre: 'CURP', ambito: 'empleado', carpeta: 'CURP', grupo: 'trabajador', obligatorio: false },
+  { codigo: 'EMP_INFONAVIT_RET', nombre: 'Aviso de retención INFONAVIT', ambito: 'empleado', carpeta: 'Infonavit_retencion', grupo: 'trabajador', obligatorio: false, vigencia: true },
+  { codigo: 'EMP_ACTA_MATRIMONIO', nombre: 'Acta de matrimonio', ambito: 'empleado', carpeta: 'Acta_matrimonio', grupo: 'trabajador', obligatorio: false },
+  { codigo: 'EMP_ACTA_HIJO', nombre: 'Acta de nacimiento de hijo', ambito: 'empleado', carpeta: 'Actas_hijos', grupo: 'trabajador', obligatorio: false },
   { codigo: 'EMP_INCAPACIDADES', nombre: 'Incapacidades', ambito: 'empleado', carpeta: 'Incapacidades', grupo: 'trabajador', obligatorio: false },
   { codigo: 'EMP_FINIQUITO', nombre: 'Finiquito / liquidación', ambito: 'empleado', carpeta: 'Finiquito', grupo: 'trabajador', obligatorio: false },
   { codigo: 'EMP_PARTICULARES', nombre: 'Documentos particulares', ambito: 'empleado', carpeta: 'Documentos_particulares', grupo: 'trabajador', obligatorio: false }

@@ -61,6 +61,50 @@ async function main() {
     fs.writeFileSync(dest, buf);
   }
   console.log(`[face-models] listo en ${OUT}`);
+
+  const arcDir = path.join(__dirname, '..', 'vendor', 'arcface');
+  const arcName = 'w600k_r50.onnx';
+  const arcDest = path.join(arcDir, arcName);
+  const arcUrl =
+    process.env.BIOMETRICS_ARCFACE_URL ||
+    'https://huggingface.co/public-data/insightface/resolve/main/models/buffalo_l/w600k_r50.onnx';
+  fs.mkdirSync(arcDir, { recursive: true });
+  if (fs.existsSync(arcDest) && fs.statSync(arcDest).size > 150_000_000) {
+    console.log(`[face-models] skip ${arcName}`);
+  } else {
+    console.log(`[face-models] download ${arcName}`);
+    await downloadToFile(arcUrl, arcDest);
+  }
+  console.log(`[face-models] ArcFace listo en ${arcDir}`);
+}
+
+function downloadToFile(url, dest) {
+  return new Promise((resolve, reject) => {
+    const file = fs.createWriteStream(dest);
+    https
+      .get(url, { headers: { 'User-Agent': 'paypilot-biometrics' } }, (res) => {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          file.close();
+          fs.unlink(dest, () => {});
+          downloadToFile(res.headers.location, dest).then(resolve, reject);
+          return;
+        }
+        if (res.statusCode !== 200) {
+          file.close();
+          fs.unlink(dest, () => {});
+          reject(new Error(`HTTP ${res.statusCode} ${url}`));
+          res.resume();
+          return;
+        }
+        res.pipe(file);
+        file.on('finish', () => file.close(resolve));
+      })
+      .on('error', (err) => {
+        file.close();
+        fs.unlink(dest, () => {});
+        reject(err);
+      });
+  });
 }
 
 main().catch((err) => {

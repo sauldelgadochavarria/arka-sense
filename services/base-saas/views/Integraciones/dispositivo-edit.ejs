@@ -4,6 +4,14 @@
 <form method="post" action="/integraciones/dispositivos/<%= dispositivo._id %>" class="form-grid">
   <label>Nombre</label>
   <input name="nombre" value="<%= dispositivo.nombre %>" required />
+  <label>Número de serie</label>
+  <input name="numeroSerie" value="<%= dispositivo.numeroSerie || '' %>" />
+  <label>Uso</label>
+  <select name="proposito">
+    <% propositos.forEach(function(p) { %>
+    <option value="<%= p.value %>" <%= (dispositivo.proposito || 'asistencia') === p.value ? 'selected' : '' %>><%= p.label %></option>
+    <% }); %>
+  </select>
   <label>Tipo</label>
   <select name="tipo">
     <% tiposDispositivo.forEach(function(t) { %>
@@ -23,8 +31,43 @@
     <option value="<%= s._id %>" <%= String(dispositivo.subsidiariaId) === String(s._id) ? 'selected' : '' %>><%= s.nombre %></option>
     <% }); %>
   </select>
+  <label>Zona</label>
+  <select name="zonaId">
+    <option value="">— Ninguna —</option>
+    <% zonas.forEach(function(z) { %>
+    <option value="<%= z._id %>" <%= String(dispositivo.zonaId) === String(z._id) ? 'selected' : '' %>><%= z.nombre %></option>
+    <% }); %>
+  </select>
   <label>Activo</label>
   <input type="checkbox" name="activo" <%= dispositivo.activo ? 'checked' : '' %> />
   <button type="submit">Guardar</button>
 </form>
+
+<h2>Quién puede checar aquí</h2>
+<p class="muted">
+  Si la lista está vacía, la sincronización de catálogo sigue enviando a todos los empleados activos.
+  Al agregar personas, el equipo queda limitado a esa lista.
+</p>
+<form method="post" action="/integraciones/dispositivos/<%= dispositivo._id %>/empleados" class="form-grid">
+  <input name="numEmpleado" placeholder="Número de empleado" required />
+  <button type="submit">Agregar</button>
+</form>
+<table>
+  <thead><tr><th>Empleado</th><th></th></tr></thead>
+  <tbody>
+    <% if (!autorizados.length) { %>
+    <tr><td colspan="2" class="muted">Sin lista. El catálogo no está limitado.</td></tr>
+    <% } %>
+    <% autorizados.forEach(function(emp) { %>
+    <tr>
+      <td><%= etiquetaEmpleado(emp) %></td>
+      <td>
+        <form method="post" action="/integraciones/dispositivos/<%= dispositivo._id %>/empleados/<%= emp._id %>/quitar" class="inline-form">
+          <button type="submit">Quitar</button>
+        </form>
+      </td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
 <%- include('../Partials/layout-bottom') %>

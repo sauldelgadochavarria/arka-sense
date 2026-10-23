@@ -16,8 +16,11 @@ let readyPromise = null;
 let isReady = false;
 let lastError = null;
 
+const { embedArcFace, cosineDistance, ensureArcFace } = require('./arcfaceService');
+
 const MODEL_DIR = path.join(__dirname, '..', '..', 'vendor', 'face-api-models');
-const MATCH_THRESHOLD = Number(process.env.BIOMETRICS_MATCH_THRESHOLD || 0.62);
+/** Distancia de coseno de ArcFace. Más bajo = más estricto. 0.40 exige parecido >= 0.60. */
+const MATCH_THRESHOLD = Number(process.env.BIOMETRICS_MATCH_THRESHOLD || 0.4);
 
 const NEUTRAL_MIN = Number(process.env.BIOMETRICS_NEUTRAL_MIN || 0.28);
 const HAPPY_MIN = Number(process.env.BIOMETRICS_HAPPY_MIN || 0.18);
@@ -55,8 +58,8 @@ async function ensureReady() {
 
       await faceapi.nets.ssdMobilenetv1.loadFromDisk(MODEL_DIR);
       await faceapi.nets.faceLandmark68Net.loadFromDisk(MODEL_DIR);
-      await faceapi.nets.faceRecognitionNet.loadFromDisk(MODEL_DIR);
       await faceapi.nets.faceExpressionNet.loadFromDisk(MODEL_DIR);
+      await ensureArcFace();
       isReady = true;
       lastError = null;
       console.log(`[biometrics] face-api listo (${backend})`);
@@ -149,11 +152,7 @@ async function analyzeFace(imageBuffer, { label = 'frame', flipHorizontal = fals
 
   async function detectOn(source) {
     const options = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.3 });
-    return faceapi
-      .detectAllFaces(source, options)
-      .withFaceLandmarks()
-      .withFaceExpressions()
-      .withFaceDescriptors();
+    return faceapi.detectAllFaces(source, options).withFaceLandmarks().withFaceExpressions();
   }
 
   let detections = await detectOn(img);
@@ -223,6 +222,15 @@ async function analyzeFace(imageBuffer, { label = 'frame', flipHorizontal = fals
   };
   const expressionSum = Object.values(expressions).reduce((s, v) => s + v, 0);
   const landmarks = det.landmarks.positions.map((p) => ({ x: p.x, y: p.y }));
+  let descriptor;
+  try {
+    descriptor = await embedArcFace(img, landmarks);
+  } catch (err) {
+    return {
+      ok: false,
+      error: err.message || `No se pudo calcular el rostro en ${label}`
+    };
+  }
 
   return {
     ok: true,
@@ -231,7 +239,7 @@ async function analyzeFace(imageBuffer, { label = 'frame', flipHorizontal = fals
     expressionSum,
     expressionReliable: expressionSum >= 0.45,
     mouthOpen: mouthOpenRatio(landmarks),
-    descriptor: Array.from(det.descriptor),
+    descriptor,
     landmarks,
     score: Number(det.detection.score || 0)
   };
@@ -363,6 +371,70 @@ function bestMatch(probes, reference, threshold = MATCH_THRESHOLD) {
   return best;
 }
 
+function asGallery(references) {
+  if (!references) return [];
+  if (typeof references[0] === 'number') {
+    const one = normalizeEmbedding(references);
+    return one.length >= 64 ? [one] : [];
+  }
+  return (references || []).map(normalizeEmbedding).filter((r) => r.length >= 64);
+}
+
+/**
+ * Identidad contra el rostro de la cuenta. Independiente de la prueba de vida.
+ * Los dos fotogramas tienen que quedar en el umbral. Un fotograma cercano no
+ * autoriza al otro: la salida de Rocío pasó con 0.580 porque un fotograma
+ * quedó en 0.45 o menos.
+ */
+function verifyIdentity(probes, references, threshold = MATCH_THRESHOLD) {
+  const gallery = asGallery(references);
+  const valid = (probes || []).filter(Boolean);
+  if (!valid.length || !gallery.length) {
+    return {
+      ok: false,
+      distance: 99,
+      bestDistance: 99,
+      worstDistance: 99,
+      confidenceScore: 0,
+      threshold,
+      samples: valid.length,
+      stage: 'identity',
+      rule: 'reject'
+    };
+  }
+
+  const probeDistances = [];
+  for (const probe of valid) {
+    const p = normalizeEmbedding(probe);
+    let nearest = 99;
+    for (const ref of gallery) {
+      if (p.length !== ref.length) continue;
+      const d = p.length >= 512 ? cosineDistance(p, ref) : euclideanDistance(p, ref);
+      if (d < nearest) nearest = d;
+    }
+    probeDistances.push(nearest);
+  }
+
+  const bestDistance = Math.min(...probeDistances);
+  const worstDistance = Math.max(...probeDistances);
+  const ok = valid.length >= 2 && worstDistance <= threshold;
+  return {
+    ok,
+    distance: worstDistance,
+    bestDistance,
+    worstDistance,
+    confidenceScore: Math.max(0, Math.min(1, Math.round((1 - worstDistance) * 1000) / 1000)),
+    threshold,
+    samples: valid.length,
+    stage: 'identity',
+    rule: ok ? 'both' : 'reject'
+  };
+}
+
+function consensusMatch(probes, reference, threshold = MATCH_THRESHOLD) {
+  return verifyIdentity(probes, reference, threshold);
+}
+
 module.exports = {
   ensureReady,
   getStatus,
@@ -370,6 +442,8 @@ module.exports = {
   evaluateLiveness,
   matchDescriptor,
   bestMatch,
+  verifyIdentity,
+  consensusMatch,
   normalizeEmbedding,
   euclideanDistance,
   MATCH_THRESHOLD,

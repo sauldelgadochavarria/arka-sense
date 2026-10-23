@@ -2,6 +2,7 @@
 <h1>Puntos de acceso</h1>
 <div class="toolbar">
   <a class="btn" href="/config-subsidiarias">← Subsidiarias</a>
+  <a class="btn" href="/config-zonas">Zonas</a>
 </div>
 <p class="muted">
   Catálogo de geocercas (lat, lng, radio) para validar marcaciones móviles.
@@ -24,6 +25,12 @@
     <option value="<%= s._id %>"><%= s.nombre %></option>
     <% }); %>
   </select>
+  <select name="zonaId">
+    <option value="">— Zona (opcional) —</option>
+    <% (zonas || []).forEach(function(z) { %>
+    <option value="<%= z._id %>"><%= z.nombre %></option>
+    <% }); %>
+  </select>
   <input name="lat" type="number" step="any" placeholder="Latitud" required />
   <input name="lng" type="number" step="any" placeholder="Longitud" required />
   <input name="radioMetros" type="number" min="10" max="5000" value="120" placeholder="Radio (m)" required />
@@ -38,6 +45,7 @@
       <th>Código</th>
       <th>Nombre</th>
       <th>Sucursal</th>
+      <th>Zona</th>
       <th>Lat / Lng</th>
       <th>Radio</th>
       <th>Activo</th>
@@ -46,13 +54,14 @@
   </thead>
   <tbody>
     <% if (!puntos.length) { %>
-    <tr><td colspan="7" class="muted">Sin puntos registrados.</td></tr>
+    <tr><td colspan="8" class="muted">Sin puntos registrados.</td></tr>
     <% } %>
     <% puntos.forEach(function(p) { %>
     <tr class="<%= !p.activo ? 'row-muted' : '' %>">
       <td><%= p.codigo || '—' %></td>
       <td><%= p.nombre %></td>
       <td><%= p.subsidiariaId ? (subMap.get(String(p.subsidiariaId)) || '—') : '—' %></td>
+      <td><%= p.zonaId ? (zonaMap.get(String(p.zonaId)) || '—') : '—' %></td>
       <td class="muted small"><%= p.lat %>, <%= p.lng %></td>
       <td><%= p.radioMetros %> m</td>
       <td><%= p.activo ? 'Sí' : 'No' %></td>

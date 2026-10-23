@@ -137,6 +137,7 @@ const ESTATUS_PERIODO_NOMINA = {
 /** Categorías para agrupar variables en el editor de fórmulas. */
 const CATEGORIAS_VARIABLES = [
   { id: 'periodo', label: 'Período y asistencia', descripcion: 'Días, faltas y métricas del período de nómina.' },
+  { id: 'familia', label: 'Familia y prestaciones', descripcion: 'Hijos, cónyuge y cumpleaños dentro del período de nómina.' },
   { id: 'salario', label: 'Salario e insumos del empleado', descripcion: 'Sueldo diario, antigüedad y datos del expediente.' },
   { id: 'fiscal', label: 'Parámetros fiscales', descripcion: 'UMA, salario mínimo y base de cotización.' },
   { id: 'horas_extra', label: 'Horas extra', descripcion: 'Cantidades de HE dobles y triples del período.' },
@@ -215,6 +216,46 @@ const VARIABLES_CONTEXTO = [
     categoria: 'salario',
     descripcion: 'Años de antigüedad al cierre del período (para vacaciones, prima, etc.).',
     ejemplo: 3
+  },
+  {
+    key: 'hijos',
+    label: 'Hijos registrados',
+    tipo: 'number',
+    categoria: 'familia',
+    descripcion: 'Cantidad de hijos en el expediente. También EMPLEADO.hijos.',
+    ejemplo: 2
+  },
+  {
+    key: 'hijosMenores',
+    label: 'Hijos menores de 18',
+    tipo: 'number',
+    categoria: 'familia',
+    descripcion: 'Hijos con fecha de nacimiento y menos de 18 años al fin del período. Útil para recreación familiar.',
+    ejemplo: 1
+  },
+  {
+    key: 'hijosEscolares',
+    label: 'Hijos menores en escuela',
+    tipo: 'number',
+    categoria: 'familia',
+    descripcion: 'Menores de 18 con nivel de escolaridad distinto de ninguna.',
+    ejemplo: 1
+  },
+  {
+    key: 'tieneConyuge',
+    label: 'Tiene cónyuge (1/0)',
+    tipo: 'number',
+    categoria: 'familia',
+    descripcion: '1 si hay cónyuge o concubino capturado en el expediente.',
+    ejemplo: 1
+  },
+  {
+    key: 'nacimientoEnPeriodo',
+    label: 'Cumpleaños en el período',
+    tipo: 'number',
+    categoria: 'familia',
+    descripcion: 'Cuántos hijos o el cónyuge cumplen años entre fechaInicio y fechaFin. Útil para la percepción de nacimiento.',
+    ejemplo: 1
   },
   {
     key: 'uma',

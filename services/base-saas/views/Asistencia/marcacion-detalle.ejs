@@ -99,6 +99,8 @@
       <% } %>
       <% if (geo.siteNombre) { %> · <%= geo.siteNombre %><% } %>
     </dd>
+    <dt>Zona</dt>
+    <dd><%= geo.zonaNombre || '—' %></dd>
     <dt>Distancia</dt>
     <dd>
       <% if (geo.distanceMeters != null) { %>

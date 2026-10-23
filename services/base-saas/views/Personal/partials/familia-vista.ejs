@@ -1,0 +1,125 @@
+<%
+  const salud = empleado.salud || {};
+  const fam = empleado.familia || {};
+  const conyuge = fam.conyuge || {};
+  const hijos = fam.hijos || [];
+  const contactos = fam.contactosEmergencia || [];
+  const beneficiarios = fam.beneficiarios || [];
+  const alertas = (typeof alertasExpediente !== 'undefined' && alertasExpediente) ? alertasExpediente : [];
+  const etiquetaAplica = (typeof ETIQUETA_APLICA !== 'undefined' && ETIQUETA_APLICA) ? ETIQUETA_APLICA : {};
+  const etiquetaEscuela = {
+    ninguna: 'Ninguna',
+    preescolar: 'Preescolar',
+    primaria: 'Primaria',
+    secundaria: 'Secundaria',
+    bachillerato: 'Bachillerato',
+    universidad: 'Universidad',
+    otro: 'Otro'
+  };
+  const etiquetaSexo = { M: 'Masculino', F: 'Femenino', X: 'Otro' };
+  function fecha(v) {
+    if (!v) return '—';
+    const d = new Date(v);
+    return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString('es-MX');
+  }
+%>
+<% if (alertas.length) { %>
+<ul class="alert-list">
+  <% alertas.forEach(function(a) { %>
+  <li class="alert-item alert-warn"><%= a.texto %></li>
+  <% }); %>
+</ul>
+<% } %>
+
+<section>
+  <h2>Salud</h2>
+  <dl>
+    <dt>Tipo de sangre</dt><dd><%= salud.tipoSangre || '—' %></dd>
+    <dt>Alergias</dt><dd><%= salud.alergias || '—' %></dd>
+    <dt>Enfermedades o padecimientos</dt><dd style="white-space:pre-wrap"><%= salud.padecimientos || '—' %></dd>
+  </dl>
+</section>
+
+<section>
+  <h2>Cónyuge / concubino(a)</h2>
+  <% if (!conyuge.nombre) { %>
+  <p class="muted">Sin cónyuge registrado. El motor usa <code>tieneConyuge</code> = 0.</p>
+  <% } else { %>
+  <dl>
+    <dt>Nombre</dt><dd><%= conyuge.nombre %></dd>
+    <dt>Nacimiento</dt><dd><%= fecha(conyuge.fechaNacimiento) %></dd>
+    <dt>Ocupación</dt><dd><%= conyuge.ocupacion || '—' %></dd>
+    <dt>Teléfono</dt><dd><%= conyuge.telefono || '—' %></dd>
+  </dl>
+  <% } %>
+</section>
+
+<section>
+  <h2>Hijos</h2>
+  <p class="hint">En las fórmulas de nómina: <code>hijos</code>, <code>hijosMenores</code> (menores de 18), <code>hijosEscolares</code> y <code>nacimientoEnPeriodo</code> (cumpleaños del hijo o del cónyuge dentro del período). Ejemplo: <code>si(nacimientoEnPeriodo &gt; 0, monto, 0)</code> para una percepción de nacimiento, y <code>si(hijosMenores &gt; 0, hijosMenores * monto, 0)</code> para recreación familiar.</p>
+  <% if (!hijos.length) { %>
+  <p class="muted">Sin hijos registrados.</p>
+  <% } else { %>
+  <table class="table-compact">
+    <thead>
+      <tr><th>Nombre</th><th>Nacimiento</th><th>Sexo</th><th>Escolaridad</th></tr>
+    </thead>
+    <tbody>
+      <% hijos.forEach(function(h) { %>
+      <tr>
+        <td><%= h.nombre || '—' %></td>
+        <td><%= fecha(h.fechaNacimiento) %></td>
+        <td><%= etiquetaSexo[h.sexo] || '—' %></td>
+        <td><%= etiquetaEscuela[h.escolaridad] || '—' %></td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table>
+  <% } %>
+</section>
+
+<section>
+  <h2>Contactos de emergencia</h2>
+  <% if (!contactos.length) { %>
+  <p class="muted">Sin contactos de emergencia.</p>
+  <% } else { %>
+  <table class="table-compact">
+    <thead>
+      <tr><th>Nombre</th><th>Parentesco</th><th>Teléfono</th><th>Alterno</th></tr>
+    </thead>
+    <tbody>
+      <% contactos.forEach(function(c) { %>
+      <tr>
+        <td><%= c.nombre || '—' %></td>
+        <td><%= c.parentesco || '—' %></td>
+        <td><%= c.telefono || '—' %></td>
+        <td><%= c.telefonoAlt || '—' %></td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table>
+  <% } %>
+</section>
+
+<section>
+  <h2>Beneficiarios</h2>
+  <% if (!beneficiarios.length) { %>
+  <p class="muted">Sin beneficiarios. Sirven para seguro de vida, fondo de ahorro, PTU y finiquito.</p>
+  <% } else { %>
+  <table class="table-compact">
+    <thead>
+      <tr><th>Nombre</th><th>Parentesco</th><th class="num">%</th><th>Aplica a</th></tr>
+    </thead>
+    <tbody>
+      <% beneficiarios.forEach(function(b) { %>
+      <tr>
+        <td><%= b.nombre || '—' %></td>
+        <td><%= b.parentesco || '—' %></td>
+        <td class="num"><%= Number(b.porcentaje || 0).toLocaleString('es-MX', { maximumFractionDigits: 2 }) %></td>
+        <td><%= etiquetaAplica[b.aplicaA] || b.aplicaA || '—' %></td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table>
+  <% } %>
+</section>

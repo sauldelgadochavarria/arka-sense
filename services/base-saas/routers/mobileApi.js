@@ -26,7 +26,7 @@ const {
   registrarAuditoriaAsistencia
 } = require('../services/asistenciaAuditoriaService');
 const { TIPOS_MARCACION, ESTATUS_DIARIO } = require('../config/asistencia');
-const { validatePunchLocation } = require('../services/geofence/geofenceService');
+const { validatePunchLocation, etiquetaZona } = require('../services/geofence/geofenceService');
 const { registrarIntento } = require('../services/attendanceAttemptService');
 const {
   buildHorarioRecordatorios,
@@ -202,7 +202,7 @@ router.post('/auth/login', async (req, res) => {
       empleado: {
         id: String(empleado._id),
         numEmpleado: empleado.numEmpleado || '',
-        nombre: [empleado.firstName, empleado.lastName].filter(Boolean).join(' ').trim(),
+        nombre: [empleado.firstName, empleado.apellidoPaterno || empleado.lastName].filter(Boolean).join(' ').trim(),
         subsidiariaId: empleado.subsidiariaId ? String(empleado.subsidiariaId) : null
       },
       tenant: {
@@ -575,6 +575,7 @@ router.post('/asistencia/marcar', requireMobileAuth, async (req, res) => {
       at: ahora,
       justificacionFueraZona: String(req.body.justificacionFueraZona || '')
     });
+    const zonaPunch = await etiquetaZona(req.mobileAuth.tenantId, geo.match);
 
     if (!geo.allowed) {
       const etapa = isMocked || /fake|simulad/i.test(String(geo.reason || '')) ? 'punch_fake_gps' : 'geo_check';
@@ -599,6 +600,7 @@ router.post('/asistencia/marcar', requireMobileAuth, async (req, res) => {
           fueraDeZona: true,
           allowed: false,
           siteNombre: geo.match?.nombre || '',
+          zonaNombre: zonaPunch.zonaNombre,
           distanceMeters: geo.distanceMeters ?? null,
           radioMetros: geo.match?.radioMetros ?? null,
           skipped: Boolean(geo.skipped)
@@ -614,7 +616,8 @@ router.post('/asistencia/marcar', requireMobileAuth, async (req, res) => {
           fueraDeZona: true,
           politica: geo.politica,
           distanceMeters: geo.distanceMeters ?? null,
-          siteNombre: geo.match?.nombre || null
+          siteNombre: geo.match?.nombre || null,
+          zonaNombre: zonaPunch.zonaNombre || null
         }
       });
     }
@@ -653,6 +656,8 @@ router.post('/asistencia/marcar', requireMobileAuth, async (req, res) => {
         fueraDeZona: Boolean(geo.fueraDeZona),
         allowed: true,
         puntoAccesoId: puntoId,
+        zonaId: puntoId ? zonaPunch.zonaId : null,
+        zonaNombre: puntoId ? zonaPunch.zonaNombre : '',
         siteSource: match?.source || '',
         siteNombre: match?.nombre || '',
         distanceMeters: geo.distanceMeters != null ? geo.distanceMeters : null,
@@ -693,6 +698,7 @@ router.post('/asistencia/marcar', requireMobileAuth, async (req, res) => {
         fueraDeZona: Boolean(geo.fueraDeZona),
         allowed: true,
         siteNombre: match?.nombre || '',
+        zonaNombre: puntoId ? zonaPunch.zonaNombre : '',
         distanceMeters: geo.distanceMeters ?? null,
         radioMetros: match?.radioMetros ?? null,
         skipped: Boolean(geo.skipped)
@@ -733,8 +739,20 @@ router.post('/asistencia/marcar', requireMobileAuth, async (req, res) => {
       fecha
     );
 
+    const quien = [empleado.firstName, empleado.apellidoPaterno || empleado.lastName]
+      .filter(Boolean)
+      .join(' ')
+      .trim();
+    const etiqueta = empleado.numEmpleado ? `${quien} (${empleado.numEmpleado})` : quien;
+
     return res.status(201).json({
       ok: true,
+      message: `${tipoMarcacion} registrada para ${etiqueta}`,
+      empleado: {
+        id: String(empleado._id),
+        numEmpleado: empleado.numEmpleado || '',
+        nombre: quien
+      },
       marcacion: {
         id: String(created._id),
         tipoMarcacion: created.tipoMarcacion,
@@ -748,6 +766,7 @@ router.post('/asistencia/marcar', requireMobileAuth, async (req, res) => {
         fueraDeZona: Boolean(geo.fueraDeZona),
         skipped: Boolean(geo.skipped),
         siteNombre: match?.nombre || null,
+        zonaNombre: puntoId ? zonaPunch.zonaNombre || null : null,
         distanceMeters: geo.distanceMeters ?? null,
         politica: geo.politica
       },
@@ -839,6 +858,7 @@ router.get('/asistencia/historial', requireMobileAuth, async (req, res) => {
               fueraDeZona: Boolean(m.geocerca.fueraDeZona),
               allowed: m.geocerca.allowed !== false,
               siteNombre: m.geocerca.siteNombre || '',
+              zonaNombre: m.geocerca.zonaNombre || '',
               siteSource: m.geocerca.siteSource || '',
               distanceMeters: m.geocerca.distanceMeters,
               radioMetros: m.geocerca.radioMetros,
@@ -1035,21 +1055,42 @@ router.post('/vacaciones/aprobaciones/:id/resolver', requireMobileAuth, async (r
   }
 });
 
+async function requireRecibosEmpleado(req, res) {
+  const Empleado = await getEmpleadoModel();
+  const empleado = await Empleado.findOne({
+    _id: req.mobileAuth.empleadoId,
+    tenantId: req.mobileAuth.tenantId,
+    estatus: 'activo'
+  }).lean();
+  if (!empleado) {
+    jsonError(res, 403, 'Empleado no encontrado');
+    return null;
+  }
+  const flags = await resolveMobileFeatureFlags(req.mobileAuth.tenantId, empleado);
+  if (!tenantHasFeature(flags, 'recibos')) {
+    jsonError(res, 403, 'Módulo de recibos no activo', 'FEATURE_DISABLED');
+    return null;
+  }
+  return empleado;
+}
+
+function sendArchivo(res, file) {
+  if (!file || file.status !== 200) {
+    return jsonError(res, file?.status || 404, file?.error || 'Archivo no disponible');
+  }
+  res.setHeader('Content-Type', file.contentType);
+  res.setHeader('Content-Disposition', `attachment; filename="${file.filename.replace(/"/g, '')}"`);
+  res.setHeader('Content-Length', file.buffer.length);
+  return res.send(file.buffer);
+}
+
 /** GET /api/v1/recibos — histórico de nómina del empleado */
 router.get('/recibos', requireMobileAuth, async (req, res) => {
   try {
-    const Empleado = await getEmpleadoModel();
-    const empleado = await Empleado.findOne({
-      _id: req.mobileAuth.empleadoId,
-      tenantId: req.mobileAuth.tenantId,
-      estatus: 'activo'
-    }).lean();
-    if (!empleado) return jsonError(res, 403, 'Empleado no encontrado');
-    const flags = await resolveMobileFeatureFlags(req.mobileAuth.tenantId, empleado);
-    if (!tenantHasFeature(flags, 'recibos')) {
-      return jsonError(res, 403, 'Módulo de recibos no activo', 'FEATURE_DISABLED');
-    }
+    const empleado = await requireRecibosEmpleado(req, res);
+    if (!empleado) return;
     const getNominaHistoricoReciboModel = require('../models/nominaHistoricoRecibo');
+    const { idsConXml } = require('../services/reciboEmpleadoDescarga');
     const Historico = await getNominaHistoricoReciboModel();
     const rows = await Historico.find({
       tenantId: req.mobileAuth.tenantId,
@@ -1057,8 +1098,9 @@ router.get('/recibos', requireMobileAuth, async (req, res) => {
     })
       .sort({ anio: -1, mes: -1, createdAt: -1 })
       .limit(36)
-      .select('anio mes periodo totalPercepciones totalDeducciones netoPagar origen fechaCierre')
+      .select('anio mes periodo totalPercepciones totalDeducciones netoPagar origen fechaCierre timbrado.archivoXmlId timbrado.uuid timbrado.estatus')
       .lean();
+    const conXml = await idsConXml(req.mobileAuth.tenantId, empleado._id, rows);
     const recibos = rows.map((r) => ({
       id: String(r._id),
       anio: r.anio,
@@ -1071,12 +1113,50 @@ router.get('/recibos', requireMobileAuth, async (req, res) => {
       totalDeducciones: r.totalDeducciones,
       neto: r.netoPagar,
       origen: r.origen || '',
-      fechaCierre: r.fechaCierre || null
+      fechaCierre: r.fechaCierre || null,
+      tieneXml: conXml.has(String(r._id)),
+      uuid: r.timbrado?.uuid || ''
     }));
     return res.json({ ok: true, recibos });
   } catch (err) {
     console.error('[api/v1/recibos]', err);
     return jsonError(res, 500, err.message || 'Error al cargar recibos');
+  }
+});
+
+/** GET /api/v1/recibos/:id/xml — CFDI del empleado de la sesión */
+router.get('/recibos/:id/xml', requireMobileAuth, async (req, res) => {
+  try {
+    const empleado = await requireRecibosEmpleado(req, res);
+    if (!empleado) return;
+    const { descargarXmlEmpleado } = require('../services/reciboEmpleadoDescarga');
+    const file = await descargarXmlEmpleado({
+      tenantId: req.mobileAuth.tenantId,
+      empleadoId: empleado._id,
+      historicoId: req.params.id
+    });
+    return sendArchivo(res, file);
+  } catch (err) {
+    console.error('[api/v1/recibos/xml]', err);
+    return jsonError(res, 500, 'Error al descargar el XML');
+  }
+});
+
+/** GET /api/v1/recibos/:id/pdf — representación del recibo, sin detalle de fórmulas */
+router.get('/recibos/:id/pdf', requireMobileAuth, async (req, res) => {
+  try {
+    const empleado = await requireRecibosEmpleado(req, res);
+    if (!empleado) return;
+    const { descargarPdfEmpleado } = require('../services/reciboEmpleadoDescarga');
+    const file = await descargarPdfEmpleado({
+      tenantId: req.mobileAuth.tenantId,
+      empleadoId: empleado._id,
+      historicoId: req.params.id
+    });
+    return sendArchivo(res, file);
+  } catch (err) {
+    console.error('[api/v1/recibos/pdf]', err);
+    return jsonError(res, 500, 'Error al generar el PDF');
   }
 });
 

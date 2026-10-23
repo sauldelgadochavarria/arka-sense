@@ -16,6 +16,8 @@ const CORE_INCIDENCIA_KEYS = [
   'domingosTrabajados'
 ];
 
+const { metricasFamilia } = require('../../libs/empleadoFamilia');
+
 function toNum(v, fallback = 0) {
   const n = Number(v);
   return Number.isFinite(n) ? n : fallback;
@@ -55,6 +57,8 @@ function buildNamespacedContext({ empleado, periodo, incidencias, parametros, ex
   const departamentoCodigo = String(emp.departamentoCodigo ?? '').trim();
   const departamentoCodigoNum = Number(departamentoCodigo);
 
+  const fam = metricasFamilia(emp, per);
+
   const EMPLEADO = {
     salarioDiario: toNum(emp.salarioDiario ?? emp.sueldoDiario),
     sueldoDiario: toNum(emp.salarioDiario ?? emp.sueldoDiario),
@@ -82,6 +86,11 @@ function buildNamespacedContext({ empleado, periodo, incidencias, parametros, ex
     departamentoCodigo,
     departamentoCodigoNum: Number.isFinite(departamentoCodigoNum) ? departamentoCodigoNum : 0,
     departamentoId: String(emp.departamentoId || '').trim(),
+    hijos: fam.hijos,
+    hijosMenores: fam.hijosMenores,
+    hijosEscolares: fam.hijosEscolares,
+    tieneConyuge: fam.tieneConyuge,
+    nacimientoEnPeriodo: fam.nacimientoEnPeriodo,
     atributos
   };
 
@@ -167,6 +176,11 @@ function buildNamespacedContext({ empleado, periodo, incidencias, parametros, ex
     llegadasTarde: INCIDENCIAS.llegadasTarde,
     sinRetardo: INCIDENCIAS.sinRetardo,
     sinFaltas: INCIDENCIAS.sinFaltas,
+    hijos: EMPLEADO.hijos,
+    hijosMenores: EMPLEADO.hijosMenores,
+    hijosEscolares: EMPLEADO.hijosEscolares,
+    tieneConyuge: EMPLEADO.tieneConyuge,
+    nacimientoEnPeriodo: EMPLEADO.nacimientoEnPeriodo,
     ...EXTRAS,
     ...resultadosPrevios
   };

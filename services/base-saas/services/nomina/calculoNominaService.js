@@ -277,6 +277,7 @@ async function calcularReciboEmpleado(
       departamento: empleado.departamentoNombre || empleado.departamento || '',
       departamentoCodigo: empleado.departamentoCodigo || '',
       departamentoId: empleado.departamentoId || null,
+      familia: empleado.familia || {},
       atributos: { horasJornada, valorHora },
       nominaConfig: cfgNomina
     },
@@ -296,7 +297,9 @@ async function calcularReciboEmpleado(
       numeroPeriodo: periodo.numeroPeriodo || 0,
       tipoPeriodo: periodo.tipoPeriodo || '',
       despensaPagoMensual: prest.despensaPagoMensual !== false ? 1 : 0,
-      pagaDespensa: prest.pagaDespensa ? 1 : 0
+      pagaDespensa: prest.pagaDespensa ? 1 : 0,
+      fechaInicio: periodo.fechaInicio || null,
+      fechaFin: periodo.fechaFin || null
     },
     incidencias: {
       faltas: faltasInjustificadas,

@@ -7,8 +7,46 @@
   · No. <code><%= empleado.numEmpleado %></code>
 </p>
 
-<div class="detail-grid">
-  <section>
+<div class="actions-bar actions-bar-top">
+  <a class="btn" data-ficha-edit href="/personal-empleados/<%= empleado._id %>/edit">Editar</a>
+  <a class="btn" href="/personal-empleados/<%= empleado._id %>/biometria-facial">Biometría facial</a>
+  <% if (empleado.estatus === 'baja') { %>
+  <form method="post" action="/personal-empleados/<%= empleado._id %>/reactivar" class="inline-form">
+    <button type="submit">Reactivar</button>
+  </form>
+  <% } else { %>
+  <form method="post" action="/personal-empleados/<%= empleado._id %>/baja" class="inline-form" onsubmit="return confirm('¿Registrar baja de este empleado?');">
+    <select name="motivoBaja" required>
+      <option value="">— Motivo baja —</option>
+      <% ['Renuncia voluntaria','Término de contrato','Despido justificado','Despido injustificado','Abandono de empleo','Jubilación','Defunción','Otro'].forEach(function(m) { %>
+      <option value="<%= m %>"><%= m %></option>
+      <% }); %>
+    </select>
+    <button type="submit" class="btn-danger">Dar de baja</button>
+  </form>
+  <% } %>
+</div>
+
+<div class="ficha-tabs" data-ficha-tabs>
+  <div class="ficha-tablist" role="tablist" aria-label="Expediente del empleado">
+    <button type="button" class="ficha-tab is-active" role="tab" id="exp-tab-personales" aria-selected="true" aria-controls="exp-panel-personales" data-ficha-tab="personales" tabindex="0">Personales</button>
+    <button type="button" class="ficha-tab" role="tab" id="exp-tab-familia" aria-selected="false" aria-controls="exp-panel-familia" data-ficha-tab="familia" tabindex="-1">Familia</button>
+    <button type="button" class="ficha-tab" role="tab" id="exp-tab-documentacion" aria-selected="false" aria-controls="exp-panel-documentacion" data-ficha-tab="documentacion" tabindex="-1">Documentación</button>
+    <button type="button" class="ficha-tab" role="tab" id="exp-tab-fiscal" aria-selected="false" aria-controls="exp-panel-fiscal" data-ficha-tab="fiscal" tabindex="-1">Fiscal e IMSS</button>
+    <button type="button" class="ficha-tab" role="tab" id="exp-tab-sueldo" aria-selected="false" aria-controls="exp-panel-sueldo" data-ficha-tab="sueldo" tabindex="-1">Sueldo</button>
+    <button type="button" class="ficha-tab" role="tab" id="exp-tab-organizacion" aria-selected="false" aria-controls="exp-panel-organizacion" data-ficha-tab="organizacion" tabindex="-1">Organización</button>
+    <button type="button" class="ficha-tab" role="tab" id="exp-tab-asistencia" aria-selected="false" aria-controls="exp-panel-asistencia" data-ficha-tab="asistencia" tabindex="-1">Asistencia</button>
+    <button type="button" class="ficha-tab" role="tab" id="exp-tab-bancarios" aria-selected="false" aria-controls="exp-panel-bancarios" data-ficha-tab="bancarios" tabindex="-1">Bancarios</button>
+    <% if (typeof showNominaConfig !== 'undefined' && showNominaConfig) { %>
+    <button type="button" class="ficha-tab" role="tab" id="exp-tab-nomina" aria-selected="false" aria-controls="exp-panel-nomina" data-ficha-tab="nomina" tabindex="-1">Nómina</button>
+    <% } %>
+    <button type="button" class="ficha-tab" role="tab" id="exp-tab-acceso" aria-selected="false" aria-controls="exp-panel-acceso" data-ficha-tab="acceso" tabindex="-1">Acceso</button>
+    <button type="button" class="ficha-tab" role="tab" id="exp-tab-historial" aria-selected="false" aria-controls="exp-panel-historial" data-ficha-tab="historial" tabindex="-1">Historial</button>
+  </div>
+
+  <div class="ficha-panel is-active" role="tabpanel" id="exp-panel-personales" data-ficha-panel="personales" aria-labelledby="exp-tab-personales">
+    <div class="detail-grid">
+<section>
     <h2>Identificación</h2>
     <dl>
       <dt>Nombre(s)</dt><dd><%= empleado.firstName || '—' %></dd>
@@ -28,8 +66,71 @@
       <dt>Tipo empleado</dt><dd><%= typeof labelTipoEmpleado !== 'undefined' ? labelTipoEmpleado : (empleado.tipoEmpleado || '—') %></dd>
     </dl>
   </section>
-
+<section>
+    <h2>Contacto</h2>
+    <dl>
+      <dt>Email corporativo</dt><dd><%= empleado.email || '—' %></dd>
+      <dt>Email personal</dt><dd><%= empleado.emailPersonal || '—' %></dd>
+      <dt>Celular</dt><dd><%= empleado.telefono || '—' %></dd>
+      <dt>Teléfono fijo</dt><dd><%= empleado.telefonoFijo || '—' %></dd>
+      <dt>Registro dispositivo (SMS)</dt>
+      <dd><%= empleado.exentoRegistroDispositivo ? 'Exento (aunque la subsidiaria lo exija)' : 'Según política de subsidiaria' %></dd>
+    </dl>
+  </section>
+<section>
+    <h2>Domicilio</h2>
+    <% const dom = empleado.domicilio || {}; %>
+    <dl>
+      <dt>Dirección</dt>
+      <dd>
+        <%= [dom.calle, dom.numeroExt, dom.numeroInt].filter(Boolean).join(' ') || '—' %>
+        <% if (dom.colonia) { %><br /><span class="muted">Col. <%= dom.colonia %></span><% } %>
+      </dd>
+      <dt>Población</dt><dd><%= dom.poblacion || '—' %></dd>
+      <dt>Entidad</dt><dd><%= typeof labelEntidadDom !== 'undefined' ? labelEntidadDom : (dom.entidad || '—') %></dd>
+      <dt>C.P.</dt><dd><%= dom.codigoPostal || '—' %></dd>
+    </dl>
+  </section>
+<% if (empleado.estatus === 'baja') { %>
   <section>
+    <h2>Baja</h2>
+    <dl>
+      <dt>Fecha baja</dt><dd><%= empleado.fechaBaja ? new Date(empleado.fechaBaja).toLocaleDateString('es-MX') : '—' %></dd>
+      <dt>Motivo baja</dt><dd><%= empleado.motivoBaja || '—' %></dd>
+    </dl>
+  </section>
+  <% } %>
+    </div>
+  </div>
+
+  <div class="ficha-panel" role="tabpanel" id="exp-panel-fiscal" data-ficha-panel="fiscal" aria-labelledby="exp-tab-fiscal">
+    <div class="detail-grid">
+<section>
+    <h2>Fiscal (RFC / CURP)</h2>
+    <dl>
+      <dt>CURP</dt><dd><%= empleado.curp || '—' %></dd>
+      <dt>RFC</dt><dd><%= empleado.rfc || '—' %></dd>
+      <dt>Sexo</dt><dd><%= empleado.sexo || '—' %></dd>
+      <dt>Fecha nacimiento</dt><dd><%= empleado.fechaNacimiento ? new Date(empleado.fechaNacimiento).toLocaleDateString('es-MX') : '—' %></dd>
+      <dt>Entidad nacimiento</dt><dd><%= typeof labelEntidadNac !== 'undefined' ? labelEntidadNac : (empleado.entidadNacimiento || '—') %></dd>
+      <dt>Ciudad nacimiento</dt><dd><%= empleado.ciudadNacimiento || '—' %></dd>
+    </dl>
+  </section>
+<section>
+    <h2>IMSS</h2>
+    <dl>
+      <dt>NSS</dt><dd><%= empleado.nss || '—' %></dd>
+      <dt>Registro patronal</dt><dd><%= empleado.registroPatronal || (empresa && empresa.registroPatronal) || '—' %></dd>
+      <dt>UMF</dt><dd><%= empleado.umf || '—' %></dd>
+      <dt>Estado civil</dt><dd><%= typeof labelEstadoCivil !== 'undefined' ? labelEstadoCivil : (empleado.estadoCivil || '—') %></dd>
+    </dl>
+  </section>
+    </div>
+  </div>
+
+  <div class="ficha-panel" role="tabpanel" id="exp-panel-sueldo" data-ficha-panel="sueldo" aria-labelledby="exp-tab-sueldo">
+    <div class="detail-grid">
+<section>
     <h2>Salarial / SDI</h2>
     <dl>
       <dt>Salario diario</dt><dd><%= empleado.salarioDiario != null ? empleado.salarioDiario.toLocaleString('es-MX', { minimumFractionDigits: 2 }) : '—' %></dd>
@@ -44,57 +145,12 @@
       </dd>
     </dl>
   </section>
+    </div>
+  </div>
 
-  <section>
-    <h2>IMSS</h2>
-    <dl>
-      <dt>NSS</dt><dd><%= empleado.nss || '—' %></dd>
-      <dt>Registro patronal</dt><dd><%= empleado.registroPatronal || (empresa && empresa.registroPatronal) || '—' %></dd>
-      <dt>UMF</dt><dd><%= empleado.umf || '—' %></dd>
-      <dt>Estado civil</dt><dd><%= typeof labelEstadoCivil !== 'undefined' ? labelEstadoCivil : (empleado.estadoCivil || '—') %></dd>
-    </dl>
-  </section>
-
-  <section>
-    <h2>Fiscal (RFC / CURP)</h2>
-    <dl>
-      <dt>CURP</dt><dd><%= empleado.curp || '—' %></dd>
-      <dt>RFC</dt><dd><%= empleado.rfc || '—' %></dd>
-      <dt>Sexo</dt><dd><%= empleado.sexo || '—' %></dd>
-      <dt>Fecha nacimiento</dt><dd><%= empleado.fechaNacimiento ? new Date(empleado.fechaNacimiento).toLocaleDateString('es-MX') : '—' %></dd>
-      <dt>Entidad nacimiento</dt><dd><%= typeof labelEntidadNac !== 'undefined' ? labelEntidadNac : (empleado.entidadNacimiento || '—') %></dd>
-      <dt>Ciudad nacimiento</dt><dd><%= empleado.ciudadNacimiento || '—' %></dd>
-    </dl>
-  </section>
-
-  <section>
-    <h2>Domicilio</h2>
-    <% const dom = empleado.domicilio || {}; %>
-    <dl>
-      <dt>Dirección</dt>
-      <dd>
-        <%= [dom.calle, dom.numeroExt, dom.numeroInt].filter(Boolean).join(' ') || '—' %>
-        <% if (dom.colonia) { %><br /><span class="muted">Col. <%= dom.colonia %></span><% } %>
-      </dd>
-      <dt>Población</dt><dd><%= dom.poblacion || '—' %></dd>
-      <dt>Entidad</dt><dd><%= typeof labelEntidadDom !== 'undefined' ? labelEntidadDom : (dom.entidad || '—') %></dd>
-      <dt>C.P.</dt><dd><%= dom.codigoPostal || '—' %></dd>
-    </dl>
-  </section>
-
-  <section>
-    <h2>Contacto</h2>
-    <dl>
-      <dt>Email corporativo</dt><dd><%= empleado.email || '—' %></dd>
-      <dt>Email personal</dt><dd><%= empleado.emailPersonal || '—' %></dd>
-      <dt>Celular</dt><dd><%= empleado.telefono || '—' %></dd>
-      <dt>Teléfono fijo</dt><dd><%= empleado.telefonoFijo || '—' %></dd>
-      <dt>Registro dispositivo (SMS)</dt>
-      <dd><%= empleado.exentoRegistroDispositivo ? 'Exento (aunque la subsidiaria lo exija)' : 'Según política de subsidiaria' %></dd>
-    </dl>
-  </section>
-
-  <section>
+  <div class="ficha-panel" role="tabpanel" id="exp-panel-organizacion" data-ficha-panel="organizacion" aria-labelledby="exp-tab-organizacion">
+    <div class="detail-grid">
+<section>
     <h2>Organización</h2>
     <dl>
       <dt>Sucursal</dt><dd><%= empleado.subsidiariaId ? (subMap.get(String(empleado.subsidiariaId)) || '—') : '—' %></dd>
@@ -134,8 +190,12 @@
       <dt>Supervisor</dt><dd><%= empleado.supervisorId ? (supervisorMap.get(String(empleado.supervisorId)) || '—') : '—' %></dd>
     </dl>
   </section>
+    </div>
+  </div>
 
-  <section>
+  <div class="ficha-panel" role="tabpanel" id="exp-panel-asistencia" data-ficha-panel="asistencia" aria-labelledby="exp-tab-asistencia">
+    <div class="detail-grid">
+<section>
     <h2>Integración y asistencia</h2>
     <dl>
       <dt>Código externo</dt><dd><%= empleado.codigoExterno || '—' %></dd>
@@ -146,19 +206,28 @@
       <dt>Exportar horas extra</dt><dd><%= empleado.exportarHorasExtra !== false ? 'Sí' : 'No' %></dd>
     </dl>
   </section>
+    </div>
+  </div>
 
-  <% if (empleado.estatus === 'baja') { %>
-  <section>
-    <h2>Baja</h2>
+  <div class="ficha-panel" role="tabpanel" id="exp-panel-bancarios" data-ficha-panel="bancarios" aria-labelledby="exp-tab-bancarios">
+    <div class="detail-grid">
+<section>
+    <h2>Datos bancarios</h2>
+    <% const dbanco = empleado.datosBancarios || {}; %>
     <dl>
-      <dt>Fecha baja</dt><dd><%= empleado.fechaBaja ? new Date(empleado.fechaBaja).toLocaleDateString('es-MX') : '—' %></dd>
-      <dt>Motivo baja</dt><dd><%= empleado.motivoBaja || '—' %></dd>
+      <dt>Banco</dt><dd><%= dbanco.bancoNombre || '—' %></dd>
+      <dt>Código</dt><dd><%= dbanco.bancoCodigo || '—' %></dd>
+      <dt>Cuenta</dt><dd><%= dbanco.cuenta || '—' %></dd>
+      <dt>CLABE</dt><dd><%= dbanco.clabe || '—' %></dd>
     </dl>
   </section>
-  <% } %>
+    </div>
+  </div>
 
   <% if (typeof showNominaConfig !== 'undefined' && showNominaConfig) { %>
-  <% const nc = empleado.nominaConfig || {};
+  <div class="ficha-panel" role="tabpanel" id="exp-panel-nomina" data-ficha-panel="nomina" aria-labelledby="exp-tab-nomina">
+    <div class="detail-grid">
+<% const nc = empleado.nominaConfig || {};
      const despensaMod = nc.despensaModalidad || ((nc.despensaMonto > 0 || nc.despensaMontoMensual > 0) ? 'fijo' : 'ninguna');
      const despensaMonto = Number(nc.despensaMontoMensual) > 0 ? Number(nc.despensaMontoMensual) : (Number(nc.despensaMonto) || 0);
      const topeLabels = {
@@ -205,6 +274,26 @@
       </dd>
       <dt>Base INFONAVIT período</dt><dd><%= nc.sueldoIntegrado > 0 ? nc.sueldoIntegrado : '—' %></dd>
       <dt>Días cotización override</dt><dd><%= nc.diasCotizacionImss > 0 ? nc.diasCotizacionImss : '—' %></dd>
+      <dt>FONACOT</dt>
+      <dd>
+        <% if (nc.fonacotDescuento > 0) { %>
+        Override: $<%= Number(nc.fonacotDescuento).toLocaleString('es-MX', { minimumFractionDigits: 2 }) %>
+        <% } else if (nc.tipoCreditoFonacot === 'monto_fijo' || nc.fonacotMonto > 0) { %>
+        Monto fijo<% if (nc.fonacotMonto > 0) { %>: $<%= Number(nc.fonacotMonto).toLocaleString('es-MX', { minimumFractionDigits: 2 }) %><% } %>
+        <% } else if (nc.tipoCreditoFonacot === 'porcentaje' || nc.fonacotPorcentaje > 0) { %>
+        <%= nc.fonacotPorcentaje > 0 ? nc.fonacotPorcentaje + '% del bruto' : 'Porcentaje' %>
+        <% } else { %>—<% } %>
+      </dd>
+      <dt>Cuota sindical</dt>
+      <dd>
+        <% if (nc.cuotaSindicalDescuento > 0) { %>
+        Override: $<%= Number(nc.cuotaSindicalDescuento).toLocaleString('es-MX', { minimumFractionDigits: 2 }) %>
+        <% } else if (nc.tipoCuotaSindical === 'monto_fijo' || nc.cuotaSindicalMonto > 0) { %>
+        Monto fijo<% if (nc.cuotaSindicalMonto > 0) { %>: $<%= Number(nc.cuotaSindicalMonto).toLocaleString('es-MX', { minimumFractionDigits: 2 }) %><% } %>
+        <% } else if (nc.tipoCuotaSindical === 'porcentaje' || nc.cuotaSindicalPorcentaje > 0) { %>
+        <%= nc.cuotaSindicalPorcentaje > 0 ? nc.cuotaSindicalPorcentaje + '%' : 'Porcentaje' %>
+        <% } else { %>—<% } %>
+      </dd>
       <dt>Prima vacacional (días)</dt>
       <dd>
         <% if (nc.diasPrimaVacacional > 0) { %>
@@ -218,9 +307,23 @@
       <dt>Saldo fondo finiquito</dt><dd><%= nc.fondoAhorroSaldoFiniquito > 0 ? nc.fondoAhorroSaldoFiniquito : '—' %></dd>
     </dl>
   </section>
+    </div>
+  </div>
   <% } %>
-</div>
 
+  <div class="ficha-panel" role="tabpanel" id="exp-panel-acceso" data-ficha-panel="acceso" aria-labelledby="exp-tab-acceso">
+    <%- include('partials/acceso-portal', { empleado, acceso }) %>
+  </div>
+
+  <div class="ficha-panel" role="tabpanel" id="exp-panel-familia" data-ficha-panel="familia" aria-labelledby="exp-tab-familia">
+    <%- include('partials/familia-vista') %>
+  </div>
+
+  <div class="ficha-panel" role="tabpanel" id="exp-panel-documentacion" data-ficha-panel="documentacion" aria-labelledby="exp-tab-documentacion">
+    <%- include('partials/expediente-docs') %>
+  </div>
+
+  <div class="ficha-panel" role="tabpanel" id="exp-panel-historial" data-ficha-panel="historial" aria-labelledby="exp-tab-historial">
 <% if (typeof historialReciente !== 'undefined' && historialReciente) { %>
 <section class="historial-resumen">
   <h2>Historial laboral reciente</h2>
@@ -247,7 +350,6 @@
   <p><a href="/personal-empleados/<%= empleado._id %>/historial-laboral">Ver historial completo →</a></p>
 </section>
 <% } %>
-
 <section class="historial-resumen">
   <h2>Historial de nóminas</h2>
   <% if (!historialNominas || !historialNominas.length) { %>
@@ -294,24 +396,8 @@
   <p class="muted small">Hasta <%= historialNominas.length %> recibos más recientes (histórico e importación; incluye períodos abiertos si existen).</p>
   <% } %>
 </section>
-
-<div class="actions-bar">
-  <a class="btn" href="/personal-empleados/<%= empleado._id %>/edit">Editar</a>
-  <a class="btn" href="/personal-empleados/<%= empleado._id %>/biometria-facial">Biometría facial</a>
-  <% if (empleado.estatus === 'baja') { %>
-  <form method="post" action="/personal-empleados/<%= empleado._id %>/reactivar" class="inline-form">
-    <button type="submit">Reactivar</button>
-  </form>
-  <% } else { %>
-  <form method="post" action="/personal-empleados/<%= empleado._id %>/baja" class="inline-form" onsubmit="return confirm('¿Registrar baja de este empleado?');">
-    <select name="motivoBaja" required>
-      <option value="">— Motivo baja —</option>
-      <% ['Renuncia voluntaria','Término de contrato','Despido justificado','Despido injustificado','Abandono de empleo','Jubilación','Defunción','Otro'].forEach(function(m) { %>
-      <option value="<%= m %>"><%= m %></option>
-      <% }); %>
-    </select>
-    <button type="submit" class="btn-danger">Dar de baja</button>
-  </form>
-  <% } %>
+  </div>
 </div>
+<noscript><style>.ficha-panel{display:flex!important;flex-direction:column;gap:.9rem}</style></noscript>
+<script src="/js/ficha-tabs.js"></script>
 <%- include('../Partials/layout-bottom') %>

@@ -2,6 +2,8 @@
 
 const getPuntoAccesoModel = require('../models/puntoAcceso');
 const getSubsidiariaModel = require('../models/subsidiaria');
+const getZonaModel = require('../models/zona');
+const { resolverZona } = require('./zonasController');
 const {
   requireEmpresaForTenant,
   findOneByTenant,
@@ -26,6 +28,7 @@ function buildPayload(body, empresaId) {
   return {
     empresaId,
     subsidiariaId: parseOptionalObjectId(body.subsidiariaId),
+    zonaId: parseOptionalObjectId(body.zonaId),
     codigo: trimString(body.codigo).toUpperCase(),
     nombre: trimString(body.nombre),
     descripcion: trimString(body.descripcion),
@@ -40,20 +43,26 @@ async function listPuntos(req, res) {
   const PuntoAcceso = await getPuntoAccesoModel();
   const Subsidiaria = await getSubsidiariaModel();
 
-  const [puntos, subsidiarias] = empresa
+  const [puntos, subsidiarias, zonas] = empresa
     ? await Promise.all([
         PuntoAcceso.find({ tenantId: req.session.tenantId }).sort({ nombre: 1 }).lean(),
-        Subsidiaria.find({ empresaId: empresa._id }).sort({ nombre: 1 }).lean()
+        Subsidiaria.find({ empresaId: empresa._id }).sort({ nombre: 1 }).lean(),
+        getZonaModel().then((Zona) =>
+          Zona.find({ tenantId: req.session.tenantId }).sort({ nombre: 1 }).lean()
+        )
       ])
-    : [[], []];
+    : [[], [], []];
 
   const subMap = new Map(subsidiarias.map((s) => [String(s._id), s.nombre]));
+  const zonaMap = new Map(zonas.map((z) => [String(z._id), z.nombre]));
 
   res.render('Configurations/puntos-acceso', {
     title: 'Puntos de acceso',
     puntos,
     subsidiarias,
     subMap,
+    zonas,
+    zonaMap,
     empresa,
     error: error || null,
     session: req.session
@@ -68,6 +77,13 @@ async function createPunto(req, res) {
       return res.redirect('/config-puntos-acceso');
     }
     const payload = buildPayload(req.body, empresa._id);
+    const lugar = await resolverZona(req.session.tenantId, payload.zonaId, payload.subsidiariaId);
+    if (lugar.error) {
+      req.flash('error', lugar.error);
+      return res.redirect('/config-puntos-acceso');
+    }
+    payload.zonaId = lugar.zonaId;
+    payload.subsidiariaId = lugar.subsidiariaId;
     if (!payload.nombre || payload.lat == null || payload.lng == null) {
       req.flash('error', 'Nombre, latitud y longitud son obligatorios');
       return res.redirect('/config-puntos-acceso');
@@ -105,11 +121,14 @@ async function editPunto(req, res) {
   const subsidiarias = empresa
     ? await Subsidiaria.find({ empresaId: empresa._id }).sort({ nombre: 1 }).lean()
     : [];
+  const Zona = await getZonaModel();
+  const zonas = await Zona.find({ tenantId: req.session.tenantId, activo: true }).sort({ nombre: 1 }).lean();
 
   res.render('Configurations/punto-acceso-edit', {
     title: `Editar · ${punto.nombre}`,
     punto,
     subsidiarias,
+    zonas,
     empresa,
     error: error || null,
     session: req.session
@@ -123,6 +142,13 @@ async function updatePunto(req, res) {
     if (!punto) return res.status(404).send('Punto no encontrado');
 
     const payload = buildPayload(req.body, punto.empresaId);
+    const lugar = await resolverZona(req.session.tenantId, payload.zonaId, payload.subsidiariaId);
+    if (lugar.error) {
+      req.flash('error', lugar.error);
+      return res.redirect(`/config-puntos-acceso/${req.params.id}/edit`);
+    }
+    payload.zonaId = lugar.zonaId;
+    payload.subsidiariaId = lugar.subsidiariaId;
     if (!payload.nombre || payload.lat == null || payload.lng == null) {
       req.flash('error', 'Nombre, latitud y longitud son obligatorios');
       return res.redirect(`/config-puntos-acceso/${req.params.id}/edit`);
@@ -132,6 +158,7 @@ async function updatePunto(req, res) {
     punto.codigo = payload.codigo;
     punto.descripcion = payload.descripcion;
     punto.subsidiariaId = payload.subsidiariaId;
+    punto.zonaId = payload.zonaId;
     punto.lat = payload.lat;
     punto.lng = payload.lng;
     punto.radioMetros = payload.radioMetros;

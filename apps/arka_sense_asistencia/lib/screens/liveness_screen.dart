@@ -43,6 +43,8 @@ class _LivenessScreenState extends State<LivenessScreen> {
   String? _error;
   String? _instruction;
   String? _challengeId;
+  String? _purpose;
+  String? _sesionNombre;
   List<Map<String, dynamic>> _frames = const [];
   int _frameIndex = 0;
   int _attempt = 0;
@@ -106,6 +108,12 @@ class _LivenessScreenState extends State<LivenessScreen> {
   Future<void> _loadChallenge() async {
     final data = await context.read<AuthState>().api.get('/biometrics/challenge');
     _challengeId = data['challengeId'] as String?;
+    _purpose = data['purpose'] as String?;
+    final sesion = data['sesion'];
+    if (sesion is Map) {
+      final nombre = sesion['nombre']?.toString().trim();
+      if (nombre != null && nombre.isNotEmpty) _sesionNombre = nombre;
+    }
     final raw = data['requiredFrames'];
     _frames = raw is List
         ? raw.map((e) => Map<String, dynamic>.from(e as Map)).toList()
@@ -190,13 +198,10 @@ class _LivenessScreenState extends State<LivenessScreen> {
       _error = null;
     });
     try {
-      final emp = context.read<AuthState>().session?['empleado'] as Map?;
-      final userId = emp?['id']?.toString() ?? '';
       final data = await context.read<AuthState>().api.postMultipart(
             '/biometrics/verify',
             fields: {
               'challengeId': _challengeId ?? '',
-              'userId': userId,
             },
             files: {
               for (final e in _captured.entries) e.key: e.value,
@@ -293,7 +298,20 @@ class _LivenessScreenState extends State<LivenessScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          'Prueba de vida (${_attempt.clamp(0, widget.maxAttempts)}/${widget.maxAttempts})',
+          _sesionNombre ??
+              context.read<AuthState>().displayName,
+        ),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(22),
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(
+              _purpose == 'enroll'
+                  ? 'Enrolando el rostro de esta sesión'
+                  : 'Validando el rostro de esta sesión',
+              style: const TextStyle(color: Colors.white70, fontSize: 12),
+            ),
+          ),
         ),
       ),
       body: _initializing

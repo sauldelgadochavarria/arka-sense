@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Activar acceso — Arka-Presence</title>
+  <link rel="stylesheet" href="/css/variables.css" />
+  <link rel="stylesheet" href="/css/app.css" />
+</head>
+<body class="auth-page">
+  <div class="card">
+    <h1>Arka-Presence</h1>
+    <% if (listo) { %>
+    <h2>Contraseña lista</h2>
+    <p>Ya puedes entrar con <strong><%= email %></strong>.</p>
+    <p>En la app usa la cuenta <strong><%= cuenta || 'de tu empresa' %></strong>, este correo y la contraseña que acabas de definir.</p>
+    <p><a class="btn" href="/auth-login">Entrar al portal</a></p>
+    <% } else if (!valido) { %>
+    <h2>Enlace no disponible</h2>
+    <p><%= error || 'El enlace no es válido o ya venció. Pide a RRHH que envíe otro desde tu expediente.' %></p>
+    <% } else { %>
+    <h2>Define tu contraseña</h2>
+    <p class="muted">Correo de acceso: <strong><%= email %></strong></p>
+    <% if (error) { %><div class="alert"><%= error %></div><% } %>
+    <form method="post" action="/activar-acceso/<%= token %>">
+      <label>Contraseña</label>
+      <input type="password" name="password" required minlength="6" autocomplete="new-password" />
+      <label>Confirmar contraseña</label>
+      <input type="password" name="password2" required minlength="6" autocomplete="new-password" />
+      <button type="submit">Guardar y activar</button>
+    </form>
+    <p class="hint">Después entra a la app con la cuenta de la empresa, este correo y esta contraseña.</p>
+    <% } %>
+  </div>
+</body>
+</html>

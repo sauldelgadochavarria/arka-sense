@@ -66,6 +66,8 @@ const attendanceRecordSchema = new mongoose.Schema(
       fueraDeZona: { type: Boolean, default: false },
       allowed: { type: Boolean, default: true },
       puntoAccesoId: { type: mongoose.Schema.Types.ObjectId, ref: 'PuntoAcceso', default: null },
+      zonaId: { type: mongoose.Schema.Types.ObjectId, ref: 'Zona', default: null },
+      zonaNombre: { type: String, default: '' },
       siteSource: { type: String, default: '' },
       siteNombre: { type: String, default: '' },
       distanceMeters: { type: Number, default: null },

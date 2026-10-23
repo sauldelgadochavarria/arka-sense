@@ -271,6 +271,15 @@ async function reorganizeMenuPackages(Menu, adminRoleId) {
     };
     await upsertByRuta(Menu, {
       ...aCommon,
+      menuPrincipal: 'Zonas',
+      rutaApp: '/config-zonas',
+      parentId: asistencia._id,
+      orden: 48,
+      requiredFeatureKeys: ['asistencia'],
+      roles: []
+    });
+    await upsertByRuta(Menu, {
+      ...aCommon,
       menuPrincipal: 'Puntos de acceso',
       rutaApp: '/config-puntos-acceso',
       parentId: asistencia._id,

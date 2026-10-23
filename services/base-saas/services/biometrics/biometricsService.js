@@ -6,11 +6,11 @@ const {
   ensureReady,
   analyzeFace,
   evaluateLiveness,
-  bestMatch,
+  verifyIdentity,
   normalizeEmbedding,
-  euclideanDistance,
   MATCH_THRESHOLD
 } = require('./faceApiService');
+const { cosineDistance, MODEL_VERSION } = require('./arcfaceService');
 
 const DEFAULT_FRAMES = [
   { id: 'frame_neutral', instruction: 'Mira al frente, sin sonreír (rostro relajado)' },
@@ -36,17 +36,38 @@ async function issueChallenge(auth) {
 async function getEmpleadoBiometria(tenantId, empleadoId) {
   const Empleado = await getEmpleadoModel();
   const emp = await Empleado.findOne({ _id: empleadoId, tenantId })
-    .select('firstName lastName biometriaFacial')
+    .select('firstName lastName apellidoPaterno apellidoMaterno numEmpleado biometriaFacial')
     .lean();
   return emp;
 }
 
+function etiquetaEmpleado(emp) {
+  if (!emp) return 'la sesión actual';
+  const nombre = [emp.firstName, emp.apellidoPaterno || emp.lastName, emp.apellidoMaterno]
+    .filter(Boolean)
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const base = nombre || 'la sesión actual';
+  return emp.numEmpleado ? `${base} (${emp.numEmpleado})` : base;
+}
+
+function isArcFaceTemplate(bio = {}) {
+  return (
+    Boolean(bio.enrolled) &&
+    String(bio.modelVersion || '').startsWith('arcface') &&
+    normalizeEmbedding(bio.embedding).length === 512
+  );
+}
+
 function bioFlags(bio = {}) {
-  const enrolled = Boolean(bio.enrolled && normalizeEmbedding(bio.embedding).length >= 64);
+  const enrolled = isArcFaceTemplate(bio);
+  const legacy = Boolean(bio.enrolled) && !enrolled;
   const autoEnrolamiento = Boolean(bio.autoEnrolamiento);
   const autoMejoraPlantilla = bio.autoMejoraPlantilla !== false;
   return {
     enrolled,
+    legacy,
     autoEnrolamiento,
     autoMejoraPlantilla,
     canSelfEnroll: autoEnrolamiento && !enrolled,
@@ -120,7 +141,7 @@ async function enrollFromImage({ tenantId, empleadoId, imageBuffer, enrolledBy, 
         'biometriaFacial.enrolled': true,
         'biometriaFacial.enrolledAt': new Date(),
         'biometriaFacial.enrolledBy': enrolledBy || source || null,
-        'biometriaFacial.modelVersion': 'facenet-128',
+        'biometriaFacial.modelVersion': MODEL_VERSION,
         'biometriaFacial.embedding': embedding,
         'biometriaFacial.distanceThreshold': MATCH_THRESHOLD,
         'biometriaFacial.detectionScore': face.score,
@@ -164,7 +185,7 @@ async function enrollFromLivenessFrames({
   const qa = qualityGate(actionFace, 'frame_action');
   if (!qa.ok) return { success: false, message: qa.message };
 
-  const pairDist = euclideanDistance(
+  const pairDist = cosineDistance(
     normalizeEmbedding(neutralFace.descriptor),
     normalizeEmbedding(actionFace.descriptor)
   );
@@ -176,7 +197,7 @@ async function enrollFromLivenessFrames({
   }
 
   const embedding = averageDescriptors([neutralFace.descriptor, actionFace.descriptor]);
-  if (embedding.length < 64) {
+  if (embedding.length !== 512) {
     return { success: false, message: 'No se pudo construir la plantilla facial' };
   }
 
@@ -189,8 +210,10 @@ async function enrollFromLivenessFrames({
         'biometriaFacial.enrolled': true,
         'biometriaFacial.enrolledAt': new Date(),
         'biometriaFacial.enrolledBy': enrolledBy,
-        'biometriaFacial.modelVersion': 'facenet-128',
+        'biometriaFacial.modelVersion': MODEL_VERSION,
         'biometriaFacial.embedding': embedding,
+        'biometriaFacial.embeddingNeutral': l2Normalize(neutralFace.descriptor),
+        'biometriaFacial.embeddingAction': l2Normalize(actionFace.descriptor),
         'biometriaFacial.distanceThreshold': MATCH_THRESHOLD,
         'biometriaFacial.detectionScore': detectionScore,
         'biometriaFacial.samplesCount': 2,
@@ -288,7 +311,10 @@ async function clearEnrollment({ tenantId, empleadoId }) {
           enrolledBy: null,
           modelVersion: '',
           embedding: [],
-          distanceThreshold: Number.isFinite(th) && th >= 0.45 ? th : MATCH_THRESHOLD,
+          embeddingNeutral: [],
+          embeddingAction: [],
+          distanceThreshold:
+            Number.isFinite(th) && th >= 0.25 && th <= MATCH_THRESHOLD ? th : MATCH_THRESHOLD,
           detectionScore: 0,
           autoEnrolamiento: Boolean(flags.autoEnrolamiento),
           autoMejoraPlantilla: flags.autoMejoraPlantilla !== false,
@@ -319,7 +345,7 @@ async function updateBiometriaConfig({
   }
   if (distanceThreshold != null) {
     const th = Number(distanceThreshold);
-    if (Number.isFinite(th) && th >= 0.45 && th <= 0.85) {
+    if (Number.isFinite(th) && th >= 0.25 && th <= MATCH_THRESHOLD) {
       $set['biometriaFacial.distanceThreshold'] = th;
     }
   }
@@ -361,6 +387,7 @@ async function verifyLivenessAndMatch({ auth, challengeId, frameNeutral, frameAc
   if (!emp) {
     return { success: false, confidenceScore: 0, message: 'Empleado no encontrado' };
   }
+  const quien = etiquetaEmpleado(emp);
   const bio = emp.biometriaFacial || {};
   const flags = bioFlags(bio);
 
@@ -378,8 +405,8 @@ async function verifyLivenessAndMatch({ auth, challengeId, frameNeutral, frameAc
     return {
       success: false,
       confidenceScore: 0,
-      message: `Prueba de vida fallida: ${live.reasons[0]}`,
-      details: { liveness: live.metrics, reasons: live.reasons }
+      message: `Prueba de vida: ${live.reasons[0]}`,
+      details: { stage: 'liveness', liveness: live.metrics, reasons: live.reasons }
     };
   }
 
@@ -389,7 +416,7 @@ async function verifyLivenessAndMatch({ auth, challengeId, frameNeutral, frameAc
       return {
         success: false,
         confidenceScore: 0,
-        message: 'Sin rostro de referencia. Solicita el enroll en RRHH o pide que habiliten autoenrolamiento.'
+        message: `Sin rostro de ${quien}. Pide a RRHH que habiliten el autoenrolamiento.`
       };
     }
     const enrolled = await enrollFromLivenessFrames({
@@ -403,14 +430,14 @@ async function verifyLivenessAndMatch({ auth, challengeId, frameNeutral, frameAc
       return {
         success: false,
         confidenceScore: 0,
-        message: enrolled.message,
+        message: `${quien}: ${enrolled.message}`,
         details: { purpose: 'enroll' }
       };
     }
     return {
       success: true,
       confidenceScore: enrolled.confidenceScore || 1,
-      message: enrolled.message,
+      message: `Rostro registrado para ${quien}. Las siguientes marcaciones se validan contra esta sesión.`,
       details: {
         purpose: 'enroll',
         autoEnrolled: true,
@@ -420,19 +447,23 @@ async function verifyLivenessAndMatch({ auth, challengeId, frameNeutral, frameAc
     };
   }
 
-  const reference = normalizeEmbedding(bio.embedding);
+  const gallery = [bio.embedding, bio.embeddingNeutral, bio.embeddingAction]
+    .map(normalizeEmbedding)
+    .filter((d) => d.length === 512);
   const storedTh = Number(bio.distanceThreshold);
   const threshold =
-    Number.isFinite(storedTh) && storedTh >= 0.55 ? storedTh : MATCH_THRESHOLD;
+    Number.isFinite(storedTh) && storedTh >= 0.25 && storedTh < MATCH_THRESHOLD
+      ? storedTh
+      : MATCH_THRESHOLD;
 
-  let match = bestMatch(
+  let match = verifyIdentity(
     [neutralFace.descriptor, actionFace.descriptor],
-    reference,
+    gallery,
     threshold
   );
   let usedFlip = false;
 
-  if (!match.ok && match.distance > threshold) {
+  if (!match.ok) {
     const flippedNeutral = await analyzeFace(frameNeutral, {
       label: 'frame_neutral_flip',
       flipHorizontal: true
@@ -444,9 +475,9 @@ async function verifyLivenessAndMatch({ auth, challengeId, frameNeutral, frameAc
     const probes = [];
     if (flippedNeutral.ok) probes.push(flippedNeutral.descriptor);
     if (flippedAction.ok) probes.push(flippedAction.descriptor);
-    if (probes.length) {
-      const flipMatch = bestMatch(probes, reference, threshold);
-      if (flipMatch.distance < match.distance) {
+    if (probes.length >= 2) {
+      const flipMatch = verifyIdentity(probes, gallery, threshold);
+      if (flipMatch.ok || flipMatch.distance < match.distance) {
         match = flipMatch;
         usedFlip = true;
       }
@@ -454,19 +485,25 @@ async function verifyLivenessAndMatch({ auth, challengeId, frameNeutral, frameAc
   }
 
   if (!match.ok) {
-    const tip =
-      match.distance > 0.75
-        ? ' Vuelve a registrar el rostro en RRHH (ficha → Biometría facial) con la misma persona y buena luz.'
-        : ' Usa la misma persona enrollada, buena luz y mira al frente.';
+    const best = Number(match.bestDistance);
+    const worst = Number(match.worstDistance);
+    const oneClose = best <= threshold && worst > threshold;
+    const message = oneClose
+      ? `Verificación de rostro: un fotograma se acerca a ${quien}, el otro no (${best.toFixed(3)} y ${worst.toFixed(3)}, límite ${threshold}). Repite mirando al frente.`
+      : `Verificación de rostro: ${quien} no coincide con la cuenta (distancias ${best.toFixed(3)} y ${worst.toFixed(3)}, límite ${threshold}).`;
     return {
       success: false,
       confidenceScore: match.confidenceScore || 0,
-      message: `Identidad no coincide (distancia ${match.distance.toFixed(3)} > ${threshold}).${tip}`,
+      message,
       details: {
+        stage: 'identity',
         distance: match.distance,
+        bestDistance: match.bestDistance,
+        worstDistance: match.worstDistance,
         threshold,
         usedFlip,
-        purpose: 'verify'
+        purpose: 'verify',
+        liveness: live.metrics
       }
     };
   }
@@ -490,11 +527,14 @@ async function verifyLivenessAndMatch({ auth, challengeId, frameNeutral, frameAc
     success: true,
     confidenceScore: match.confidenceScore,
     message: improve.improved
-      ? 'Identidad verificada. Plantilla facial actualizada (mejor calidad).'
-      : 'Identidad y prueba de vida verificadas exitosamente',
+      ? `Rostro de ${quien} verificado. Plantilla facial actualizada.`
+      : `Rostro de ${quien} verificado.`,
     details: {
+      stage: 'identity',
       purpose: 'verify',
       distance: match.distance,
+      bestDistance: match.bestDistance,
+      worstDistance: match.worstDistance,
       threshold,
       usedFlip,
       liveness: live.metrics,
@@ -513,6 +553,7 @@ module.exports = {
   getEmpleadoBiometria,
   updateBiometriaConfig,
   bioFlags,
+  etiquetaEmpleado,
   DEFAULT_FRAMES,
   ENROLL_MIN_SCORE
 };

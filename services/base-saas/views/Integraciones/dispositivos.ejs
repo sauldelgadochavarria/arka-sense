@@ -3,6 +3,7 @@
 <div class="toolbar">
   <a class="btn" href="/integraciones/perfiles">Integraciones</a>
   <a class="btn" href="/integraciones/grupos-dispositivos">Grupos</a>
+  <a class="btn" href="/config-zonas">Zonas</a>
   <a class="btn" href="/integraciones/logs">Logs</a>
 </div>
 <% if (!empresa) { %>
@@ -12,6 +13,12 @@
 <h2>Registrar dispositivo</h2>
 <form method="post" action="/integraciones/dispositivos" class="form-grid">
   <input name="nombre" placeholder="Nombre (ej. Checador entrada)" required />
+  <input name="numeroSerie" placeholder="Número de serie" />
+  <select name="proposito">
+    <% propositos.forEach(function(p) { %>
+    <option value="<%= p.value %>"><%= p.label %></option>
+    <% }); %>
+  </select>
   <select name="tipo">
     <% tiposDispositivo.forEach(function(t) { %>
     <option value="<%= t.value %>"><%= t.label %></option>
@@ -26,22 +33,30 @@
     <option value="<%= s._id %>"><%= s.nombre %></option>
     <% }); %>
   </select>
+  <select name="zonaId">
+    <option value="">— Zona —</option>
+    <% zonas.forEach(function(z) { %>
+    <option value="<%= z._id %>"><%= z.nombre %></option>
+    <% }); %>
+  </select>
   <button type="submit">Registrar</button>
 </form>
 
 <h2>Dispositivos</h2>
 <table>
   <thead>
-    <tr><th>Nombre</th><th>Tipo</th><th>Host</th><th>Estatus</th><th>Último ping</th><th>Catálogo</th><th></th></tr>
+    <tr><th>Nombre</th><th>Serie</th><th>Uso</th><th>Zona</th><th>Host</th><th>Estatus</th><th>Último ping</th><th>Catálogo</th><th></th></tr>
   </thead>
   <tbody>
     <% if (!dispositivos.length) { %>
-    <tr><td colspan="7">Sin dispositivos registrados.</td></tr>
+    <tr><td colspan="9">Sin dispositivos registrados.</td></tr>
     <% } %>
     <% dispositivos.forEach(function(d) { %>
     <tr>
       <td><%= d.nombre %></td>
-      <td><%= d.tipo %></td>
+      <td><%= d.numeroSerie || '—' %></td>
+      <td><%= d.proposito === 'acceso' ? 'Acceso' : 'Asistencia' %></td>
+      <td><%= d.zonaId ? (zonaMap.get(String(d.zonaId)) || '—') : '—' %></td>
       <td><%= d.host || '—' %>:<%= d.puerto %></td>
       <td><span class="badge badge-<%= d.estatus === 'online' ? 'activo' : d.estatus === 'offline' ? 'baja' : 'suspendido' %>"><%= d.estatus %></span></td>
       <td><%= d.ultimoPing ? new Date(d.ultimoPing).toLocaleString('es-MX') : '—' %></td>

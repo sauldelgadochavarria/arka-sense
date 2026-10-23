@@ -42,6 +42,40 @@ function auditMeta(req) {
   };
 }
 
+/** Si la marcación no trae zona guardada, usa la zona actual de su punto de acceso. */
+async function completarZonas(tenantId, marcaciones) {
+  const faltan = marcaciones.filter((m) => m.geocerca?.puntoAccesoId && !m.geocerca?.zonaNombre);
+  if (!faltan.length) return;
+  const getPuntoAccesoModel = require('../models/puntoAcceso');
+  const getZonaModel = require('../models/zona');
+  const Punto = await getPuntoAccesoModel();
+  const ids = [...new Set(faltan.map((m) => String(m.geocerca.puntoAccesoId)))];
+  const puntos = await Punto.find({
+    tenantId,
+    _id: { $in: ids },
+    zonaId: { $ne: null }
+  })
+    .select('zonaId')
+    .lean();
+  if (!puntos.length) return;
+  const Zona = await getZonaModel();
+  const zonaIds = [...new Set(puntos.map((p) => String(p.zonaId)))];
+  const zonas = await Zona.find({ tenantId, _id: { $in: zonaIds } }).select('nombre').lean();
+  const nombrePorZona = new Map(zonas.map((z) => [String(z._id), z.nombre || '']));
+  const porPunto = new Map(
+    puntos.map((p) => [
+      String(p._id),
+      { zonaId: p.zonaId, zonaNombre: nombrePorZona.get(String(p.zonaId)) || '' }
+    ])
+  );
+  for (const m of faltan) {
+    const z = porPunto.get(String(m.geocerca.puntoAccesoId));
+    if (!z?.zonaNombre) continue;
+    m.geocerca.zonaId = m.geocerca.zonaId || z.zonaId;
+    m.geocerca.zonaNombre = z.zonaNombre;
+  }
+}
+
 async function listMarcaciones(req, res) {
   const { empresa, error } = await requireEmpresaForTenant(req);
   const fechaStr = defaultFechaQuery(req);
@@ -109,6 +143,7 @@ async function listMarcaciones(req, res) {
     empleados.map((e) => [String(e._id), `${e.firstName} ${e.lastName} (${e.numEmpleado})`])
   );
   const dailyMap = new Map(diariosScoped.map((d) => [String(d.empleadoId), d]));
+  await completarZonas(req.session.tenantId, marcacionesScoped);
 
   // Contar checadas activas por empleado+tipo (detectar duplicados)
   const dupKeyCount = new Map();
@@ -191,6 +226,7 @@ async function showMarcacionDetalle(req, res) {
     if (sub?.zonaHoraria) zonaHoraria = sub.zonaHoraria;
   }
   const formatTime = (d) => formatTimeHHMM(d, zonaHoraria);
+  await completarZonas(req.session.tenantId, [marcacion]);
 
   const fechaStr = marcacion.fecha
     ? ymdInTimeZone(marcacion.fecha, zonaHoraria)

@@ -11,6 +11,7 @@ const {
   parseCheckbox
 } = require('./formHelpers');
 const { TIPOS_BASE_COTIZACION } = require('../config/empleadoCatalogos');
+const { buildFamilia, buildSalud } = require('./empleadoFamilia');
 
 const TIPOS_REGISTRO_VALIDOS = ['ninguno', 'rol_turnos', 'planilla'];
 const TIPOS_CREDITO_INFONAVIT_VALIDOS = ['', 'porcentaje', 'vsm', 'cuota_fija'];
@@ -189,6 +190,8 @@ function buildEmpleadoPayload(body, tenantId, empresaId) {
       cuenta: trimString(body.banco_cuenta).replace(/\s/g, ''),
       clabe: trimString(body.banco_clabe).replace(/\D/g, '').slice(0, 18)
     },
+    salud: buildSalud(body),
+    familia: buildFamilia(body),
     nominaConfig: buildNominaConfigPayload(body)
   };
 }

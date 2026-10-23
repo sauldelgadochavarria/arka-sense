@@ -47,6 +47,7 @@
       <th>Original</th>
       <th>Empleado</th>
       <th>Tipo</th>
+      <th>Zona</th>
       <th>Estado</th>
       <th>Resumen día</th>
       <th>Rastro</th>
@@ -55,7 +56,7 @@
   </thead>
   <tbody>
     <% if (!marcaciones.length) { %>
-    <tr><td colspan="8" class="muted">Sin marcaciones para este filtro. <a href="#captura">Registrar una</a>.</td></tr>
+    <tr><td colspan="9" class="muted">Sin marcaciones para este filtro. <a href="#captura">Registrar una</a>.</td></tr>
     <% } %>
     <% marcaciones.forEach(function(m) {
          const daily = dailyMap.get(String(m.empleadoId));
@@ -81,6 +82,7 @@
       <td class="muted small"><%= formatTimeHHMM(tsOrig) %></td>
       <td><%= empMap.get(String(m.empleadoId)) || '—' %></td>
       <td><%= m.tipoMarcacion %></td>
+      <td><%= (m.geocerca && m.geocerca.zonaNombre) || '—' %></td>
       <td>
         <span class="badge badge-<%= anulada ? 'suspendido' : 'activo' %>">
           <%= anulada ? 'Anulada' : 'Activa' %>

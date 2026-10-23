@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const { getFixedMongooseConnection, FIXED_CONNECTIONS } = require('../services/cachingService');
 const { COLLECTION_EMPLEADOS } = require('../config/constants');
+const { correosDeEmpleado, mensajeCorreoDuplicado, errorCorreoDuplicado } = require('../libs/empleadoCorreo');
 
 const empleadoSchema = new mongoose.Schema(
   {
@@ -213,6 +214,48 @@ const empleadoSchema = new mongoose.Schema(
       cuenta: { type: String, trim: true, default: '' },
       clabe: { type: String, trim: true, default: '' }
     },
+    /** Salud del trabajador (emergencias y elegibilidad). No es un expediente clínico. */
+    salud: {
+      tipoSangre: { type: String, trim: true, default: '' },
+      alergias: { type: String, trim: true, default: '' },
+      padecimientos: { type: String, trim: true, default: '' }
+    },
+    /**
+     * Familia para prestaciones (nacimiento, recreación, seguros, PTU, finiquito).
+     * El motor lee hijos, hijosMenores, hijosEscolares, tieneConyuge y nacimientoEnPeriodo.
+     */
+    familia: {
+      conyuge: {
+        nombre: { type: String, trim: true, default: '' },
+        fechaNacimiento: { type: Date, default: null },
+        ocupacion: { type: String, trim: true, default: '' },
+        telefono: { type: String, trim: true, default: '' }
+      },
+      hijos: [
+        {
+          nombre: { type: String, trim: true, default: '' },
+          fechaNacimiento: { type: Date, default: null },
+          sexo: { type: String, trim: true, default: '' },
+          escolaridad: { type: String, trim: true, default: '' }
+        }
+      ],
+      contactosEmergencia: [
+        {
+          nombre: { type: String, trim: true, default: '' },
+          parentesco: { type: String, trim: true, default: '' },
+          telefono: { type: String, trim: true, default: '' },
+          telefonoAlt: { type: String, trim: true, default: '' }
+        }
+      ],
+      beneficiarios: [
+        {
+          nombre: { type: String, trim: true, default: '' },
+          parentesco: { type: String, trim: true, default: '' },
+          porcentaje: { type: Number, default: 0, min: 0, max: 100 },
+          aplicaA: { type: String, trim: true, default: 'todos' }
+        }
+      ]
+    },
     /**
      * Plantilla facial 1:1 (FaceNet 128-d).
      * RRHH enrolla en ficha; si autoEnrolamiento=true la app puede autoenrolar
@@ -224,7 +267,10 @@ const empleadoSchema = new mongoose.Schema(
       enrolledBy: { type: String, trim: true, default: null },
       modelVersion: { type: String, trim: true, default: '' },
       embedding: { type: [Number], default: undefined },
-      distanceThreshold: { type: Number, default: 0.62 },
+      /** Neutro y sonrisa por separado, para comparar cada fotograma con su gesto. */
+      embeddingNeutral: { type: [Number], default: undefined },
+      embeddingAction: { type: [Number], default: undefined },
+      distanceThreshold: { type: Number, default: 0.4 },
       detectionScore: { type: Number, default: 0 },
       /** Permite que el empleado se enrolé desde la app (liveness + calidad). */
       autoEnrolamiento: { type: Boolean, default: false },
@@ -238,6 +284,12 @@ const empleadoSchema = new mongoose.Schema(
   },
   { timestamps: true, collection: COLLECTION_EMPLEADOS }
 );
+
+empleadoSchema.pre('save', async function rechazarCorreoDuplicado() {
+  if (!correosDeEmpleado(this).length) return;
+  const mensaje = await mensajeCorreoDuplicado(this.constructor, this.tenantId, this, this._id);
+  if (mensaje) throw errorCorreoDuplicado(mensaje);
+});
 
 empleadoSchema.index({ tenantId: 1, empresaId: 1, numEmpleado: 1 }, { unique: true });
 empleadoSchema.index({ tenantId: 1, tipoPeriodoId: 1 });

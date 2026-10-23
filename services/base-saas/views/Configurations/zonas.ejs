@@ -1,0 +1,65 @@
+<%- include('../Partials/layout-top', { title: title || 'Zonas', session }) %>
+<h1>Zonas</h1>
+<div class="toolbar">
+  <a class="btn" href="/config-subsidiarias">Subsidiarias</a>
+  <a class="btn" href="/config-puntos-acceso">Puntos de acceso</a>
+  <a class="btn" href="/integraciones/dispositivos">Terminales</a>
+</div>
+<p class="muted">
+  Una zona vive dentro de una subsidiaria (recepción, almacén, piso).
+  La zona horaria y los módulos siguen en la subsidiaria.
+</p>
+
+<% if (!empresa) { %>
+<p>No hay empresa vinculada.</p>
+<% } else { %>
+
+<h2>Nueva zona</h2>
+<form method="post" action="/config-zonas" class="form-grid form-wide">
+  <select name="subsidiariaId" required>
+    <option value="">— Subsidiaria —</option>
+    <% subsidiarias.forEach(function(s) { %>
+    <option value="<%= s._id %>"><%= s.nombre %></option>
+    <% }); %>
+  </select>
+  <input name="codigo" placeholder="Código (opcional)" maxlength="32" />
+  <input name="nombre" placeholder="Nombre (ej. Recepción)" required />
+  <input name="descripcion" placeholder="Descripción" />
+  <button type="submit">Crear zona</button>
+</form>
+
+<h2>Catálogo</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Subsidiaria</th>
+      <th>Código</th>
+      <th>Nombre</th>
+      <th>Descripción</th>
+      <th>Activa</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <% if (!zonas.length) { %>
+    <tr><td colspan="6" class="muted">Sin zonas. Los puntos y las terminales pueden seguir sin zona.</td></tr>
+    <% } %>
+    <% zonas.forEach(function(z) { %>
+    <tr class="<%= !z.activo ? 'row-muted' : '' %>">
+      <td><%= subMap.get(String(z.subsidiariaId)) || '—' %></td>
+      <td><%= z.codigo || '—' %></td>
+      <td><%= z.nombre %></td>
+      <td class="muted"><%= z.descripcion || '—' %></td>
+      <td><%= z.activo ? 'Sí' : 'No' %></td>
+      <td class="actions">
+        <a href="/config-zonas/<%= z._id %>/edit">Editar</a>
+        <form method="post" action="/config-zonas/<%= z._id %>/toggle" class="inline-form">
+          <button type="submit"><%= z.activo ? 'Desactivar' : 'Activar' %></button>
+        </form>
+      </td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<% } %>
+<%- include('../Partials/layout-bottom') %>

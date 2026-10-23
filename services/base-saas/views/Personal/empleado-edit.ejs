@@ -2,7 +2,7 @@
 <p><a href="/personal-empleados/<%= empleado._id %>">← Volver al expediente</a></p>
 
 <h1>Editar empleado</h1>
-<form method="post" action="/personal-empleados/<%= empleado._id %>" class="form-grid form-wide">
+<form method="post" action="/personal-empleados/<%= empleado._id %>" class="form-fichas">
   <%- include('partials/empleado-fields', {
     empleado, subsidiarias, departamentos, puestos, turnos,
     centrosCosto: typeof centrosCosto !== 'undefined' ? centrosCosto : [],
@@ -16,6 +16,10 @@
     tiposBaseCotizacion: typeof tiposBaseCotizacion !== 'undefined' ? tiposBaseCotizacion : [],
     umaVigente: typeof umaVigente !== 'undefined' ? umaVigente : 0
   }) %>
-  <button type="submit">Guardar cambios</button>
+  <div class="ficha-savebar">
+    <button type="submit">Guardar cambios</button>
+  </div>
 </form>
+<form id="form-acceso-portal" method="post" action="/personal-empleados/<%= empleado._id %>/acceso-portal"></form>
+<form id="form-documentacion" method="post" action="/nomina/gestion-documental/subir" enctype="multipart/form-data"></form>
 <%- include('../Partials/layout-bottom') %>

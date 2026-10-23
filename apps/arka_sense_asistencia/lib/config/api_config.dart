@@ -11,7 +11,7 @@ class ApiConfig {
   /// - Dispositivo físico: http://&lt;IP-LAN&gt;:4003  (127.0.0.1 = el teléfono, no el PC)
   static const String baseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://10.5.7.73:4003',
+    defaultValue: 'http://192.168.1.32:4003',
   );
 
   static const String apiPrefix = '/api/v1';

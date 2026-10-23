@@ -14,6 +14,10 @@ const {
 const { buildEmpleadoPayload } = require('../libs/empleadoPayload');
 const { validateEmpleadoImssIsn, labelEntidadFederativa } = require('../libs/empleadoImssIsnValidation');
 const { toDateInputValue } = require('../libs/formHelpers');
+const { describirAcceso } = require('../services/portalAccesoService');
+const { alertasFamilia, TIPOS_SANGRE, ESCOLARIDADES, APLICA_BENEFICIARIO, ETIQUETA_APLICA } = require('../libs/empleadoFamilia');
+const { listarDocumentos } = require('../services/gestionDocumentalService');
+const { TIPOS_DOCUMENTO } = require('../config/gestionDocumentalCatalog');
 const { tenantHasFeature } = require('../libs/tenantFeatureFlags');
 const {
   TIPOS_CREDITO_INFONAVIT,
@@ -33,6 +37,13 @@ const { resolverBaseImss } = require('../libs/sdiHelpers');
 const { getEnumItems, ensureSystemEnums } = require('../services/nomina/systemEnumService');
 const { revokeMobileAccessForEmpleado } = require('../services/mobileAccessService');
 
+function mensajeErrorGuardarEmpleado(err, fallback) {
+  if (err && err.code === 11000) return 'El número de empleado o código externo ya existe';
+  if (err && err.code === 'CORREO_DUPLICADO') return err.message;
+  if (err && err.code === 'FAMILIA') return err.message;
+  return fallback;
+}
+
 async function loadUmaVigente(tenantId) {
   try {
     const { obtenerParametrosVigentes } = require('../services/nomina/tablasFiscalesService');
@@ -48,7 +59,35 @@ function empleadoFormExtras(umaVigente = 0) {
     entidadesFederativas: ENTIDADES_FEDERATIVAS,
     estadosCiviles: ESTADOS_CIVILES,
     tiposBaseCotizacion: TIPOS_BASE_COTIZACION,
-    umaVigente
+    umaVigente,
+    TIPOS_SANGRE,
+    ESCOLARIDADES,
+    APLICA_BENEFICIARIO,
+    ETIQUETA_APLICA
+  };
+}
+
+async function cargarExpedienteEmpleado(req, empleado, empresa) {
+  const gestionDocumental = tenantHasFeature(req.session?.featureFlags || {}, 'gestion_documental');
+  let documentosEmpleado = [];
+  if (gestionDocumental && empresa && empleado) {
+    try {
+      documentosEmpleado = await listarDocumentos(req.session.tenantId, empresa._id, {
+        empleadoId: empleado._id
+      });
+    } catch (_) {
+      documentosEmpleado = [];
+    }
+  }
+  return {
+    gestionDocumental,
+    documentosEmpleado,
+    tiposDocumentoEmpleado: TIPOS_DOCUMENTO.filter((t) => t.ambito === 'empleado'),
+    alertasExpediente: alertasFamilia(
+      empleado,
+      gestionDocumental ? documentosEmpleado : null,
+      new Date()
+    )
   };
 }
 
@@ -402,7 +441,9 @@ async function listEmpleados(req, res) {
     cuotaSindicalTope30Opts: CUOTA_SINDICAL_TOPE30_OPTS,
     cuotaSindicalBaseOpts: CUOTA_SINDICAL_BASE_OPTS,
     error: error || null,
-    session: req.session
+    session: req.session,
+    gestionDocumental: tenantHasFeature(req.session?.featureFlags || {}, 'gestion_documental'),
+    tiposDocumentoEmpleado: TIPOS_DOCUMENTO.filter((t) => t.ambito === 'empleado')
   });
 }
 
@@ -433,7 +474,7 @@ async function createEmpleado(req, res) {
     res.redirect(`/personal-empleados/${empleado._id}`);
   } catch (err) {
     console.error('[empleados]', err);
-    req.flash('error', err.code === 11000 ? 'El número de empleado o código externo ya existe' : 'Error al crear empleado');
+    req.flash('error', mensajeErrorGuardarEmpleado(err, 'Error al crear empleado'));
     res.redirect('/personal-empleados');
   }
 }
@@ -511,8 +552,13 @@ async function showEmpleado(req, res) {
     }
   }
 
+  const acceso = await describirAcceso(req.session.tenantId, empleado);
+  const expediente = await cargarExpedienteEmpleado(req, empleado, empresa);
+
   res.render('Personal/empleado-show', {
     empleado,
+    acceso,
+    ...expediente,
     ...maps,
     ...enumsEmp,
     ...empleadoFormExtras(umaVigente),
@@ -553,8 +599,14 @@ async function editEmpleado(req, res) {
   const enumsEmp = await loadEmpleadoEnums();
   const umaVigente = await loadUmaVigente(req.session.tenantId);
 
+  const acceso = await describirAcceso(req.session.tenantId, empleado);
+  acceso.externo = true;
+  const expediente = await cargarExpedienteEmpleado(req, empleado, empresa);
+
   res.render('Personal/empleado-edit', {
     empleado,
+    acceso,
+    ...expediente,
     ...catalogs,
     ...enumsEmp,
     ...empleadoFormExtras(umaVigente),
@@ -603,6 +655,8 @@ async function updateEmpleado(req, res) {
     empleado.markModified('domicilio');
     empleado.markModified('nominaConfig');
     empleado.markModified('datosBancarios');
+    empleado.markModified('salud');
+    empleado.markModified('familia');
     await empleado.save();
     await syncAsignacionFromBody(req.session.tenantId, empresa._id, empleado._id, req.body);
     await registrarCambioAutomatico(req.session.tenantId, empresa._id, antes, empleado.toObject(), {
@@ -625,7 +679,7 @@ async function updateEmpleado(req, res) {
     res.redirect(`/personal-empleados/${empleado._id}`);
   } catch (err) {
     console.error('[empleados]', err);
-    req.flash('error', err.code === 11000 ? 'El número de empleado o código externo ya existe' : 'Error al actualizar empleado');
+    req.flash('error', mensajeErrorGuardarEmpleado(err, 'Error al actualizar empleado'));
     res.redirect(`/personal-empleados/${req.params.id}/edit`);
   }
 }

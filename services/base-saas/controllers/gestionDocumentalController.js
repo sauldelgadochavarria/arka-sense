@@ -37,6 +37,12 @@ function flashRedirect(req, res, path, type, msg) {
   return res.redirect(path);
 }
 
+function volverSeguro(raw, fallback) {
+  const v = String(raw || '').trim();
+  if (/^\/personal-empleados\/[a-fA-F0-9]{24}(\/edit)?(#[a-z]+)?$/.test(v)) return v;
+  return fallback;
+}
+
 function featureFlagsFromReq(req) {
   return req.session?.featureFlags || req.tenant?.featureFlags || {};
 }
@@ -281,9 +287,21 @@ async function uploadAction(req, res) {
       origen: 'upload',
       ...userMeta(req)
     });
-    return flashRedirect(req, res, '/nomina/gestion-documental', 'success', 'Documento cargado');
+    return flashRedirect(
+      req,
+      res,
+      volverSeguro(req.body.volver, '/nomina/gestion-documental'),
+      'success',
+      'Documento cargado'
+    );
   } catch (err) {
-    return flashRedirect(req, res, '/nomina/gestion-documental/subir', 'error', err.message);
+    return flashRedirect(
+      req,
+      res,
+      volverSeguro(req.body.volver, '/nomina/gestion-documental/subir'),
+      'error',
+      err.message
+    );
   }
 }
 

@@ -134,4 +134,8 @@ router.post('/cambiar-subsidiaria/:id', async (req, res) => {
   res.redirect(redirectAfterContextSwitch(req, '/dashboard'));
 });
 
+const portalAccesoController = require('./portalAccesoController');
+router.get('/activar-acceso/:token', portalAccesoController.activarForm);
+router.post('/activar-acceso/:token', portalAccesoController.activarAction);
+
 module.exports = router;

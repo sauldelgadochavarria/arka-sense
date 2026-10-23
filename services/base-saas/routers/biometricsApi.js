@@ -13,7 +13,8 @@ const {
   issueChallenge,
   verifyLivenessAndMatch,
   getEmpleadoBiometria,
-  bioFlags
+  bioFlags,
+  etiquetaEmpleado
 } = require('../services/biometrics/biometricsService');
 const { registrarIntento } = require('../services/attendanceAttemptService');
 const { startOfDay } = require('../libs/timeHelpers');
@@ -50,11 +51,14 @@ router.get('/challenge', requireMobileAuth, async (req, res) => {
       return jsonError(
         res,
         409,
-        'Sin plantilla facial. RRHH debe registrar el rostro o habilitar autoenrolamiento en la ficha.'
+        flags.legacy
+          ? 'El rostro se registró con el modelo anterior. Hay que volver a capturarlo.'
+          : 'Sin plantilla facial. RRHH debe registrar el rostro o habilitar autoenrolamiento en la ficha.'
       );
     }
     const challenge = await issueChallenge(req.mobileAuth);
     const purpose = flags.enrolled ? 'verify' : 'enroll';
+    const quien = etiquetaEmpleado(emp);
     return res.json({
       ok: true,
       challengeId: challenge.challengeId,
@@ -62,7 +66,12 @@ router.get('/challenge', requireMobileAuth, async (req, res) => {
       expiresAt: challenge.expiresAt,
       purpose,
       autoEnrolamiento: flags.autoEnrolamiento,
-      enrolled: flags.enrolled
+      enrolled: flags.enrolled,
+      sesion: {
+        empleadoId: String(emp?._id || req.mobileAuth.empleadoId),
+        numEmpleado: emp?.numEmpleado || '',
+        nombre: quien
+      }
     });
   } catch (err) {
     console.error('[biometrics/challenge]', err);
@@ -129,12 +138,15 @@ router.post(
         userAgent: req.get('user-agent') || ''
       });
 
-      const status = result.success ? 200 : 401;
+      // 422, no 401: la app trata cualquier 401 como sesión revocada y borra el token.
+      const status = result.success ? 200 : 422;
       return res.status(status).json({
         ok: result.success,
         success: result.success,
+        code: result.success ? (purpose === 'enroll' ? 'BIO_AUTO_ENROLL' : 'BIO_OK') : 'BIO_FAIL',
         confidenceScore: result.confidenceScore ?? 0,
         message: result.message,
+        error: result.success ? undefined : result.message,
         details: result.details || undefined,
         purpose
       });

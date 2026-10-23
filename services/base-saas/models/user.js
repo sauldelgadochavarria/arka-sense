@@ -18,6 +18,11 @@ const userSchema = new mongoose.Schema(
     ],
     tenantId: { type: String, trim: true, default: '' },
     empleadoId: { type: mongoose.Schema.Types.ObjectId, ref: 'Empleado', default: null },
+    /** true hasta que la persona define su contraseña con el enlace del correo. */
+    credencialesPendientes: { type: Boolean, default: false },
+    inviteTokenHash: { type: String, default: '' },
+    inviteExpiresAt: { type: Date, default: null },
+    inviteSentAt: { type: Date, default: null },
     activo: { type: Boolean, default: true },
     activeSessionToken: { type: String, default: '' },
     /** Incrementar para invalidar JWT de la app móvil (baja / desactivar). */
@@ -27,6 +32,7 @@ const userSchema = new mongoose.Schema(
 );
 
 userSchema.index({ tenantId: 1 }, { sparse: true });
+userSchema.index({ inviteTokenHash: 1 }, { sparse: true });
 
 async function getUserModel() {
   const conn = await getFixedMongooseConnection(FIXED_CONNECTIONS.CONFIG);

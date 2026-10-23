@@ -6,6 +6,13 @@ import 'package:http/http.dart' as http;
 
 import '../config/api_config.dart';
 
+class DownloadedFile {
+  DownloadedFile({required this.bytes, required this.filename, required this.contentType});
+  final List<int> bytes;
+  final String filename;
+  final String contentType;
+}
+
 class ApiException implements Exception {
   ApiException(this.message, {this.statusCode, this.reasonCode});
   final String message;
@@ -13,8 +20,20 @@ class ApiException implements Exception {
   final String? reasonCode;
 
   bool get isSessionRevoked {
-    // Cualquier 401 en API autenticada = sesión inválida / revocada.
-    if (statusCode == 401) return true;
+    // Un rostro que no coincide no debe cerrar la sesión.
+    const authCodes = {
+      'TOKEN_REQUIRED',
+      'TOKEN_INVALID',
+      'TOKEN_INCOMPLETE',
+      'SESSION_REVOKED',
+      'EMPLEADO_BAJA',
+      'USER_INACTIVE',
+      'TENANT_MISMATCH',
+      'UNAUTHORIZED',
+    };
+    if (statusCode == 401) {
+      return reasonCode == null || authCodes.contains(reasonCode);
+    }
     if (statusCode != 403) return false;
     const codes = {
       'SESSION_REVOKED',
@@ -69,6 +88,38 @@ class ApiClient {
       );
     } on TimeoutException {
       throw ApiException('Tiempo de espera agotado (${ApiConfig.baseUrl}).');
+    }
+  }
+
+  /// Descarga binaria (PDF/XML). Timeout más amplio que el JSON habitual.
+  Future<DownloadedFile> download(String path) async {
+    try {
+      final res = await http
+          .get(
+            Uri.parse('${ApiConfig.apiBase}$path'),
+            headers: {
+              'Accept': '*/*',
+              if (token != null && token!.isNotEmpty) 'Authorization': 'Bearer $token',
+            },
+          )
+          .timeout(const Duration(seconds: 45));
+      if (res.statusCode >= 400) {
+        await _decode(res);
+      }
+      final cd = res.headers['content-disposition'] ?? '';
+      final match = RegExp('filename="?([^";]+)').firstMatch(cd);
+      final name = Uri.decodeComponent((match?.group(1) ?? 'archivo').trim());
+      return DownloadedFile(
+        bytes: res.bodyBytes,
+        filename: name.isEmpty ? 'archivo' : name,
+        contentType: res.headers['content-type'] ?? 'application/octet-stream',
+      );
+    } on ApiException {
+      rethrow;
+    } on SocketException catch (e) {
+      throw ApiException('Sin conexión a ${ApiConfig.baseUrl} (${e.message}).');
+    } on TimeoutException {
+      throw ApiException('Tiempo de espera agotado al descargar (${ApiConfig.baseUrl}).');
     }
   }
 

@@ -11,6 +11,7 @@ const { COLLECTION_ATTENDANCE_ATTEMPTS } = require('../config/constants');
 const RESULTADOS = ['aceptado', 'aceptado_con_observacion', 'rechazado', 'error'];
 const ETAPAS = [
   'bio_verify',
+  'bio_enroll',
   'geo_check',
   'punch',
   'punch_duplicate',
@@ -61,6 +62,7 @@ const attendanceAttemptSchema = new mongoose.Schema(
       fueraDeZona: { type: Boolean, default: false },
       allowed: { type: Boolean, default: null },
       siteNombre: { type: String, default: '' },
+      zonaNombre: { type: String, default: '' },
       distanceMeters: { type: Number, default: null },
       radioMetros: { type: Number, default: null },
       skipped: { type: Boolean, default: false }

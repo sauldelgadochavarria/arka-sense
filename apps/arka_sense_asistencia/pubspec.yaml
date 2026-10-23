@@ -21,6 +21,8 @@ dependencies:
   timezone: ^0.9.4
   shared_preferences: ^2.3.3
   uuid: ^4.6.0
+  path_provider: ^2.1.5
+  share_plus: ^10.1.4
 
 dev_dependencies:
   flutter_test:

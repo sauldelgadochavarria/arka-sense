@@ -49,7 +49,7 @@ flutter build apk --release --dart-define=API_BASE_URL=http://TU_IP_LAN:4003
 | Desktop / iOS sim | `http://127.0.0.1:4003` |
 | Teléfono físico | `http://<IP-LAN-del-PC>:4003` (no uses `127.0.0.1`) |
 
-IP LAN actual de desarrollo (Wi‑Fi): **`192.168.1.11`** — si cambia la red, actualiza `ApiConfig` o el `--dart-define`.
+IP LAN actual de desarrollo (Wi‑Fi): **`192.168.1.32`** — si cambia la red, actualiza `ApiConfig` o el `--dart-define`.
 
 ### Probar en iPhone
 

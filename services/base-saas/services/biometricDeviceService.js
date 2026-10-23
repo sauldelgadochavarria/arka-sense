@@ -34,6 +34,13 @@ async function pingDevice(deviceId, tenantId) {
   return { device: device.toObject(), detalle };
 }
 
+function filtroCatalogo(device) {
+  const filtro = { tenantId: device.tenantId, estatus: 'activo', activo: true };
+  const ids = Array.isArray(device.empleadosAutorizados) ? device.empleadosAutorizados.filter(Boolean) : [];
+  if (ids.length) filtro._id = { $in: ids };
+  return filtro;
+}
+
 async function syncCatalogToDevice(deviceId, tenantId, userId = '') {
   const BiometricDevice = await getBiometricDeviceModel();
   const Empleado = await getEmpleadoModel();
@@ -41,13 +48,13 @@ async function syncCatalogToDevice(deviceId, tenantId, userId = '') {
   const device = await BiometricDevice.findOne({ _id: deviceId, tenantId });
   if (!device) throw new Error('DEVICE_NOT_FOUND');
 
-  const empleados = await Empleado.find({ tenantId, estatus: 'activo', activo: true })
-    .select('numEmpleado firstName lastName')
+  const empleados = await Empleado.find(filtroCatalogo(device))
+    .select('numEmpleado firstName lastName apellidoPaterno')
     .lean();
 
   const payload = empleados.map((e) => ({
     pin: e.numEmpleado,
-    nombre: `${e.firstName} ${e.lastName}`.trim()
+    nombre: [e.firstName, e.apellidoPaterno || e.lastName].filter(Boolean).join(' ').trim()
   }));
 
   device.ultimaSincCatalogo = new Date();

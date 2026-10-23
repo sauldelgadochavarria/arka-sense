@@ -1,0 +1,18 @@
+<%- include('../Partials/layout-top', { title: title || 'Editar zona', session }) %>
+<h1>Editar zona</h1>
+<div class="toolbar">
+  <a class="btn" href="/config-zonas">← Zonas</a>
+</div>
+<form method="post" action="/config-zonas/<%= zona._id %>" class="form-grid form-wide">
+  <select name="subsidiariaId" required>
+    <option value="">— Subsidiaria —</option>
+    <% subsidiarias.forEach(function(s) { %>
+    <option value="<%= s._id %>" <%= String(zona.subsidiariaId) === String(s._id) ? 'selected' : '' %>><%= s.nombre %></option>
+    <% }); %>
+  </select>
+  <input name="codigo" placeholder="Código" maxlength="32" value="<%= zona.codigo || '' %>" />
+  <input name="nombre" placeholder="Nombre" required value="<%= zona.nombre %>" />
+  <input name="descripcion" placeholder="Descripción" value="<%= zona.descripcion || '' %>" />
+  <button type="submit">Guardar</button>
+</form>
+<%- include('../Partials/layout-bottom') %>

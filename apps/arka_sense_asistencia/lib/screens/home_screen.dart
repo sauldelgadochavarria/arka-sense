@@ -243,12 +243,15 @@ class _HomeScreenState extends State<HomeScreen> {
           type: 'alerta',
         );
         if (!mounted) return;
+        final serverMsg = res['message']?.toString();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Registrado: ${_labelTipo(tipo)}'
-              ' · ${(live.confidenceScore * 100).toStringAsFixed(0)}%'
-              '${fuera ? ' · fuera de zona' : (site != null && site.isNotEmpty ? ' · $site' : '')}',
+              (serverMsg != null && serverMsg.isNotEmpty)
+                  ? serverMsg
+                  : 'Registrado: ${_labelTipo(tipo)}'
+                      ' · ${(live.confidenceScore * 100).toStringAsFixed(0)}%'
+                      '${fuera ? ' · fuera de zona' : (site != null && site.isNotEmpty ? ' · $site' : '')}',
             ),
           ),
         );

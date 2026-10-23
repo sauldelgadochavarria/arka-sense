@@ -13,6 +13,7 @@ const cargasInicialesController = require('../controllers/cargasInicialesControl
 const departamentosController = require('../controllers/departamentosController');
 const puestosController = require('../controllers/puestosController');
 const empleadosController = require('../controllers/empleadosController');
+const portalAccesoController = require('../controllers/portalAccesoController');
 const historialLaboralController = require('../controllers/historialLaboralController');
 const ajusteAnualController = require('../controllers/ajusteAnualController');
 const tipoPeriodoNominaController = require('../controllers/tipoPeriodoNominaController');
@@ -263,6 +264,13 @@ router.get('/config-puntos-acceso/:id/edit', puntosAccesoController.editPunto);
 router.post('/config-puntos-acceso/:id', puntosAccesoController.updatePunto);
 router.post('/config-puntos-acceso/:id/toggle', puntosAccesoController.togglePunto);
 
+const zonasController = require('../controllers/zonasController');
+router.get('/config-zonas', zonasController.listZonas);
+router.post('/config-zonas', zonasController.createZona);
+router.get('/config-zonas/:id/edit', zonasController.editZona);
+router.post('/config-zonas/:id', zonasController.updateZona);
+router.post('/config-zonas/:id/toggle', zonasController.toggleZona);
+
 
 router.get('/config-sistema/enums', systemConfigController.listEnums);
 router.get('/config-sistema/enums/:grupo', systemConfigController.editEnum);
@@ -290,6 +298,8 @@ router.post('/personal-empleados/:id', empleadosController.updateEmpleado);
 router.post('/personal-empleados/:id/baja', empleadosController.bajaEmpleado);
 router.post('/personal-empleados/:id/reactivar', empleadosController.reactivarEmpleado);
 router.post('/personal-empleados/:id/calcular-sdi', empleadosController.calcularSdiAction);
+router.post('/personal-empleados/:id/acceso-portal', portalAccesoController.invitarAcceso);
+router.post('/personal-empleados/:id/acceso-portal/revocar', portalAccesoController.revocarAccesoAction);
 
 const biometriaFacialController = require('../controllers/biometriaFacialController');
 const uploadBiometriaMem = multer({
@@ -664,6 +674,8 @@ router.post('/integraciones/grupos-dispositivos/:id/toggle', gruposDispositivosC
 router.get('/integraciones/dispositivos', dispositivosController.listDispositivos);
 router.post('/integraciones/dispositivos', dispositivosController.createDispositivo);
 router.get('/integraciones/dispositivos/:id/edit', dispositivosController.editDispositivo);
+router.post('/integraciones/dispositivos/:id/empleados', dispositivosController.agregarEmpleado);
+router.post('/integraciones/dispositivos/:id/empleados/:empleadoId/quitar', dispositivosController.quitarEmpleado);
 router.post('/integraciones/dispositivos/:id', dispositivosController.updateDispositivo);
 router.post('/integraciones/dispositivos/:id/ping', dispositivosController.pingDispositivo);
 router.post('/integraciones/dispositivos/:id/sinc-catalogo', dispositivosController.sincronizarCatalogo);

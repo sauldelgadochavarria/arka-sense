@@ -1,0 +1,86 @@
+<%
+  const docs = (typeof documentosEmpleado !== 'undefined' && documentosEmpleado) ? documentosEmpleado : [];
+  const tipos = (typeof tiposDocumentoEmpleado !== 'undefined' && tiposDocumentoEmpleado) ? tiposDocumentoEmpleado : [];
+  const tipoNombre = {};
+  tipos.forEach(function(t) { tipoNombre[t.codigo] = t.nombre; });
+  const alertas = ((typeof alertasExpediente !== 'undefined' && alertasExpediente) ? alertasExpediente : [])
+    .filter(function(a) { return a.tipo === 'domicilio'; });
+  const anio = new Date().getFullYear();
+  const externo = typeof formExterno !== 'undefined' && formExterno;
+  const volver = '/personal-empleados/' + empleado._id + (externo ? '/edit' : '') + '#documentacion';
+  const formAttr = externo ? ' form="form-documentacion"' : '';
+  function fecha(v) {
+    if (!v) return '—';
+    const d = new Date(v);
+    return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString('es-MX');
+  }
+%>
+<p class="hint">Identificación, contrato, IMSS, INFONAVIT y actas de la familia. PDF o imagen (JPG, PNG), hasta 25 MB. El comprobante de domicilio avisa si no tiene vigencia o está por vencer.</p>
+
+<% if (alertas.length) { %>
+<ul class="alert-list">
+  <% alertas.forEach(function(a) { %>
+  <li class="alert-item alert-warn"><%= a.texto %></li>
+  <% }); %>
+</ul>
+<% } %>
+
+<% if (typeof gestionDocumental !== 'undefined' && !gestionDocumental) { %>
+<p class="muted">La gestión documental no está activa en este tenant. Actívala para guardar los archivos del expediente.</p>
+<% } else { %>
+<% if (!docs.length) { %>
+<p class="muted">Aún no hay archivos de este empleado.</p>
+<% } else { %>
+<table class="table-compact">
+  <thead>
+    <tr><th>Documento</th><th>Archivo</th><th>Vigente hasta</th><th></th></tr>
+  </thead>
+  <tbody>
+    <% docs.forEach(function(d) { %>
+    <tr>
+      <td><%= tipoNombre[d.tipoCodigo] || d.tipoCodigo %><% if (d.notas) { %><br><span class="muted small"><%= d.notas %></span><% } %></td>
+      <td><%= d.nombreOriginal || '—' %></td>
+      <td><%= fecha(d.vigenteHasta) %></td>
+      <td><a href="/nomina/gestion-documental/<%= d._id %>/descargar">Descargar</a></td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<% } %>
+
+<% if (!externo) { %>
+<form method="post" action="/nomina/gestion-documental/subir" enctype="multipart/form-data" class="form-grid" style="margin-top:1rem">
+<% } else { %>
+<div class="form-grid" style="margin-top:1rem">
+<% } %>
+  <input type="hidden" name="empleadoId" value="<%= empleado._id %>"<%- formAttr %> />
+  <input type="hidden" name="volver" value="<%= volver %>"<%- formAttr %> />
+  <input type="hidden" name="anio" value="<%= anio %>"<%- formAttr %> />
+  <label>Tipo
+    <select name="tipoCodigo" required<%- formAttr %>>
+      <option value="">— Selecciona —</option>
+      <% tipos.forEach(function(t) { %>
+      <option value="<%= t.codigo %>"><%= t.nombre %></option>
+      <% }); %>
+    </select>
+  </label>
+  <label>Archivo
+    <input type="file" name="archivo" required accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"<%- formAttr %> />
+  </label>
+  <label>Vigente desde
+    <input type="date" name="vigenteDesde"<%- formAttr %> />
+  </label>
+  <label>Vigente hasta
+    <input type="date" name="vigenteHasta"<%- formAttr %> />
+  </label>
+  <label style="grid-column:1/-1">Notas
+    <input name="notas" maxlength="300" placeholder="Ej. nombre del hijo en el acta"<%- formAttr %> />
+  </label>
+  <button type="submit"<%- formAttr %>>Cargar documento</button>
+<% if (!externo) { %>
+</form>
+<% } else { %>
+</div>
+<% } %>
+<p class="muted small"><a href="/nomina/gestion-documental">Abrir gestión documental</a></p>
+<% } %>

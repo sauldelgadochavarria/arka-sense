@@ -5,7 +5,7 @@
  * La decisión SIEMPRE es del backend (Haversine).
  */
 
-const getPuntoAccesoModel = require('../../models/puntoAcceso');
+const getZonaModel = require('../../models/zona');
 const getAsignacionPuntoAccesoModel = require('../../models/asignacionPuntoAcceso');
 const getSubsidiariaModel = require('../../models/subsidiaria');
 const {
@@ -34,7 +34,8 @@ function siteFromPunto(p) {
     lat: Number(p.lat),
     lng: Number(p.lng),
     radioMetros: Number(p.radioMetros) || 120,
-    subsidiariaId: p.subsidiariaId ? String(p.subsidiariaId) : null
+    subsidiariaId: p.subsidiariaId ? String(p.subsidiariaId) : null,
+    zonaId: p.zonaId ? String(p.zonaId) : null
   };
 }
 
@@ -255,10 +256,19 @@ async function validatePunchLocation({
   };
 }
 
+async function etiquetaZona(tenantId, match) {
+  if (!match?.zonaId) return { zonaId: null, zonaNombre: '' };
+  const Zona = await getZonaModel();
+  const zona = await Zona.findOne({ _id: match.zonaId, tenantId }).select('nombre').lean();
+  if (!zona) return { zonaId: null, zonaNombre: '' };
+  return { zonaId: zona._id, zonaNombre: zona.nombre || '' };
+}
+
 module.exports = {
   haversineMeters,
   resolveCandidateSites,
   validatePunchLocation,
+  etiquetaZona,
   POLITICAS_MARCAJE_GEO,
   DEFAULT_POLITICA_MARCAJE_GEO
 };

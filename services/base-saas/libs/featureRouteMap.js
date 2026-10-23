@@ -11,6 +11,7 @@ const FEATURE_ROUTE_RULES = [
 
   { prefix: '/asistencia', allOf: ['asistencia'] },
   { prefix: '/config-puntos-acceso', allOf: ['asistencia'] },
+  { prefix: '/config-zonas', allOf: ['asistencia'] },
 
   { prefix: '/incidencias/dias-inhabiles', anyOf: ['vacaciones', 'incidencias'] },
   { prefix: '/incidencias/vacaciones/solicitudes', allOf: ['vacaciones'] },

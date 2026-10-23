@@ -2,12 +2,21 @@
 
 const getEmpleadoModel = require('../../../models/empleado');
 const { toNum, toDate } = require('../csvParse');
+const { normalizarCorreo, mensajeCorreoDuplicado } = require('../../../libs/empleadoCorreo');
 
 async function validateEmpleados(tenantId, empresaId, rows) {
   const Empleado = await getEmpleadoModel();
-  const existentes = await Empleado.find({ tenantId }).select('numEmpleado').lean();
+  const existentes = await Empleado.find({ tenantId }).select('numEmpleado email emailPersonal').lean();
   const setExist = new Set(existentes.map((e) => String(e.numEmpleado)));
+  const correoDe = new Map();
+  for (const e of existentes) {
+    for (const campo of [e.email, e.emailPersonal]) {
+      const correo = normalizarCorreo(campo);
+      if (correo && !correoDe.has(correo)) correoDe.set(correo, String(e.numEmpleado));
+    }
+  }
   const vistos = new Set();
+  const vistosCorreo = new Map();
   const errores = [];
   const ok = [];
 
@@ -28,6 +37,20 @@ async function validateEmpleados(tenantId, empresaId, rows) {
       continue;
     }
     vistos.add(num);
+    const email = normalizarCorreo(data.email);
+    if (email) {
+      const dueno = correoDe.get(email);
+      if (dueno && dueno !== num) {
+        errores.push({ fila, campo: 'email', mensaje: `Ya está en el empleado ${dueno}`, valor: email });
+        continue;
+      }
+      const enArchivo = vistosCorreo.get(email);
+      if (enArchivo && enArchivo !== num) {
+        errores.push({ fila, campo: 'email', mensaje: `Duplicado en el archivo (empleado ${enArchivo})`, valor: email });
+        continue;
+      }
+      vistosCorreo.set(email, num);
+    }
     const salario = toNum(data.salarioDiario, 0);
     if (salario == null || salario < 0) {
       errores.push({ fila, campo: 'salarioDiario', mensaje: 'Salario inválido', valor: String(data.salarioDiario || '') });
@@ -42,7 +65,7 @@ async function validateEmpleados(tenantId, empresaId, rows) {
       rfc: String(data.rfc || '').trim().toUpperCase(),
       curp: String(data.curp || '').trim().toUpperCase(),
       nss: String(data.nss || '').trim(),
-      email: String(data.email || '').trim().toLowerCase(),
+      email: email,
       salarioDiario: salario,
       fechaIngreso,
       tipoContrato: String(data.tipoContrato || 'indefinido').trim() || 'indefinido',
@@ -86,6 +109,15 @@ async function applyEmpleados(tenantId, empresaId, validos) {
         activo: row.estatus === 'activo'
       };
       if (row.fechaIngreso) payload.fechaIngreso = row.fechaIngreso;
+
+      const actual = row.existe
+        ? await Empleado.findOne({ tenantId, numEmpleado: row.numEmpleado }).select('_id').lean()
+        : null;
+      const dup = await mensajeCorreoDuplicado(Empleado, tenantId, { email: row.email }, actual && actual._id);
+      if (dup) {
+        errores.push({ fila: row.fila, campo: 'email', mensaje: dup, valor: row.email || '' });
+        continue;
+      }
 
       await Empleado.updateOne(
         { tenantId, numEmpleado: row.numEmpleado },

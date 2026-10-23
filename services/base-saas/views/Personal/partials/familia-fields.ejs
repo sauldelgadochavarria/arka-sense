@@ -1,0 +1,154 @@
+<%
+  const salud = (empleado && empleado.salud) ? empleado.salud : {};
+  const fam = (empleado && empleado.familia) ? empleado.familia : {};
+  const conyuge = fam.conyuge || {};
+  const hijos = (fam.hijos && fam.hijos.length) ? fam.hijos : [{}];
+  const contactos = (fam.contactosEmergencia && fam.contactosEmergencia.length) ? fam.contactosEmergencia : [{}];
+  const beneficiarios = (fam.beneficiarios && fam.beneficiarios.length) ? fam.beneficiarios : [{}];
+  const tiposSangre = (typeof TIPOS_SANGRE !== 'undefined' && TIPOS_SANGRE) ? TIPOS_SANGRE : ['', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
+  const escolaridades = (typeof ESCOLARIDADES !== 'undefined' && ESCOLARIDADES) ? ESCOLARIDADES : ['', 'ninguna', 'preescolar', 'primaria', 'secundaria', 'bachillerato', 'universidad', 'otro'];
+  const etiquetaEscolaridad = {
+    '': '—',
+    ninguna: 'Ninguna',
+    preescolar: 'Preescolar',
+    primaria: 'Primaria',
+    secundaria: 'Secundaria',
+    bachillerato: 'Bachillerato',
+    universidad: 'Universidad',
+    otro: 'Otro'
+  };
+  const aplicaOpts = (typeof APLICA_BENEFICIARIO !== 'undefined' && APLICA_BENEFICIARIO) ? APLICA_BENEFICIARIO : ['todos', 'seguro_vida', 'fondo_ahorro', 'ptu', 'finiquito'];
+  const aplicaLabel = (typeof ETIQUETA_APLICA !== 'undefined' && ETIQUETA_APLICA) ? ETIQUETA_APLICA : {};
+  function fecha(v) { return (typeof toDateInputValue === 'function') ? toDateInputValue(v) : ''; }
+%>
+<fieldset class="form-section">
+  <legend>Salud</legend>
+  <p class="hint">Tipo de sangre, alergias y padecimientos sirven al contacto de emergencia. No sustituyen un expediente clínico.</p>
+  <label>Tipo de sangre
+    <select name="salud_tipoSangre">
+      <% tiposSangre.forEach(function(t) { %>
+      <option value="<%= t %>" <%= (salud.tipoSangre || '') === t ? 'selected' : '' %>><%= t || '— Sin capturar —' %></option>
+      <% }); %>
+    </select>
+  </label>
+  <label style="grid-column:1/-1">Alergias
+    <input name="salud_alergias" maxlength="500" value="<%= salud.alergias || '' %>" placeholder="Ej. penicilina, picadura de abeja" />
+  </label>
+  <label style="grid-column:1/-1">Enfermedades o padecimientos
+    <textarea name="salud_padecimientos" maxlength="2000" placeholder="Una por línea, si las hay"><%= salud.padecimientos || '' %></textarea>
+  </label>
+</fieldset>
+
+<fieldset class="form-section">
+  <legend>Cónyuge / concubino(a)</legend>
+  <input name="conyuge_nombre" maxlength="200" placeholder="Nombre completo" value="<%= conyuge.nombre || '' %>" />
+  <label>Fecha de nacimiento
+    <input name="conyuge_fechaNacimiento" type="date" value="<%= fecha(conyuge.fechaNacimiento) %>" />
+  </label>
+  <input name="conyuge_ocupacion" maxlength="120" placeholder="Ocupación" value="<%= conyuge.ocupacion || '' %>" />
+  <input name="conyuge_telefono" maxlength="30" placeholder="Teléfono" value="<%= conyuge.telefono || '' %>" />
+</fieldset>
+
+<fieldset class="form-section" id="bloque-hijos">
+  <legend>Hijos</legend>
+  <p class="hint">La fecha de nacimiento alimenta al motor: <code>hijosMenores</code>, <code>hijosEscolares</code> y <code>nacimientoEnPeriodo</code> (cumpleaños dentro del período, para percepciones como nacimiento o recreación familiar).</p>
+  <div class="filas-rep" data-filas="hijos">
+    <% hijos.forEach(function(h) { %>
+    <div class="fila-rep">
+      <input name="hijo_nombre" maxlength="200" placeholder="Nombre completo" value="<%= h.nombre || '' %>" />
+      <label>Nacimiento
+        <input name="hijo_fechaNacimiento" type="date" value="<%= fecha(h.fechaNacimiento) %>" />
+      </label>
+      <label>Sexo
+        <select name="hijo_sexo">
+          <option value="">—</option>
+          <option value="M" <%= h.sexo === 'M' ? 'selected' : '' %>>Masculino</option>
+          <option value="F" <%= h.sexo === 'F' ? 'selected' : '' %>>Femenino</option>
+          <option value="X" <%= h.sexo === 'X' ? 'selected' : '' %>>Otro</option>
+        </select>
+      </label>
+      <label>Escolaridad
+        <select name="hijo_escolaridad">
+          <% escolaridades.forEach(function(e) { %>
+          <option value="<%= e %>" <%= (h.escolaridad || '') === e ? 'selected' : '' %>><%= etiquetaEscolaridad[e] || e || '—' %></option>
+          <% }); %>
+        </select>
+      </label>
+      <button type="button" class="btn btn-secondary btn-quitar-fila">Quitar</button>
+    </div>
+    <% }); %>
+  </div>
+  <button type="button" class="btn btn-secondary" data-agregar="hijos">Agregar hijo</button>
+</fieldset>
+
+<fieldset class="form-section">
+  <legend>Contactos de emergencia</legend>
+  <div class="filas-rep" data-filas="emergencia">
+    <% contactos.forEach(function(c) { %>
+    <div class="fila-rep">
+      <input name="emergencia_nombre" maxlength="200" placeholder="Nombre" value="<%= c.nombre || '' %>" />
+      <input name="emergencia_parentesco" maxlength="60" placeholder="Parentesco" value="<%= c.parentesco || '' %>" />
+      <input name="emergencia_telefono" maxlength="30" placeholder="Teléfono" value="<%= c.telefono || '' %>" />
+      <input name="emergencia_telefonoAlt" maxlength="30" placeholder="Teléfono alterno" value="<%= c.telefonoAlt || '' %>" />
+      <button type="button" class="btn btn-secondary btn-quitar-fila">Quitar</button>
+    </div>
+    <% }); %>
+  </div>
+  <button type="button" class="btn btn-secondary" data-agregar="emergencia">Agregar contacto</button>
+</fieldset>
+
+<fieldset class="form-section">
+  <legend>Beneficiarios</legend>
+  <p class="hint">Porcentajes de seguro de vida, fondo de ahorro, PTU o finiquito. Si eliges «Todos», ese porcentaje entra en cada destino. La suma por destino no puede pasar de 100%.</p>
+  <div class="filas-rep" data-filas="benef">
+    <% beneficiarios.forEach(function(b) { %>
+    <div class="fila-rep">
+      <input name="benef_nombre" maxlength="200" placeholder="Nombre" value="<%= b.nombre || '' %>" />
+      <input name="benef_parentesco" maxlength="60" placeholder="Parentesco" value="<%= b.parentesco || '' %>" />
+      <label>%
+        <input name="benef_porcentaje" type="number" min="0" max="100" step="0.01" value="<%= b.porcentaje > 0 ? b.porcentaje : '' %>" />
+      </label>
+      <label>Aplica a
+        <select name="benef_aplicaA">
+          <% aplicaOpts.forEach(function(a) { %>
+          <option value="<%= a %>" <%= (b.aplicaA || 'todos') === a ? 'selected' : '' %>><%= aplicaLabel[a] || a %></option>
+          <% }); %>
+        </select>
+      </label>
+      <button type="button" class="btn btn-secondary btn-quitar-fila">Quitar</button>
+    </div>
+    <% }); %>
+  </div>
+  <button type="button" class="btn btn-secondary" data-agregar="benef">Agregar beneficiario</button>
+</fieldset>
+
+<script>
+(function () {
+  document.querySelectorAll('[data-agregar]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var box = btn.parentElement.querySelector('[data-filas="' + btn.getAttribute('data-agregar') + '"]');
+      if (!box) return;
+      var fila = box.querySelector('.fila-rep');
+      if (!fila) return;
+      var copia = fila.cloneNode(true);
+      copia.querySelectorAll('input, select, textarea').forEach(function (el) {
+        if (el.type === 'checkbox') el.checked = false;
+        else el.value = '';
+      });
+      box.appendChild(copia);
+    });
+  });
+  document.addEventListener('click', function (e) {
+    var btn = e.target.closest ? e.target.closest('.btn-quitar-fila') : null;
+    if (!btn) return;
+    var fila = btn.closest('.fila-rep');
+    var box = fila && fila.parentElement;
+    if (!fila || !box) return;
+    if (box.querySelectorAll('.fila-rep').length === 1) {
+      fila.querySelectorAll('input, select, textarea').forEach(function (el) { el.value = ''; });
+      return;
+    }
+    fila.remove();
+  });
+})();
+</script>

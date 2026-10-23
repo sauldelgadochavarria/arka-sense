@@ -11,6 +11,25 @@
   const apMat = empleado ? (empleado.apellidoMaterno || '') : '';
   const lastFallback = empleado && !apPat && !apMat ? (empleado.lastName || '') : '';
 %>
+<div class="ficha-tabs" data-ficha-tabs>
+  <div class="ficha-tablist" role="tablist" aria-label="Secciones del empleado">
+    <button type="button" class="ficha-tab is-active" role="tab" id="ficha-tab-personales" aria-selected="true" aria-controls="ficha-panel-personales" data-ficha-tab="personales" tabindex="0">Personales</button>
+    <button type="button" class="ficha-tab" role="tab" id="ficha-tab-familia" aria-selected="false" aria-controls="ficha-panel-familia" data-ficha-tab="familia" tabindex="-1">Familia</button>
+    <button type="button" class="ficha-tab" role="tab" id="ficha-tab-documentacion" aria-selected="false" aria-controls="ficha-panel-documentacion" data-ficha-tab="documentacion" tabindex="-1">Documentación</button>
+    <button type="button" class="ficha-tab" role="tab" id="ficha-tab-fiscal" aria-selected="false" aria-controls="ficha-panel-fiscal" data-ficha-tab="fiscal" tabindex="-1">Fiscal e IMSS</button>
+    <button type="button" class="ficha-tab" role="tab" id="ficha-tab-sueldo" aria-selected="false" aria-controls="ficha-panel-sueldo" data-ficha-tab="sueldo" tabindex="-1">Sueldo</button>
+    <button type="button" class="ficha-tab" role="tab" id="ficha-tab-organizacion" aria-selected="false" aria-controls="ficha-panel-organizacion" data-ficha-tab="organizacion" tabindex="-1">Organización</button>
+    <button type="button" class="ficha-tab" role="tab" id="ficha-tab-asistencia" aria-selected="false" aria-controls="ficha-panel-asistencia" data-ficha-tab="asistencia" tabindex="-1">Asistencia</button>
+    <button type="button" class="ficha-tab" role="tab" id="ficha-tab-bancarios" aria-selected="false" aria-controls="ficha-panel-bancarios" data-ficha-tab="bancarios" tabindex="-1">Bancarios</button>
+    <% if (typeof showNominaConfig !== 'undefined' && showNominaConfig) { %>
+    <button type="button" class="ficha-tab" role="tab" id="ficha-tab-nomina" aria-selected="false" aria-controls="ficha-panel-nomina" data-ficha-tab="nomina" tabindex="-1">Nómina</button>
+    <% } %>
+    <% if (typeof acceso !== 'undefined' && acceso && empleado && empleado._id) { %>
+    <button type="button" class="ficha-tab" role="tab" id="ficha-tab-acceso" aria-selected="false" aria-controls="ficha-panel-acceso" data-ficha-tab="acceso" tabindex="-1">Acceso</button>
+    <% } %>
+  </div>
+
+<div class="ficha-panel is-active" role="tabpanel" id="ficha-panel-personales" data-ficha-panel="personales" aria-labelledby="ficha-tab-personales">
 <fieldset class="form-section">
   <legend>Datos generales / identificación</legend>
   <input name="numEmpleado" placeholder="Código / No. empleado *" value="<%= empleado ? empleado.numEmpleado : '' %>" required />
@@ -72,8 +91,94 @@
     <strong>Sindicalizado</strong> = atributo CFDI <code>NominaReceptor@Sindicalizado</code> (Sí/No); la carga masiva lo llena desde el XML.
     <strong>Tipo de empleado</strong> = confianza / sindicalizado (se alinea con Sindicalizado al guardar).
   </p>
+  <% if (empleado) { %>
+  <label>Estatus
+    <select name="estatus">
+    <% estatusOptions.forEach(function(o) { %>
+    <option value="<%= o.value %>" <%= empleado.estatus === o.value ? 'selected' : '' %>><%= o.label %></option>
+    <% }); %>
+    </select>
+  </label>
+  <label>Fecha de baja
+    <input name="fechaBaja" type="date" value="<%= empleado.fechaBaja ? toDateInputValue(empleado.fechaBaja) : '' %>" />
+  </label>
+  <label>Motivo de baja
+    <select name="motivoBaja">
+    <option value="">— Motivo baja —</option>
+    <% motivosBaja.forEach(function(m) { %>
+    <option value="<%= m %>" <%= empleado.motivoBaja === m ? 'selected' : '' %>><%= m %></option>
+    <% }); %>
+    </select>
+  </label>
+  <% } %>
 </fieldset>
+<fieldset class="form-section">
+  <legend>Contacto</legend>
+  <input name="email" type="email" placeholder="Email corporativo" value="<%= empleado ? empleado.email : '' %>" />
+  <input name="emailPersonal" type="email" placeholder="Email personal" value="<%= empleado ? empleado.emailPersonal : '' %>" />
+  <input name="telefono" placeholder="Teléfono celular" value="<%= empleado ? empleado.telefono : '' %>" />
+  <input name="telefonoFijo" placeholder="Teléfono fijo" value="<%= empleado ? empleado.telefonoFijo : '' %>" />
+</fieldset>
+<fieldset class="form-section">
+  <legend>Domicilio del empleado</legend>
+  <input name="domicilio_calle" placeholder="Calle / dirección" value="<%= dom.calle || '' %>" />
+  <input name="domicilio_numeroExt" placeholder="No. exterior" value="<%= dom.numeroExt || '' %>" />
+  <input name="domicilio_numeroInt" placeholder="No. interior" value="<%= dom.numeroInt || '' %>" />
+  <input name="domicilio_colonia" placeholder="Colonia" value="<%= dom.colonia || '' %>" />
+  <input name="domicilio_poblacion" placeholder="Población / ciudad" value="<%= dom.poblacion || '' %>" />
+  <select name="domicilio_entidad" required>
+    <option value="">— Entidad federativa (ISN) * —</option>
+    <% _entidades.forEach(function(e) { %>
+    <option value="<%= e.value %>" <%= dom.entidad === e.value ? 'selected' : '' %>><%= e.label %> (<%= e.value %>)</option>
+    <% }); %>
+  </select>
+  <input name="domicilio_codigoPostal" placeholder="C.P. * (CFDI)" maxlength="5" pattern="[0-9]{5}" value="<%= dom.codigoPostal || '' %>" />
+  <p class="muted small" style="grid-column:1/-1">
+    La <strong>entidad federativa</strong> del domicilio determina el impuesto sobre nómina estatal (ISN).
+  </p>
+  <p class="hint" style="grid-column:1/-1">El <strong>código postal</strong> del trabajador es obligatorio para el timbrado del CFDI de nómina.</p>
+</fieldset>
+</div>
 
+<div class="ficha-panel" role="tabpanel" id="ficha-panel-fiscal" data-ficha-panel="fiscal" aria-labelledby="ficha-tab-fiscal">
+<fieldset class="form-section">
+  <legend>Datos fiscales (RFC / CURP)</legend>
+  <input name="rfc" placeholder="RFC" maxlength="13" pattern="[A-ZÑ&amp;]{3,4}[0-9]{6}[A-Z0-9]{3}" value="<%= empleado ? empleado.rfc : '' %>" />
+  <input name="curp" placeholder="CURP" maxlength="18" pattern="[A-Z]{4}[0-9]{6}[HM][A-Z]{5}[A-Z0-9]{2}" value="<%= empleado ? empleado.curp : '' %>" />
+  <select name="sexo">
+    <option value="">— Sexo —</option>
+    <option value="M" <%= empleado && empleado.sexo === 'M' ? 'selected' : '' %>>Masculino</option>
+    <option value="F" <%= empleado && empleado.sexo === 'F' ? 'selected' : '' %>>Femenino</option>
+    <option value="X" <%= empleado && empleado.sexo === 'X' ? 'selected' : '' %>>Otro</option>
+  </select>
+  <input name="fechaNacimiento" type="date" value="<%= empleado && empleado.fechaNacimiento ? toDateInputValue(empleado.fechaNacimiento) : '' %>" />
+  <select name="entidadNacimiento">
+    <option value="">— Entidad federativa de nacimiento —</option>
+    <% _entidades.forEach(function(e) { %>
+    <option value="<%= e.value %>" <%= empleado && empleado.entidadNacimiento === e.value ? 'selected' : '' %>><%= e.label %></option>
+    <% }); %>
+  </select>
+  <input name="ciudadNacimiento" placeholder="Ciudad de nacimiento" value="<%= empleado ? (empleado.ciudadNacimiento || '') : '' %>" />
+</fieldset>
+<fieldset class="form-section">
+  <legend>Datos para el IMSS</legend>
+  <input name="nss" placeholder="NSS (Número de Seguridad Social)" value="<%= empleado ? empleado.nss : '' %>" />
+  <input name="registroPatronal" placeholder="Registro patronal IMSS (si vacío usa el de la empresa)" maxlength="11" value="<%= empleado ? (empleado.registroPatronal || '') : '' %>" />
+  <p class="muted small" style="grid-column:1/-1">
+    El registro patronal es obligatorio para SUA/IDSE. Puede definirse aquí o en
+    <a href="/config-empresa">Datos de empresa</a> (aplica a todos los empleados sin override).
+  </p>
+  <input name="umf" placeholder="UMF (Unidad de Medicina Familiar)" value="<%= empleado ? (empleado.umf || '') : '' %>" />
+  <select name="estadoCivil">
+    <option value="">— Estado civil —</option>
+    <% _estadosCiviles.forEach(function(e) { %>
+    <option value="<%= e.value %>" <%= empleado && empleado.estadoCivil === e.value ? 'selected' : '' %>><%= e.label %></option>
+    <% }); %>
+  </select>
+</fieldset>
+</div>
+
+<div class="ficha-panel" role="tabpanel" id="ficha-panel-sueldo" data-ficha-panel="sueldo" aria-labelledby="ficha-tab-sueldo">
 <fieldset class="form-section">
   <legend>Información salarial (SDI / SBC)</legend>
   <label>Salario diario (parte fija)
@@ -110,87 +215,10 @@
       <% }); %>
     </select>
   </label>
-  <% if (empleado) { %>
-  <select name="estatus">
-    <% estatusOptions.forEach(function(o) { %>
-    <option value="<%= o.value %>" <%= empleado.estatus === o.value ? 'selected' : '' %>><%= o.label %></option>
-    <% }); %>
-  </select>
-  <input name="fechaBaja" type="date" value="<%= empleado.fechaBaja ? toDateInputValue(empleado.fechaBaja) : '' %>" />
-  <select name="motivoBaja">
-    <option value="">— Motivo baja —</option>
-    <% motivosBaja.forEach(function(m) { %>
-    <option value="<%= m %>" <%= empleado.motivoBaja === m ? 'selected' : '' %>><%= m %></option>
-    <% }); %>
-  </select>
-  <% } %>
 </fieldset>
+</div>
 
-<fieldset class="form-section">
-  <legend>Datos para el IMSS</legend>
-  <input name="nss" placeholder="NSS (Número de Seguridad Social)" value="<%= empleado ? empleado.nss : '' %>" />
-  <input name="registroPatronal" placeholder="Registro patronal IMSS (si vacío usa el de la empresa)" maxlength="11" value="<%= empleado ? (empleado.registroPatronal || '') : '' %>" />
-  <p class="muted small" style="grid-column:1/-1">
-    El registro patronal es obligatorio para SUA/IDSE. Puede definirse aquí o en
-    <a href="/config-empresa">Datos de empresa</a> (aplica a todos los empleados sin override).
-  </p>
-  <input name="umf" placeholder="UMF (Unidad de Medicina Familiar)" value="<%= empleado ? (empleado.umf || '') : '' %>" />
-  <select name="estadoCivil">
-    <option value="">— Estado civil —</option>
-    <% _estadosCiviles.forEach(function(e) { %>
-    <option value="<%= e.value %>" <%= empleado && empleado.estadoCivil === e.value ? 'selected' : '' %>><%= e.label %></option>
-    <% }); %>
-  </select>
-</fieldset>
-
-<fieldset class="form-section">
-  <legend>Datos fiscales (RFC / CURP)</legend>
-  <input name="rfc" placeholder="RFC" maxlength="13" pattern="[A-ZÑ&amp;]{3,4}[0-9]{6}[A-Z0-9]{3}" value="<%= empleado ? empleado.rfc : '' %>" />
-  <input name="curp" placeholder="CURP" maxlength="18" pattern="[A-Z]{4}[0-9]{6}[HM][A-Z]{5}[A-Z0-9]{2}" value="<%= empleado ? empleado.curp : '' %>" />
-  <select name="sexo">
-    <option value="">— Sexo —</option>
-    <option value="M" <%= empleado && empleado.sexo === 'M' ? 'selected' : '' %>>Masculino</option>
-    <option value="F" <%= empleado && empleado.sexo === 'F' ? 'selected' : '' %>>Femenino</option>
-    <option value="X" <%= empleado && empleado.sexo === 'X' ? 'selected' : '' %>>Otro</option>
-  </select>
-  <input name="fechaNacimiento" type="date" value="<%= empleado && empleado.fechaNacimiento ? toDateInputValue(empleado.fechaNacimiento) : '' %>" />
-  <select name="entidadNacimiento">
-    <option value="">— Entidad federativa de nacimiento —</option>
-    <% _entidades.forEach(function(e) { %>
-    <option value="<%= e.value %>" <%= empleado && empleado.entidadNacimiento === e.value ? 'selected' : '' %>><%= e.label %></option>
-    <% }); %>
-  </select>
-  <input name="ciudadNacimiento" placeholder="Ciudad de nacimiento" value="<%= empleado ? (empleado.ciudadNacimiento || '') : '' %>" />
-</fieldset>
-
-<fieldset class="form-section">
-  <legend>Domicilio del empleado</legend>
-  <input name="domicilio_calle" placeholder="Calle / dirección" value="<%= dom.calle || '' %>" />
-  <input name="domicilio_numeroExt" placeholder="No. exterior" value="<%= dom.numeroExt || '' %>" />
-  <input name="domicilio_numeroInt" placeholder="No. interior" value="<%= dom.numeroInt || '' %>" />
-  <input name="domicilio_colonia" placeholder="Colonia" value="<%= dom.colonia || '' %>" />
-  <input name="domicilio_poblacion" placeholder="Población / ciudad" value="<%= dom.poblacion || '' %>" />
-  <select name="domicilio_entidad" required>
-    <option value="">— Entidad federativa (ISN) * —</option>
-    <% _entidades.forEach(function(e) { %>
-    <option value="<%= e.value %>" <%= dom.entidad === e.value ? 'selected' : '' %>><%= e.label %> (<%= e.value %>)</option>
-    <% }); %>
-  </select>
-  <input name="domicilio_codigoPostal" placeholder="C.P. * (CFDI)" maxlength="5" pattern="[0-9]{5}" value="<%= dom.codigoPostal || '' %>" />
-  <p class="muted small" style="grid-column:1/-1">
-    La <strong>entidad federativa</strong> del domicilio determina el impuesto sobre nómina estatal (ISN).
-  </p>
-  <p class="hint" style="grid-column:1/-1">El <strong>código postal</strong> del trabajador es obligatorio para el timbrado del CFDI de nómina.</p>
-</fieldset>
-
-<fieldset class="form-section">
-  <legend>Contacto</legend>
-  <input name="email" type="email" placeholder="Email corporativo" value="<%= empleado ? empleado.email : '' %>" />
-  <input name="emailPersonal" type="email" placeholder="Email personal" value="<%= empleado ? empleado.emailPersonal : '' %>" />
-  <input name="telefono" placeholder="Teléfono celular" value="<%= empleado ? empleado.telefono : '' %>" />
-  <input name="telefonoFijo" placeholder="Teléfono fijo" value="<%= empleado ? empleado.telefonoFijo : '' %>" />
-</fieldset>
-
+<div class="ficha-panel" role="tabpanel" id="ficha-panel-organizacion" data-ficha-panel="organizacion" aria-labelledby="ficha-tab-organizacion">
 <fieldset class="form-section">
   <legend>Asignación organizacional</legend>
   <select name="subsidiariaId">
@@ -240,7 +268,6 @@
     <% }); %>
   </select>
 </fieldset>
-
 <fieldset class="form-section">
   <legend>Plantilla de horario</legend>
   <select name="plantillaRotacionId" id="plantillaRotacionId">
@@ -260,85 +287,9 @@
     <a href="/asistencia-rotaciones" target="_blank">Gestionar plantillas</a>
   </p>
 </fieldset>
+</div>
 
-<script>
-(function () {
-  const sel = document.getElementById('plantillaRotacionId');
-  const label = document.getElementById('labelFechaAncla');
-  const input = document.getElementById('plantillaFechaAncla');
-  if (sel && label) {
-    function sync() {
-      const on = !!sel.value;
-      label.style.display = on ? '' : 'none';
-      if (on && input && !input.value) {
-        input.value = new Date().toISOString().slice(0, 10);
-      }
-    }
-    sel.addEventListener('change', sync);
-    sync();
-  }
-
-  const uma = Number(<%= typeof umaVigente !== 'undefined' && umaVigente ? Number(umaVigente) : 0 %>) || 0;
-  const topeUma = 25;
-  const sdiEl = document.getElementById('campoSdi');
-  const sdEl = document.querySelector('input[name="salarioDiario"]');
-  const preview = document.getElementById('sbcTopadoPreview');
-  function refreshSbc() {
-    if (!preview) return;
-    const sd = Number(sdEl && sdEl.value) || 0;
-    const sdi = Number(sdiEl && sdiEl.value) || sd;
-    if (!uma || !sdi) {
-      preview.value = uma ? '' : 'UMA no disponible — SBC se calcula en nómina';
-      return;
-    }
-    const tope = uma * topeUma;
-    const sbc = Math.min(sdi, tope);
-    preview.value = 'SBC topado: $' + sbc.toFixed(2) + ' (tope 25×UMA = $' + tope.toFixed(2) + ')';
-  }
-  if (sdiEl) sdiEl.addEventListener('input', refreshSbc);
-  if (sdEl) sdEl.addEventListener('input', refreshSbc);
-  refreshSbc();
-
-  const btnSdi = document.getElementById('btnCalcularSdi');
-  if (btnSdi) {
-    btnSdi.addEventListener('click', async function () {
-      const msg = document.getElementById('sdiCalcMsg');
-      const det = document.getElementById('sdiCalcDetalle');
-      msg.textContent = 'Calculando…';
-      try {
-        const tipo = document.getElementById('tipoSalario')?.value || 'fijo';
-        const sd = document.querySelector('input[name="salarioDiario"]')?.value || '';
-        const res = await fetch('<%= empleado && empleado._id ? "/personal-empleados/" + empleado._id + "/calcular-sdi" : "#" %>', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-          body: JSON.stringify({ tipoSalario: tipo, salarioDiario: sd, aplicar: false })
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Error');
-        if (sdiEl) sdiEl.value = data.sdi;
-        refreshSbc();
-        msg.textContent = 'SDI $' + Number(data.sdi).toFixed(2) + ' · SBC $' + Number(data.sbc).toFixed(2) + ' (tabla: ' + (data.tabla && data.tabla.nombre) + ')';
-        if (det) {
-          det.style.display = '';
-          det.textContent = JSON.stringify({
-            tipo: data.tipoSalario,
-            factor: data.factorIntegracion,
-            parteFija: data.parteFija,
-            extrasDiarios: data.extrasDiarios,
-            otrasPrestaciones: data.otrasPrestaciones,
-            promedioVariable: data.promedioVariable,
-            tabla: data.tabla,
-            formula: data.formula
-          }, null, 2);
-        }
-      } catch (e) {
-        msg.textContent = e.message || 'No se pudo calcular';
-      }
-    });
-  }
-})();
-</script>
-
+<div class="ficha-panel" role="tabpanel" id="ficha-panel-asistencia" data-ficha-panel="asistencia" aria-labelledby="ficha-tab-asistencia">
 <fieldset class="form-section">
   <legend>Administración e integración</legend>
   <input name="codigoExterno" placeholder="Código externo (ERP / nómina)" value="<%= empleado ? (empleado.codigoExterno || '') : '' %>" />
@@ -385,7 +336,9 @@
     </label>
   </div>
 </fieldset>
+</div>
 
+<div class="ficha-panel" role="tabpanel" id="ficha-panel-bancarios" data-ficha-panel="bancarios" aria-labelledby="ficha-tab-bancarios">
 <% const dbanco = empleado && empleado.datosBancarios ? empleado.datosBancarios : {}; %>
 <fieldset class="form-section">
   <legend>Datos bancarios (dispersión)</legend>
@@ -395,12 +348,14 @@
   <input name="banco_cuenta" placeholder="Cuenta" value="<%= dbanco.cuenta || '' %>" />
   <input name="banco_clabe" maxlength="18" placeholder="CLABE (18 dígitos)" value="<%= dbanco.clabe || '' %>" />
 </fieldset>
+</div>
 
 <% if (typeof showNominaConfig !== 'undefined' && showNominaConfig) { %>
+<div class="ficha-panel" role="tabpanel" id="ficha-panel-nomina" data-ficha-panel="nomina" aria-labelledby="ficha-tab-nomina">
 <% const nc = empleado && empleado.nominaConfig ? empleado.nominaConfig : {}; %>
 <fieldset class="form-section">
   <legend>Nómina formal (INFONAVIT / FONACOT / fondo / finiquito)</legend>
-  <p class="hint">Parámetros del motor (créditos, fondo de ahorro, finiquito). El SDI/SBC para IMSS está en «Información salarial».</p>
+  <p class="hint">Parámetros del motor (créditos, fondo de ahorro, finiquito). El SDI/SBC para IMSS está en la pestaña Sueldo.</p>
 
   <div class="checkbox-group">
     <label><input type="checkbox" name="nomina_aplicaFondoAhorro" value="1" <%= nc.aplicaFondoAhorro ? 'checked' : '' %> /> Aplica fondo de ahorro</label>
@@ -503,4 +458,100 @@
   <input name="nomina_proporcionAguinaldoFiniquito" type="number" min="0" step="0.01" placeholder="Monto aguinaldo finiquito" value="<%= nc.proporcionAguinaldoFiniquito > 0 ? nc.proporcionAguinaldoFiniquito : '' %>" />
   <input name="nomina_fondoAhorroSaldoFiniquito" type="number" min="0" step="0.01" placeholder="Saldo fondo de ahorro finiquito" value="<%= nc.fondoAhorroSaldoFiniquito > 0 ? nc.fondoAhorroSaldoFiniquito : '' %>" />
 </fieldset>
+</div>
 <% } %>
+<% if (typeof acceso !== 'undefined' && acceso && empleado && empleado._id) { %>
+<div class="ficha-panel" role="tabpanel" id="ficha-panel-acceso" data-ficha-panel="acceso" aria-labelledby="ficha-tab-acceso">
+  <%- include('acceso-portal', { empleado, acceso }) %>
+</div>
+<% } %>
+<div class="ficha-panel" role="tabpanel" id="ficha-panel-familia" data-ficha-panel="familia" aria-labelledby="ficha-tab-familia">
+  <%- include('familia-fields', { empleado: empleado || null, toDateInputValue: typeof toDateInputValue !== 'undefined' ? toDateInputValue : function () { return ''; } }) %>
+</div>
+<div class="ficha-panel" role="tabpanel" id="ficha-panel-documentacion" data-ficha-panel="documentacion" aria-labelledby="ficha-tab-documentacion">
+  <% if (empleado && empleado._id) { %>
+  <%- include('expediente-docs', { formExterno: true }) %>
+  <% } else { %>
+  <p class="hint">INE, acta de nacimiento, CURP, domicilio, constancia fiscal, contrato, alta del IMSS, INFONAVIT y actas de la familia se cargan en esta pestaña después de crear al empleado.</p>
+  <% } %>
+</div>
+</div>
+<script>
+(function () {
+  const sel = document.getElementById('plantillaRotacionId');
+  const label = document.getElementById('labelFechaAncla');
+  const input = document.getElementById('plantillaFechaAncla');
+  if (sel && label) {
+    function sync() {
+      const on = !!sel.value;
+      label.style.display = on ? '' : 'none';
+      if (on && input && !input.value) {
+        input.value = new Date().toISOString().slice(0, 10);
+      }
+    }
+    sel.addEventListener('change', sync);
+    sync();
+  }
+
+  const uma = Number(<%= typeof umaVigente !== 'undefined' && umaVigente ? Number(umaVigente) : 0 %>) || 0;
+  const topeUma = 25;
+  const sdiEl = document.getElementById('campoSdi');
+  const sdEl = document.querySelector('input[name="salarioDiario"]');
+  const preview = document.getElementById('sbcTopadoPreview');
+  function refreshSbc() {
+    if (!preview) return;
+    const sd = Number(sdEl && sdEl.value) || 0;
+    const sdi = Number(sdiEl && sdiEl.value) || sd;
+    if (!uma || !sdi) {
+      preview.value = uma ? '' : 'UMA no disponible — SBC se calcula en nómina';
+      return;
+    }
+    const tope = uma * topeUma;
+    const sbc = Math.min(sdi, tope);
+    preview.value = 'SBC topado: $' + sbc.toFixed(2) + ' (tope 25×UMA = $' + tope.toFixed(2) + ')';
+  }
+  if (sdiEl) sdiEl.addEventListener('input', refreshSbc);
+  if (sdEl) sdEl.addEventListener('input', refreshSbc);
+  refreshSbc();
+
+  const btnSdi = document.getElementById('btnCalcularSdi');
+  if (btnSdi) {
+    btnSdi.addEventListener('click', async function () {
+      const msg = document.getElementById('sdiCalcMsg');
+      const det = document.getElementById('sdiCalcDetalle');
+      msg.textContent = 'Calculando…';
+      try {
+        const tipo = document.getElementById('tipoSalario')?.value || 'fijo';
+        const sd = document.querySelector('input[name="salarioDiario"]')?.value || '';
+        const res = await fetch('<%= empleado && empleado._id ? "/personal-empleados/" + empleado._id + "/calcular-sdi" : "#" %>', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify({ tipoSalario: tipo, salarioDiario: sd, aplicar: false })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Error');
+        if (sdiEl) sdiEl.value = data.sdi;
+        refreshSbc();
+        msg.textContent = 'SDI $' + Number(data.sdi).toFixed(2) + ' · SBC $' + Number(data.sbc).toFixed(2) + ' (tabla: ' + (data.tabla && data.tabla.nombre) + ')';
+        if (det) {
+          det.style.display = '';
+          det.textContent = JSON.stringify({
+            tipo: data.tipoSalario,
+            factor: data.factorIntegracion,
+            parteFija: data.parteFija,
+            extrasDiarios: data.extrasDiarios,
+            otrasPrestaciones: data.otrasPrestaciones,
+            promedioVariable: data.promedioVariable,
+            tabla: data.tabla,
+            formula: data.formula
+          }, null, 2);
+        }
+      } catch (e) {
+        msg.textContent = e.message || 'No se pudo calcular';
+      }
+    });
+  }
+})();
+</script>
+<noscript><style>.ficha-panel{display:flex!important;flex-direction:column;gap:.9rem}</style></noscript>
+<script src="/js/ficha-tabs.js"></script>

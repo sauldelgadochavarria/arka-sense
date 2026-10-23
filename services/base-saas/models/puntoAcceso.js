@@ -19,6 +19,12 @@ const puntoAccesoSchema = new mongoose.Schema(
       default: null,
       index: true
     },
+    zonaId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Zona',
+      default: null,
+      index: true
+    },
     codigo: { type: String, trim: true, uppercase: true, default: '' },
     nombre: { type: String, required: true, trim: true },
     descripcion: { type: String, trim: true, default: '' },
