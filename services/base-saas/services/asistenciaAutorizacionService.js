@@ -85,29 +85,33 @@ async function syncFueraZonaOpcional(tenantId, empleado, daily, marcacionGeo) {
   }
 }
 
-async function listPendientes(tenantId, { supervisorId = null, equipoIds = null, limit = 80 } = {}) {
+async function listPendientes(tenantId, { supervisorId = null, equipoIds = null, empleadoIds = null, limit = 80 } = {}) {
+  if (Array.isArray(empleadoIds) && !empleadoIds.length) return [];
   const AsistenciaAutorizacion = await getAsistenciaAutorizacionModel();
   const q = { tenantId, estado: 'pendiente' };
+  if (Array.isArray(empleadoIds)) q.empleadoId = { $in: empleadoIds };
   const or = [];
   if (supervisorId) or.push({ supervisorId });
   if (Array.isArray(equipoIds) && equipoIds.length) {
     or.push({ empleadoId: { $in: equipoIds } });
   }
-  if (or.length === 1) Object.assign(q, or[0]);
-  else if (or.length > 1) q.$or = or;
+  if (or.length === 1 && !q.empleadoId) Object.assign(q, or[0]);
+  else if (or.length) q.$or = or;
   return AsistenciaAutorizacion.find(q).sort({ fecha: -1, createdAt: -1 }).limit(limit).lean();
 }
 
 async function countPendientes(tenantId, opts = {}) {
+  if (Array.isArray(opts.empleadoIds) && !opts.empleadoIds.length) return 0;
   const AsistenciaAutorizacion = await getAsistenciaAutorizacionModel();
   const q = { tenantId, estado: 'pendiente' };
+  if (Array.isArray(opts.empleadoIds)) q.empleadoId = { $in: opts.empleadoIds };
   const or = [];
   if (opts.supervisorId) or.push({ supervisorId: opts.supervisorId });
   if (Array.isArray(opts.equipoIds) && opts.equipoIds.length) {
     or.push({ empleadoId: { $in: opts.equipoIds } });
   }
-  if (or.length === 1) Object.assign(q, or[0]);
-  else if (or.length > 1) q.$or = or;
+  if (or.length === 1 && !q.empleadoId) Object.assign(q, or[0]);
+  else if (or.length) q.$or = or;
   return AsistenciaAutorizacion.countDocuments(q);
 }
 

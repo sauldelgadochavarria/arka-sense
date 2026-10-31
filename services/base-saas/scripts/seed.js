@@ -263,7 +263,6 @@ async function seedAsistenciaMenus(Menu, adminRoleId) {
           $set: {
             menuPrincipal: item.menuPrincipal,
             orden: item.orden,
-            parentId: asistenciaCat._id,
             activo: true,
             requiredFeatureKeys: ['asistencia'],
             roles: []

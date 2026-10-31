@@ -3,7 +3,7 @@ const getSubsidiariaModel = require('../models/subsidiaria');
 const getZonaModel = require('../models/zona');
 const getEmpleadoModel = require('../models/empleado');
 const { resolverZona } = require('./zonasController');
-const { requireEmpresaForTenant } = require('../libs/tenantScope');
+const { requireEmpresaForTenant, sessionSubsidiariaId, scopeLugarFilter } = require('../libs/tenantScope');
 const { trimString, parseOptionalObjectId } = require('../libs/formHelpers');
 const { TIPOS_DISPOSITIVO } = require('../config/integraciones');
 const { pingDevice, syncCatalogToDevice } = require('../services/biometricDeviceService');
@@ -28,11 +28,18 @@ async function listDispositivos(req, res) {
   const Subsidiaria = await getSubsidiariaModel();
   const Zona = await getZonaModel();
 
+  const subId = sessionSubsidiariaId(req);
+  const lugarQ = scopeLugarFilter(req.session.tenantId, subId, { incluirCompartidos: true });
+  const zonaQ = {
+    ...scopeLugarFilter(req.session.tenantId, subId, { incluirCompartidos: false }),
+    activo: true
+  };
+
   const [dispositivos, subsidiarias, zonas] = empresa
     ? await Promise.all([
-        BiometricDevice.find({ tenantId: req.session.tenantId }).sort({ nombre: 1 }).lean(),
+        BiometricDevice.find(lugarQ).sort({ nombre: 1 }).lean(),
         Subsidiaria.find({ empresaId: empresa._id, activo: true }).sort({ nombre: 1 }).lean(),
-        Zona.find({ tenantId: req.session.tenantId, activo: true }).sort({ nombre: 1 }).lean()
+        Zona.find(zonaQ).sort({ nombre: 1 }).lean()
       ])
     : [[], [], []];
 
@@ -111,7 +118,12 @@ async function editDispositivo(req, res) {
     ? await Subsidiaria.find({ empresaId: empresa._id, activo: true }).sort({ nombre: 1 }).lean()
     : [];
   const Zona = await getZonaModel();
-  const zonas = await Zona.find({ tenantId: req.session.tenantId, activo: true }).sort({ nombre: 1 }).lean();
+  const zonas = await Zona.find({
+    ...scopeLugarFilter(req.session.tenantId, dispositivo.subsidiariaId || sessionSubsidiariaId(req), {
+      incluirCompartidos: false
+    }),
+    activo: true
+  }).sort({ nombre: 1 }).lean();
   const Empleado = await getEmpleadoModel();
   const ids = Array.isArray(dispositivo.empleadosAutorizados) ? dispositivo.empleadosAutorizados : [];
   const autorizados = ids.length

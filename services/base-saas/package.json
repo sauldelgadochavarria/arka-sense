@@ -28,6 +28,7 @@
     "biometrics:models": "node scripts/download-face-models.js"
   },
   "dependencies": {
+    "@aws-sdk/client-rekognition": "^3.758.0",
     "@aws-sdk/client-s3": "^3.758.0",
     "@tensorflow/tfjs": "^4.22.0",
     "@tensorflow/tfjs-backend-cpu": "^4.22.0",

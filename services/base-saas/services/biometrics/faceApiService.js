@@ -19,12 +19,13 @@ let lastError = null;
 const { embedArcFace, cosineDistance, ensureArcFace } = require('./arcfaceService');
 
 const MODEL_DIR = path.join(__dirname, '..', '..', 'vendor', 'face-api-models');
-/** Distancia de coseno de ArcFace. Más bajo = más estricto. 0.40 exige parecido >= 0.60. */
-const MATCH_THRESHOLD = Number(process.env.BIOMETRICS_MATCH_THRESHOLD || 0.4);
+/** Distancia de coseno de ArcFace. Más bajo = más estricto. 0.42 exige parecido >= 0.58. */
+const MATCH_THRESHOLD = Number(process.env.BIOMETRICS_MATCH_THRESHOLD || 0.35);
 
 const NEUTRAL_MIN = Number(process.env.BIOMETRICS_NEUTRAL_MIN || 0.28);
-const HAPPY_MIN = Number(process.env.BIOMETRICS_HAPPY_MIN || 0.18);
-const EXPR_DELTA_MIN = Number(process.env.BIOMETRICS_EXPR_DELTA_MIN || 0.06);
+/** Sonrisa leve. El clasificador de expresiones suele dejar happy cerca de 0 en el móvil. */
+const HAPPY_MIN = Number(process.env.BIOMETRICS_HAPPY_MIN || 0.08);
+const EXPR_DELTA_MIN = Number(process.env.BIOMETRICS_EXPR_DELTA_MIN || 0.03);
 const LANDMARK_DRIFT_MIN = Number(process.env.BIOMETRICS_LANDMARK_DRIFT_MIN || 0.25);
 
 async function ensureReady() {
@@ -105,6 +106,24 @@ function mouthOpenRatio(landmarks) {
   const mouthH = Math.hypot(bottom.x - top.x, bottom.y - top.y);
   const mouthW = Math.hypot(right.x - left.x, right.y - left.y);
   return mouthW > 1 ? mouthH / mouthW : 0;
+}
+
+/** Sonrisa geométrica: la boca se ensancha y las comisuras suben, aunque no se vean dientes. */
+function smileGeometry(face) {
+  const lm = face?.landmarks;
+  const faceW = Math.max(1, Number(face?.box?.width) || 1);
+  if (!lm || lm.length < 68) return { widthRatio: 0, cornerLift: 0 };
+  const left = lm[48];
+  const right = lm[54];
+  const top = lm[62];
+  const bottom = lm[66];
+  const mouthW = Math.hypot(right.x - left.x, right.y - left.y);
+  const cornerY = (left.y + right.y) / 2;
+  const midY = (top.y + bottom.y) / 2;
+  return {
+    widthRatio: mouthW / faceW,
+    cornerLift: (midY - cornerY) / faceW
+  };
 }
 
 function topExpression(expr) {
@@ -284,16 +303,31 @@ function evaluateLiveness(neutralFace, actionFace) {
 
   const exprDelta = a.happy - n.happy;
   const mouthDelta = (actionFace.mouthOpen || 0) - (neutralFace.mouthOpen || 0);
+  const geoN = smileGeometry(neutralFace);
+  const geoA = smileGeometry(actionFace);
+  const widthDelta = geoA.widthRatio - geoN.widthRatio;
+  const liftDelta = geoA.cornerLift - geoN.cornerLift;
+  const topA = topExpression(a);
   let happyOk = false;
   if (aReliable) {
-    happyOk = a.happy >= HAPPY_MIN || exprDelta >= EXPR_DELTA_MIN;
+    happyOk =
+      a.happy >= HAPPY_MIN ||
+      exprDelta >= EXPR_DELTA_MIN ||
+      (topA.name === 'happy' && a.happy >= 0.05);
   }
   if (!happyOk) {
-    happyOk = mouthDelta >= 0.05 || (actionFace.mouthOpen || 0) >= 0.32;
+    // En el móvil la sonrisa abre la boca y sube las comisuras, aunque el ancho
+    // respecto a la cara baje. La salida que sí pasó tuvo widthDelta -0.06 y
+    // mouthDelta +0.27. Un leve levantamiento de comisuras, sin abrir ni ensanchar,
+    // no cuenta: así pasó un giro de cabeza.
+    happyOk =
+      widthDelta >= 0.012 ||
+      mouthDelta >= 0.045 ||
+      (liftDelta >= 0.02 && mouthDelta >= 0.02);
   }
   if (!happyOk) {
     reasons.push(
-      `Sonrisa insuficiente (happy=${a.happy.toFixed(2)}, Δexpr=${exprDelta.toFixed(2)}, Δboca=${mouthDelta.toFixed(2)}). Sonríe más en la 2.ª.`
+      'No se notó la sonrisa. En la segunda foto sonríe un poco, aunque sea sin mostrar dientes.'
     );
   }
 
@@ -329,6 +363,8 @@ function evaluateLiveness(neutralFace, actionFace) {
     metrics: {
       exprDelta,
       mouthDelta,
+      widthDelta,
+      liftDelta,
       landmarkDrift,
       areaRatio,
       neutral: n.neutral,

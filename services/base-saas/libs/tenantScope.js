@@ -84,6 +84,26 @@ function scopeEmpleadosFromReq(req, empresa, opts = {}) {
   );
 }
 
+/**
+ * Lugares (zona, punto, dispositivo) de la subsidiaria activa.
+ * Los compartidos no traen subsidiaria y siguen visibles en todas.
+ * Las zonas siempre pertenecen a una subsidiaria: incluirCompartidos false.
+ */
+function scopeLugarFilter(tenantId, subsidiariaId, { incluirCompartidos = true } = {}) {
+  const filter = { tenantId: String(tenantId || '') };
+  if (!subsidiariaId) return filter;
+  if (!incluirCompartidos) {
+    filter.subsidiariaId = subsidiariaId;
+    return filter;
+  }
+  filter.$or = [
+    { subsidiariaId },
+    { subsidiariaId: null },
+    { subsidiariaId: { $exists: false } }
+  ];
+  return filter;
+}
+
 async function findOneByTenant(Model, tenantId, id) {
   if (!tenantId || !isValidObjectId(id)) return null;
   return Model.findOne({ _id: id, tenantId }).lean();
@@ -269,5 +289,6 @@ module.exports = {
   scopeEmpresaFilter,
   scopeEmpleadosFilter,
   scopeEmpleadosFromReq,
+  scopeLugarFilter,
   redirectAfterContextSwitch
 };

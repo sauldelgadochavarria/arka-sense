@@ -24,6 +24,15 @@ function sessionActor(req) {
   };
 }
 
+async function idsEmpleadosSesion(req, empresa) {
+  if (!sessionSubsidiariaId(req) || !empresa) return null;
+  const Empleado = await getEmpleadoModel();
+  const q = scopeEmpleadosFromReq(req, empresa, { soloActivos: false });
+  if (!q) return null;
+  const rows = await Empleado.find(q).select('_id').lean();
+  return rows.map((e) => e._id);
+}
+
 async function showHub(req, res) {
   const { empresa, error } = await requireEmpresaForTenant(req);
   const scope = await resolveAsistenciaScope(req);
@@ -40,19 +49,27 @@ async function showHub(req, res) {
   let diariosHoy = [];
 
   if (empresa && !error) {
+    const idsSub = await idsEmpleadosSesion(req, empresa);
     const pendienteOpts = scope.onlyEquipo
       ? {
           equipoIds: scope.equipoIds,
           supervisorId: scope.empleadoId || undefined,
+          ...(idsSub ? { empleadoIds: idsSub } : {}),
           limit: 15
         }
-      : { limit: 15 };
+      : { ...(idsSub ? { empleadoIds: idsSub } : {}), limit: 15 };
     pendientes = await listPendientes(req.session.tenantId, pendienteOpts);
     pendientesCount = await countPendientes(
       req.session.tenantId,
       scope.onlyEquipo
-        ? { equipoIds: scope.equipoIds, supervisorId: scope.empleadoId || undefined }
-        : {}
+        ? {
+            equipoIds: scope.equipoIds,
+            supervisorId: scope.empleadoId || undefined,
+            ...(idsSub ? { empleadoIds: idsSub } : {})
+          }
+        : idsSub
+          ? { empleadoIds: idsSub }
+          : {}
     );
     if (scope.onlyEquipo) {
       equipoResumen = await resumenEquipoHoy(req.session.tenantId, scope.equipoIds, fecha);
@@ -77,6 +94,7 @@ async function showHub(req, res) {
     const intentos = await listIntentos(req.session.tenantId, {
       fechaDesde: fecha,
       fechaHasta: endOfDay(fecha),
+      ...(idsSub ? { empleadoIds: idsSub } : {}),
       limit: 200
     });
     const intentosFiltrados =
@@ -128,15 +146,17 @@ async function listAutorizaciones(req, res) {
 
   let pendientes = [];
   if (empresa && !error) {
+    const idsSub = await idsEmpleadosSesion(req, empresa);
     pendientes = await listPendientes(
       req.session.tenantId,
       scope.onlyEquipo
         ? {
             equipoIds: scope.equipoIds,
             supervisorId: scope.empleadoId || undefined,
+            ...(idsSub ? { empleadoIds: idsSub } : {}),
             limit: 100
           }
-        : { limit: 100 }
+        : { ...(idsSub ? { empleadoIds: idsSub } : {}), limit: 100 }
     );
   }
 

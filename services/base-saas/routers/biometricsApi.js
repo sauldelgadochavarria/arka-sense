@@ -23,7 +23,7 @@ const router = express.Router();
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024, files: 4 }
+  limits: { fileSize: 5 * 1024 * 1024, files: 8 }
 });
 
 function jsonError(res, status, error) {
@@ -88,35 +88,49 @@ router.post(
   requireMobileAuth,
   upload.fields([
     { name: 'frame_neutral', maxCount: 1 },
-    { name: 'frame_action', maxCount: 1 }
+    { name: 'frame_n1', maxCount: 1 },
+    { name: 'frame_n2', maxCount: 1 },
+    { name: 'frame_n3', maxCount: 1 },
+    { name: 'frame_action', maxCount: 1 },
+    { name: 'frame_e1', maxCount: 1 },
+    { name: 'frame_e2', maxCount: 1 },
+    { name: 'frame_e3', maxCount: 1 },
+    { name: 'frame_e4', maxCount: 1 },
+    { name: 'frame_e5', maxCount: 1 },
+    { name: 'frame_e6', maxCount: 1 }
   ]),
   async (req, res) => {
     try {
       const challengeId = String(req.body.challengeId || '');
-      const frameNeutral = req.files?.frame_neutral?.[0]?.buffer;
-      const frameAction = req.files?.frame_action?.[0]?.buffer;
+      const frames = {};
+      for (const [name, files] of Object.entries(req.files || {})) {
+        const buf = files?.[0]?.buffer;
+        if (buf?.length) frames[name] = buf;
+      }
 
       const result = await verifyLivenessAndMatch({
         auth: req.mobileAuth,
         challengeId,
-        frameNeutral,
-        frameAction
+        frames
       });
 
       const details = result.details || {};
       const purpose = details.purpose || 'verify';
+      const faceSaved = Boolean(details.faceSaved);
       await registrarIntento({
         tenantId: req.mobileAuth.tenantId,
         empleadoId: req.mobileAuth.empleadoId,
         userId: req.mobileAuth.userId,
         etapa: purpose === 'enroll' ? 'bio_enroll' : 'bio_verify',
-        resultado: result.success ? 'aceptado' : 'rechazado',
+        resultado: result.success || faceSaved ? 'aceptado' : 'rechazado',
         mensaje: result.message || '',
         reasonCode: result.success
           ? purpose === 'enroll'
             ? 'BIO_AUTO_ENROLL'
             : 'BIO_OK'
-          : 'BIO_FAIL',
+          : faceSaved
+            ? 'BIO_ENROLL_SAVED'
+            : 'BIO_FAIL',
         challengeId,
         fechaJornada: startOfDay(new Date()),
         biometria: {
@@ -132,7 +146,14 @@ router.post(
         detalle: {
           liveness: details.liveness || null,
           purpose,
-          templateImproved: details.templateImproved || false
+          templateImproved: details.templateImproved || false,
+          bestDistance: details.bestDistance ?? null,
+          medianDistance: details.medianDistance ?? null,
+          worstDistance: details.worstDistance ?? null,
+          similarity: details.similarity ?? null,
+          proveedor: details.proveedor ?? null,
+          frontalWorst: details.frontalWorst ?? null,
+          frontalGap: details.frontalGap ?? null
         },
         ip: req.ip || '',
         userAgent: req.get('user-agent') || ''

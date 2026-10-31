@@ -68,10 +68,11 @@ async function registrarAuditoriaAsistencia({
   }
 }
 
-async function listAuditoriaAsistencia(tenantId, { empleadoId, fechaDesde, fechaHasta, limit = 80 } = {}) {
+async function listAuditoriaAsistencia(tenantId, { empleadoId, empleadoIds, fechaDesde, fechaHasta, limit = 80 } = {}) {
   const AsistenciaAuditoria = await getAsistenciaAuditoriaModel();
   const q = { tenantId };
   if (empleadoId) q.empleadoId = empleadoId;
+  else if (Array.isArray(empleadoIds)) q.empleadoId = { $in: empleadoIds };
   if (fechaDesde || fechaHasta) {
     q.createdAt = {};
     if (fechaDesde) q.createdAt.$gte = fechaDesde;

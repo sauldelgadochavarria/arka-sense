@@ -102,6 +102,23 @@ function sugerirTipoMarcacion(tiposHoy = []) {
   return 'entrada';
 }
 
+/** Zona de la subsidiaria del empleado. El contenedor corre en UTC. */
+async function zonaHorariaDeEmpleado(empleado) {
+  let zonaHoraria = DEFAULT_TZ;
+  if (empleado?.subsidiariaId) {
+    const Subsidiaria = await getSubsidiariaModel();
+    const sub = await Subsidiaria.findById(empleado.subsidiariaId).select('zonaHoraria').lean();
+    if (sub?.zonaHoraria) zonaHoraria = sub.zonaHoraria;
+  }
+  return zonaHoraria;
+}
+
+/** Mediodía UTC del día laboral. Así la consulta de hoy coincide con la marcación. */
+async function fechaLaboralMovil(empleado, ahora = new Date()) {
+  const zonaHoraria = await zonaHorariaDeEmpleado(empleado);
+  return calendarDateInTimeZone(ahora, zonaHoraria);
+}
+
 router.get('/health', (_req, res) => {
   res.json({ ok: true, api: 'arka-sense-asistencia-v1' });
 });
@@ -315,20 +332,23 @@ router.post('/auth/dispositivo/verificar-otp', requireMobileAuth, async (req, re
 router.get('/asistencia/hoy', requireMobileAuth, async (req, res) => {
   try {
     const ahora = new Date();
-    const fecha = startOfDay(ahora);
     const AttendanceRecord = await getAttendanceRecordModel();
     const Empleado = await getEmpleadoModel();
     const empleado = await Empleado.findOne({
       _id: req.mobileAuth.empleadoId,
       tenantId: req.mobileAuth.tenantId
     })
-      .select('turnoId firstName lastName numEmpleado')
+      .select('turnoId firstName lastName numEmpleado subsidiariaId')
       .lean();
+
+    // Mismo día que POST /marcar (zona de la subsidiaria). startOfDay(ahora) en UTC
+    // cambia de día a las 18:00 México y la app deja de ver la entrada.
+    const fecha = await fechaLaboralMovil(empleado, ahora);
 
     const marcaciones = await AttendanceRecord.find({
       tenantId: req.mobileAuth.tenantId,
       empleadoId: req.mobileAuth.empleadoId,
-      fecha: { $gte: fecha, $lte: endOfDay(fecha) },
+      fecha: { $gte: startOfDay(fecha), $lte: endOfDay(fecha) },
       $or: [{ estado: 'activa' }, { estado: { $exists: false } }, { estado: null }]
     })
       .sort({ timestamp: 1 })
@@ -428,14 +448,8 @@ router.post('/asistencia/marcar', requireMobileAuth, async (req, res) => {
       return jsonError(res, 403, 'Empleado no encontrado o inactivo');
     }
 
-    let zonaHoraria = DEFAULT_TZ;
-    if (empleado.subsidiariaId) {
-      const Subsidiaria = await getSubsidiariaModel();
-      const sub = await Subsidiaria.findById(empleado.subsidiariaId).select('zonaHoraria').lean();
-      if (sub?.zonaHoraria) zonaHoraria = sub.zonaHoraria;
-    }
     // Día laboral según zona de la subsidiaria (no UTC del contenedor)
-    const fecha = calendarDateInTimeZone(ahora, zonaHoraria);
+    const fecha = await fechaLaboralMovil(empleado, ahora);
 
     const existentes = await AttendanceRecord.find({
       tenantId: req.mobileAuth.tenantId,
@@ -468,7 +482,11 @@ router.post('/asistencia/marcar', requireMobileAuth, async (req, res) => {
         ip: req.ip || '',
         userAgent: req.get('user-agent') || ''
       });
-      return jsonError(res, 409, `Ya registraste «${tipoMarcacion}» hoy`);
+      return res.status(200).json({
+        ok: true,
+        alreadyRegistered: true,
+        message: `Ya registraste «${tipoMarcacion}» hoy`
+      });
     }
     if (tiposHoy.includes('salida')) {
       await registrarIntento({

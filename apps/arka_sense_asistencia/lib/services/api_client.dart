@@ -156,7 +156,7 @@ class ApiClient {
       files.forEach((name, bytes) {
         req.files.add(http.MultipartFile.fromBytes(name, bytes, filename: '$name.jpg'));
       });
-      final streamed = await _withTimeout(req.send());
+      final streamed = await req.send().timeout(const Duration(seconds: 40));
       final res = await http.Response.fromStream(streamed);
       return await _decode(res, acceptSuccessFlag: true);
     } on SocketException catch (e) {

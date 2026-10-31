@@ -104,6 +104,37 @@
     <button type="submit" class="primary">Guardar licencia</button>
   </form>
 
+  <h2>Biometría facial</h2>
+  <p class="hint">
+    ArcFace corre en este servidor. AWS Rekognition compara las fotos en Amazon y solo se usa
+    si el flag «Biometría AWS Rekognition» está activo y aquí se elige AWS.
+    La clave secreta no se muestra: déjala vacía para conservar la que ya está guardada.
+  </p>
+  <% const bioCfg = tenant.biometria || {}; const awsCfg = bioCfg.aws || {}; %>
+  <form method="post" action="/admin/tenants/<%= tenant.tenantId %>/biometria">
+    <label class="flag-row">
+      <input type="radio" name="proveedor" value="local" <%= bioCfg.proveedor !== 'aws' ? 'checked' : '' %> />
+      ArcFace local
+    </label>
+    <label class="flag-row">
+      <input type="radio" name="proveedor" value="aws" <%= bioCfg.proveedor === 'aws' ? 'checked' : '' %> />
+      AWS Rekognition
+    </label>
+    <label>Región
+      <input type="text" name="region" value="<%= awsCfg.region || 'us-east-1' %>" />
+    </label>
+    <label>Access key ID
+      <input type="text" name="accessKeyId" value="<%= awsCfg.accessKeyId || '' %>" autocomplete="off" />
+    </label>
+    <label>Secret access key
+      <input type="password" name="secretAccessKey" value="" placeholder="<%= awsCfg.secretAccessKey ? 'Guardada. Escribe otra solo para cambiarla.' : '' %>" autocomplete="new-password" />
+    </label>
+    <label>Parecido mínimo (0–100)
+      <input type="number" name="similarityMin" min="50" max="99" step="1" value="<%= awsCfg.similarityMin || 90 %>" />
+    </label>
+    <button type="submit" class="primary">Guardar biometría</button>
+  </form>
+
   <% if (tenant.status === 'active') { %>
   <form method="post" action="/admin/tenants/<%= tenant.tenantId %>/suspend" style="margin-top:2rem">
     <button type="submit" class="danger">Suspender</button>

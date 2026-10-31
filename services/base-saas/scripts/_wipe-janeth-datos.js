@@ -54,15 +54,23 @@ async function main() {
   console.log('Borrando…');
 
   if (periodoIds.length) {
+    const reciboIds = await db
+      .collection('nomina_recibos')
+      .find({ periodoId: { $in: periodoIds } })
+      .project({ _id: 1 })
+      .toArray()
+      .then((rows) => rows.map((r) => r._id));
+    if (reciboIds.length) {
+      await del(
+        db.collection('nomina_conceptos_aplicados'),
+        { reciboId: { $in: reciboIds } },
+        'nomina_conceptos_aplicados (por recibo)'
+      );
+    }
     await del(
       db.collection('nomina_recibos'),
       { periodoId: { $in: periodoIds } },
       'nomina_recibos (por periodo)'
-    );
-    await del(
-      db.collection('nomina_conceptos_aplicados'),
-      { periodoId: { $in: periodoIds } },
-      'nomina_conceptos_aplicados (por periodo)'
     );
     await del(
       db.collection('nomina_calculo_jobs'),
@@ -77,6 +85,19 @@ async function main() {
   }
 
   if (empIds.length) {
+    const reciboEmpIds = await db
+      .collection('nomina_recibos')
+      .find({ empleadoId: { $in: empIds } })
+      .project({ _id: 1 })
+      .toArray()
+      .then((rows) => rows.map((r) => r._id));
+    if (reciboEmpIds.length) {
+      await del(
+        db.collection('nomina_conceptos_aplicados'),
+        { reciboId: { $in: reciboEmpIds } },
+        'nomina_conceptos_aplicados (por recibo emp)'
+      );
+    }
     await del(
       db.collection('nomina_historico_recibos'),
       { empleadoId: { $in: empIds } },

@@ -270,6 +270,19 @@ const empleadoSchema = new mongoose.Schema(
       /** Neutro y sonrisa por separado, para comparar cada fotograma con su gesto. */
       embeddingNeutral: { type: [Number], default: undefined },
       embeddingAction: { type: [Number], default: undefined },
+      /** Poses del mismo rostro: frente, izquierda, derecha y alguna extra tras un checado bueno. */
+      muestras: {
+        type: [
+          {
+            pose: { type: String, trim: true, default: '' },
+            embedding: { type: [Number], default: undefined },
+            addedAt: { type: Date, default: null }
+          }
+        ],
+        default: undefined
+      },
+      /** JPEG de referencia para Rekognition. ArcFace sigue usando el embedding. */
+      referenciaJpeg: { type: Buffer, default: undefined },
       distanceThreshold: { type: Number, default: 0.4 },
       detectionScore: { type: Number, default: 0 },
       /** Permite que el empleado se enrolé desde la app (liveness + calidad). */

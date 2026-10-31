@@ -5,10 +5,12 @@ import 'dart:typed_data';
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:provider/provider.dart';
 
 import '../services/api_client.dart';
 import '../services/auth_state.dart';
+import '../services/mlkit_camera.dart';
 
 /// Resultado de la prueba de vida + match 1:1.
 class LivenessResult {
@@ -17,12 +19,14 @@ class LivenessResult {
     required this.message,
     this.confidenceScore = 0,
     this.challengeId,
+    this.purpose,
   });
 
   final bool success;
   final String message;
   final double confidenceScore;
   final String? challengeId;
+  final String? purpose;
 }
 
 /// Flujo guiado: challenge → captura frames → verify (máx. 3 intentos).
@@ -49,11 +53,29 @@ class _LivenessScreenState extends State<LivenessScreen> {
   int _frameIndex = 0;
   int _attempt = 0;
   int? _countdown;
+  int _poseHits = 0;
+  bool _scanning = false;
+  bool _snapLocked = false;
+  bool _resumeLive = false;
+  String? _liveHint;
+  DateTime _lastScan = DateTime.fromMillisecondsSinceEpoch(0);
   final Map<String, Uint8List> _captured = {};
+  final FaceDetector _faces = FaceDetector(
+    options: FaceDetectorOptions(
+      enableClassification: true,
+      performanceMode: FaceDetectorMode.fast,
+      minFaceSize: 0.15,
+    ),
+  );
 
   bool get _isDesktop {
     if (kIsWeb) return false;
     return Platform.isWindows || Platform.isLinux || Platform.isMacOS;
+  }
+
+  bool get _livePose {
+    if (kIsWeb || _isDesktop) return false;
+    return Platform.isAndroid || Platform.isIOS;
   }
 
   bool get _isFrontCamera {
@@ -70,6 +92,7 @@ class _LivenessScreenState extends State<LivenessScreen> {
 
   @override
   void dispose() {
+    _faces.close();
     _cam?.dispose();
     super.dispose();
   }
@@ -88,16 +111,38 @@ class _LivenessScreenState extends State<LivenessScreen> {
         (c) => c.lensDirection == CameraLensDirection.front,
         orElse: () => _cameras.first,
       );
-      final ctrl = CameraController(
-        front,
-        _isDesktop ? ResolutionPreset.high : ResolutionPreset.medium,
-        enableAudio: false,
-        imageFormatGroup: ImageFormatGroup.jpeg,
-      );
-      await ctrl.initialize();
+      CameraController? ctrl;
+      Object? cameraError;
+      final formats = _livePose
+          ? const [ImageFormatGroup.nv21, ImageFormatGroup.yuv420, ImageFormatGroup.jpeg]
+          : const [ImageFormatGroup.jpeg];
+      for (final format in formats) {
+        final attempt = CameraController(
+          front,
+          _isDesktop ? ResolutionPreset.high : ResolutionPreset.medium,
+          enableAudio: false,
+          imageFormatGroup: format,
+        );
+        try {
+          await attempt.initialize();
+          ctrl = attempt;
+          break;
+        } catch (e) {
+          cameraError = e;
+          await attempt.dispose();
+        }
+      }
+      if (ctrl == null) {
+        throw cameraError ?? Exception('No se pudo abrir la cámara');
+      }
       if (!mounted) return;
       _cam = ctrl;
       await _loadChallenge();
+      try {
+        await _startLive();
+      } catch (_) {
+        _liveHint = 'La detección en vivo no arrancó. Usa el botón.';
+      }
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     } finally {
@@ -123,7 +168,31 @@ class _LivenessScreenState extends State<LivenessScreen> {
     _instruction = _frames.isNotEmpty
         ? (_frames.first['instruction'] as String? ?? 'Mira a la cámara')
         : 'Mira a la cámara';
+    _poseHits = 0;
+    _liveHint = _livePose ? _poseHint() : null;
     setState(() {});
+  }
+
+  bool get _wantsSmile {
+    if (_frames.isEmpty || _frameIndex >= _frames.length) return false;
+    final frame = _frames[_frameIndex];
+    final id = frame['id']?.toString() ?? '';
+    if (frame['step'] != null && _stepAt(_frameIndex) == 2) return true;
+    return id == 'frame_action' || id.contains('sonrisa');
+  }
+
+  String _poseHint() {
+    if (_frames.isEmpty || _frameIndex < 0 || _frameIndex >= _frames.length) {
+      return _wantsSmile
+          ? 'Sonríe un poco y quédate quieto. La foto sale sola.'
+          : 'Rostro relajado, sin sonreír. La foto sale sola.';
+    }
+    final group = _burstFrom(_frameIndex);
+    final place = group.indexOf(_frameIndex);
+    final which = group.length > 1 && place >= 0 ? ' Foto ${place + 1} de ${group.length}.' : '';
+    return _wantsSmile
+        ? 'Sonríe un poco y quédate quieto.$which La foto sale sola.'
+        : 'Rostro relajado, sin sonreír.$which La foto sale sola.';
   }
 
   /// Tamaño lógico del preview sin estirar (sensor móvil suele ser landscape).
@@ -144,6 +213,73 @@ class _LivenessScreenState extends State<LivenessScreen> {
     return shot.readAsBytes();
   }
 
+  Future<void> _stopLive() async {
+    final cam = _cam;
+    if (cam != null && cam.value.isStreamingImages) {
+      await cam.stopImageStream();
+    }
+  }
+
+  Future<void> _startLive() async {
+    if (!_livePose || _busy) return;
+    final cam = _cam;
+    if (cam == null || !cam.value.isInitialized || cam.value.isStreamingImages) return;
+    _snapLocked = false;
+    _poseHits = 0;
+    await cam.startImageStream(_onCameraImage);
+  }
+
+  void _onCameraImage(CameraImage image) {
+    if (_busy || _snapLocked || _scanning || !mounted) return;
+    final now = DateTime.now();
+    if (now.difference(_lastScan).inMilliseconds < 280) return;
+    _lastScan = now;
+    _scanFace(image);
+  }
+
+  Future<void> _scanFace(CameraImage image) async {
+    final cam = _cam;
+    if (cam == null) return;
+    _scanning = true;
+    try {
+      final input = inputImageFromCamera(image, cam);
+      if (input == null) return;
+      final faces = await _faces.processImage(input);
+      if (!mounted || _snapLocked || _busy) return;
+      if (faces.isEmpty) {
+        _poseHits = 0;
+        _setLive('Coloca tu rostro dentro del óvalo');
+        return;
+      }
+      final face = faces.reduce(
+        (a, b) => a.boundingBox.width >= b.boundingBox.width ? a : b,
+      );
+      final ready = facePoseReady(face, wantSmile: _wantsSmile);
+      if (!ready) {
+        _poseHits = 0;
+        _setLive(_poseHint());
+        return;
+      }
+      _poseHits += 1;
+      _setLive(_wantsSmile ? 'Sonrisa lista…' : 'Rostro listo…');
+      if (_poseHits >= 3) {
+        _snapLocked = true;
+        _poseHits = 0;
+        if (mounted) setState(() {});
+        Future<void>(() => _captureCurrent(fromLive: true));
+      }
+    } catch (_) {
+      _poseHits = 0;
+    } finally {
+      _scanning = false;
+    }
+  }
+
+  void _setLive(String hint) {
+    if (_liveHint == hint || !mounted) return;
+    setState(() => _liveHint = hint);
+  }
+
   Future<void> _runCountdown() async {
     for (var i = 3; i >= 1; i--) {
       if (!mounted) return;
@@ -153,39 +289,111 @@ class _LivenessScreenState extends State<LivenessScreen> {
     if (mounted) setState(() => _countdown = null);
   }
 
-  Future<void> _captureCurrent() async {
+  int _stepAt(int index) {
+    final raw = _frames[index]['step'];
+    if (raw is num) return raw.toInt();
+    return index + 1;
+  }
+
+  int get _visibleSteps {
+    if (_frames.isEmpty) return 0;
+    var count = 1;
+    var prev = _stepAt(0);
+    for (var i = 1; i < _frames.length; i++) {
+      final step = _stepAt(i);
+      if (step != prev) {
+        count += 1;
+        prev = step;
+      }
+    }
+    return count;
+  }
+
+  int get _currentVisibleStep {
+    if (_frames.isEmpty) return 1;
+    var count = 1;
+    var prev = _stepAt(0);
+    for (var i = 1; i <= _frameIndex && i < _frames.length; i++) {
+      final step = _stepAt(i);
+      if (step != prev) {
+        count += 1;
+        prev = step;
+      }
+    }
+    return count;
+  }
+
+  List<int> _burstFrom(int start) {
+    final step = _stepAt(start);
+    final hasStep = _frames[start]['step'] != null;
+    final group = <int>[start];
+    if (!hasStep) return group;
+    for (var i = start + 1; i < _frames.length; i++) {
+      if (_stepAt(i) != step) break;
+      group.add(i);
+    }
+    return group;
+  }
+
+  Future<void> _captureCurrent({bool fromLive = false}) async {
     if (_busy || _frames.isEmpty) return;
+    _snapLocked = true;
     setState(() {
       _busy = true;
       _error = null;
     });
+    var keepWatching = false;
     try {
-      await _runCountdown();
-      final bytes = await _snapBytes();
-      if (bytes == null || bytes.isEmpty) {
-        throw Exception('No se pudo capturar el fotograma');
+      await _stopLive();
+      if (!fromLive) await _runCountdown();
+      final group = _burstFrom(_frameIndex);
+      // En vivo: una foto por vez, y se vuelve a mirar el rostro antes de la siguiente.
+      final shots = fromLive ? <int>[_frameIndex] : group;
+      for (var k = 0; k < shots.length; k++) {
+        if (k > 0) {
+          if (mounted) setState(() => _instruction = 'Mantén la pose…');
+          await Future<void>.delayed(const Duration(milliseconds: 400));
+        }
+        final bytes = await _snapBytes();
+        if (bytes == null || bytes.isEmpty) {
+          throw Exception('No se pudo capturar el fotograma');
+        }
+        final idx = shots[k];
+        final id = _frames[idx]['id'] as String? ?? 'frame_$idx';
+        _captured[id] = bytes;
       }
-      final id = _frames[_frameIndex]['id'] as String? ?? 'frame_$_frameIndex';
-      _captured[id] = bytes;
 
-      if (_frameIndex + 1 < _frames.length) {
+      final last = shots.last;
+      if (last + 1 < _frames.length) {
         setState(() {
-          _frameIndex += 1;
+          _frameIndex = last + 1;
           _instruction =
               _frames[_frameIndex]['instruction'] as String? ?? 'Siguiente gesto';
+          _liveHint = _livePose ? _poseHint() : null;
         });
-        await Future<void>.delayed(const Duration(milliseconds: 1200));
+        await Future<void>.delayed(const Duration(milliseconds: 350));
+        keepWatching = true;
       } else {
         await _submitVerify();
+        keepWatching = _resumeLive;
+        _resumeLive = false;
       }
     } catch (e) {
       setState(() => _error = e.toString());
+      keepWatching = _livePose;
     } finally {
       if (mounted) {
         setState(() {
           _busy = false;
           _countdown = null;
         });
+      }
+      if (keepWatching && mounted) {
+        try {
+          await _startLive();
+        } catch (err) {
+          if (mounted) setState(() => _error = err.toString());
+        }
       }
     }
   }
@@ -215,6 +423,7 @@ class _LivenessScreenState extends State<LivenessScreen> {
           message: (data['message'] as String?) ?? 'Verificado',
           confidenceScore: (data['confidenceScore'] as num?)?.toDouble() ?? 0,
           challengeId: _challengeId,
+          purpose: (data['purpose'] as String?) ?? _purpose,
         ),
       );
     } on ApiException catch (e) {
@@ -232,6 +441,7 @@ class _LivenessScreenState extends State<LivenessScreen> {
       await Future<void>.delayed(const Duration(milliseconds: 800));
       try {
         await _loadChallenge();
+        _resumeLive = true;
       } catch (err) {
         setState(() => _error = err.toString());
       }
@@ -346,6 +556,14 @@ class _LivenessScreenState extends State<LivenessScreen> {
                             textAlign: TextAlign.center,
                             style: Theme.of(context).textTheme.titleMedium,
                           ),
+                          if (_liveHint != null) ...[
+                            const SizedBox(height: 6),
+                            Text(
+                              _liveHint!,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(color: Color(0xFF2FD4A1), fontSize: 14),
+                            ),
+                          ],
                           const SizedBox(height: 6),
                           const Text(
                             'Llena el óvalo con tu rostro. Evita espejos y otras personas detrás.',
@@ -362,7 +580,7 @@ class _LivenessScreenState extends State<LivenessScreen> {
                           ],
                           const SizedBox(height: 16),
                           FilledButton.icon(
-                            onPressed: _busy ? null : _captureCurrent,
+                            onPressed: (_busy || _snapLocked) ? null : _captureCurrent,
                             icon: _busy
                                 ? const SizedBox(
                                     width: 18,
@@ -371,10 +589,13 @@ class _LivenessScreenState extends State<LivenessScreen> {
                                   )
                                 : const Icon(Icons.camera_alt),
                             label: Text(
-                              _frameIndex + 1 >= _frames.length &&
-                                      _captured.length >= _frames.length - 1
-                                  ? 'Capturar y verificar'
-                                  : 'Capturar (${_frameIndex + 1}/${_frames.length})',
+                              _livePose
+                                  ? (_currentVisibleStep >= _visibleSteps
+                                      ? 'Tomar ahora y verificar'
+                                      : 'Tomar ahora ($_currentVisibleStep/$_visibleSteps)')
+                                  : (_currentVisibleStep >= _visibleSteps
+                                      ? 'Capturar y verificar'
+                                      : 'Capturar ($_currentVisibleStep/$_visibleSteps)'),
                             ),
                             style: FilledButton.styleFrom(
                               minimumSize: const Size.fromHeight(52),

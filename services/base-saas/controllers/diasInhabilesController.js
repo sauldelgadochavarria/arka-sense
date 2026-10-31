@@ -12,15 +12,23 @@ async function listDiasInhabiles(req, res) {
   const desde = new Date(anio, 0, 1);
   const hasta = new Date(anio, 11, 31, 23, 59, 59);
   const subId = sessionSubsidiariaId(req);
+  const lugar = subId
+    ? {
+        $or: [
+          { subsidiariaId: subId },
+          { subsidiariaId: null },
+          { subsidiariaId: { $exists: false } }
+        ]
+      }
+    : null;
 
   const rows = empresa
     ? await DiaInhabil.find({
         tenantId: req.session.tenantId,
         fecha: { $gte: desde, $lte: hasta },
-        $or: [
-          { empresaId: empresa._id },
-          { empresaId: null },
-          ...(subId ? [{ subsidiariaId: subId }] : [])
+        $and: [
+          { $or: [{ empresaId: empresa._id }, { empresaId: null }] },
+          ...(lugar ? [lugar] : [])
         ]
       })
         .sort({ fecha: 1 })

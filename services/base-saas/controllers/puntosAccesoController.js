@@ -7,7 +7,9 @@ const { resolverZona } = require('./zonasController');
 const {
   requireEmpresaForTenant,
   findOneByTenant,
-  findOneDocByTenant
+  findOneDocByTenant,
+  sessionSubsidiariaId,
+  scopeLugarFilter
 } = require('../libs/tenantScope');
 const { trimString, parseOptionalObjectId } = require('../libs/formHelpers');
 
@@ -43,13 +45,18 @@ async function listPuntos(req, res) {
   const PuntoAcceso = await getPuntoAccesoModel();
   const Subsidiaria = await getSubsidiariaModel();
 
+  const subId = sessionSubsidiariaId(req);
+  const lugarQ = scopeLugarFilter(req.session.tenantId, subId, { incluirCompartidos: true });
+  const zonaQ = {
+    ...scopeLugarFilter(req.session.tenantId, subId, { incluirCompartidos: false }),
+    activo: true
+  };
+
   const [puntos, subsidiarias, zonas] = empresa
     ? await Promise.all([
-        PuntoAcceso.find({ tenantId: req.session.tenantId }).sort({ nombre: 1 }).lean(),
+        PuntoAcceso.find({ ...lugarQ, empresaId: empresa._id }).sort({ nombre: 1 }).lean(),
         Subsidiaria.find({ empresaId: empresa._id }).sort({ nombre: 1 }).lean(),
-        getZonaModel().then((Zona) =>
-          Zona.find({ tenantId: req.session.tenantId }).sort({ nombre: 1 }).lean()
-        )
+        getZonaModel().then((Zona) => Zona.find(zonaQ).sort({ nombre: 1 }).lean())
       ])
     : [[], [], []];
 
@@ -122,7 +129,11 @@ async function editPunto(req, res) {
     ? await Subsidiaria.find({ empresaId: empresa._id }).sort({ nombre: 1 }).lean()
     : [];
   const Zona = await getZonaModel();
-  const zonas = await Zona.find({ tenantId: req.session.tenantId, activo: true }).sort({ nombre: 1 }).lean();
+  const subId = sessionSubsidiariaId(req);
+  const zonas = await Zona.find({
+    ...scopeLugarFilter(req.session.tenantId, punto.subsidiariaId || subId, { incluirCompartidos: false }),
+    activo: true
+  }).sort({ nombre: 1 }).lean();
 
   res.render('Configurations/punto-acceso-edit', {
     title: `Editar · ${punto.nombre}`,

@@ -2,7 +2,7 @@
 
 const getZonaModel = require('../models/zona');
 const getSubsidiariaModel = require('../models/subsidiaria');
-const { requireEmpresaForTenant, findOneByTenant, findOneDocByTenant } = require('../libs/tenantScope');
+const { requireEmpresaForTenant, findOneByTenant, findOneDocByTenant, sessionSubsidiariaId, scopeLugarFilter } = require('../libs/tenantScope');
 const { trimString, parseOptionalObjectId } = require('../libs/formHelpers');
 
 async function resolverZona(tenantId, zonaId, subsidiariaId) {
@@ -23,9 +23,13 @@ async function listZonas(req, res) {
   const { empresa, error } = await requireEmpresaForTenant(req);
   const Zona = await getZonaModel();
   const Subsidiaria = await getSubsidiariaModel();
+  const subId = sessionSubsidiariaId(req);
   const [zonas, subsidiarias] = empresa
     ? await Promise.all([
-        Zona.find({ tenantId: req.session.tenantId }).sort({ nombre: 1 }).lean(),
+        Zona.find({
+          ...scopeLugarFilter(req.session.tenantId, subId, { incluirCompartidos: false }),
+          empresaId: empresa._id
+        }).sort({ nombre: 1 }).lean(),
         Subsidiaria.find({ empresaId: empresa._id, activo: true }).sort({ nombre: 1 }).lean()
       ])
     : [[], []];

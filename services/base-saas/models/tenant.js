@@ -12,7 +12,16 @@ const tenantSchema = new mongoose.Schema(
       default: 'pending',
       index: true
     },
-    featureFlags: { type: mongoose.Schema.Types.Mixed, default: {} }
+    featureFlags: { type: mongoose.Schema.Types.Mixed, default: {} },
+    biometria: {
+      proveedor: { type: String, enum: ['local', 'aws'], default: 'local' },
+      aws: {
+        region: { type: String, default: '' },
+        accessKeyId: { type: String, default: '' },
+        secretAccessKey: { type: String, default: '' },
+        similarityMin: { type: Number, default: 90 }
+      }
+    }
   },
   { timestamps: true, collection: 'tenants' }
 );

@@ -5,6 +5,7 @@
  * La decisión SIEMPRE es del backend (Haversine).
  */
 
+const getPuntoAccesoModel = require('../../models/puntoAcceso');
 const getZonaModel = require('../../models/zona');
 const getAsignacionPuntoAccesoModel = require('../../models/asignacionPuntoAcceso');
 const getSubsidiariaModel = require('../../models/subsidiaria');

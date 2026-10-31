@@ -31,6 +31,18 @@ async function upsertByRuta(Menu, data) {
   return upsertMenuNode(Menu, data);
 }
 
+async function ensureGroup(Menu, parentId, menuPrincipal, orden, extra = {}) {
+  return upsertMenuNode(Menu, {
+    menuPrincipal,
+    esCategoria: true,
+    parentId,
+    orden,
+    activo: true,
+    rutaApp: '',
+    roles: [],
+    ...extra
+  });
+}
 async function setRootMeta(Menu, name, meta) {
   await Menu.updateMany(
     { menuPrincipal: name, esCategoria: true, parentId: null },
@@ -105,80 +117,76 @@ async function reorganizeMenuPackages(Menu, adminRoleId) {
 
   // —— Personal / Organización ——
   if (personal) {
-    const pCommon = { activo: true, requiredFeatureKeys: ['personal'], roles: [] };
+    const pCommon = { activo: true, requiredFeatureKeys: ['personal'], roles: [], esCategoria: false };
+    const personalOps = await ensureGroup(Menu, personal._id, 'Operación', 10, {
+      requiredFeatureKeys: ['personal']
+    });
+    const personalCfg = await ensureGroup(Menu, personal._id, 'Configuración', 40, {
+      requiredFeatureKeys: ['personal']
+    });
     await upsertByRuta(Menu, {
       ...pCommon,
       menuPrincipal: 'Empleados',
       rutaApp: '/personal-empleados',
-      parentId: personal._id,
-      orden: 10,
-      esCategoria: false
+      parentId: personalOps,
+      orden: 10
     });
     await upsertByRuta(Menu, {
       ...pCommon,
-      menuPrincipal: 'Departamentos',
-      rutaApp: '/personal-departamentos',
-      parentId: personal._id,
-      orden: 11
-    });
-    await upsertByRuta(Menu, {
-      ...pCommon,
-      menuPrincipal: 'Puestos',
-      rutaApp: '/personal-puestos',
-      parentId: personal._id,
-      orden: 12
-    });
-    await upsertByRuta(Menu, {
-      ...pCommon,
-      menuPrincipal: 'Empresa',
-      rutaApp: '/config-empresa',
-      parentId: personal._id,
-      orden: 13
-    });
-    await upsertByRuta(Menu, {
-      ...pCommon,
-      menuPrincipal: 'Cargas iniciales',
-      rutaApp: '/config-empresa/cargas',
-      parentId: personal._id,
-      orden: 14
-    });
-    await upsertByRuta(Menu, {
-      ...pCommon,
-      menuPrincipal: 'Históricos CFDI (ZIP)',
-      rutaApp: '/config-empresa/cargas/cfdi_nomina_zip',
-      parentId: personal._id,
-      orden: 14.1
-    });
-    await upsertByRuta(Menu, {
-      ...pCommon,
-      menuPrincipal: 'Históricos CFDI masivo',
-      rutaApp: '/config-empresa/cargas/cfdi_nomina_zip_masivo',
-      parentId: personal._id,
-      orden: 14.2
-    });
-    await upsertByRuta(Menu, {
-      ...pCommon,
-      menuPrincipal: 'Tipos mov. laboral',
-      rutaApp: '/personal/tipos-movimiento-laboral',
-      parentId: personal._id,
-      orden: 15
+      menuPrincipal: 'Portal de empleados',
+      rutaApp: '/portal',
+      parentId: personalOps,
+      orden: 20,
+      requiredFeatureKeys: ['core']
     });
     await upsertByRuta(Menu, {
       ...pCommon,
       menuPrincipal: 'Ajuste anual de sueldos',
       rutaApp: '/personal/ajuste-anual',
-      parentId: personal._id,
-      orden: 16
+      parentId: personalOps,
+      orden: 30
     });
     await upsertByRuta(Menu, {
-      menuPrincipal: 'Portal de empleados',
-      rutaApp: '/portal',
-      parentId: personal._id,
-      orden: 17,
-      activo: true,
-      requiredFeatureKeys: ['core'],
-      roles: [],
-      esCategoria: false
+      ...pCommon,
+      menuPrincipal: 'Departamentos',
+      rutaApp: '/personal-departamentos',
+      parentId: personalCfg,
+      orden: 10
+    });
+    await upsertByRuta(Menu, {
+      ...pCommon,
+      menuPrincipal: 'Puestos',
+      rutaApp: '/personal-puestos',
+      parentId: personalCfg,
+      orden: 20
+    });
+    await upsertByRuta(Menu, {
+      ...pCommon,
+      menuPrincipal: 'Tipos mov. laboral',
+      rutaApp: '/personal/tipos-movimiento-laboral',
+      parentId: personalCfg,
+      orden: 30
+    });
+    await upsertByRuta(Menu, {
+      ...pCommon,
+      menuPrincipal: 'Empresa',
+      rutaApp: '/config-empresa',
+      parentId: personalCfg,
+      orden: 40
+    });
+    await upsertByRuta(Menu, {
+      ...pCommon,
+      menuPrincipal: 'Cargas iniciales',
+      rutaApp: '/config-empresa/cargas',
+      parentId: personalCfg,
+      orden: 50
+    });
+    await upsertByRuta(Menu, {
+      ...pCommon,
+      menuPrincipal: 'Históricos CFDI',
+      rutaApp: '/config-empresa/cargas/cfdi_nomina_zip_masivo',
+      parentId: personalCfg,
+      orden: 60
     });
     await Menu.updateMany(
       {
@@ -262,51 +270,62 @@ async function reorganizeMenuPackages(Menu, adminRoleId) {
 
   // —— Asistencia (+ checadores / geocercas) ——
   if (asistencia) {
-    const aCommon = { activo: true, requiredFeatureKeys: ['asistencia'], roles: [] };
+    const aCommon = { activo: true, requiredFeatureKeys: ['asistencia'], roles: [], esCategoria: false };
     const checadorCommon = {
       activo: true,
       requiredFeatureKeysAny: ['asistencia', 'integraciones'],
       requiredFeatureKeys: [],
-      roles: []
+      roles: [],
+      esCategoria: false
     };
-    await upsertByRuta(Menu, {
-      ...aCommon,
-      menuPrincipal: 'Zonas',
-      rutaApp: '/config-zonas',
-      parentId: asistencia._id,
-      orden: 48,
-      requiredFeatureKeys: ['asistencia'],
-      roles: []
+    const asistenciaOps = await ensureGroup(Menu, asistencia._id, 'Operación', 10, {
+      requiredFeatureKeys: ['asistencia']
     });
-    await upsertByRuta(Menu, {
-      ...aCommon,
-      menuPrincipal: 'Puntos de acceso',
-      rutaApp: '/config-puntos-acceso',
-      parentId: asistencia._id,
-      orden: 49,
-      requiredFeatureKeys: ['asistencia'],
-      roles: []
+    const asistenciaCfg = await ensureGroup(Menu, asistencia._id, 'Configuración', 40, {
+      requiredFeatureKeys: ['asistencia']
     });
+    const ops = [
+      ['Inicio asistencia', '/asistencia', 10],
+      ['Marcaciones', '/asistencia-marcaciones', 20],
+      ['Asistencia del día', '/asistencia-diaria', 30],
+      ['Autorizaciones', '/asistencia-autorizaciones', 40],
+      ['Registro de jornada', '/asistencia-registro-jornada', 50]
+    ];
+    for (const [menuPrincipal, rutaApp, orden] of ops) {
+      await upsertByRuta(Menu, { ...aCommon, menuPrincipal, rutaApp, parentId: asistenciaOps, orden });
+    }
+    const cfg = [
+      ['Turnos', '/asistencia-turnos', 10],
+      ['Plantillas de horario', '/asistencia-rotaciones', 20],
+      ['Asignaciones plantilla', '/asistencia-rotaciones/asignaciones', 30],
+      ['Cambios de turno', '/asistencia-rotaciones/cambios', 40],
+      ['Vista calendario', '/asistencia-rotaciones/matriz', 50],
+      ['Zonas', '/config-zonas', 60],
+      ['Puntos de acceso', '/config-puntos-acceso', 70]
+    ];
+    for (const [menuPrincipal, rutaApp, orden] of cfg) {
+      await upsertByRuta(Menu, { ...aCommon, menuPrincipal, rutaApp, parentId: asistenciaCfg, orden });
+    }
     await upsertByRuta(Menu, {
       ...checadorCommon,
       menuPrincipal: 'Dispositivos',
       rutaApp: '/integraciones/dispositivos',
-      parentId: asistencia._id,
-      orden: 90
+      parentId: asistenciaCfg,
+      orden: 80
     });
     await upsertByRuta(Menu, {
       ...checadorCommon,
       menuPrincipal: 'Grupos dispositivos',
       rutaApp: '/integraciones/grupos-dispositivos',
-      parentId: asistencia._id,
-      orden: 91
+      parentId: asistenciaCfg,
+      orden: 90
     });
     await upsertByRuta(Menu, {
       ...checadorCommon,
       menuPrincipal: 'Sync ABC',
       rutaApp: '/integraciones/abc',
-      parentId: asistencia._id,
-      orden: 92
+      parentId: asistenciaCfg,
+      orden: 100
     });
   }
 
@@ -316,6 +335,30 @@ async function reorganizeMenuPackages(Menu, adminRoleId) {
       { parentId: incidencias._id, rutaApp: '/portal' },
       { $set: { activo: false } }
     );
+    const incOps = await ensureGroup(Menu, incidencias._id, 'Operación', 10, {
+      requiredFeatureKeys: ['incidencias']
+    });
+    const incCfg = await ensureGroup(Menu, incidencias._id, 'Configuración', 40, {
+      requiredFeatureKeys: ['incidencias']
+    });
+    const incCommon = { activo: true, requiredFeatureKeys: ['incidencias'], roles: [], esCategoria: false };
+    await upsertByRuta(Menu, { ...incCommon, menuPrincipal: 'Incidencias', rutaApp: '/incidencias', parentId: incOps, orden: 10 });
+    await upsertByRuta(Menu, { ...incCommon, menuPrincipal: 'Pendientes', rutaApp: '/incidencias/pendientes', parentId: incOps, orden: 20 });
+    await upsertByRuta(Menu, {
+      ...incCommon,
+      menuPrincipal: 'Vacaciones',
+      rutaApp: '/incidencias/vacaciones',
+      parentId: incOps,
+      orden: 30,
+      requiredFeatureKeys: ['vacaciones']
+    });
+    await upsertByRuta(Menu, {
+      ...incCommon,
+      menuPrincipal: 'Tipos de incidencia',
+      rutaApp: '/incidencias/tipos',
+      parentId: incCfg,
+      orden: 10
+    });
   }
 
   // —— Pre-nómina ——
@@ -328,61 +371,76 @@ async function reorganizeMenuPackages(Menu, adminRoleId) {
       roles: []
     };
 
+    const prenOps = await ensureGroup(Menu, prenomina._id, 'Operación', 10, {
+      requiredFeatureKeys: ['prenomina']
+    });
+    const prenCfg = await ensureGroup(Menu, prenomina._id, 'Configuración', 20, {
+      requiredFeatureKeys: ['prenomina']
+    });
+
     await upsertByRuta(Menu, {
       ...prCommon,
       menuPrincipal: 'Períodos',
       rutaApp: '/prenomina-periodos',
-      parentId: prenomina._id,
-      orden: 10
+      parentId: prenOps,
+      orden: 10,
+      esCategoria: false
     });
     await upsertByRuta(Menu, {
       ...prCommon,
       menuPrincipal: 'Movimientos',
       rutaApp: '/prenomina/movimientos',
-      parentId: prenomina._id,
-      orden: 11
-    });
-    await upsertByRuta(Menu, {
-      ...prCommon,
-      menuPrincipal: 'Conceptos',
-      rutaApp: '/prenomina-conceptos',
-      parentId: prenomina._id,
-      orden: 12
-    });
-    await upsertByRuta(Menu, {
-      ...orgAny,
-      menuPrincipal: 'Centro de costos',
-      rutaApp: '/prenomina/centros-costo',
-      parentId: prenomina._id,
-      orden: 13
-    });
-    await upsertByRuta(Menu, {
-      ...orgAny,
-      menuPrincipal: 'Tipos de período',
-      rutaApp: '/prenomina/tipos-periodo',
-      parentId: prenomina._id,
-      orden: 14
+      parentId: prenOps,
+      orden: 20,
+      esCategoria: false
     });
     await upsertByRuta(Menu, {
       ...prCommon,
       menuPrincipal: 'Exportar a nómina',
       rutaApp: '/integraciones/exportacion',
-      parentId: prenomina._id,
-      orden: 15
+      parentId: prenOps,
+      orden: 30,
+      esCategoria: false
+    });
+    await upsertByRuta(Menu, {
+      ...prCommon,
+      menuPrincipal: 'Conceptos',
+      rutaApp: '/prenomina-conceptos',
+      parentId: prenCfg,
+      orden: 10,
+      esCategoria: false
+    });
+    await upsertByRuta(Menu, {
+      ...orgAny,
+      menuPrincipal: 'Centro de costos',
+      rutaApp: '/prenomina/centros-costo',
+      parentId: prenCfg,
+      orden: 20,
+      esCategoria: false
+    });
+    await upsertByRuta(Menu, {
+      ...orgAny,
+      menuPrincipal: 'Tipos de período',
+      rutaApp: '/prenomina/tipos-periodo',
+      parentId: prenCfg,
+      orden: 30,
+      esCategoria: false
     });
     await upsertByRuta(Menu, {
       ...orgAny,
       menuPrincipal: 'Períodos (catálogo)',
       rutaApp: '/catalogos/periodos',
-      parentId: prenomina._id,
-      orden: 17
+      parentId: prenCfg,
+      orden: 40,
+      esCategoria: false
     });
     await upsertByRuta(Menu, {
       ...orgAny,
       menuPrincipal: 'Generar períodos',
       rutaApp: '/catalogos/periodos/generar',
-      parentId: prenomina._id,
-      orden: 18
+      parentId: prenCfg,
+      orden: 50,
+      esCategoria: false
     });
 
     const reportesId = await upsertMenuNode(Menu, {
@@ -390,7 +448,7 @@ async function reorganizeMenuPackages(Menu, adminRoleId) {
       menuPrincipal: 'Reportes',
       esCategoria: true,
       parentId: prenomina._id,
-      orden: 16
+      orden: 30
     });
     await upsertMenuNode(Menu, {
       ...prCommon,
@@ -451,7 +509,7 @@ async function reorganizeMenuPackages(Menu, adminRoleId) {
       );
       await Menu.updateOne(
         { _id: nomConfig._id },
-        { $set: { menuPrincipal: 'Configuración de nómina', orden: 20, activo: true } }
+        { $set: { menuPrincipal: 'Configuración de nómina', orden: 80, activo: true } }
       );
     }
 
@@ -499,17 +557,24 @@ async function reorganizeMenuPackages(Menu, adminRoleId) {
       orden: 42
     });
 
-    // Mover hijos de Gestión documental bajo Cumplimiento (o dejar categoría anidada)
-    const gestDoc = await Menu.findOne({
-      parentId: nomina._id,
+    // Gestión documental al nivel de Nómina: el menú solo pinta dos niveles.
+    const gestDocs = await Menu.find({
       menuPrincipal: 'Gestión documental',
-      esCategoria: true
+      esCategoria: true,
+      activo: true
     }).lean();
-    if (gestDoc) {
+    let keeper = null;
+    for (const g of gestDocs) {
+      const n = await Menu.countDocuments({ parentId: g._id, activo: { $ne: false } });
+      if (!keeper || n > keeper.n) keeper = { id: g._id, n };
+    }
+    if (keeper) {
       await Menu.updateOne(
-        { _id: gestDoc._id },
-        { $set: { parentId: cumplId, orden: 43, requiredFeatureKeys: ['gestion_documental'] } }
+        { _id: keeper.id },
+        { $set: { parentId: nomina._id, orden: 45, activo: true, requiredFeatureKeys: ['gestion_documental'] } }
       );
+      const dupIds = gestDocs.filter((g) => String(g._id) !== String(keeper.id)).map((g) => g._id);
+      if (dupIds.length) await Menu.updateMany({ _id: { $in: dupIds } }, { $set: { activo: false } });
     }
 
     // Desactivar duplicados SUA/Confronta en raíz de Nómina (si quedaron)
@@ -523,16 +588,50 @@ async function reorganizeMenuPackages(Menu, adminRoleId) {
 
     await Menu.updateOne(
       { parentId: nomina._id, menuPrincipal: 'Timbrado', esCategoria: true },
-      { $set: { orden: 30 } }
+      { $set: { orden: 20 } }
     );
     await Menu.updateOne(
       { parentId: nomina._id, menuPrincipal: 'Reportes', rutaApp: '/nomina/reportes' },
       { $set: { orden: 50 } }
     );
     await Menu.updateOne(
-      { parentId: nomina._id, menuPrincipal: 'APIs' },
-      { $set: { orden: 60 } }
+      { parentId: nomina._id, menuPrincipal: 'Acumulados' },
+      { $set: { orden: 51, parentId: nomina._id } }
     );
+    if (nomConfig) {
+      await upsertByRuta(Menu, {
+        ...nCommon,
+        menuPrincipal: 'Tipos de período',
+        rutaApp: '/nomina/tipos-periodo',
+        parentId: nomConfig._id,
+        orden: 10,
+        esCategoria: false
+      });
+      await upsertByRuta(Menu, {
+        ...nCommon,
+        menuPrincipal: 'Configuración PAC',
+        rutaApp: '/nomina/pac',
+        parentId: nomConfig._id,
+        orden: 80,
+        esCategoria: false
+      });
+      await upsertByRuta(Menu, {
+        ...nCommon,
+        menuPrincipal: 'Configuración de correo',
+        rutaApp: '/nomina/correo',
+        parentId: nomConfig._id,
+        orden: 81,
+        esCategoria: false
+      });
+      await upsertByRuta(Menu, {
+        ...nCommon,
+        menuPrincipal: 'APIs',
+        rutaApp: '/nomina/placeholder/apis',
+        parentId: nomConfig._id,
+        orden: 90,
+        esCategoria: false
+      });
+    }
     await Menu.updateOne(
       { parentId: nomina._id, menuPrincipal: 'Catálogos', esCategoria: true },
       { $set: { orden: 55 } }
@@ -541,8 +640,10 @@ async function reorganizeMenuPackages(Menu, adminRoleId) {
 
   // Un solo Portal: bajo Personal
   if (personal) {
+    const underPersonal = await Menu.find({ parentId: personal._id }).select('_id').lean();
+    const personalIds = [personal._id, ...underPersonal.map((g) => g._id)];
     await Menu.updateMany(
-      { rutaApp: '/portal', parentId: { $ne: personal._id } },
+      { rutaApp: '/portal', parentId: { $nin: personalIds } },
       { $set: { activo: false } }
     );
   }

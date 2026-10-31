@@ -4,7 +4,7 @@ const getOverrideTurnoModel = require('../models/overrideTurno');
 const getEmpleadoModel = require('../models/empleado');
 const getDepartamentoModel = require('../models/departamento');
 const getTurnoModel = require('../models/turno');
-const { requireEmpresaForTenant, findOneByTenant, findOneDocByTenant } = require('../libs/tenantScope');
+const { requireEmpresaForTenant, findOneByTenant, findOneDocByTenant, scopeEmpleadosFromReq } = require('../libs/tenantScope');
 const { trimString, parseOptionalObjectId, parseDate } = require('../libs/formHelpers');
 const { startOfDay, endOfDay } = require('../libs/timeHelpers');
 const { DIAS_SEMANA } = require('../config/asistencia');
@@ -24,6 +24,24 @@ function defaultFechaQuery(req) {
   return trimString(req.query.fecha) || new Date().toISOString().slice(0, 10);
 }
 
+async function empleadosDeSesion(req, empresa, { soloActivos = true } = {}) {
+  const Empleado = await getEmpleadoModel();
+  const q = scopeEmpleadosFromReq(req, empresa, { soloActivos }) || {
+    tenantId: req.session.tenantId,
+    ...(soloActivos ? { estatus: 'activo', activo: true } : {})
+  };
+  return Empleado.find(q).sort({ lastName: 1 }).lean();
+}
+
+async function empleadoEnSesion(req, empresa, empleadoId) {
+  if (!empleadoId || !empresa) return null;
+  const Empleado = await getEmpleadoModel();
+  const q = scopeEmpleadosFromReq(req, empresa, { soloActivos: false }) || {
+    tenantId: req.session.tenantId
+  };
+  return Empleado.findOne({ ...q, _id: empleadoId }).select('_id').lean();
+}
+
 async function loadTurnosMap(tenantId) {
   const Turno = await getTurnoModel();
   const turnos = await Turno.find({ tenantId, activo: true }).sort({ nombre: 1 }).lean();
@@ -39,10 +57,18 @@ async function listRotaciones(req, res) {
   const AsignacionRotacion = await getAsignacionRotacionModel();
   const { turnoMap } = await loadTurnosMap(req.session.tenantId);
 
+  const empleadosSesion = empresa ? await empleadosDeSesion(req, empresa, { soloActivos: false }) : [];
+  const empIds = empleadosSesion.map((e) => e._id);
   const [plantillas, asignaciones] = empresa
     ? await Promise.all([
         PlantillaRotacion.find({ tenantId: req.session.tenantId }).sort({ nombre: 1 }).lean(),
-        AsignacionRotacion.find({ tenantId: req.session.tenantId, activo: true }).lean()
+        empIds.length
+          ? AsignacionRotacion.find({
+              tenantId: req.session.tenantId,
+              activo: true,
+              empleadoId: { $in: empIds }
+            }).lean()
+          : []
       ])
     : [[], []];
 
@@ -173,18 +199,23 @@ async function listAsignaciones(req, res) {
   const { empresa, error } = await requireEmpresaForTenant(req);
   const PlantillaRotacion = await getPlantillaRotacionModel();
   const AsignacionRotacion = await getAsignacionRotacionModel();
-  const Empleado = await getEmpleadoModel();
   const Departamento = await getDepartamentoModel();
   const { turnoMap } = await loadTurnosMap(req.session.tenantId);
 
-  const [plantillas, asignaciones, empleados, departamentos] = empresa
+  const empleados = empresa ? await empleadosDeSesion(req, empresa, { soloActivos: true }) : [];
+  const empIds = empleados.map((e) => e._id);
+  const [plantillas, asignaciones, departamentos] = empresa
     ? await Promise.all([
         PlantillaRotacion.find({ tenantId: req.session.tenantId, activo: true }).sort({ nombre: 1 }).lean(),
-        AsignacionRotacion.find({ tenantId: req.session.tenantId }).sort({ updatedAt: -1 }).lean(),
-        Empleado.find({ tenantId: req.session.tenantId, estatus: 'activo' }).sort({ lastName: 1 }).lean(),
+        empIds.length
+          ? AsignacionRotacion.find({
+              tenantId: req.session.tenantId,
+              empleadoId: { $in: empIds }
+            }).sort({ updatedAt: -1 }).lean()
+          : [],
         Departamento.find({ tenantId: req.session.tenantId, activo: true }).sort({ nombre: 1 }).lean()
       ])
-    : [[], [], [], []];
+    : [[], [], []];
 
   const plantillaMap = new Map(
     plantillas.map((p) => [String(p._id), `${p.nombre} (${getPlantillaTipo(p)})`])
@@ -222,6 +253,12 @@ async function createAsignacion(req, res) {
       return res.redirect('/asistencia-rotaciones/asignaciones');
     }
 
+    const propio = await empleadoEnSesion(req, empresa, empleadoId);
+    if (!propio) {
+      req.flash('error', 'Ese empleado no pertenece a la subsidiaria activa');
+      return res.redirect('/asistencia-rotaciones/asignaciones');
+    }
+
     await upsertAsignacion(req.session.tenantId, empresa._id, empleadoId, plantillaId, fechaAncla);
     req.flash('success', 'Asignación guardada');
     res.redirect('/asistencia-rotaciones/asignaciones');
@@ -250,11 +287,14 @@ async function createAsignacionMasiva(req, res) {
     }
 
     const Empleado = await getEmpleadoModel();
-    const empleados = await Empleado.find({
+    const empQ = scopeEmpleadosFromReq(req, empresa, { soloActivos: true }) || {
       tenantId: req.session.tenantId,
-      departamentoId,
       estatus: 'activo',
       activo: true
+    };
+    const empleados = await Empleado.find({
+      ...empQ,
+      departamentoId
     }).lean();
 
     for (const emp of empleados) {
@@ -271,9 +311,12 @@ async function createAsignacionMasiva(req, res) {
 }
 
 async function toggleAsignacion(req, res) {
+  const { empresa } = await requireEmpresaForTenant(req);
   const AsignacionRotacion = await getAsignacionRotacionModel();
   const asignacion = await findOneDocByTenant(AsignacionRotacion, req.session.tenantId, req.params.id);
   if (!asignacion) return res.status(404).send('Asignación no encontrada');
+  const propio = await empleadoEnSesion(req, empresa, asignacion.empleadoId);
+  if (!propio) return res.status(404).send('Asignación no encontrada');
 
   asignacion.activo = !asignacion.activo;
   await asignacion.save();
@@ -284,23 +327,22 @@ async function toggleAsignacion(req, res) {
 async function listCambios(req, res) {
   const { empresa, error } = await requireEmpresaForTenant(req);
   const OverrideTurno = await getOverrideTurnoModel();
-  const Empleado = await getEmpleadoModel();
   const { turnos, turnoMap } = await loadTurnosMap(req.session.tenantId);
 
   const desde = parseDate(req.query.desde) || startOfDay(new Date());
   const hasta = parseDate(req.query.hasta) || endOfDay(new Date(Date.now() + 30 * 86400000));
 
-  const [cambios, empleados] = empresa
-    ? await Promise.all([
-        OverrideTurno.find({
-          tenantId: req.session.tenantId,
-          fecha: { $gte: startOfDay(desde), $lte: endOfDay(hasta) }
-        })
-          .sort({ fecha: -1 })
-          .lean(),
-        Empleado.find({ tenantId: req.session.tenantId, estatus: 'activo' }).sort({ lastName: 1 }).lean()
-      ])
-    : [[], []];
+  const empleados = empresa ? await empleadosDeSesion(req, empresa, { soloActivos: true }) : [];
+  const empIds = empleados.map((e) => e._id);
+  const cambios = empresa && empIds.length
+    ? await OverrideTurno.find({
+        tenantId: req.session.tenantId,
+        empleadoId: { $in: empIds },
+        fecha: { $gte: startOfDay(desde), $lte: endOfDay(hasta) }
+      })
+        .sort({ fecha: -1 })
+        .lean()
+    : [];
 
   const empMap = new Map(empleados.map((e) => [String(e._id), `${e.firstName} ${e.lastName}`]));
 
@@ -341,6 +383,12 @@ async function createCambio(req, res) {
       return res.redirect('/asistencia-rotaciones/cambios');
     }
 
+    const propio = await empleadoEnSesion(req, empresa, empleadoId);
+    if (!propio) {
+      req.flash('error', 'Ese empleado no pertenece a la subsidiaria activa');
+      return res.redirect('/asistencia-rotaciones/cambios');
+    }
+
     const OverrideTurno = await getOverrideTurnoModel();
     await OverrideTurno.findOneAndUpdate(
       { tenantId: req.session.tenantId, empleadoId, fecha: startOfDay(fecha) },
@@ -370,9 +418,12 @@ async function createCambio(req, res) {
 }
 
 async function toggleCambio(req, res) {
+  const { empresa } = await requireEmpresaForTenant(req);
   const OverrideTurno = await getOverrideTurnoModel();
   const cambio = await findOneDocByTenant(OverrideTurno, req.session.tenantId, req.params.id);
   if (!cambio) return res.status(404).send('Cambio no encontrado');
+  const propio = await empleadoEnSesion(req, empresa, cambio.empleadoId);
+  if (!propio) return res.status(404).send('Cambio no encontrado');
 
   cambio.activo = !cambio.activo;
   await cambio.save();
@@ -386,18 +437,21 @@ async function showMatriz(req, res) {
   const fechaInicio = startOfDay(new Date(`${fechaStr}T12:00:00`));
   const diasVista = Math.min(28, Math.max(7, Number(req.query.dias) || 14));
 
-  const Empleado = await getEmpleadoModel();
   const AsignacionRotacion = await getAsignacionRotacionModel();
   const { turnoMap } = await loadTurnosMap(req.session.tenantId);
 
-  const asignaciones = empresa
-    ? await AsignacionRotacion.find({ tenantId: req.session.tenantId, activo: true }).lean()
+  const empleadosSesion = empresa ? await empleadosDeSesion(req, empresa, { soloActivos: false }) : [];
+  const empIds = empleadosSesion.map((e) => e._id);
+  const asignaciones = empresa && empIds.length
+    ? await AsignacionRotacion.find({
+        tenantId: req.session.tenantId,
+        activo: true,
+        empleadoId: { $in: empIds }
+      }).lean()
     : [];
 
-  const empleadoIds = asignaciones.map((a) => a.empleadoId);
-  const empleados = empleadoIds.length
-    ? await Empleado.find({ _id: { $in: empleadoIds } }).sort({ lastName: 1 }).lean()
-    : [];
+  const asignados = new Set(asignaciones.map((a) => String(a.empleadoId)));
+  const empleados = empleadosSesion.filter((e) => asignados.has(String(e._id)));
 
   const fechas = [];
   for (let i = 0; i < diasVista; i += 1) {

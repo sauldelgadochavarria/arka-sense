@@ -42,6 +42,17 @@ function auditMeta(req) {
   };
 }
 
+/** La marcación solo se ve o se corrige si el empleado pertenece a la subsidiaria activa. */
+async function empleadoEnSubsidiariaActiva(req, empresa, empleadoId) {
+  if (!sessionSubsidiariaId(req)) return true;
+  if (!empresa || !empleadoId) return false;
+  const Empleado = await getEmpleadoModel();
+  const q = scopeEmpleadosFromReq(req, empresa, { soloActivos: false });
+  if (!q) return false;
+  const row = await Empleado.findOne({ _id: empleadoId, ...q }).select('_id').lean();
+  return Boolean(row);
+}
+
 /** Si la marcación no trae zona guardada, usa la zona actual de su punto de acceso. */
 async function completarZonas(tenantId, marcaciones) {
   const faltan = marcaciones.filter((m) => m.geocerca?.puntoAccesoId && !m.geocerca?.zonaNombre);
@@ -92,55 +103,72 @@ async function listMarcaciones(req, res) {
   const DailyAttendance = await getDailyAttendanceModel();
   const { ESTATUS_DIARIO } = require('../config/asistencia');
 
+  const subId = sessionSubsidiariaId(req);
+  const empQ = scopeEmpleadosFromReq(req, empresa, { soloActivos: false }) || {
+    tenantId: req.session.tenantId
+  };
+  const empleadosScope = empresa
+    ? await Empleado.find(empQ).sort({ lastName: 1, firstName: 1 }).lean()
+    : [];
+  const empleados = empleadosScope.filter((e) => e.estatus === 'activo' && e.activo === true);
+  const empIds = empleadosScope.map((e) => e._id);
+  const empIdSet = new Set(empIds.map((id) => String(id)));
+
   const marcFilter = {
     tenantId: req.session.tenantId,
     fecha: { $gte: fecha, $lte: endOfDay(fecha) }
   };
-  const subId = sessionSubsidiariaId(req);
-  if (subId) marcFilter.subsidiariaId = subId;
+  const and = [];
   if (!verAnuladas) {
-    marcFilter.$or = [{ estado: 'activa' }, { estado: { $exists: false } }, { estado: null }];
+    and.push({ $or: [{ estado: 'activa' }, { estado: { $exists: false } }, { estado: null }] });
   }
-  if (empleadoFiltro) {
-    const oid = parseOptionalObjectId(empleadoFiltro);
-    if (oid) marcFilter.empleadoId = oid;
+  const oidFiltro = empleadoFiltro ? parseOptionalObjectId(empleadoFiltro) : null;
+  const filtroEnScope = Boolean(oidFiltro && (!subId || empIdSet.has(String(oidFiltro))));
+  const filtroFuera = Boolean(oidFiltro && subId && !empIdSet.has(String(oidFiltro)));
+  if (subId) {
+    if (filtroEnScope) marcFilter.empleadoId = oidFiltro;
+    else if (filtroFuera) marcFilter.empleadoId = { $in: [] };
+    else marcFilter.empleadoId = { $in: empIds };
+  } else if (oidFiltro) {
+    marcFilter.empleadoId = oidFiltro;
   }
+  if (and.length === 1) Object.assign(marcFilter, and[0]);
+  else if (and.length > 1) marcFilter.$and = and;
 
-  const empQ = scopeEmpleadosFromReq(req, empresa, { soloActivos: true }) || {
+  const dailyFilter = {
     tenantId: req.session.tenantId,
-    estatus: 'activo'
+    fecha: { $gte: fecha, $lte: endOfDay(fecha) }
   };
+  if (filtroEnScope) dailyFilter.empleadoId = oidFiltro;
+  else if (filtroFuera) dailyFilter.empleadoId = { $in: [] };
+  else if (subId) dailyFilter.empleadoId = { $in: empIds };
 
-  const [empleados, marcaciones, diarios, bitacora] = empresa
+  const [marcaciones, diarios, bitacora] = empresa
     ? await Promise.all([
-        Empleado.find(empQ).sort({ lastName: 1 }).lean(),
         AttendanceRecord.find(marcFilter).sort({ timestamp: 1 }).lean(),
-        DailyAttendance.find({
-          tenantId: req.session.tenantId,
-          fecha: { $gte: fecha, $lte: endOfDay(fecha) },
-          ...(empleadoFiltro && parseOptionalObjectId(empleadoFiltro)
-            ? { empleadoId: parseOptionalObjectId(empleadoFiltro) }
-            : {})
-        }).lean(),
+        DailyAttendance.find(dailyFilter).lean(),
         listAuditoriaAsistencia(req.session.tenantId, {
-          ...(empleadoFiltro && parseOptionalObjectId(empleadoFiltro)
-            ? { empleadoId: parseOptionalObjectId(empleadoFiltro) }
-            : {}),
+          ...(filtroEnScope
+            ? { empleadoId: oidFiltro }
+            : filtroFuera
+              ? { empleadoIds: [] }
+              : subId
+                ? { empleadoIds: empIds }
+                : {}),
           fechaDesde: fecha,
           fechaHasta: endOfDay(fecha),
           limit: 60
         })
       ])
-    : [[], [], [], []];
+    : [[], [], []];
 
-  const empIdSet = new Set(empleados.map((e) => String(e._id)));
-  const diariosScoped = diarios.filter((d) => empIdSet.has(String(d.empleadoId)));
+  const diariosScoped = diarios.filter((d) => !subId || empIdSet.has(String(d.empleadoId)));
   const marcacionesScoped = marcaciones.filter(
-    (m) => !subId || empIdSet.has(String(m.empleadoId)) || String(m.subsidiariaId || '') === String(subId)
+    (m) => !subId || empIdSet.has(String(m.empleadoId))
   );
 
   const empMap = new Map(
-    empleados.map((e) => [String(e._id), `${e.firstName} ${e.lastName} (${e.numEmpleado})`])
+    empleadosScope.map((e) => [String(e._id), `${e.firstName} ${e.lastName} (${e.numEmpleado})`])
   );
   const dailyMap = new Map(diariosScoped.map((d) => [String(d.empleadoId), d]));
   await completarZonas(req.session.tenantId, marcacionesScoped);
@@ -196,6 +224,10 @@ async function showMarcacionDetalle(req, res) {
   }).lean();
   if (!marcacion) {
     req.flash('error', 'Marcación no encontrada');
+    return res.redirect('/asistencia-marcaciones');
+  }
+  if (!(await empleadoEnSubsidiariaActiva(req, empresa, marcacion.empleadoId))) {
+    req.flash('error', 'La marcación no pertenece a la subsidiaria activa');
     return res.redirect('/asistencia-marcaciones');
   }
 
@@ -422,7 +454,7 @@ async function createMarcacion(req, res) {
 async function ajustarMarcacion(req, res) {
   const fechaRedirect = defaultFechaQuery(req);
   try {
-    const { error } = await requireEmpresaForTenant(req);
+    const { empresa, error } = await requireEmpresaForTenant(req);
     if (error) {
       req.flash('error', error);
       return res.redirect('/asistencia-marcaciones');
@@ -442,6 +474,10 @@ async function ajustarMarcacion(req, res) {
     const doc = await AttendanceRecord.findOne({ _id: id, tenantId: req.session.tenantId });
     if (!doc) {
       req.flash('error', 'Marcación no encontrada');
+      return res.redirect(`/asistencia-marcaciones?fecha=${fechaRedirect}`);
+    }
+    if (!(await empleadoEnSubsidiariaActiva(req, empresa, doc.empleadoId))) {
+      req.flash('error', 'La marcación no pertenece a la subsidiaria activa');
       return res.redirect(`/asistencia-marcaciones?fecha=${fechaRedirect}`);
     }
     if (doc.estado === 'anulada') {
@@ -529,7 +565,7 @@ async function ajustarMarcacion(req, res) {
 async function anularMarcacion(req, res) {
   const fechaRedirect = defaultFechaQuery(req);
   try {
-    const { error } = await requireEmpresaForTenant(req);
+    const { empresa, error } = await requireEmpresaForTenant(req);
     if (error) {
       req.flash('error', error);
       return res.redirect('/asistencia-marcaciones');
@@ -546,6 +582,10 @@ async function anularMarcacion(req, res) {
     const doc = await AttendanceRecord.findOne({ _id: id, tenantId: req.session.tenantId });
     if (!doc) {
       req.flash('error', 'Marcación no encontrada');
+      return res.redirect(`/asistencia-marcaciones?fecha=${fechaRedirect}`);
+    }
+    if (!(await empleadoEnSubsidiariaActiva(req, empresa, doc.empleadoId))) {
+      req.flash('error', 'La marcación no pertenece a la subsidiaria activa');
       return res.redirect(`/asistencia-marcaciones?fecha=${fechaRedirect}`);
     }
     if (doc.estado === 'anulada') {

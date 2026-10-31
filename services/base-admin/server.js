@@ -161,6 +161,27 @@ app.post('/admin/tenants/:tenantId/feature-flags', adminAccessControl, async (re
   res.redirect(`/admin/tenants/${req.params.tenantId}?msg=${encodeURIComponent('Módulos guardados correctamente')}`);
 });
 
+app.post('/admin/tenants/:tenantId/biometria', adminAccessControl, async (req, res) => {
+  const tenant = await Tenant.findOne({ tenantId: req.params.tenantId });
+  if (!tenant) return res.status(404).send('Tenant no encontrado');
+  const proveedor = req.body.proveedor === 'aws' ? 'aws' : 'local';
+  const prev = tenant.biometria?.aws || {};
+  const secretPosted = String(req.body.secretAccessKey || '').trim();
+  const similarity = Number(req.body.similarityMin);
+  tenant.biometria = {
+    proveedor,
+    aws: {
+      region: String(req.body.region || prev.region || 'us-east-1').trim() || 'us-east-1',
+      accessKeyId: String(req.body.accessKeyId || '').trim(),
+      secretAccessKey: secretPosted || prev.secretAccessKey || '',
+      similarityMin: Number.isFinite(similarity) ? Math.min(99, Math.max(50, similarity)) : 90
+    }
+  };
+  tenant.markModified('biometria');
+  await tenant.save();
+  res.redirect(`/admin/tenants/${tenant.tenantId}?msg=${encodeURIComponent('Biometría guardada')}`);
+});
+
 app.get('/admin/menus', adminAccessControl, async (_req, res) => {
   const menus = await Menu.find().sort({ orden: 1, menuPrincipal: 1 }).lean();
   res.render('menus/index', { menus });

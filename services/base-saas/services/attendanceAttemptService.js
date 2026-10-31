@@ -42,6 +42,10 @@ async function listIntentos(tenantId, opts = {}) {
   const AttendanceAttempt = await getAttendanceAttemptModel();
   const q = { tenantId };
   if (opts.empleadoId) q.empleadoId = opts.empleadoId;
+  else if (Array.isArray(opts.empleadoIds)) {
+    if (!opts.empleadoIds.length) return [];
+    q.empleadoId = { $in: opts.empleadoIds };
+  }
   if (opts.marcacionId) q.marcacionId = opts.marcacionId;
   if (opts.resultado) q.resultado = opts.resultado;
   if (opts.etapa) q.etapa = opts.etapa;

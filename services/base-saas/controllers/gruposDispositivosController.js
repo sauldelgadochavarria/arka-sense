@@ -4,7 +4,9 @@ const getSubsidiariaModel = require('../models/subsidiaria');
 const {
   requireEmpresaForTenant,
   findOneByTenant,
-  findOneDocByTenant
+  findOneDocByTenant,
+  sessionSubsidiariaId,
+  scopeLugarFilter
 } = require('../libs/tenantScope');
 const { trimString, parseOptionalObjectId, parseObjectIdArray } = require('../libs/formHelpers');
 
@@ -14,10 +16,13 @@ async function listGrupos(req, res) {
   const BiometricDevice = await getBiometricDeviceModel();
   const Subsidiaria = await getSubsidiariaModel();
 
+  const subId = sessionSubsidiariaId(req);
+  const lugarQ = scopeLugarFilter(req.session.tenantId, subId, { incluirCompartidos: true });
+
   const [grupos, dispositivos, subsidiarias] = empresa
     ? await Promise.all([
-        GrupoDispositivos.find({ tenantId: req.session.tenantId }).sort({ nombre: 1 }).lean(),
-        BiometricDevice.find({ tenantId: req.session.tenantId, activo: true }).sort({ nombre: 1 }).lean(),
+        GrupoDispositivos.find(lugarQ).sort({ nombre: 1 }).lean(),
+        BiometricDevice.find({ ...lugarQ, activo: true }).sort({ nombre: 1 }).lean(),
         Subsidiaria.find({ empresaId: empresa._id, activo: true }).sort({ nombre: 1 }).lean()
       ])
     : [[], [], []];

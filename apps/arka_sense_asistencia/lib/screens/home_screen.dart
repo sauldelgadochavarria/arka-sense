@@ -204,7 +204,7 @@ class _HomeScreenState extends State<HomeScreen> {
       );
       if (!mounted) return;
       if (live == null) return;
-      if (!live.success) {
+      if (!live.success || live.purpose == 'enroll') {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(live.message)));
         return;
       }

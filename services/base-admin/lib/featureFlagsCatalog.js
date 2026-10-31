@@ -56,6 +56,12 @@ const FEATURE_FLAG_KEYS = [
     packageId: 'asistencia_prenomina'
   },
   {
+    key: 'biometria_aws',
+    label: 'Biometría AWS Rekognition',
+    description: 'Permite usar Amazon Rekognition, además de ArcFace local. El motor activo se elige en la configuración del tenant.',
+    packageId: 'asistencia_prenomina'
+  },
+  {
     key: 'reportes',
     label: 'Reportes',
     description: 'Reportes y dashboard gerencial (asistencia / pre-nómina).',
@@ -99,7 +105,7 @@ const FEATURE_PACKAGES = [
     label: 'Asistencia-Prenómina',
     description: 'Control de tiempo, incidencias y pre-nómina.',
     alwaysOn: false,
-    flagKeys: ['asistencia', 'incidencias', 'vacaciones', 'prenomina', 'reportes']
+    flagKeys: ['asistencia', 'incidencias', 'vacaciones', 'prenomina', 'reportes', 'biometria_aws']
   },
   {
     id: 'nomina',
@@ -203,6 +209,7 @@ function defaultFeatureFlagsForNewTenant() {
     vacaciones: true,
     prenomina: true,
     reportes: true,
+    biometria_aws: false,
     nomina: false,
     recibos: false,
     gestion_documental: false
