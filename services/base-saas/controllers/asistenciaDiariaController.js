@@ -5,7 +5,12 @@ const getDepartamentoModel = require('../models/departamento');
 const getPayrollPeriodModel = require('../models/payrollPeriod');
 const { requireEmpresaForTenant, scopeEmpresaFilter, scopeEmpleadosFromReq, sessionSubsidiariaId } = require('../libs/tenantScope');
 const { trimString, parseOptionalObjectId } = require('../libs/formHelpers');
-const { parseDateTimeLocal, startOfDay, endOfDay, formatTimeHHMM } = require('../libs/timeHelpers');
+const { parseDateTimeLocal, startOfDay, endOfDay, formatTimeHHMM, ymdAncla } = require('../libs/timeHelpers');
+const {
+  contextoFecha,
+  mapaZonasPorSubsidiaria,
+  mapaZonaPorEmpleado
+} = require('../services/zonaHorariaService');
 const { ESTATUS_DIARIO } = require('../config/asistencia');
 const { recalculateDayForTenant } = require('../services/attendanceProcessingService');
 const { listTiposPeriodo } = require('../services/tipoPeriodoNominaService');
@@ -20,14 +25,16 @@ function labelPeriodo(p, tipoMap) {
     (p.tipoPeriodoId && tipoMap.get(String(p.tipoPeriodoId))) || p.tipo || '';
   const num = p.numeroPeriodo != null ? `#${p.numeroPeriodo}` : '';
   const anio = p.anio || '';
-  const ini = p.fechaInicio ? startOfDay(p.fechaInicio).toISOString().slice(0, 10) : '';
-  const fin = p.fechaFin ? startOfDay(p.fechaFin).toISOString().slice(0, 10) : '';
+  const ini = p.fechaInicio ? ymdAncla(p.fechaInicio) : '';
+  const fin = p.fechaFin ? ymdAncla(p.fechaFin) : '';
   return [tipoNom, num, anio, ini && fin ? `${ini}→${fin}` : ''].filter(Boolean).join(' · ');
 }
 
 async function listDiaria(req, res) {
   const { empresa, error } = await requireEmpresaForTenant(req);
-  let fechaStr = defaultFechaQuery(req);
+  const ctx = await contextoFecha(req.query.fecha, sessionSubsidiariaId(req));
+  let fechaStr = ctx.ymd;
+  const zonaPagina = ctx.zona;
   const estatusFiltro = trimString(req.query.estatus);
   const departamentoId = parseOptionalObjectId(req.query.departamentoId);
   let tipoPeriodoId = parseOptionalObjectId(req.query.tipoPeriodoId);
@@ -53,17 +60,17 @@ async function listDiaria(req, res) {
       }
       const ini = startOfDay(periodoSel.fechaInicio);
       const fin = startOfDay(periodoSel.fechaFin);
-      let fecha = startOfDay(parseDateTimeLocal(`${fechaStr}T12:00`) || new Date());
+      let fecha = startOfDay(parseDateTimeLocal(`${fechaStr}T12:00`, zonaPagina) || new Date());
       if (fecha < ini || fecha > fin) {
-        const hoy = startOfDay(new Date());
+        const hoy = startOfDay(parseDateTimeLocal(`${ymdAncla(new Date(), zonaPagina)}T12:00`, zonaPagina) || new Date());
         fecha = hoy >= ini && hoy <= fin ? hoy : ini;
-        fechaStr = fecha.toISOString().slice(0, 10);
+        fechaStr = ymdAncla(fecha, zonaPagina);
         fechaAjustadaPorPeriodo = true;
       }
     }
   }
 
-  const fecha = startOfDay(parseDateTimeLocal(`${fechaStr}T12:00`) || new Date());
+  const fecha = startOfDay(parseDateTimeLocal(`${fechaStr}T12:00`, zonaPagina) || new Date());
 
   const empQuery = scopeEmpleadosFromReq(req, empresa, { soloActivos: true }) || {
     tenantId: req.session.tenantId,
@@ -127,12 +134,15 @@ async function listDiaria(req, res) {
 
   const periodoLabel = periodoSel ? labelPeriodo(periodoSel, tipoPeriodoMap) : '';
 
+  const mapaSubs = await mapaZonasPorSubsidiaria(empleados.map((e) => e.subsidiariaId));
+  const zonaPorEmp = mapaZonaPorEmpleado(empleados, mapaSubs);
   const todasFilas = empleados.map((empleado) => {
     const resumen = resumenMap.get(String(empleado._id)) || null;
     const turno = empleado.turnoId ? turnoById.get(String(empleado.turnoId)) : null;
     return {
       empleado,
       resumen,
+      zonaHoraria: (resumen && resumen.zonaHoraria) || zonaPorEmp.get(String(empleado._id)) || zonaPagina,
       comidaChecada: Boolean(turno?.comidaChecada),
       departamentoNombre: empleado.departamentoId
         ? deptoMap.get(String(empleado.departamentoId)) || '—'
@@ -191,8 +201,9 @@ async function listDiaria(req, res) {
 async function reprocesarDiaria(req, res) {
   try {
     const { empresa } = await requireEmpresaForTenant(req);
-    const fechaStr = defaultFechaQuery(req);
-    const fecha = startOfDay(parseDateTimeLocal(`${fechaStr}T12:00`) || new Date());
+    const ctx = await contextoFecha(req.query.fecha || req.body.fecha, sessionSubsidiariaId(req));
+    const fechaStr = ctx.ymd;
+    const fecha = ctx.desde;
     await recalculateDayForTenant(req.session.tenantId, fecha, {
       empresaId: empresa?._id || null,
       subsidiariaId: sessionSubsidiariaId(req)

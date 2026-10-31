@@ -1,5 +1,5 @@
 <%- include('../Partials/layout-top', { title: 'Intentos de checado', session }) %>
-<%- include('partials/flujo-asistencia', { pasoActual: 1, fecha: typeof fecha !== 'undefined' ? fecha : null }) %>
+<%- include('partials/flujo-asistencia', { pasoActual: 4, fecha: typeof fecha !== 'undefined' ? fecha : null }) %>
 <%
   const resultadoLabel = {
     aceptado: 'Aceptado',
@@ -31,7 +31,6 @@
     </select>
     <button type="submit">Filtrar</button>
   </form>
-  <a class="btn" href="/asistencia-marcaciones?fecha=<%= fecha %>">Marcaciones</a>
 </div>
 
 <table>
@@ -53,7 +52,7 @@
     <% } %>
     <% intentos.forEach(function(i) { %>
     <tr class="<%= i.resultado === 'rechazado' || i.resultado === 'error' ? 'row-muted' : '' %>">
-      <td><%= formatTimeHHMM(i.createdAt) %></td>
+      <td><%= formatTimeHHMM(i.createdAt, i.zonaHoraria) %></td>
       <td><%= empMap.get(String(i.empleadoId)) || '—' %></td>
       <td><code><%= i.etapa %></code></td>
       <td>

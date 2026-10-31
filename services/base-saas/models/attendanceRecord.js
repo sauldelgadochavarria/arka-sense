@@ -17,6 +17,11 @@ const attendanceRecordSchema = new mongoose.Schema(
     timestamp: { type: Date, required: true, index: true },
     /** Marca de tiempo tal como se registró la primera vez (inalterable en espíritu). */
     timestampOriginal: { type: Date, default: null },
+    /**
+     * Zona IANA con la que se interpretó esta checada (subsidiaria al momento del registro).
+     * El timestamp sigue siendo instante UTC; esta zona no se reescribe si la plaza cambia.
+     */
+    zonaHoraria: { type: String, trim: true, default: '' },
     /** Instantánea del servidor al crear el registro (evidencia anti-alteración local). */
     servidorRegisteredAt: { type: Date, default: null },
     tipoMarcacion: {

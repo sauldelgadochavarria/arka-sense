@@ -1,5 +1,5 @@
 <%- include('../Partials/layout-top', { title: 'Registro de jornada', session }) %>
-<%- include('partials/flujo-asistencia', { pasoActual: 3, fecha: typeof fecha !== 'undefined' ? fecha : null }) %>
+<%- include('partials/flujo-asistencia', { pasoActual: 5, fecha: typeof fecha !== 'undefined' ? fecha : null }) %>
 <div class="page-header">
   <h1>Registro de jornada</h1>
   <p class="page-subtitle">
@@ -11,12 +11,6 @@
 <% if (!empresa) { %>
 <p>No hay empresa vinculada a este tenant.</p>
 <% } else { %>
-
-<div class="toolbar">
-  <a class="btn" href="/asistencia-marcaciones">← Marcaciones</a>
-  <a class="btn" href="/asistencia-diaria">Asistencia del día</a>
-  <a class="btn" href="/asistencia-intentos">Intentos / evidencia</a>
-</div>
 
 <form method="get" action="/asistencia-registro-jornada" class="filter-form form-grid">
   <label>Desde

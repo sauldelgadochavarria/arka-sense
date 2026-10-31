@@ -244,10 +244,10 @@
                 <td>
                   <a href="/asistencia-diaria?fecha=<%= dia.ymd %>&amp;periodoId=<%= periodo._id %>"><%= dia.ymd %></a>
                 </td>
-                <td><%= dia.entrada && formatTimeHHMM ? formatTimeHHMM(dia.entrada) : '—' %></td>
-                <td><%= dia.salidaComida && formatTimeHHMM ? formatTimeHHMM(dia.salidaComida) : '—' %></td>
-                <td><%= dia.regresoComida && formatTimeHHMM ? formatTimeHHMM(dia.regresoComida) : '—' %></td>
-                <td><%= dia.salida && formatTimeHHMM ? formatTimeHHMM(dia.salida) : '—' %></td>
+                <td><%= dia.entrada && formatTimeHHMM ? formatTimeHHMM(dia.entrada, fila.zonaHoraria) : '—' %></td>
+                <td><%= dia.salidaComida && formatTimeHHMM ? formatTimeHHMM(dia.salidaComida, fila.zonaHoraria) : '—' %></td>
+                <td><%= dia.regresoComida && formatTimeHHMM ? formatTimeHHMM(dia.regresoComida, fila.zonaHoraria) : '—' %></td>
+                <td><%= dia.salida && formatTimeHHMM ? formatTimeHHMM(dia.salida, fila.zonaHoraria) : '—' %></td>
                 <td><%= dia.minutosRetardo ? dia.minutosRetardo + ' min' : '—' %></td>
                 <td><%= dia.minutosHorasExtra ? dia.minutosHorasExtra + ' min' : '—' %></td>
                 <td><span class="badge badge-<%= dia.estatus %>"><%= estLabel %></span></td>

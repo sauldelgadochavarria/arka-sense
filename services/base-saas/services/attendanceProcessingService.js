@@ -3,7 +3,8 @@
 const getEmpleadoModel = require('../models/empleado');
 const getAttendanceRecordModel = require('../models/attendanceRecord');
 const getDailyAttendanceModel = require('../models/dailyAttendance');
-const { applyTimeToDate, minutesDiff, startOfDay, endOfDay } = require('../libs/timeHelpers');
+const { applyTimeToDate, minutesDiff, startOfDay, endOfDay, DEFAULT_TZ } = require('../libs/timeHelpers');
+const { zonaDeSubsidiariaId } = require('./zonaHorariaService');
 const { isTimestampInHolgura } = require('../libs/turnoHelpers');
 const { shouldQualifyAttendance } = require('../libs/empleadoHelpers');
 const { syncAutomaticIncidencias } = require('./incidenciasAutoSync');
@@ -12,7 +13,8 @@ const { clasificarMinutosDia } = require('../libs/horasExtraClasificacion');
 const { resolveEsquemaJornada } = require('../libs/esquemaJornada');
 
 function isDiaLaborable(turno, fecha) {
-  const day = new Date(fecha).getDay();
+  // Ancla laboral (medianoche o mediodía UTC): el día de semana UTC es el del calendario.
+  const day = new Date(fecha).getUTCDay();
   if (turno.descansaDomingo && day === 0) return false;
   if (turno.descansaSabado && day === 6) return false;
   if (Array.isArray(turno.diasLaborables) && turno.diasLaborables.length > 0) {
@@ -64,7 +66,7 @@ function splitHorasExtra(minutosExtraTotal, turno) {
   };
 }
 
-function computeUnqualifiedDaily(fecha, turno, records, empleado) {
+function computeUnqualifiedDaily(fecha, turno, records, empleado, timeZone = DEFAULT_TZ) {
   const laborable = turno ? isDiaLaborable(turno, fecha) : true;
   const entrada = records[0]?.timestamp || null;
   const salida = records[records.length - 1]?.timestamp || null;
@@ -74,8 +76,8 @@ function computeUnqualifiedDaily(fecha, turno, records, empleado) {
   else if (!records.length) estatus = 'falta';
 
   return {
-    entradaProgramada: turno ? applyTimeToDate(fecha, turno.horaEntrada) : null,
-    salidaProgramada: turno ? applyTimeToDate(fecha, turno.horaSalida) : null,
+    entradaProgramada: turno ? applyTimeToDate(fecha, turno.horaEntrada, timeZone) : null,
+    salidaProgramada: turno ? applyTimeToDate(fecha, turno.horaSalida, timeZone) : null,
     entradaReal: entrada,
     salidaComida: null,
     regresoComida: null,
@@ -94,10 +96,10 @@ function computeUnqualifiedDaily(fecha, turno, records, empleado) {
   };
 }
 
-function computeDailyMetrics(turno, fechaInput, records, empleado) {
+function computeDailyMetrics(turno, fechaInput, records, empleado, timeZone = DEFAULT_TZ) {
   const fecha = startOfDay(fechaInput);
   if (!shouldQualifyAttendance(empleado)) {
-    return computeUnqualifiedDaily(fecha, turno, records, empleado);
+    return computeUnqualifiedDaily(fecha, turno, records, empleado, timeZone);
   }
 
   const entrada = pickLatest(records, 'entrada');
@@ -109,8 +111,8 @@ function computeDailyMetrics(turno, fechaInput, records, empleado) {
   const multiEntrada = countTipo('entrada') > 1;
   const multiSalida = countTipo('salida') > 1;
 
-  const entradaProgramada = applyTimeToDate(fecha, turno.horaEntrada);
-  const salidaProgramada = applyTimeToDate(fecha, turno.horaSalida);
+  const entradaProgramada = applyTimeToDate(fecha, turno.horaEntrada, timeZone);
+  const salidaProgramada = applyTimeToDate(fecha, turno.horaSalida, timeZone);
   const holguraAntes = turno.holguraAntesMin ?? 180;
   const holguraDespues = turno.holguraDespuesMin ?? 180;
   const modoTolerancia = turno.modoTolerancia || 'normal';
@@ -129,10 +131,24 @@ function computeDailyMetrics(turno, fechaInput, records, empleado) {
 
   const entradaEnHolgura =
     entrada?.timestamp &&
-    isTimestampInHolgura(entrada.timestamp, fecha, turno.horaEntrada, holguraAntes, holguraDespues);
+    isTimestampInHolgura(
+      entrada.timestamp,
+      fecha,
+      turno.horaEntrada,
+      holguraAntes,
+      holguraDespues,
+      timeZone
+    );
   const salidaEnHolgura =
     salida?.timestamp &&
-    isTimestampInHolgura(salida.timestamp, fecha, turno.horaSalida, holguraAntes, holguraDespues);
+    isTimestampInHolgura(
+      salida.timestamp,
+      fecha,
+      turno.horaSalida,
+      holguraAntes,
+      holguraDespues,
+      timeZone
+    );
 
   if (entrada?.timestamp && !entradaEnHolgura) {
     incidencias.push('FR');
@@ -250,6 +266,7 @@ async function recalculateDailyAttendance(tenantId, empleadoId, fechaInput) {
   const empleado = await Empleado.findOne({ _id: empleadoId, tenantId }).lean();
   if (!empleado) return null;
 
+  const timeZone = await zonaDeSubsidiariaId(empleado.subsidiariaId);
   const resolved = await resolveTurnoVigente(tenantId, empleado, fecha);
   const { turno, esDescansoForzado, plantilla, asignacion } = resolved;
 
@@ -272,6 +289,7 @@ async function recalculateDailyAttendance(tenantId, empleadoId, fechaInput) {
           empleadoId,
           fecha,
           turnoId: null,
+          zonaHoraria: timeZone,
           estatus: 'descanso',
           incidenciasAutomaticas: [],
           minutosRetardo: 0,
@@ -314,6 +332,7 @@ async function recalculateDailyAttendance(tenantId, empleadoId, fechaInput) {
           empleadoId,
           fecha,
           turnoId: null,
+          zonaHoraria: timeZone,
           estatus,
           incidenciasAutomaticas,
           notas
@@ -325,7 +344,7 @@ async function recalculateDailyAttendance(tenantId, empleadoId, fechaInput) {
     return daily;
   }
 
-  const metrics = computeDailyMetrics(turno, fecha, records, empleado);
+  const metrics = computeDailyMetrics(turno, fecha, records, empleado, timeZone);
   if (resolved.origen === 'rotacion' && plantilla) {
     const rotNota = `Rotación: ${plantilla.nombre}${asignacion?.fechaAncla ? ` (ancla ${new Date(asignacion.fechaAncla).toLocaleDateString('es-MX')})` : ''}`;
     metrics.notas = metrics.notas ? `${rotNota} · ${metrics.notas}` : rotNota;
@@ -360,6 +379,7 @@ async function recalculateDailyAttendance(tenantId, empleadoId, fechaInput) {
         empleadoId,
         fecha,
         turnoId: turno._id,
+        zonaHoraria: timeZone,
         ...metrics
       }
     },

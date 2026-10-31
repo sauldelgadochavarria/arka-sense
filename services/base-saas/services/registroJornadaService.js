@@ -4,7 +4,8 @@ const getEmpleadoModel = require('../models/empleado');
 const getTurnoModel = require('../models/turno');
 const getDailyAttendanceModel = require('../models/dailyAttendance');
 const getTipoPeriodoNominaModel = require('../models/tipoPeriodoNomina');
-const { startOfDay, endOfDay, minutesDiff, formatTimeHHMM } = require('../libs/timeHelpers');
+const { startOfDay, endOfDay, minutesDiff, formatTimeHHMM, ymdAncla } = require('../libs/timeHelpers');
+const { mapaZonasPorSubsidiaria, zonaDeEmpleado } = require('./zonaHorariaService');
 const { weekKey, clasificarHorasExtraPeriodo } = require('../libs/horasExtraClasificacion');
 const { resolveEsquemaJornada, ESQUEMA_JORNADA_DEFAULTS } = require('../libs/esquemaJornada');
 const { normalizeWeekday } = require('../libs/calendarioPeriodo');
@@ -65,6 +66,7 @@ async function buildRegistroJornada(
     : [];
   const tipoMap = new Map(tipos.map((t) => [String(t._id), t]));
 
+  const mapaSubs = await mapaZonasPorSubsidiaria(empleados.map((e) => e.subsidiariaId));
   const empMap = new Map(
     empleados.map((e) => {
       const turno = e.turnoId ? turnoMap.get(String(e.turnoId)) : null;
@@ -80,6 +82,7 @@ async function buildRegistroJornada(
           turnoId: e.turnoId || null,
           esquema,
           weekStartsOn,
+          zonaHoraria: zonaDeEmpleado(e, mapaSubs),
           sinTurno: !turno
         }
       ];
@@ -124,16 +127,16 @@ async function buildRegistroJornada(
       numEmpleado: emp.numEmpleado,
       nombre: emp.nombre,
       fecha: d.fecha,
-      week: weekKey(d.fecha, { weekStartsOn: emp.weekStartsOn }),
+      week: weekKey(ymdAncla(d.fecha, emp.zonaHoraria), { weekStartsOn: emp.weekStartsOn }),
       weekStartsOn: emp.weekStartsOn,
       entrada: d.entradaReal || null,
       salidaComida: d.salidaComida || null,
       regresoComida: d.regresoComida || null,
       salida: d.salidaReal || null,
-      entradaFmt: d.entradaReal ? formatTimeHHMM(d.entradaReal) : '—',
-      salidaComidaFmt: d.salidaComida ? formatTimeHHMM(d.salidaComida) : '—',
-      regresoComidaFmt: d.regresoComida ? formatTimeHHMM(d.regresoComida) : '—',
-      salidaFmt: d.salidaReal ? formatTimeHHMM(d.salidaReal) : '—',
+      entradaFmt: d.entradaReal ? formatTimeHHMM(d.entradaReal, emp.zonaHoraria) : '—',
+      salidaComidaFmt: d.salidaComida ? formatTimeHHMM(d.salidaComida, emp.zonaHoraria) : '—',
+      regresoComidaFmt: d.regresoComida ? formatTimeHHMM(d.regresoComida, emp.zonaHoraria) : '—',
+      salidaFmt: d.salidaReal ? formatTimeHHMM(d.salidaReal, emp.zonaHoraria) : '—',
       minutosEfectivos: efectivos,
       minutosOrdinarios: ordinarios,
       minutosHE: he,

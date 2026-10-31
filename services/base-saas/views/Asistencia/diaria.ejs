@@ -73,9 +73,6 @@
   <form method="post" action="/asistencia-diaria/reprocesar?fecha=<%= fecha %><%= qsExtra() %>" class="inline-form">
     <button type="submit">Reprocesar día</button>
   </form>
-  <a class="btn" href="/asistencia-marcaciones?fecha=<%= fecha %>">Marcaciones / corregir</a>
-  <a class="btn" href="/asistencia-marcaciones?fecha=<%= fecha %>&amp;nueva=1#captura">+ Registrar</a>
-  <a class="btn" href="/asistencia-autorizaciones">Autorizar</a>
 </div>
 
 <% if (periodoSel) { %>
@@ -188,16 +185,16 @@
         <br><span class="muted small" title="El turno exige 4 marcajes">4 checadas</span>
         <% } %>
       </td>
-      <td><%= r && r.entradaReal ? formatTimeHHMM(r.entradaReal) : '—' %></td>
+      <td><%= r && r.entradaReal ? formatTimeHHMM(r.entradaReal, fila.zonaHoraria) : '—' %></td>
       <% if (typeof mostrarComida !== 'undefined' && mostrarComida) { %>
       <td class="<%= fila.comidaChecada && r && !r.salidaComida ? 'warn-cell' : '' %>">
-        <%= r && r.salidaComida ? formatTimeHHMM(r.salidaComida) : (fila.comidaChecada ? '—' : 'n/a') %>
+        <%= r && r.salidaComida ? formatTimeHHMM(r.salidaComida, fila.zonaHoraria) : (fila.comidaChecada ? '—' : 'n/a') %>
       </td>
       <td class="<%= fila.comidaChecada && r && !r.regresoComida ? 'warn-cell' : '' %>">
-        <%= r && r.regresoComida ? formatTimeHHMM(r.regresoComida) : (fila.comidaChecada ? '—' : 'n/a') %>
+        <%= r && r.regresoComida ? formatTimeHHMM(r.regresoComida, fila.zonaHoraria) : (fila.comidaChecada ? '—' : 'n/a') %>
       </td>
       <% } %>
-      <td><%= r && r.salidaReal ? formatTimeHHMM(r.salidaReal) : '—' %></td>
+      <td><%= r && r.salidaReal ? formatTimeHHMM(r.salidaReal, fila.zonaHoraria) : '—' %></td>
       <td><%= r && r.minutosRetardo ? r.minutosRetardo + ' min' : '—' %></td>
       <td><%= r && r.minutosHorasExtra ? r.minutosHorasExtra + ' min' : '—' %></td>
       <td>
@@ -206,10 +203,8 @@
         <% } else { %>
         <span class="badge badge-sin_procesar" title="No hay daily_attendance para este día. Reprocesar o asignar turno.">Sin procesar</span>
         <% } %>
-        <% if (est === 'incompleto' || est === 'registro_parcial' || est === 'fuera_de_rango' || (r && r.excedeLimiteDiario)) { %>
         <br>
-        <a class="muted small" href="/asistencia-marcaciones?fecha=<%= fecha %>&amp;empleadoId=<%= fila.empleado._id %>&amp;nueva=1#captura">Corregir marcaciones</a>
-        <% } %>
+        <a class="muted small" href="/asistencia-marcaciones?fecha=<%= fecha %>&amp;empleadoId=<%= fila.empleado._id %>">Corregir</a>
       </td>
       <td><%= r && r.incidenciasAutomaticas && r.incidenciasAutomaticas.length ? r.incidenciasAutomaticas.join(', ') : '—' %></td>
     </tr>

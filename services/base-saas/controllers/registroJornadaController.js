@@ -3,7 +3,8 @@
 const getEmpleadoModel = require('../models/empleado');
 const { requireEmpresaForTenant, scopeEmpleadosFromReq, sessionSubsidiariaId } = require('../libs/tenantScope');
 const { parseOptionalObjectId, trimString } = require('../libs/formHelpers');
-const { parseDateTimeLocal, startOfDay, endOfDay } = require('../libs/timeHelpers');
+const { parseDateTimeLocal, startOfDay, endOfDay, ymdInTimeZone, addDaysYmd } = require('../libs/timeHelpers');
+const { zonaDeSubsidiariaId } = require('../services/zonaHorariaService');
 const { ESTATUS_DIARIO } = require('../config/asistencia');
 const { buildRegistroJornada } = require('../services/registroJornadaService');
 const {
@@ -18,13 +19,11 @@ function sessionActor(req) {
   return { userId, userLabel };
 }
 
-function defaultRange() {
-  const fin = new Date();
-  const ini = new Date(fin);
-  ini.setDate(ini.getDate() - 6);
+function defaultRange(timeZone) {
+  const hasta = ymdInTimeZone(new Date(), timeZone);
   return {
-    desde: ini.toISOString().slice(0, 10),
-    hasta: fin.toISOString().slice(0, 10)
+    desde: addDaysYmd(hasta, -6),
+    hasta
   };
 }
 
@@ -37,13 +36,14 @@ function fmtMin(m) {
 
 async function showRegistroJornada(req, res) {
   const { empresa, error } = await requireEmpresaForTenant(req);
-  const defaults = defaultRange();
+  const zona = await zonaDeSubsidiariaId(sessionSubsidiariaId(req));
+  const defaults = defaultRange(zona);
   const desdeStr = trimString(req.query.desde) || defaults.desde;
   const hastaStr = trimString(req.query.hasta) || defaults.hasta;
   const empleadoId = parseOptionalObjectId(req.query.empleadoId);
 
-  const fechaInicio = startOfDay(parseDateTimeLocal(`${desdeStr}T12:00`) || new Date());
-  const fechaFin = endOfDay(parseDateTimeLocal(`${hastaStr}T12:00`) || new Date());
+  const fechaInicio = startOfDay(parseDateTimeLocal(`${desdeStr}T12:00`, zona) || new Date());
+  const fechaFin = endOfDay(parseDateTimeLocal(`${hastaStr}T12:00`, zona) || new Date());
 
   const Empleado = await getEmpleadoModel();
   const empQ = scopeEmpleadosFromReq(req, empresa, { soloActivos: true }) || {

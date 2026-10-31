@@ -16,7 +16,8 @@ const {
 } = require('../services/vacacionesService');
 const { contarDiasVacaciones } = require('../services/calendarioLaboralService');
 const { parseOptionalObjectId, trimString, parseDate, toDateInputValue } = require('../libs/formHelpers');
-const { startOfDay, endOfDay, formatTimeHHMM, DEFAULT_TZ } = require('../libs/timeHelpers');
+const { startOfDay, endOfDay, formatTimeHHMM, ymdAncla, ymdInTimeZone } = require('../libs/timeHelpers');
+const { zonaDeSubsidiariaId } = require('../services/zonaHorariaService');
 const { ESTATUS_INCIDENCIA } = require('../config/incidenciasCatalog');
 const { ESTATUS_DIARIO } = require('../config/asistencia');
 const { getAsignacionActiva } = require('../services/turnoResolverService');
@@ -60,7 +61,8 @@ async function portalHome(req, res) {
 
 async function portalAsistencia(req, res) {
   const empleado = req.empleado;
-  const mes = trimString(req.query.mes) || new Date().toISOString().slice(0, 7);
+  const zona = await zonaDeSubsidiariaId(empleado?.subsidiariaId);
+  const mes = trimString(req.query.mes) || ymdInTimeZone(new Date(), zona).slice(0, 7);
   const diaSel = trimString(req.query.dia) || '';
   const [year, month] = mes.split('-').map(Number);
   const desde = new Date(year, month - 1, 1);
@@ -112,14 +114,14 @@ async function portalAsistencia(req, res) {
 
   const authByFecha = new Map();
   for (const a of autorizaciones) {
-    const k = startOfDay(a.fecha).toISOString().slice(0, 10);
+    const k = ymdAncla(a.fecha, zona);
     if (!authByFecha.has(k)) authByFecha.set(k, []);
     authByFecha.get(k).push(a);
   }
 
   const marcByFecha = new Map();
   for (const m of marcaciones) {
-    const k = startOfDay(m.fecha).toISOString().slice(0, 10);
+    const k = ymdAncla(m.fecha, zona);
     if (!marcByFecha.has(k)) marcByFecha.set(k, []);
     marcByFecha.get(k).push(m);
   }
@@ -146,17 +148,18 @@ async function portalAsistencia(req, res) {
 
   let diaDetalle = null;
   if (diaSel) {
-    const diaDate = startOfDay(parseDate(diaSel) || new Date(`${diaSel}T12:00`));
-    const ymd = diaDate.toISOString().slice(0, 10);
+    const diaDate = parseDate(diaSel) || new Date(`${diaSel}T12:00:00.000Z`);
+    const ymd = ymdAncla(diaDate, zona);
     diaDetalle = {
       ymd,
-      label: diaDate.toLocaleDateString('es-MX', {
+      label: new Intl.DateTimeFormat('es-MX', {
+        timeZone: zona,
         weekday: 'long',
         year: 'numeric',
         month: 'long',
         day: 'numeric'
-      }),
-      resumen: resumenes.find((r) => startOfDay(r.fecha).toISOString().slice(0, 10) === ymd) || null,
+      }).format(new Date(`${ymd}T12:00:00.000Z`)),
+      resumen: resumenes.find((r) => ymdAncla(r.fecha, zona) === ymd) || null,
       marcaciones: marcByFecha.get(ymd) || [],
       autorizaciones: authByFecha.get(ymd) || []
     };
@@ -188,7 +191,7 @@ async function portalAsistencia(req, res) {
     metodoLabel,
     authEstadoLabel,
     authTipoLabel,
-    formatTimeHHMM,
+    formatTimeHHMM: (d) => formatTimeHHMM(d, zona),
     estatusLabels: ESTATUS_DIARIO,
     session: req.session
   });
@@ -371,7 +374,7 @@ async function portalPreviewDiasVacacion(req, res) {
       subsidiariaId: emp.subsidiariaId || null,
       fechaInicio,
       fechaFin,
-      timeZone: DEFAULT_TZ
+      timeZone: await zonaDeSubsidiariaId(emp?.subsidiariaId)
     });
     return res.json({ ok: true, dias, detalle });
   } catch (err) {

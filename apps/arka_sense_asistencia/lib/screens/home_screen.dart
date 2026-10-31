@@ -12,6 +12,7 @@ import '../services/device_id_service.dart';
 import '../services/location_service.dart';
 import '../services/notification_inbox.dart';
 import '../services/punch_local_store.dart';
+import '../services/reloj_subsidiaria.dart';
 import '../services/reminder_scheduler.dart';
 import 'history_screen.dart';
 import 'liveness_screen.dart';
@@ -153,11 +154,12 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  String _fmtHoraIso(String? iso) {
-    if (iso == null || iso.isEmpty) return '—';
-    final d = DateTime.tryParse(iso)?.toLocal();
-    if (d == null) return '—';
-    return DateFormat.Hm().format(d);
+  String? get _zona =>
+      _hoy?['zonaHoraria']?.toString() ??
+      (_hoy?['reloj'] as Map?)?['zonaHoraria']?.toString();
+
+  String _fmtHoraIso(String? iso, {String? ya}) {
+    return RelojSubsidiaria.hora(iso, _zona, yaFormateada: ya);
   }
 
   String _labelTipo(String value) {
@@ -171,7 +173,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   String _saludo() {
-    final h = DateTime.now().hour;
+    final h = RelojSubsidiaria.horaDeReloj(_hoy?['reloj'] as Map<String, dynamic>?);
     if (h < 12) return '¡Buenos días';
     if (h < 19) return '¡Buenas tardes';
     return '¡Buenas noches';
@@ -180,10 +182,10 @@ class _HomeScreenState extends State<HomeScreen> {
   bool get _enTurnoAhora {
     final horario = _hoy?['horario'] as Map<String, dynamic>?;
     if (horario == null || horario['esDescanso'] == true) return false;
-    final ini = DateTime.tryParse('${horario['entradaProgramada']}')?.toLocal();
-    final fin = DateTime.tryParse('${horario['salidaProgramada']}')?.toLocal();
+    final ini = DateTime.tryParse('${horario['entradaProgramada']}')?.toUtc();
+    final fin = DateTime.tryParse('${horario['salidaProgramada']}')?.toUtc();
     if (ini == null || fin == null) return false;
-    final now = DateTime.now();
+    final now = DateTime.now().toUtc();
     // Holgura ±30 min para el semáforo
     return now.isAfter(ini.subtract(const Duration(minutes: 30))) &&
         now.isBefore(fin.add(const Duration(minutes: 30)));
@@ -248,7 +250,7 @@ class _HomeScreenState extends State<HomeScreen> {
           SnackBar(
             content: Text(
               (serverMsg != null && serverMsg.isNotEmpty)
-                  ? serverMsg
+                  ? '$serverMsg${((res['marcacion'] as Map?)?['hora']?.toString().isNotEmpty ?? false) ? ' · ${(res['marcacion'] as Map)['hora']}' : ''}'
                   : 'Registrado: ${_labelTipo(tipo)}'
                       ' · ${(live.confidenceScore * 100).toStringAsFixed(0)}%'
                       '${fuera ? ' · fuera de zona' : (site != null && site.isNotEmpty ? ' · $site' : '')}',
@@ -322,10 +324,12 @@ class _HomeScreenState extends State<HomeScreen> {
     final firstName = auth.displayName.split(' ').first;
     final horario = _hoy?['horario'] as Map<String, dynamic>?;
     final turno = horario?['turno'] as Map<String, dynamic>?;
-    final fechaTxt = DateFormat('EEE d MMM y').format(DateTime.now());
+    final reloj = _hoy?['reloj'] as Map<String, dynamic>?;
+    final fechaTxt = RelojSubsidiaria.fechaDesdeYmd(reloj?['fecha']?.toString() ?? _hoy?['fecha']?.toString());
+    final fechaVisible = fechaTxt.isEmpty ? DateFormat('EEE d MMM y').format(DateTime.now()) : fechaTxt;
 
     final pages = <Widget>[
-      _buildInicio(auth, firstName, fechaTxt, horario, turno),
+      _buildInicio(auth, firstName, fechaVisible, horario, turno),
       const HistoryScreen(),
       if (auth.vacacionesEnabled) const VacacionesScreen(),
       if (auth.recibosEnabled) const RecibosScreen(),
@@ -506,8 +510,8 @@ class _HomeScreenState extends State<HomeScreen> {
                       if (horario != null && horario['esDescanso'] != true) ...[
                         const SizedBox(height: 10),
                         Text(
-                          'Entrada ${_fmtHoraIso(horario['entradaProgramada']?.toString())}'
-                          '  ·  Salida ${_fmtHoraIso(horario['salidaProgramada']?.toString())}',
+                          'Entrada ${_fmtHoraIso(horario['entradaProgramada']?.toString(), ya: horario['entradaHora']?.toString())}'
+                          '  ·  Salida ${_fmtHoraIso(horario['salidaProgramada']?.toString(), ya: horario['salidaHora']?.toString())}',
                           style: const TextStyle(color: Colors.white70, fontSize: 13),
                         ),
                       ],
@@ -675,8 +679,11 @@ class _HomeScreenState extends State<HomeScreen> {
   String _ultimaActividadTxt() {
     if (_marcaciones.isEmpty) return 'Sin marcaciones aún hoy';
     final last = _marcaciones.last;
-    final ts = DateTime.tryParse('${last['timestamp']}');
-    final hora = ts != null ? DateFormat.Hm().format(ts.toLocal()) : '—';
+    final hora = RelojSubsidiaria.hora(
+      last['timestamp'],
+      last['zonaHoraria']?.toString() ?? _zona,
+      yaFormateada: last['hora']?.toString(),
+    );
     return 'Última: ${_labelTipo('${last['tipoMarcacion']}')} · $hora';
   }
 

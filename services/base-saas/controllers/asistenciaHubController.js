@@ -6,6 +6,7 @@ const getDailyAttendanceModel = require('../models/dailyAttendance');
 const { requireEmpresaForTenant, scopeEmpleadosFromReq, sessionSubsidiariaId } = require('../libs/tenantScope');
 const { parseOptionalObjectId, trimString } = require('../libs/formHelpers');
 const { parseDateTimeLocal, startOfDay, endOfDay, formatTimeHHMM } = require('../libs/timeHelpers');
+const { contextoFecha, zonaDeSubsidiariaId } = require('../services/zonaHorariaService');
 const { resolveAsistenciaScope } = require('../libs/portalSession');
 const {
   listPendientes,
@@ -36,8 +37,9 @@ async function idsEmpleadosSesion(req, empresa) {
 async function showHub(req, res) {
   const { empresa, error } = await requireEmpresaForTenant(req);
   const scope = await resolveAsistenciaScope(req);
-  const fechaStr = trimString(req.query.fecha) || new Date().toISOString().slice(0, 10);
-  const fecha = startOfDay(parseDateTimeLocal(`${fechaStr}T12:00`) || new Date());
+  const ctx = await contextoFecha(req.query.fecha, sessionSubsidiariaId(req));
+  const fechaStr = ctx.ymd;
+  const fecha = ctx.desde;
 
   const Empleado = await getEmpleadoModel();
   const DailyAttendance = await getDailyAttendanceModel();
@@ -264,7 +266,8 @@ async function solicitarCambioTurnoAction(req, res) {
   try {
     const scope = await resolveAsistenciaScope(req);
     const empleadoId = parseOptionalObjectId(req.body.empleadoId);
-    const fecha = parseDateTimeLocal(`${trimString(req.body.fecha)}T12:00`);
+    const zona = await zonaDeSubsidiariaId(sessionSubsidiariaId(req));
+    const fecha = parseDateTimeLocal(`${trimString(req.body.fecha)}T12:00`, zona);
     const turnoPropuestoId = parseOptionalObjectId(req.body.turnoPropuestoId);
     const esDescanso = trimString(req.body.esDescanso) === '1';
     const motivo = trimString(req.body.motivo);

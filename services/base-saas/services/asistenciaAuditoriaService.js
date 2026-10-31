@@ -10,6 +10,7 @@ function snapshotMarcacion(doc) {
     fecha: doc.fecha || null,
     timestamp: doc.timestamp || null,
     timestampOriginal: doc.timestampOriginal || null,
+    zonaHoraria: doc.zonaHoraria || '',
     tipoMarcacion: doc.tipoMarcacion || '',
     metodo: doc.metodo || '',
     estado: doc.estado || 'activa',

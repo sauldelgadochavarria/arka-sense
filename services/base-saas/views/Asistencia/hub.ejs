@@ -7,7 +7,7 @@
     <% if (scope && scope.mode === 'supervisor') { %>
     Vista de <strong>supervisor</strong>: tu equipo y autorizaciones pendientes.
     <% } else { %>
-    Centro operativo: captura, calificación, evidencia y topes de jornada.
+    Sigue los pasos de arriba: marcaciones, día, autorizar, evidencia y jornada.
     <% } %>
   </p>
 </section>
@@ -44,17 +44,6 @@
   <div class="card"><strong><%= pendientesCount %></strong> por autorizar</div>
   <% } %>
 </div>
-
-<section class="card-block">
-  <h2>Hacer ahora</h2>
-  <div class="toolbar" style="flex-wrap:wrap;gap:.5rem">
-    <a class="btn" href="/asistencia-autorizaciones">2b. Autorizar pendientes</a>
-    <a class="btn" href="/asistencia-marcaciones?fecha=<%= fecha %>">1. Marcaciones</a>
-    <a class="btn" href="/asistencia-diaria?fecha=<%= fecha %>">2. Asistencia del día</a>
-    <a class="btn" href="/asistencia-intentos?fecha=<%= fecha %>">3. Intentos / evidencia</a>
-    <a class="btn" href="/asistencia-registro-jornada?desde=<%= fecha %>&amp;hasta=<%= fecha %>">4. Registro de jornada</a>
-  </div>
-</section>
 
 <% if (pendientes && pendientes.length) { %>
 <section class="card-block">

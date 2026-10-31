@@ -38,9 +38,16 @@ function labelModoTolerancia(modo, modos) {
   return found ? found.value : modo || 'normal';
 }
 
-function isTimestampInHolgura(timestamp, fecha, horaReferencia, holguraAntesMin, holguraDespuesMin) {
+function isTimestampInHolgura(
+  timestamp,
+  fecha,
+  horaReferencia,
+  holguraAntesMin,
+  holguraDespuesMin,
+  timeZone
+) {
   if (!timestamp || !horaReferencia) return false;
-  const center = applyTimeToDate(fecha, horaReferencia);
+  const center = applyTimeToDate(fecha, horaReferencia, timeZone);
   if (!center) return false;
   const antes = holguraAntesMin ?? 180;
   const despues = holguraDespuesMin ?? 180;

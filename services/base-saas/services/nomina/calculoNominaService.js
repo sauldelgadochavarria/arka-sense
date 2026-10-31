@@ -216,9 +216,13 @@ async function calcularReciboEmpleado(
     semanaDelMes
   } = require('../../libs/periodoPrestacionesFlags');
   const { resolverTablaPrestaciones } = require('../sdiCalculoService');
+  const { zonaDeSubsidiariaId } = require('../zonaHorariaService');
+  const zonaPeriodo = await zonaDeSubsidiariaId(
+    periodo.subsidiariaId || empleado.subsidiariaId
+  );
   const flagsCal = {
-    esSegundaQuincena: esSegundaQuincena(periodo.fechaInicio),
-    semanaDelMes: semanaDelMes(periodo.fechaInicio)
+    esSegundaQuincena: esSegundaQuincena(periodo.fechaInicio, zonaPeriodo),
+    semanaDelMes: semanaDelMes(periodo.fechaInicio, zonaPeriodo)
   };
 
   let tablaPrestaciones = null;

@@ -17,8 +17,12 @@ const {
   startOfDay,
   endOfDay,
   calendarDateInTimeZone,
-  DEFAULT_TZ
+  parseFechaCalendario,
+  ymdInTimeZone,
+  addDaysYmd,
+  relojEnZona
 } = require('../libs/timeHelpers');
+const { zonaDeSubsidiariaId, normalizarZona } = require('../services/zonaHorariaService');
 const getSubsidiariaModel = require('../models/subsidiaria');
 const { recalculateDailyAttendance } = require('../services/attendanceProcessingService');
 const {
@@ -102,21 +106,22 @@ function sugerirTipoMarcacion(tiposHoy = []) {
   return 'entrada';
 }
 
-/** Zona de la subsidiaria del empleado. El contenedor corre en UTC. */
-async function zonaHorariaDeEmpleado(empleado) {
-  let zonaHoraria = DEFAULT_TZ;
-  if (empleado?.subsidiariaId) {
-    const Subsidiaria = await getSubsidiariaModel();
-    const sub = await Subsidiaria.findById(empleado.subsidiariaId).select('zonaHoraria').lean();
-    if (sub?.zonaHoraria) zonaHoraria = sub.zonaHoraria;
-  }
-  return zonaHoraria;
+/** Mediodía UTC del día laboral en la zona de la subsidiaria. */
+async function fechaLaboralMovil(empleado, ahora = new Date()) {
+  const zonaHoraria = await zonaDeSubsidiariaId(empleado?.subsidiariaId);
+  return { fecha: calendarDateInTimeZone(ahora, zonaHoraria), zonaHoraria };
 }
 
-/** Mediodía UTC del día laboral. Así la consulta de hoy coincide con la marcación. */
-async function fechaLaboralMovil(empleado, ahora = new Date()) {
-  const zonaHoraria = await zonaHorariaDeEmpleado(empleado);
-  return calendarDateInTimeZone(ahora, zonaHoraria);
+/** Hora que debe pintar la app: reloj de la subsidiaria, no el del teléfono. */
+function marcacionMovilJson(m, zonaFallback) {
+  const zona = normalizarZona(m.zonaHoraria || zonaFallback);
+  const reloj = relojEnZona(m.timestamp, zona);
+  return {
+    hora: reloj.hora,
+    fechaLocal: reloj.fecha,
+    fechaHora: reloj.fechaHora,
+    zonaHoraria: zona
+  };
 }
 
 router.get('/health', (_req, res) => {
@@ -343,7 +348,8 @@ router.get('/asistencia/hoy', requireMobileAuth, async (req, res) => {
 
     // Mismo día que POST /marcar (zona de la subsidiaria). startOfDay(ahora) en UTC
     // cambia de día a las 18:00 México y la app deja de ver la entrada.
-    const fecha = await fechaLaboralMovil(empleado, ahora);
+    const { fecha, zonaHoraria } = await fechaLaboralMovil(empleado, ahora);
+    const reloj = relojEnZona(ahora, zonaHoraria);
 
     const marcaciones = await AttendanceRecord.find({
       tenantId: req.mobileAuth.tenantId,
@@ -363,7 +369,7 @@ router.get('/asistencia/hoy', requireMobileAuth, async (req, res) => {
       const turno = resolved.turno;
       const esDescanso = Boolean(resolved.esDescansoForzado) || !turno;
       if (!esDescanso && turno) {
-        const prog = programacionDelDia(fecha, turno);
+        const prog = programacionDelDia(fecha, turno, zonaHoraria);
         horarioHoy = {
           esDescanso: false,
           origen: resolved.origen,
@@ -376,7 +382,9 @@ router.get('/asistencia/hoy', requireMobileAuth, async (req, res) => {
           entradaProgramada: prog.entradaProgramada
             ? prog.entradaProgramada.toISOString()
             : null,
-          salidaProgramada: prog.salidaProgramada ? prog.salidaProgramada.toISOString() : null
+          salidaProgramada: prog.salidaProgramada ? prog.salidaProgramada.toISOString() : null,
+          entradaHora: turno.horaEntrada,
+          salidaHora: turno.horaSalida
         };
       } else {
         horarioHoy = { esDescanso: true, origen: resolved.origen || 'ninguno', turno: null };
@@ -385,8 +393,10 @@ router.get('/asistencia/hoy', requireMobileAuth, async (req, res) => {
 
     return res.json({
       ok: true,
-      fecha: fecha.toISOString().slice(0, 10),
+      fecha: reloj.fecha,
       ahora: ahora.toISOString(),
+      zonaHoraria,
+      reloj,
       sugerido,
       jornadaCompleta: sugerido == null,
       tiposMarcacion: TIPOS_MARCACION,
@@ -396,7 +406,8 @@ router.get('/asistencia/hoy', requireMobileAuth, async (req, res) => {
         tipoMarcacion: m.tipoMarcacion,
         timestamp: m.timestamp,
         metodo: m.metodo,
-        ubicacion: m.ubicacion || null
+        ubicacion: m.ubicacion || null,
+        ...marcacionMovilJson(m, zonaHoraria)
       }))
     });
   } catch (err) {
@@ -436,6 +447,8 @@ router.get('/asistencia/horario', requireMobileAuth, async (req, res) => {
  */
 router.post('/asistencia/marcar', requireMobileAuth, async (req, res) => {
   try {
+    // Hora oficial: reloj del servidor en la zona de la subsidiaria.
+    // Un timestamp que envíe el teléfono no se usa.
     const ahora = new Date();
     const AttendanceRecord = await getAttendanceRecordModel();
     const Empleado = await getEmpleadoModel();
@@ -448,8 +461,7 @@ router.post('/asistencia/marcar', requireMobileAuth, async (req, res) => {
       return jsonError(res, 403, 'Empleado no encontrado o inactivo');
     }
 
-    // Día laboral según zona de la subsidiaria (no UTC del contenedor)
-    const fecha = await fechaLaboralMovil(empleado, ahora);
+    const { fecha, zonaHoraria } = await fechaLaboralMovil(empleado, ahora);
 
     const existentes = await AttendanceRecord.find({
       tenantId: req.mobileAuth.tenantId,
@@ -657,6 +669,7 @@ router.post('/asistencia/marcar', requireMobileAuth, async (req, res) => {
       timestamp: ahora,
       timestampOriginal: ahora,
       servidorRegisteredAt: ahora,
+      zonaHoraria,
       tipoMarcacion,
       metodo: 'movil',
       registradoPorUserId: req.mobileAuth.userId,
@@ -771,6 +784,8 @@ router.post('/asistencia/marcar', requireMobileAuth, async (req, res) => {
         numEmpleado: empleado.numEmpleado || '',
         nombre: quien
       },
+      zonaHoraria,
+      reloj: relojEnZona(ahora, zonaHoraria),
       marcacion: {
         id: String(created._id),
         tipoMarcacion: created.tipoMarcacion,
@@ -778,7 +793,8 @@ router.post('/asistencia/marcar', requireMobileAuth, async (req, res) => {
         metodo: created.metodo,
         ubicacion: created.ubicacion,
         geocerca: created.geocerca,
-        biometria: created.biometria
+        biometria: created.biometria,
+        ...marcacionMovilJson(created, zonaHoraria)
       },
       geocerca: {
         fueraDeZona: Boolean(geo.fueraDeZona),
@@ -809,29 +825,44 @@ router.post('/asistencia/marcar', requireMobileAuth, async (req, res) => {
  */
 router.get('/asistencia/historial', requireMobileAuth, async (req, res) => {
   try {
+    const Empleado = await getEmpleadoModel();
+    const empleado = await Empleado.findOne({
+      _id: req.mobileAuth.empleadoId,
+      tenantId: req.mobileAuth.tenantId
+    })
+      .select('subsidiariaId')
+      .lean();
+    const zonaHoraria = await zonaDeSubsidiariaId(empleado?.subsidiariaId);
+
     let desde;
     let hasta;
+    let desdeYmd;
+    let hastaYmd;
     const desdeQ = String(req.query.desde || '').trim();
     const hastaQ = String(req.query.hasta || '').trim();
     if (desdeQ && hastaQ) {
-      const d0 = new Date(`${desdeQ}T00:00:00`);
-      const d1 = new Date(`${hastaQ}T00:00:00`);
-      if (Number.isNaN(d0.getTime()) || Number.isNaN(d1.getTime())) {
+      const d0 = parseFechaCalendario(desdeQ, zonaHoraria);
+      const d1 = parseFechaCalendario(hastaQ, zonaHoraria);
+      if (!d0 || !d1) {
         return jsonError(res, 400, 'Fechas inválidas (usa YYYY-MM-DD)', 'BAD_DATES');
       }
       desde = startOfDay(d0);
       hasta = endOfDay(d1);
+      desdeYmd = ymdInTimeZone(d0, zonaHoraria);
+      hastaYmd = ymdInTimeZone(d1, zonaHoraria);
       const spanMs = hasta.getTime() - desde.getTime();
       if (spanMs < 0) {
         return jsonError(res, 400, 'desde no puede ser mayor que hasta', 'BAD_RANGE');
       }
-      if (spanMs > 90 * 24 * 60 * 60 * 1000) {
+      if (spanMs > 92 * 24 * 60 * 60 * 1000) {
         return jsonError(res, 400, 'El rango máximo es 90 días', 'RANGE_TOO_LONG');
       }
     } else {
       const dias = Math.min(90, Math.max(1, Number(req.query.dias) || 14));
-      hasta = endOfDay(new Date());
-      desde = startOfDay(new Date(Date.now() - (dias - 1) * 24 * 60 * 60 * 1000));
+      hastaYmd = ymdInTimeZone(new Date(), zonaHoraria);
+      desdeYmd = addDaysYmd(hastaYmd, -(dias - 1));
+      desde = startOfDay(parseFechaCalendario(desdeYmd, zonaHoraria));
+      hasta = endOfDay(parseFechaCalendario(hastaYmd, zonaHoraria));
     }
 
     const AttendanceRecord = await getAttendanceRecordModel();
@@ -847,14 +878,17 @@ router.get('/asistencia/historial', requireMobileAuth, async (req, res) => {
 
     return res.json({
       ok: true,
-      desde: desde.toISOString().slice(0, 10),
-      hasta: hasta.toISOString().slice(0, 10),
+      desde: desdeYmd,
+      hasta: hastaYmd,
+      zonaHoraria,
+      reloj: relojEnZona(new Date(), zonaHoraria),
       marcaciones: rows.map((m) => ({
         id: String(m._id),
         fecha: m.fecha,
         tipoMarcacion: m.tipoMarcacion,
         timestamp: m.timestamp,
         timestampOriginal: m.timestampOriginal || null,
+        ...marcacionMovilJson(m, zonaHoraria),
         servidorRegisteredAt: m.servidorRegisteredAt || null,
         metodo: m.metodo,
         estado: m.estado || 'activa',
@@ -962,16 +996,17 @@ router.get('/vacaciones/saldo', requireMobileAuth, async (req, res) => {
 router.get('/vacaciones/preview-dias', requireMobileAuth, async (req, res) => {
   try {
     const empleado = await assertVacacionesMobile(req);
-    const inicio = new Date(req.query.inicio || req.query.fechaInicio);
-    const fin = new Date(req.query.fin || req.query.fechaFin || req.query.inicio);
-    if (Number.isNaN(inicio.getTime())) return jsonError(res, 400, 'Fechas inválidas');
+    const zona = await zonaDeSubsidiariaId(empleado.subsidiariaId);
+    const inicio = parseFechaCalendario(req.query.inicio || req.query.fechaInicio, zona);
+    const fin = parseFechaCalendario(req.query.fin || req.query.fechaFin || req.query.inicio, zona);
+    if (!inicio) return jsonError(res, 400, 'Fechas inválidas');
     const { dias, detalle } = await contarDiasVacaciones({
       tenantId: req.mobileAuth.tenantId,
       empresaId: empleado.empresaId || null,
       subsidiariaId: empleado.subsidiariaId || null,
       fechaInicio: inicio,
-      fechaFin: fin,
-      timeZone: DEFAULT_TZ
+      fechaFin: fin || inicio,
+      timeZone: zona
     });
     return res.json({ ok: true, dias, detalle });
   } catch (err) {
@@ -982,11 +1017,15 @@ router.get('/vacaciones/preview-dias', requireMobileAuth, async (req, res) => {
 router.post('/vacaciones/solicitar', requireMobileAuth, async (req, res) => {
   try {
     const empleado = await assertVacacionesMobile(req);
+    const zona = await zonaDeSubsidiariaId(empleado.subsidiariaId);
+    const fechaInicio = parseFechaCalendario(req.body.fechaInicio, zona);
+    const fechaFin = parseFechaCalendario(req.body.fechaFin || req.body.fechaInicio, zona);
+    if (!fechaInicio) return jsonError(res, 400, 'Fechas inválidas');
     const doc = await crearSolicitudVacaciones({
       tenantId: req.mobileAuth.tenantId,
       empleado,
-      fechaInicio: new Date(req.body.fechaInicio),
-      fechaFin: new Date(req.body.fechaFin || req.body.fechaInicio),
+      fechaInicio,
+      fechaFin: fechaFin || fechaInicio,
       motivo: req.body.motivo,
       userId: req.mobileAuth.userId
     });

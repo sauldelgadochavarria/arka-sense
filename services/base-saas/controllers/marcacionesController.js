@@ -10,10 +10,17 @@ const {
   startOfDay,
   endOfDay,
   formatTimeHHMM,
-  DEFAULT_TZ,
-  ymdInTimeZone
+  ymdAncla,
+  calendarDateInTimeZone
 } = require('../libs/timeHelpers');
-const getSubsidiariaModel = require('../models/subsidiaria');
+const {
+  contextoFecha,
+  zonaDeSubsidiariaId,
+  normalizarZona,
+  mapaZonasPorSubsidiaria,
+  mapaZonaPorEmpleado,
+  zonaVisible
+} = require('../services/zonaHorariaService');
 const { TIPOS_MARCACION, METODOS_REGISTRO } = require('../config/asistencia');
 const { recalculateDailyAttendance } = require('../services/attendanceProcessingService');
 const {
@@ -89,11 +96,12 @@ async function completarZonas(tenantId, marcaciones) {
 
 async function listMarcaciones(req, res) {
   const { empresa, error } = await requireEmpresaForTenant(req);
-  const fechaStr = defaultFechaQuery(req);
-  const fecha = startOfDay(parseDateTimeLocal(`${fechaStr}T12:00`) || new Date());
+  const ctx = await contextoFecha(req.query.fecha, sessionSubsidiariaId(req));
+  const fechaStr = ctx.ymd;
+  const fecha = ctx.desde;
   const verAnuladas = trimString(req.query.anuladas) === '1';
   const empleadoFiltro = trimString(req.query.empleadoId) || '';
-  const mostrarCaptura = trimString(req.query.nueva) === '1' || Boolean(empleadoFiltro);
+  const mostrarCaptura = trimString(req.query.nueva) === '1';
   const empleadoPrefill = empleadoFiltro;
   const tipoPrefill = trimString(req.query.tipoMarcacion) || '';
 
@@ -171,6 +179,14 @@ async function listMarcaciones(req, res) {
     empleadosScope.map((e) => [String(e._id), `${e.firstName} ${e.lastName} (${e.numEmpleado})`])
   );
   const dailyMap = new Map(diariosScoped.map((d) => [String(d.empleadoId), d]));
+  const mapaSubs = await mapaZonasPorSubsidiaria(empleadosScope.map((e) => e.subsidiariaId));
+  const zonaPorEmp = mapaZonaPorEmpleado(empleadosScope, mapaSubs);
+  for (const m of marcacionesScoped) {
+    m.zonaHoraria = zonaVisible(m, zonaPorEmp, ctx.zona);
+  }
+  for (const b of bitacora) {
+    b.zonaHoraria = zonaVisible(b, zonaPorEmp, ctx.zona);
+  }
   await completarZonas(req.session.tenantId, marcacionesScoped);
 
   // Contar checadas activas por empleado+tipo (detectar duplicados)
@@ -250,19 +266,15 @@ async function showMarcacionDetalle(req, res) {
     })
   ]);
 
-  let zonaHoraria = DEFAULT_TZ;
-  const subId = marcacion.subsidiariaId || empleado?.subsidiariaId;
-  if (subId) {
-    const Subsidiaria = await getSubsidiariaModel();
-    const sub = await Subsidiaria.findById(subId).select('zonaHoraria nombre').lean();
-    if (sub?.zonaHoraria) zonaHoraria = sub.zonaHoraria;
-  }
+  const zonaHoraria = marcacion.zonaHoraria
+    ? normalizarZona(marcacion.zonaHoraria)
+    : await zonaDeSubsidiariaId(marcacion.subsidiariaId || empleado?.subsidiariaId);
   const formatTime = (d) => formatTimeHHMM(d, zonaHoraria);
   await completarZonas(req.session.tenantId, [marcacion]);
 
   const fechaStr = marcacion.fecha
-    ? ymdInTimeZone(marcacion.fecha, zonaHoraria)
-    : defaultFechaQuery(req);
+    ? ymdAncla(marcacion.fecha, zonaHoraria)
+    : (await contextoFecha('', sessionSubsidiariaId(req))).ymd;
 
   res.render('Asistencia/marcacion-detalle', {
     empresa,
@@ -282,8 +294,9 @@ async function showMarcacionDetalle(req, res) {
 
 async function listIntentosDia(req, res) {
   const { empresa, error } = await requireEmpresaForTenant(req);
-  const fechaStr = defaultFechaQuery(req);
-  const fecha = startOfDay(parseDateTimeLocal(`${fechaStr}T12:00`) || new Date());
+  const ctx = await contextoFecha(req.query.fecha, sessionSubsidiariaId(req));
+  const fechaStr = ctx.ymd;
+  const fecha = ctx.desde;
   const empleadoId = parseOptionalObjectId(req.query.empleadoId);
 
   const Empleado = await getEmpleadoModel();
@@ -308,6 +321,11 @@ async function listIntentosDia(req, res) {
     : [];
   const empIdSet = new Set(empleados.map((e) => String(e._id)));
   const intentos = intentosRaw.filter((i) => !i.empleadoId || empIdSet.has(String(i.empleadoId)));
+  const mapaSubs = await mapaZonasPorSubsidiaria(empleados.map((e) => e.subsidiariaId));
+  const zonaPorEmp = mapaZonaPorEmpleado(empleados, mapaSubs);
+  for (const intento of intentos) {
+    intento.zonaHoraria = zonaVisible(intento, zonaPorEmp, ctx.zona);
+  }
 
   res.render('Asistencia/intentos', {
     empresa,
@@ -338,25 +356,23 @@ async function createMarcacion(req, res) {
       req.body.usarHoraServidor === 'on' ||
       req.body.usarHoraServidor === true;
     const ahoraServidor = new Date();
-    const timestampForm = parseDateTimeLocal(req.body.timestamp);
     const motivoHoraManual = trimString(req.body.motivoHoraManual);
 
     if (!empleadoId || !tipoMarcacion) {
+      const hoy = await contextoFecha(req.query.fecha, sessionSubsidiariaId(req));
       req.flash('error', 'Empleado y tipo de marcación son obligatorios');
-      return res.redirect(`/asistencia-marcaciones?fecha=${defaultFechaQuery(req)}`);
+      return res.redirect(`/asistencia-marcaciones?fecha=${hoy.ymd}`);
     }
 
-    let timestamp = usarHoraServidor ? ahoraServidor : timestampForm;
-    if (!usarHoraServidor) {
-      if (!timestampForm) {
-        req.flash('error', 'Indica fecha/hora o marca «Usar hora del servidor»');
-        return res.redirect(`/asistencia-marcaciones?fecha=${defaultFechaQuery(req)}`);
-      }
-      if (!motivoHoraManual) {
-        req.flash('error', 'Motivo obligatorio al capturar hora distinta a la del servidor');
-        return res.redirect(`/asistencia-marcaciones?fecha=${defaultFechaQuery(req)}`);
-      }
-      timestamp = timestampForm;
+    if (!usarHoraServidor && !trimString(req.body.timestamp)) {
+      const hoy = await contextoFecha(req.query.fecha, sessionSubsidiariaId(req));
+      req.flash('error', 'Indica fecha/hora o marca «Usar hora del servidor»');
+      return res.redirect(`/asistencia-marcaciones?fecha=${hoy.ymd}`);
+    }
+    if (!usarHoraServidor && !motivoHoraManual) {
+      const hoy = await contextoFecha(req.query.fecha, sessionSubsidiariaId(req));
+      req.flash('error', 'Motivo obligatorio al capturar hora distinta a la del servidor');
+      return res.redirect(`/asistencia-marcaciones?fecha=${hoy.ymd}`);
     }
 
     const Empleado = await getEmpleadoModel();
@@ -370,11 +386,19 @@ async function createMarcacion(req, res) {
       ...empQ
     }).lean();
     if (!empleado) {
+      const hoy = await contextoFecha(req.query.fecha, sessionSubsidiariaId(req));
       req.flash('error', 'Empleado no encontrado en la subsidiaria activa o inactivo');
-      return res.redirect(`/asistencia-marcaciones?fecha=${defaultFechaQuery(req)}`);
+      return res.redirect(`/asistencia-marcaciones?fecha=${hoy.ymd}`);
     }
 
-    const fecha = startOfDay(timestamp);
+    const zona = await zonaDeSubsidiariaId(empleado.subsidiariaId);
+    const timestampForm = usarHoraServidor ? null : parseDateTimeLocal(req.body.timestamp, zona);
+    if (!usarHoraServidor && !timestampForm) {
+      req.flash('error', 'La fecha y hora no son válidas');
+      return res.redirect(`/asistencia-marcaciones?fecha=${ymdAncla(new Date(), zona)}`);
+    }
+    const timestamp = usarHoraServidor ? ahoraServidor : timestampForm;
+    const fecha = calendarDateInTimeZone(timestamp, zona);
     const AttendanceRecord = await getAttendanceRecordModel();
     const actor = sessionActor(req);
     const notasBase = trimString(req.body.notas);
@@ -394,6 +418,7 @@ async function createMarcacion(req, res) {
       timestamp,
       timestampOriginal: timestamp,
       servidorRegisteredAt: ahoraServidor,
+      zonaHoraria: zona,
       tipoMarcacion,
       metodo: trimString(req.body.metodo) || 'manual',
       registradoPorUserId: actor.userId,
@@ -441,7 +466,7 @@ async function createMarcacion(req, res) {
       'success',
       `Marcación registrada. Asistencia del día: ${estatusTxt}.${hint}`
     );
-    const ymd = fecha.toISOString().slice(0, 10);
+    const ymd = ymdAncla(fecha, zona);
     res.redirect(`/asistencia-marcaciones?fecha=${ymd}&empleadoId=${empleadoId}`);
   } catch (err) {
     console.error('[marcaciones]', err);
@@ -462,7 +487,6 @@ async function ajustarMarcacion(req, res) {
 
     const id = parseOptionalObjectId(req.params.id);
     const motivo = trimString(req.body.motivo);
-    const timestamp = parseDateTimeLocal(req.body.timestamp);
     const tipoMarcacion = trimString(req.body.tipoMarcacion);
 
     if (!id || !motivo) {
@@ -488,11 +512,25 @@ async function ajustarMarcacion(req, res) {
     const antes = snapshotMarcacion(doc.toObject());
     const actor = sessionActor(req);
     const horaAntes = antes.timestamp;
+    const Empleado = await getEmpleadoModel();
+    const empleadoZona = await Empleado.findOne({
+      _id: doc.empleadoId,
+      tenantId: req.session.tenantId
+    })
+      .select('subsidiariaId')
+      .lean();
+    const zona = doc.zonaHoraria
+      ? normalizarZona(doc.zonaHoraria)
+      : await zonaDeSubsidiariaId(doc.subsidiariaId || empleadoZona?.subsidiariaId);
+    const timestamp = trimString(req.body.timestamp)
+      ? parseDateTimeLocal(req.body.timestamp, zona)
+      : null;
 
     if (timestamp) {
       doc.timestamp = timestamp;
-      doc.fecha = startOfDay(timestamp);
+      doc.fecha = calendarDateInTimeZone(timestamp, zona);
     }
+    if (!doc.zonaHoraria) doc.zonaHoraria = zona;
     if (tipoMarcacion) doc.tipoMarcacion = tipoMarcacion;
     // Conservar siempre la primera hora original (no pisar en ajustes sucesivos)
     if (!doc.timestampOriginal) {
@@ -513,7 +551,7 @@ async function ajustarMarcacion(req, res) {
       empleadoId: doc.empleadoId,
       fechaJornada: doc.fecha,
       ...auditMeta(req),
-      mensaje: `Ajuste ${doc.tipoMarcacion}: ${formatTimeHHMM(horaAntes)} → ${formatTimeHHMM(doc.timestamp)}`,
+      mensaje: `Ajuste ${doc.tipoMarcacion}: ${formatTimeHHMM(horaAntes, zona)} → ${formatTimeHHMM(doc.timestamp, zona)}`,
       motivo,
       antes,
       despues: snapshotMarcacion(doc.toObject()),
@@ -544,15 +582,15 @@ async function ajustarMarcacion(req, res) {
       .lean();
 
     let flash =
-      `Marcación ajustada (${formatTimeHHMM(horaAntes)} → ${formatTimeHHMM(doc.timestamp)}). Motivo y bitácora registrados.`;
+      `Marcación ajustada (${formatTimeHHMM(horaAntes, zona)} → ${formatTimeHHMM(doc.timestamp, zona)}). Motivo y bitácora registrados.`;
     if (mismas.length) {
-      const horas = mismas.map((m) => formatTimeHHMM(m.timestamp)).join(', ');
+      const horas = mismas.map((m) => formatTimeHHMM(m.timestamp, zona)).join(', ');
       flash += ` Atención: hay ${mismas.length} ${doc.tipoMarcacion}(s) activa(s) más (${horas}). El día usa la última; anúlalas si no aplican.`;
     }
 
     req.flash('success', flash);
     res.redirect(
-      `/asistencia-marcaciones?fecha=${doc.fecha.toISOString().slice(0, 10)}&empleadoId=${doc.empleadoId}`
+      `/asistencia-marcaciones?fecha=${ymdAncla(doc.fecha, zona)}&empleadoId=${doc.empleadoId}`
     );
   } catch (err) {
     console.error('[marcaciones.ajustar]', err);

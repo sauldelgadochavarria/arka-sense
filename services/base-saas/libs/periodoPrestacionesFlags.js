@@ -1,13 +1,13 @@
 'use strict';
 
-const { ymdInTimeZone, DEFAULT_TZ } = require('./timeHelpers');
+const { ymdAncla, DEFAULT_TZ } = require('./timeHelpers');
 
 /**
  * Flags de calendario para prestaciones de pago mensual
  * (despensa en 2ª quincena / 3ª semana).
  */
 function diaDelMesEnTz(date, timeZone = DEFAULT_TZ) {
-  const ymd = ymdInTimeZone(date, timeZone);
+  const ymd = ymdAncla(date, timeZone);
   return Number(String(ymd).slice(8, 10)) || 0;
 }
 

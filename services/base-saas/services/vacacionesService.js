@@ -5,9 +5,9 @@ const getVacacionSaldoModel = require('../models/vacacionSaldo');
 const getVacacionSolicitudModel = require('../models/vacacionSolicitud');
 const getIncidenciaModel = require('../models/incidencia');
 const getTipoIncidenciaModel = require('../models/tipoIncidencia');
-const getSubsidiariaModel = require('../models/subsidiaria');
+const { zonaDeSubsidiariaId } = require('./zonaHorariaService');
 const { diasVacacionesPorAntiguedad, calcularAniosServicio } = require('../config/vacacionesLFT');
-const { startOfDay, DEFAULT_TZ } = require('../libs/timeHelpers');
+const { startOfDay } = require('../libs/timeHelpers');
 const { contarDiasVacaciones } = require('./calendarioLaboralService');
 const {
   notifySupervisorSolicitud,
@@ -15,10 +15,7 @@ const {
 } = require('./vacacionNotificacionService');
 
 async function resolveZonaHoraria(empleado) {
-  if (!empleado?.subsidiariaId) return DEFAULT_TZ;
-  const Subsidiaria = await getSubsidiariaModel();
-  const sub = await Subsidiaria.findById(empleado.subsidiariaId).select('zonaHoraria').lean();
-  return sub?.zonaHoraria || DEFAULT_TZ;
+  return zonaDeSubsidiariaId(empleado?.subsidiariaId);
 }
 
 async function recalcularSaldoEmpleado(tenantId, empleadoId, anio = new Date().getFullYear()) {

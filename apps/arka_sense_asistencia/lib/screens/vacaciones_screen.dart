@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../services/api_client.dart';
 import '../services/auth_state.dart';
+import '../services/reloj_subsidiaria.dart';
 
 class VacacionesScreen extends StatefulWidget {
   const VacacionesScreen({super.key});
@@ -228,7 +229,6 @@ class _VacacionesScreenState extends State<VacacionesScreen>
   }
 
   Widget _buildMisVacaciones(int disponibles) {
-    final fmt = DateFormat('d MMM y');
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(
@@ -298,16 +298,12 @@ class _VacacionesScreenState extends State<VacacionesScreen>
           ..._solicitudes.map((s) {
             final st = '${s['status'] ?? ''}';
             final id = '${s['_id'] ?? s['id'] ?? ''}';
-            final ini = DateTime.tryParse('${s['fechaInicio']}');
-            final fin = DateTime.tryParse('${s['fechaFin']}');
             final canCancel = st == 'PENDING' || st == 'APPROVED';
             return Card(
               color: const Color(0xFF12262C),
               child: ListTile(
                 title: Text(
-                  ini != null && fin != null
-                      ? '${fmt.format(ini.toLocal())} – ${fmt.format(fin.toLocal())}'
-                      : 'Periodo',
+                  '${RelojSubsidiaria.fechaCalendario(s['fechaInicio'])} – ${RelojSubsidiaria.fechaCalendario(s['fechaFin'])}',
                 ),
                 subtitle: Text('${s['diasSolicitados'] ?? '—'} días · $st'),
                 leading: Icon(Icons.beach_access, color: _statusColor(st)),
@@ -326,7 +322,6 @@ class _VacacionesScreenState extends State<VacacionesScreen>
   }
 
   Widget _buildAprobaciones() {
-    final fmt = DateFormat('d MMM');
     if (_pendientes.isEmpty) {
       return const Center(
         child: Text('No hay solicitudes pendientes de tu equipo.',
@@ -344,8 +339,6 @@ class _VacacionesScreenState extends State<VacacionesScreen>
               ? Map<String, dynamic>.from(p['empleado'] as Map)
               : null;
           final id = '${p['_id'] ?? p['id'] ?? ''}';
-          final ini = DateTime.tryParse('${p['fechaInicio']}');
-          final fin = DateTime.tryParse('${p['fechaFin']}');
           return Card(
             color: const Color(0xFF12262C),
             child: Padding(
@@ -358,9 +351,7 @@ class _VacacionesScreenState extends State<VacacionesScreen>
                     style: const TextStyle(fontWeight: FontWeight.w700),
                   ),
                   Text(
-                    ini != null && fin != null
-                        ? '${fmt.format(ini.toLocal())} – ${fmt.format(fin.toLocal())} · ${p['diasSolicitados']} días'
-                        : '',
+                    '${RelojSubsidiaria.fechaCalendario(p['fechaInicio'])} – ${RelojSubsidiaria.fechaCalendario(p['fechaFin'])} · ${p['diasSolicitados']} días',
                     style: const TextStyle(color: Colors.white70),
                   ),
                   if ('${p['motivo'] ?? ''}'.isNotEmpty)

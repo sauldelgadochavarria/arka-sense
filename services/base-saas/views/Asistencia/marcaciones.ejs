@@ -6,7 +6,8 @@
 <% } else {
   const empF = typeof empleadoFiltro !== 'undefined' ? empleadoFiltro : '';
   const tipoSel = (typeof tipoPrefill !== 'undefined' && tipoPrefill) ? tipoPrefill : (empF ? 'salida' : 'entrada');
-  const openCaptura = (typeof mostrarCaptura !== 'undefined' && mostrarCaptura) || !!empF;
+  const openCaptura = typeof mostrarCaptura !== 'undefined' && mostrarCaptura;
+
 %>
 <div class="toolbar" style="flex-wrap:wrap;gap:.5rem;align-items:flex-end">
   <form method="get" action="/asistencia-marcaciones" class="inline-form form-grid" style="max-width:none;display:flex;flex-wrap:wrap;gap:.5rem;align-items:flex-end">
@@ -36,11 +37,10 @@
 </div>
 
 <p class="muted">
-  Corrige checadas aquí (ajustar hora/tipo o anular). Para detectar incompletos usa
-  <a href="/asistencia-diaria?fecha=<%= fecha %>&amp;estatus=incompleto">asistencia del día → Incompletos</a>.
+  Cada fila tiene <strong>Corregir</strong> para cambiar hora o tipo, o para anular. «Nueva marcación» solo agrega otra checada.
 </p>
 
-<table>
+<table id="lista">
   <thead>
     <tr>
       <th>Hora</th>
@@ -74,12 +74,12 @@
     %>
     <tr class="<%= anulada ? 'row-muted' : '' %>">
       <td>
-        <a href="/asistencia-marcaciones/<%= m._id %>"><%= formatTimeHHMM(m.timestamp) %></a>
+        <a href="/asistencia-marcaciones/<%= m._id %>"><%= formatTimeHHMM(m.timestamp, m.zonaHoraria) %></a>
         <% if (m.origen === 'ajuste') { %> <span class="badge">ajuste</span><% } %>
         <% if (esUltimaUsada || esUltimaEntrada) { %> <span class="badge badge-activo" title="Esta es la checada que usa el resumen del día">en uso</span><% } %>
         <% if (dupCount > 1) { %> <span class="badge badge-suspendido" title="Hay varias del mismo tipo; el día usa la última">×<%= dupCount %></span><% } %>
       </td>
-      <td class="muted small"><%= formatTimeHHMM(tsOrig) %></td>
+      <td class="muted small"><%= formatTimeHHMM(tsOrig, m.zonaHoraria) %></td>
       <td><%= empMap.get(String(m.empleadoId)) || '—' %></td>
       <td><%= m.tipoMarcacion %></td>
       <td><%= (m.geocerca && m.geocerca.zonaNombre) || '—' %></td>
@@ -104,9 +104,10 @@
         <% if (!anulada) { %>
         ·
         <details style="display:inline-block;vertical-align:top">
-          <summary style="cursor:pointer">Ajustar / anular</summary>
+          <summary style="cursor:pointer">Corregir</summary>
           <form method="post" action="/asistencia-marcaciones/<%= m._id %>/ajustar?fecha=<%= fecha %>" class="form-grid" style="margin-top:0.5rem;min-width:240px">
-            <input type="datetime-local" name="timestamp" value="<%= fecha %>T<%= formatTimeHHMM(m.timestamp) %>" required />
+            <input type="datetime-local" name="timestamp" value="<%= fecha %>T<%= formatTimeHHMM(m.timestamp, m.zonaHoraria) %>" required />
+            <span class="muted small"><%= m.zonaHoraria || '' %></span>
             <select name="tipoMarcacion" required>
               <% tiposMarcacion.forEach(function(t) { %>
               <option value="<%= t.value %>" <%= t.value === m.tipoMarcacion ? 'selected' : '' %>><%= t.label %></option>
@@ -137,16 +138,16 @@
   <tbody>
     <% bitacora.forEach(function(b) { %>
     <tr>
-      <td><%= formatTimeHHMM(b.createdAt) %></td>
+      <td><%= formatTimeHHMM(b.createdAt, b.zonaHoraria) %></td>
       <td><code><%= b.accion %></code></td>
       <td><%= b.userLabel || b.userId || '—' %></td>
       <td><%= b.motivo || '—' %></td>
       <td class="muted small">
         <%= b.mensaje || '—' %>
         <% if (b.detalle && b.detalle.horaAntes && b.detalle.horaDespues) { %>
-        · <%= formatTimeHHMM(b.detalle.horaAntes) %> → <%= formatTimeHHMM(b.detalle.horaDespues) %>
+        · <%= formatTimeHHMM(b.detalle.horaAntes, b.zonaHoraria) %> → <%= formatTimeHHMM(b.detalle.horaDespues, b.zonaHoraria) %>
         <% } else if (b.antes && b.despues && b.antes.timestamp && b.despues.timestamp) { %>
-        · <%= formatTimeHHMM(b.antes.timestamp) %> → <%= formatTimeHHMM(b.despues.timestamp) %>
+        · <%= formatTimeHHMM(b.antes.timestamp, b.zonaHoraria) %> → <%= formatTimeHHMM(b.despues.timestamp, b.zonaHoraria) %>
         <% } %>
       </td>
     </tr>

@@ -26,7 +26,6 @@ class ReminderScheduler {
   Future<void> init() async {
     if (_ready) return;
     tzdata.initializeTimeZones();
-    // Mercado MX; el SO programa en hora local del dispositivo vía TZDateTime.from(..., tz.local)
     try {
       tz.setLocalLocation(tz.getLocation('America/Mexico_City'));
     } catch (_) {
@@ -131,8 +130,16 @@ class ReminderScheduler {
 
   Future<int> _scheduleFromPayload(Map<String, dynamic> data) async {
     await _plugin.cancelAll();
+    final zona = data['zonaHoraria']?.toString() ?? data['zonaSugerida']?.toString();
+    tz.Location location = tz.local;
+    if (zona != null && zona.isNotEmpty) {
+      try {
+        location = tz.getLocation(zona);
+        tz.setLocalLocation(location);
+      } catch (_) {}
+    }
     final list = (data['recordatorios'] as List?) ?? [];
-    final now = DateTime.now();
+    final ahora = tz.TZDateTime.now(location);
     var count = 0;
     var notifId = 1000;
 
@@ -140,8 +147,10 @@ class ReminderScheduler {
       if (item is! Map) continue;
       final atRaw = item['at']?.toString();
       if (atRaw == null || atRaw.isEmpty) continue;
-      final at = DateTime.tryParse(atRaw)?.toLocal();
-      if (at == null || !at.isAfter(now.add(const Duration(seconds: 30)))) {
+      final atUtc = DateTime.tryParse(atRaw)?.toUtc();
+      if (atUtc == null) continue;
+      final tzWhen = tz.TZDateTime.from(atUtc, location);
+      if (!tzWhen.isAfter(ahora.add(const Duration(seconds: 30)))) {
         continue;
       }
       final titulo = item['titulo']?.toString() ?? 'Recordatorio de checada';
@@ -150,7 +159,6 @@ class ReminderScheduler {
       final id = _stableId(idKey, notifId);
       notifId += 1;
 
-      final tzWhen = tz.TZDateTime.from(at, tz.local);
       try {
         await _plugin.zonedSchedule(
           id,

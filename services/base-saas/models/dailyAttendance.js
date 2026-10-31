@@ -8,6 +8,8 @@ const dailyAttendanceSchema = new mongoose.Schema(
     empleadoId: { type: mongoose.Schema.Types.ObjectId, ref: 'Empleado', required: true },
     turnoId: { type: mongoose.Schema.Types.ObjectId, ref: 'Turno' },
     fecha: { type: Date, required: true, index: true },
+    /** Zona IANA de la subsidiaria usada para turno, retardo y día laboral. */
+    zonaHoraria: { type: String, trim: true, default: '' },
     entradaProgramada: { type: Date },
     salidaProgramada: { type: Date },
     entradaReal: { type: Date },

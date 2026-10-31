@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../services/api_client.dart';
 import '../services/auth_state.dart';
 import '../services/punch_local_store.dart';
+import '../services/reloj_subsidiaria.dart';
 
 class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key});
@@ -130,13 +131,13 @@ class _HistoryScreenState extends State<HistoryScreen> {
   }
 
   List<Map<String, dynamic>> _filterByRange(List<Map<String, dynamic>> all) {
-    final start = DateTime(_desde.year, _desde.month, _desde.day);
-    final end = DateTime(_hasta.year, _hasta.month, _hasta.day, 23, 59, 59, 999);
+    final desde = _ymd(_desde);
+    final hasta = _ymd(_hasta);
     return all.where((m) {
-      final ts = DateTime.tryParse('${m['timestamp']}');
-      if (ts == null) return true;
-      final local = ts.toLocal();
-      return !local.isBefore(start) && !local.isAfter(end);
+      final ymd = (m['fechaLocal'] ?? m['fecha'] ?? '').toString();
+      final dia = RegExp(r'^(\d{4}-\d{2}-\d{2})').firstMatch(ymd)?.group(1);
+      if (dia == null) return true;
+      return dia.compareTo(desde) >= 0 && dia.compareTo(hasta) <= 0;
     }).toList();
   }
 
@@ -253,10 +254,11 @@ class _HistoryScreenState extends State<HistoryScreen> {
                             else
                               ..._rows.map((m) {
                                 final synced = m['synced'] == true;
-                                final ts = DateTime.tryParse('${m['timestamp']}');
-                                final when = ts != null
-                                    ? DateFormat('dd/MM/yyyy HH:mm').format(ts.toLocal())
-                                    : '—';
+                                final when = RelojSubsidiaria.fechaHora(
+                                  m['timestamp'],
+                                  m['zonaHoraria']?.toString(),
+                                  yaFormateada: m['fechaHora']?.toString(),
+                                );
                                 final geo = m['ubicacion'] as Map<String, dynamic>?;
                                 final hasGps = geo?['lat'] != null && geo?['lng'] != null;
                                 final device = m['dispositivo'] as Map<String, dynamic>?;
@@ -307,9 +309,11 @@ class _PunchDetailSheet extends StatelessWidget {
   final ScrollController scrollController;
 
   String _fmt(dynamic iso) {
-    final d = DateTime.tryParse('$iso');
-    if (d == null) return '—';
-    return DateFormat('dd/MM/yyyy HH:mm:ss').format(d.toLocal());
+    return RelojSubsidiaria.fechaHora(
+      iso,
+      row['zonaHoraria']?.toString(),
+      conSegundos: true,
+    );
   }
 
   String _num(dynamic v, {int decimals = 6}) {

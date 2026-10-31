@@ -1,8 +1,9 @@
 'use strict';
 
-const { requireEmpresaForTenant } = require('../libs/tenantScope');
+const { requireEmpresaForTenant, sessionSubsidiariaId } = require('../libs/tenantScope');
 const { trimString } = require('../libs/formHelpers');
-const { parseDateTimeLocal, startOfDay, endOfDay } = require('../libs/timeHelpers');
+const { parseDateTimeLocal, startOfDay, endOfDay, ymdInTimeZone } = require('../libs/timeHelpers');
+const { zonaDeSubsidiariaId } = require('../services/zonaHorariaService');
 const {
   generarDirectorioSua,
   generarAltasPeriodoSua,
@@ -14,17 +15,16 @@ const {
 
 const MODOS = ['directorio', 'altas', 'movimientos', 'creditos'];
 
-function defaultRange() {
-  const fin = new Date();
-  const ini = new Date(fin.getFullYear(), fin.getMonth(), 1);
+function defaultRange(timeZone) {
+  const hasta = ymdInTimeZone(new Date(), timeZone);
   return {
-    desde: ini.toISOString().slice(0, 10),
-    hasta: fin.toISOString().slice(0, 10)
+    desde: `${hasta.slice(0, 7)}-01`,
+    hasta
   };
 }
 
-function parseOpts(query) {
-  const rango = defaultRange();
+function parseOpts(query, timeZone) {
+  const rango = defaultRange(timeZone);
   return {
     modo: MODOS.includes(String(query.modo)) ? String(query.modo) : 'directorio',
     estatus: ['activo', 'baja', 'todos'].includes(String(query.estatus))
@@ -42,8 +42,9 @@ function parseOpts(query) {
 
 async function runExport(tenantId, empresa, filters) {
   const rp = filters.registroPatronal || empresa.registroPatronal || '';
-  const fi = startOfDay(parseDateTimeLocal(`${filters.desde}T12:00`) || new Date());
-  const ff = endOfDay(parseDateTimeLocal(`${filters.hasta}T12:00`) || new Date());
+  const zona = filters.timeZone;
+  const fi = startOfDay(parseDateTimeLocal(`${filters.desde}T12:00`, zona) || new Date());
+  const ff = endOfDay(parseDateTimeLocal(`${filters.hasta}T12:00`, zona) || new Date());
 
   if (filters.modo === 'movimientos') {
     return generarMovimientosSua(tenantId, {
@@ -74,7 +75,9 @@ async function runExport(tenantId, empresa, filters) {
 
 async function index(req, res) {
   const { empresa, error } = await requireEmpresaForTenant(req);
-  const filters = parseOpts(req.query);
+  const zona = await zonaDeSubsidiariaId(sessionSubsidiariaId(req));
+  const filters = parseOpts(req.query, zona);
+  filters.timeZone = zona;
   let result = null;
   let genError = null;
 
@@ -105,7 +108,9 @@ async function download(req, res) {
     return res.redirect('/nomina/sua');
   }
 
-  const filters = parseOpts(req.query);
+  const zona = await zonaDeSubsidiariaId(sessionSubsidiariaId(req));
+  const filters = parseOpts(req.query, zona);
+  filters.timeZone = zona;
   let result;
   try {
     result = await runExport(req.session.tenantId, empresa, filters);

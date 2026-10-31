@@ -5,7 +5,12 @@ const getEmpleadoModel = require('../models/empleado');
 const { requireEmpresaForTenant, scopeEmpresaFilter, sessionSubsidiariaId } = require('../libs/tenantScope');
 const { resolvePeriodRange } = require('../libs/payrollPeriodDates');
 const { trimString, parseDate, parseCheckbox } = require('../libs/formHelpers');
-const { startOfDay, endOfDay, ymdInTimeZone, formatTimeHHMM } = require('../libs/timeHelpers');
+const { startOfDay, endOfDay, ymdAncla, formatTimeHHMM } = require('../libs/timeHelpers');
+const {
+  mapaZonasPorSubsidiaria,
+  mapaZonaPorEmpleado,
+  zonaDeSubsidiariaId
+} = require('../services/zonaHorariaService');
 const { TIPOS_PERIODO, ESTATUS_PERIODO } = require('../config/prenomina');
 const { ESTATUS_DIARIO } = require('../config/asistencia');
 const { filterEmpleadosByTipoMotor } = require('../libs/empleadoTipoPeriodo');
@@ -164,18 +169,18 @@ function eachYmdInclusive(inicio, fin) {
   const cur = startOfDay(inicio);
   const last = startOfDay(fin);
   while (cur <= last) {
-    days.push(ymdInTimeZone(cur));
+    days.push(ymdAncla(cur));
     cur.setDate(cur.getDate() + 1);
   }
   return days;
 }
 
-function buildAsistenciaPeriodoFilas(empleadosScope, dailies, fechasYmd) {
+function buildAsistenciaPeriodoFilas(empleadosScope, dailies, fechasYmd, zonaPorEmp) {
   const byEmp = new Map();
   for (const d of dailies) {
     const k = String(d.empleadoId);
     if (!byEmp.has(k)) byEmp.set(k, new Map());
-    byEmp.get(k).set(ymdInTimeZone(d.fecha), d);
+    byEmp.get(k).set(ymdAncla(d.fecha), d);
   }
 
   return empleadosScope
@@ -227,6 +232,7 @@ function buildAsistenciaPeriodoFilas(empleadosScope, dailies, fechasYmd) {
         empleadoId: empId,
         nombre: `${emp.firstName || ''} ${emp.lastName || ''}`.trim() || '—',
         numEmpleado: emp.numEmpleado || '',
+        zonaHoraria: zonaPorEmp?.get(empId) || '',
         resumen: {
           diasTrabajados,
           faltas,
@@ -314,13 +320,24 @@ async function showPeriodo(req, res) {
     empleadosActivos: empleadosScope.length,
     empleadosSinAsistencia: Math.max(0, empleadosScope.length - porEmpleado.size),
     usaAsistencia: periodo.aplicaAsistenciaPrenomina !== false,
-    fechaInicioStr: ymdInTimeZone(inicio),
-    fechaFinStr: ymdInTimeZone(periodo.fechaFin)
+    fechaInicioStr: ymdAncla(inicio),
+    fechaFinStr: ymdAncla(periodo.fechaFin)
   };
 
+  const mapaSubs = await mapaZonasPorSubsidiaria(
+    empleadosScope.map((e) => e.subsidiariaId).concat(periodo.subsidiariaId || [])
+  );
+  const zonaPorEmp = mapaZonaPorEmpleado(empleadosScope, mapaSubs);
+  const zonaPeriodo = periodo.subsidiariaId
+    ? mapaSubs.get(String(periodo.subsidiariaId)) || (await zonaDeSubsidiariaId(periodo.subsidiariaId))
+    : null;
+  if (zonaPeriodo) {
+    cobertura.fechaInicioStr = ymdAncla(inicio, zonaPeriodo);
+    cobertura.fechaFinStr = ymdAncla(periodo.fechaFin, zonaPeriodo);
+  }
   const asistenciaFilas =
     cobertura.usaAsistencia && empleadosScope.length
-      ? buildAsistenciaPeriodoFilas(empleadosScope, dailies, fechasYmd)
+      ? buildAsistenciaPeriodoFilas(empleadosScope, dailies, fechasYmd, zonaPorEmp)
       : [];
 
   // Preflight siempre en abierto/borrador (incompletos + jornada); solo cerrado omite
