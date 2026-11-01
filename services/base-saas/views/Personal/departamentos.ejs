@@ -1,5 +1,8 @@
 <%- include('../Partials/layout-top', { title: 'Departamentos', session }) %>
 <h1>Departamentos</h1>
+<% if (session && session.subsidiariaActiva) { %>
+<p class="muted">De la subsidiaria <strong><%= session.subsidiariaActiva.nombre %></strong>.</p>
+<% } %>
 <div class="toolbar">
   <a class="btn btn-primary" href="/personal-departamentos/nuevo">+ Nuevo</a>
 </div>
@@ -7,7 +10,7 @@
 <p>No hay empresa vinculada a este tenant. Activa el tenant desde Arka-Presence Admin.</p>
 <% } else { %>
 <table>
-  <thead><tr><th>Nombre</th><th>Cód. externo</th><th>Cód. legado</th><th>Cuenta contable</th><th>Padre</th><th>Descripción</th><th>Activo</th><th></th></tr></thead>
+  <thead><tr><th>Nombre</th><th>Cód. externo</th><th>Cód. legado</th><th>Cuenta contable</th><th>Padre</th><th>Geocerca</th><th>Ubicaciones</th><th>Activo</th><th></th></tr></thead>
   <tbody>
     <% departamentos.forEach(function(d) { %>
     <tr class="<%= !d.activo ? 'row-muted' : '' %>">
@@ -16,7 +19,8 @@
       <td><%= d.codigoLegado != null ? d.codigoLegado : '—' %></td>
       <td><%= d.cuentaContableExterna || '—' %></td>
       <td><%= d.parentId ? (parentMap.get(String(d.parentId)) || '—') : '—' %></td>
-      <td><%= d.descripcion || '—' %></td>
+      <td><%= (geoLabel && geoLabel.get(d.marcajePoliticaGeo)) || 'Permitir fuera de zona y marcar' %></td>
+      <td><%= Array.isArray(d.puntoAccesoIds) && d.puntoAccesoIds.length ? d.puntoAccesoIds.length : '—' %></td>
       <td><%= d.activo ? 'Sí' : 'No' %></td>
       <td class="actions">
         <a href="/personal-departamentos/<%= d._id %>/edit">Editar</a>

@@ -171,13 +171,14 @@ function buildEmpleadoPayload(body, tenantId, empresaId) {
     marcajePoliticaGeo: (() => {
       const v = trimString(body.marcajePoliticaGeo);
       const ok = [
+        'heredar',
         'subsidiaria_default',
         'strict_assignment',
         'any_catalog_site',
         'open_with_flag',
         'disabled'
       ];
-      return ok.includes(v) ? v : 'open_with_flag';
+      return ok.includes(v) ? v : 'heredar';
     })(),
     puntoAccesoIds: parseObjectIdArray(body.puntoAccesoIds),
     exportarFaltas: parseCheckbox(body, 'exportarFaltas'),

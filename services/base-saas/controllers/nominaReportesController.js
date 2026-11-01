@@ -105,7 +105,7 @@ function labelPeriodo(p) {
   return `${p.tipoPeriodo || ''} ${num} ${ini}–${fin} (${p.estatus})`.trim();
 }
 
-async function loadCatalogs(tenantId, empresa) {
+async function loadCatalogs(tenantId, empresa, subsidiariaId = null) {
   const Periodo = await getPeriodoNominaModel();
   const Departamento = await getDepartamentoModel();
   const CentroCosto = await getCentroCostoModel();
@@ -113,7 +113,12 @@ async function loadCatalogs(tenantId, empresa) {
   if (empresa?._id) periodoQ.empresaId = empresa._id;
   const [periodos, departamentos, centrosCosto] = await Promise.all([
     Periodo.find(periodoQ).sort({ anio: -1, numeroPeriodo: -1, fechaInicio: -1 }).limit(80).lean(),
-    Departamento.find({ tenantId, activo: true }).sort({ nombre: 1 }).lean(),
+    Departamento.find({
+      tenantId,
+      activo: true,
+      ...(empresa?._id ? { empresaId: empresa._id } : {}),
+      ...(subsidiariaId ? { subsidiariaId } : {})
+    }).sort({ nombre: 1 }).lean(),
     empresa
       ? CentroCosto.find({ tenantId, empresaId: empresa._id, activo: true }).sort({ codigo: 1 }).lean()
       : []
@@ -134,7 +139,12 @@ async function loadAcumuladosCatalogs(tenantId, empresa, subsidiariaId) {
   for (let y = yearNow; y >= yearNow - 5; y -= 1) anios.push(y);
 
   const [departamentos, centrosCosto, empleados, conceptos] = await Promise.all([
-    Departamento.find({ tenantId, activo: true }).sort({ nombre: 1 }).lean(),
+    Departamento.find({
+      tenantId,
+      activo: true,
+      ...(empresa?._id ? { empresaId: empresa._id } : {}),
+      ...(subsidiariaId ? { subsidiariaId } : {})
+    }).sort({ nombre: 1 }).lean(),
     empresa
       ? CentroCosto.find({ tenantId, empresaId: empresa._id, activo: true }).sort({ codigo: 1 }).lean()
       : Promise.resolve([]),
@@ -160,7 +170,7 @@ async function loadAcumuladosCatalogs(tenantId, empresa, subsidiariaId) {
 async function index(req, res) {
   const { empresa, error } = await requireEmpresaForTenant(req);
   const filters = parseFilters(req.query);
-  const catalogs = await loadCatalogs(req.session.tenantId, empresa);
+  const catalogs = await loadCatalogs(req.session.tenantId, empresa, sessionSubsidiariaId(req));
 
   let result = null;
   if (filters.periodoId && empresa) {

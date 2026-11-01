@@ -4,7 +4,7 @@ const getOverrideTurnoModel = require('../models/overrideTurno');
 const getEmpleadoModel = require('../models/empleado');
 const getDepartamentoModel = require('../models/departamento');
 const getTurnoModel = require('../models/turno');
-const { requireEmpresaForTenant, findOneByTenant, findOneDocByTenant, scopeEmpleadosFromReq } = require('../libs/tenantScope');
+const { requireEmpresaForTenant, findOneByTenant, findOneDocByTenant, scopeEmpleadosFromReq, scopeDepartamentoFilter } = require('../libs/tenantScope');
 const { trimString, parseOptionalObjectId, parseDate } = require('../libs/formHelpers');
 const { startOfDay, endOfDay } = require('../libs/timeHelpers');
 const { DIAS_SEMANA } = require('../config/asistencia');
@@ -213,7 +213,7 @@ async function listAsignaciones(req, res) {
               empleadoId: { $in: empIds }
             }).sort({ updatedAt: -1 }).lean()
           : [],
-        Departamento.find({ tenantId: req.session.tenantId, activo: true }).sort({ nombre: 1 }).lean()
+        Departamento.find(scopeDepartamentoFilter(req, empresa, { activo: true }) || { tenantId: req.session.tenantId, activo: true }).sort({ nombre: 1 }).lean()
       ])
     : [[], [], []];
 

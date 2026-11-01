@@ -2401,10 +2401,12 @@ async function showConcepto(req, res) {
     if (empresa?._id) {
       const getDepartamentoModel = require('../models/departamento');
       const Departamento = await getDepartamentoModel();
+      const subFormula = sessionSubsidiariaId(req);
       const deptos = await Departamento.find({
         tenantId,
         empresaId: empresa._id,
-        activo: { $ne: false }
+        activo: { $ne: false },
+        ...(subFormula ? { subsidiariaId: subFormula } : {})
       })
         .select({ nombre: 1 })
         .sort({ nombre: 1 })

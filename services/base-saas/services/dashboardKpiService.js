@@ -31,7 +31,7 @@ async function asistenciaEnRango(tenantId, empIds, inicio, fin) {
   return { ok, total, pct: pct(ok, total) };
 }
 
-async function getDashboardKpis(tenantId) {
+async function getDashboardKpis(tenantId, { empresaId = null, subsidiariaId = null } = {}) {
   const hoy = new Date();
   const inicioSemana = startOfDay(new Date(hoy));
   inicioSemana.setDate(hoy.getDate() - ((hoy.getDay() + 6) % 7));
@@ -43,9 +43,20 @@ async function getDashboardKpis(tenantId) {
   const BiometricDevice = await getBiometricDeviceModel();
   const DailyAttendance = await getDailyAttendanceModel();
 
+  const empQ = { tenantId, estatus: 'activo' };
+  const deptoQ = { tenantId, activo: true };
+  if (empresaId) {
+    empQ.empresaId = empresaId;
+    deptoQ.empresaId = empresaId;
+  }
+  if (subsidiariaId) {
+    empQ.subsidiariaId = subsidiariaId;
+    deptoQ.subsidiariaId = subsidiariaId;
+  }
+
   const [empleadosActivos, departamentos, pendientes, dispositivos] = await Promise.all([
-    Empleado.find({ tenantId, estatus: 'activo' }).lean(),
-    Departamento.find({ tenantId, activo: true }).lean(),
+    Empleado.find(empQ).lean(),
+    Departamento.find(deptoQ).lean(),
     Incidencia.countDocuments({ tenantId, estatus: 'pendiente' }),
     BiometricDevice.find({ tenantId, activo: true }).lean()
   ]);

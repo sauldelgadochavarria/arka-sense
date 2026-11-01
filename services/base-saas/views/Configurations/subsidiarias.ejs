@@ -17,7 +17,7 @@
         <div class="<%= m.checked ? '' : 'muted' %>"><%= m.label %>: <%= m.checked ? 'Sí' : 'No' %></div>
         <% }); %>
       </td>
-      <td><%= s.geocercaRadioMetros ? s.geocercaRadioMetros + ' m' : '—' %></td>
+      <td class="muted"><%= s.geocercaRadioMetros ? s.geocercaRadioMetros + ' m ref.' : '—' %></td>
       <td><%= s.activo ? 'Sí' : 'No' %></td>
       <td class="actions">
         <% if (!session.subsidiariaActiva || String(session.subsidiariaActiva._id) !== String(s._id)) { %>
@@ -46,7 +46,7 @@
   <input name="codigoPostal" placeholder="Código postal" />
   <input name="lat" type="number" step="any" placeholder="Latitud (opcional)" />
   <input name="lng" type="number" step="any" placeholder="Longitud (opcional)" />
-  <input name="geocercaRadioMetros" type="number" min="0" placeholder="Radio geocerca (metros)" />
+  <input name="geocercaRadioMetros" type="number" min="0" placeholder="Radio de referencia (m), no valida el checado" />
   <button type="submit">Crear</button>
 </form>
 <% } %>

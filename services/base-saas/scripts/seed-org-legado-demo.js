@@ -2,7 +2,7 @@
 'use strict';
 
 /**
- * Siembra códigos legado Fortia en deptos, puestos y ubicación para pruebas de importación.
+ * Siembra códigos legado Fortia en deptos y puestos para pruebas de importación.
  *
  * npm run seed:org-legado-demo -- --slug=empresa-demo
  */
@@ -16,7 +16,6 @@ const getTenantModel = require('../models/tenant');
 const getEmpresaModel = require('../models/empresa');
 const getDepartamentoModel = require('../models/departamento');
 const getPuestoModel = require('../models/puesto');
-const getSubsidiariaModel = require('../models/subsidiaria');
 const { resolveTenantId } = require('../libs/resolveTenantId');
 
 const DEPTOS_DEMO = [
@@ -74,28 +73,6 @@ async function upsertPuesto(Puesto, tenantId, empresaId, item) {
   return 'creado';
 }
 
-async function upsertSubsidiaria(Subsidiaria, empresaId, item) {
-  const existing = await Subsidiaria.findOne({ empresaId, codigoLegado: item.codigoLegado });
-  if (existing) {
-    existing.nombre = item.nombre;
-    await existing.save();
-    return 'actualizada';
-  }
-  const byCodigo = await Subsidiaria.findOne({ codigo: item.codigo }).lean();
-  if (byCodigo) {
-    await Subsidiaria.updateOne({ _id: byCodigo._id }, { $set: { codigoLegado: item.codigoLegado } });
-    return 'codigoLegado asignado a subsidiaria existente';
-  }
-  await Subsidiaria.create({
-    empresaId,
-    codigo: item.codigo,
-    nombre: item.nombre,
-    codigoLegado: item.codigoLegado,
-    activo: true
-  });
-  return 'creada';
-}
-
 async function main() {
   const slug = argValue('slug');
   const uri = dbConfig.connectionStringConfig;
@@ -122,7 +99,6 @@ async function main() {
 
   const Departamento = await getDepartamentoModel();
   const Puesto = await getPuestoModel();
-  const Subsidiaria = await getSubsidiariaModel();
 
   for (const d of DEPTOS_DEMO) {
     const r = await upsertDepto(Departamento, tenantId, empresa._id, d);
@@ -132,13 +108,6 @@ async function main() {
     const r = await upsertPuesto(Puesto, tenantId, empresa._id, p);
     console.log(`Puesto ${p.codigoLegado}: ${r}`);
   }
-
-  const subResult = await upsertSubsidiaria(Subsidiaria, empresa._id, {
-    codigoLegado: 1,
-    codigo: 'UBIC01',
-    nombre: 'Ubicación legado 1'
-  });
-  console.log(`Subsidiaria CLA_UBICACION=1: ${subResult}`);
 
   console.log('✓ Catálogos org legado listos para import:historial-legado');
   await mongoose.disconnect();

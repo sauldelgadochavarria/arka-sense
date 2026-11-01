@@ -9,7 +9,7 @@
   <input name="nombre" placeholder="Nombre" required value="<%= punto.nombre %>" />
   <input name="descripcion" placeholder="Descripción" value="<%= punto.descripcion || '' %>" />
   <select name="subsidiariaId">
-    <option value="">— Sucursal (opcional) —</option>
+    <option value="">— Subsidiaria —</option>
     <% subsidiarias.forEach(function(s) { %>
     <option value="<%= s._id %>" <%= punto.subsidiariaId && String(punto.subsidiariaId) === String(s._id) ? 'selected' : '' %>><%= s.nombre %></option>
     <% }); %>

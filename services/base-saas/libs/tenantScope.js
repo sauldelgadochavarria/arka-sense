@@ -35,8 +35,14 @@ function sessionSubsidiariaId(req) {
 }
 
 /**
- * Filtro estándar para períodos / personal según empresa (+ subsidiaria activa).
+ * Departamentos de la empresa y, si hay subsidiaria activa, solo de esa plaza.
  */
+function scopeDepartamentoFilter(req, empresa, extra = {}) {
+  const base = scopeEmpresaFilter(req, empresa);
+  if (!base) return null;
+  return { ...base, ...extra };
+}
+
 function scopeEmpresaFilter(req, empresa, { includeSubsidiaria = true } = {}) {
   if (!empresa) return null;
   const filter = {
@@ -287,6 +293,7 @@ module.exports = {
   snapshotSubsidiaria,
   sessionSubsidiariaId,
   scopeEmpresaFilter,
+  scopeDepartamentoFilter,
   scopeEmpleadosFilter,
   scopeEmpleadosFromReq,
   scopeLugarFilter,

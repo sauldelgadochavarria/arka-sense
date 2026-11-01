@@ -3,7 +3,7 @@
 const getTablaPrestacionesModel = require('../models/tablaPrestaciones');
 const getDepartamentoModel = require('../models/departamento');
 const getPuestoModel = require('../models/puesto');
-const { requireEmpresaForTenant } = require('../libs/tenantScope');
+const { requireEmpresaForTenant, sessionSubsidiariaId } = require('../libs/tenantScope');
 const { buildTablaGlobalDefault, VACACIONES_LFT_TRAMOS, OTRAS_PRESTACIONES_CATALOGO, TRATAMIENTOS_PRESTACION } = require('../config/prestacionesDefaults');
 const { ensureTablaGlobal } = require('../services/sdiCalculoService');
 const { trimString, parseOptionalObjectId, parseCheckbox } = require('../libs/formHelpers');
@@ -84,13 +84,18 @@ function buildPayload(body, tenantId, empresaId) {
   };
 }
 
-async function loadCatalogs(tenantId, empresaId) {
+async function loadCatalogs(tenantId, empresaId, subsidiariaId = null) {
   await ensureSystemEnums();
   const Departamento = await getDepartamentoModel();
   const Puesto = await getPuestoModel();
   const tipoItems = await getEnumItems('tipo_empleado');
   const [departamentos, puestos] = await Promise.all([
-    Departamento.find({ tenantId, activo: true }).sort({ nombre: 1 }).lean(),
+    Departamento.find({
+      tenantId,
+      activo: true,
+      ...(empresaId ? { empresaId } : {}),
+      ...(subsidiariaId ? { subsidiariaId } : {})
+    }).sort({ nombre: 1 }).lean(),
     Puesto.find({ tenantId, activo: true }).sort({ nombre: 1 }).lean()
   ]);
   const tiposEmpleado =
@@ -118,7 +123,7 @@ async function listTablas(req, res) {
   const tablas = await Tabla.find({ tenantId: req.session.tenantId })
     .sort({ ambito: -1, nombre: 1 })
     .lean();
-  const catalogs = await loadCatalogs(req.session.tenantId, empresa._id);
+  const catalogs = await loadCatalogs(req.session.tenantId, empresa._id, sessionSubsidiariaId(req));
   res.render('Personal/prestaciones-list', {
     tablas,
     ...catalogs,
@@ -134,7 +139,7 @@ async function newTabla(req, res) {
     req.flash('error', error || 'Sin empresa');
     return res.redirect('/personal/prestaciones');
   }
-  const catalogs = await loadCatalogs(req.session.tenantId, empresa._id);
+  const catalogs = await loadCatalogs(req.session.tenantId, empresa._id, sessionSubsidiariaId(req));
   res.render('Personal/prestaciones-edit', {
     tabla: null,
     tramos: VACACIONES_LFT_TRAMOS,
@@ -171,7 +176,7 @@ async function editTabla(req, res) {
     req.flash('error', 'Tabla no encontrada');
     return res.redirect('/personal/prestaciones');
   }
-  const catalogs = await loadCatalogs(req.session.tenantId, empresa?._id);
+  const catalogs = await loadCatalogs(req.session.tenantId, empresa?._id, sessionSubsidiariaId(req));
   res.render('Personal/prestaciones-edit', {
     tabla,
     tramos: tabla.vacacionesPorAntiguedad?.length

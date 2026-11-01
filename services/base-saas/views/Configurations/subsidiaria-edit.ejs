@@ -12,7 +12,8 @@
   <input name="codigoPostal" value="<%= subsidiaria.codigoPostal || '' %>" placeholder="Código postal" />
   <input name="lat" type="number" step="any" value="<%= subsidiaria.lat != null ? subsidiaria.lat : '' %>" placeholder="Latitud" />
   <input name="lng" type="number" step="any" value="<%= subsidiaria.lng != null ? subsidiaria.lng : '' %>" placeholder="Longitud" />
-  <input name="geocercaRadioMetros" type="number" min="0" value="<%= subsidiaria.geocercaRadioMetros != null ? subsidiaria.geocercaRadioMetros : '' %>" placeholder="Radio geocerca (m)" />
+  <input name="geocercaRadioMetros" type="number" min="0" value="<%= subsidiaria.geocercaRadioMetros != null ? subsidiaria.geocercaRadioMetros : '' %>" placeholder="Radio de referencia (m)" />
+  <p class="muted small" style="grid-column:1/-1;margin:0;">Latitud, longitud y radio quedan como referencia de la plaza. El checado valida la geocerca del <a href="/config-puntos-acceso">punto de acceso</a>.</p>
   <label style="grid-column:1/-1;">
     Zona horaria (IANA)
     <select name="zonaHoraria">

@@ -1,0 +1,31 @@
+<fieldset class="form-section" style="grid-column:1/-1;">
+  <legend>Checado en esta ubicación</legend>
+  <label>
+    Geocerca
+    <select name="marcajePoliticaGeo">
+      <% const geoActual = departamento && departamento.marcajePoliticaGeo ? departamento.marcajePoliticaGeo : 'open_with_flag'; %>
+      <% (politicasGeo || []).forEach(function(p) { %>
+      <option value="<%= p.value %>" <%= geoActual === p.value ? 'selected' : '' %>><%= p.label %></option>
+      <% }); %>
+    </select>
+    <small class="muted">Quien tenga «Heredar del departamento» en su ficha usa este interruptor.</small>
+  </label>
+  <p class="hint">
+    Ubicaciones de trabajo. Si el trabajador no trae las suyas, checa aquí.
+    Si dejas vacío, se usan los puntos de acceso de su subsidiaria.
+    <a href="/config-puntos-acceso" target="_blank">Catálogo de ubicaciones</a>
+  </p>
+  <% const sel = departamento && Array.isArray(departamento.puntoAccesoIds) ? departamento.puntoAccesoIds.map(String) : []; %>
+  <% if (!(puntosAcceso || []).length) { %>
+  <p class="muted">No hay ubicaciones activas. Créalas en Puntos de acceso, ligadas a la subsidiaria.</p>
+  <% } %>
+  <% (puntosAcceso || []).forEach(function(p) { %>
+  <label>
+    <input type="checkbox" name="puntoAccesoIds" value="<%= p._id %>" <%= sel.indexOf(String(p._id)) >= 0 ? 'checked' : '' %> />
+    <%= p.nombre %> (<%= p.radioMetros %> m)
+    <% if (p.subsidiariaId && subMap && subMap.get(String(p.subsidiariaId))) { %>
+    · <%= subMap.get(String(p.subsidiariaId)) %>
+    <% } %>
+  </label>
+  <% }); %>
+</fieldset>

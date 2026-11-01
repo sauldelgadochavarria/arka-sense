@@ -91,7 +91,7 @@ async function listDiaria(req, res) {
           tenantId: req.session.tenantId,
           fecha: { $gte: fecha, $lte: endOfDay(fecha) }
         }).lean(),
-        Departamento.find({ tenantId: req.session.tenantId, empresaId: empresa._id, activo: { $ne: false } })
+        Departamento.find({ ...(scopePeriodos || { tenantId: req.session.tenantId }), activo: { $ne: false } })
           .sort({ nombre: 1 })
           .lean(),
         listTiposPeriodo(req.session.tenantId, true, empresa._id),

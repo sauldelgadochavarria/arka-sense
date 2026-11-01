@@ -290,7 +290,7 @@ function labelTipoCreditoInfonavit(value) {
   return TIPOS_CREDITO_INFONAVIT.find((t) => t.value === value)?.label || '—';
 }
 
-async function loadEmpleadoCatalogs(tenantId, empresa) {
+async function loadEmpleadoCatalogs(tenantId, empresa, subsidiariaId = null) {
   if (!empresa) {
     return {
       empleados: [],
@@ -325,7 +325,11 @@ async function loadEmpleadoCatalogs(tenantId, empresa) {
   const [empleados, departamentos, puestos, subsidiarias, turnos, gruposDispositivos, puntosAcceso, plantillas, tiposPeriodo, tablasPrestaciones, centrosCosto] =
     await Promise.all([
     Empleado.find(empresaScope).sort({ lastName: 1, firstName: 1 }).lean(),
-    Departamento.find({ ...empresaScope, activo: true }).sort({ nombre: 1 }).lean(),
+    Departamento.find({
+      ...empresaScope,
+      activo: true,
+      ...(subsidiariaId ? { subsidiariaId } : {})
+    }).sort({ nombre: 1 }).lean(),
     Puesto.find({ ...empresaScope, activo: true }).sort({ nombre: 1 }).lean(),
     Subsidiaria.find({ empresaId: empresa._id, activo: true }).sort({ nombre: 1 }).lean(),
     Turno.find({ tenantId, activo: true }).sort({ nombre: 1 }).lean(),
@@ -401,7 +405,7 @@ async function listEmpleados(req, res) {
   const { empresa, error } = await requireEmpresaForTenant(req);
   const estatus = String(req.query.estatus || 'activo').trim();
   const Empleado = await getEmpleadoModel();
-  const catalogs = await loadEmpleadoCatalogs(req.session.tenantId, empresa);
+  const catalogs = await loadEmpleadoCatalogs(req.session.tenantId, empresa, sessionSubsidiariaId(req));
 
   let filter = { tenantId: req.session.tenantId };
   if (empresa) filter.empresaId = empresa._id;
@@ -485,7 +489,7 @@ async function showEmpleado(req, res) {
   const empleado = await findOneByTenant(Empleado, req.session.tenantId, req.params.id);
   if (!empleado) return res.status(404).send('Empleado no encontrado');
 
-  const catalogs = await loadEmpleadoCatalogs(req.session.tenantId, empresa);
+  const catalogs = await loadEmpleadoCatalogs(req.session.tenantId, empresa, sessionSubsidiariaId(req));
   const maps = empresa
     ? await loadCatalogMaps(req.session.tenantId, empresa._id)
     : { ...buildLookupMaps([], [], [], []), turnoMap: new Map(), tipoPeriodoMap: new Map() };
@@ -593,7 +597,7 @@ async function editEmpleado(req, res) {
   const empleado = await findOneByTenant(Empleado, req.session.tenantId, req.params.id);
   if (!empleado) return res.status(404).send('Empleado no encontrado');
 
-  const catalogs = await loadEmpleadoCatalogs(req.session.tenantId, empresa);
+  const catalogs = await loadEmpleadoCatalogs(req.session.tenantId, empresa, sessionSubsidiariaId(req));
   catalogs.supervisores = catalogs.supervisores.filter((e) => String(e._id) !== String(empleado._id));
   const asignacionCtx = await loadAsignacionEmpleado(req.session.tenantId, empleado._id);
   const enumsEmp = await loadEmpleadoEnums();

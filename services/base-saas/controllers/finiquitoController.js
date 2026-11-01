@@ -1,6 +1,6 @@
 'use strict';
 
-const { requireEmpresaForTenant } = require('../libs/tenantScope');
+const { requireEmpresaForTenant, sessionSubsidiariaId } = require('../libs/tenantScope');
 const {
   parseOptionalObjectId,
   parseObjectIdArray,
@@ -47,7 +47,7 @@ function parseEmpleadoIds(body) {
   return one ? [String(one)] : [];
 }
 
-async function loadCatalogosFiltro(tenantId, empresaId) {
+async function loadCatalogosFiltro(tenantId, empresaId, subsidiariaId = null) {
   const Empleado = await getEmpleadoModel();
   const Departamento = await getDepartamentoModel();
   const CentroCosto = await getCentroCostoModel();
@@ -64,7 +64,12 @@ async function loadCatalogosFiltro(tenantId, empresaId) {
       )
       .sort({ numEmpleado: 1 })
       .lean(),
-    Departamento.find({ tenantId, empresaId, activo: true }).sort({ nombre: 1 }).select('_id nombre').lean(),
+    Departamento.find({
+      tenantId,
+      empresaId,
+      activo: true,
+      ...(subsidiariaId ? { subsidiariaId } : {})
+    }).sort({ nombre: 1 }).select('_id nombre').lean(),
     CentroCosto.find({ tenantId, empresaId, activo: true })
       .sort({ codigo: 1, nombre: 1 })
       .select('_id codigo nombre')
@@ -133,7 +138,7 @@ async function newForm(req, res) {
     tiposEmpleado: TIPOS_EMPLEADO
   };
   if (empresa) {
-    extras = await loadCatalogosFiltro(req.session.tenantId, empresa._id);
+    extras = await loadCatalogosFiltro(req.session.tenantId, empresa._id, sessionSubsidiariaId(req));
   }
   res.render('Nomina/finiquitos/nuevo', {
     session: req.session,
@@ -226,7 +231,7 @@ async function preview(req, res) {
       previews.push(p);
     }
 
-    const extras = await loadCatalogosFiltro(req.session.tenantId, empresa._id);
+    const extras = await loadCatalogosFiltro(req.session.tenantId, empresa._id, sessionSubsidiariaId(req));
     const form = { ...req.body, empleadoIds };
 
     res.render('Nomina/finiquitos/nuevo', {

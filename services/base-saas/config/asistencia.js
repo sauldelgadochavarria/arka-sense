@@ -48,28 +48,39 @@ const TIPOS_TURNO = [
   { value: 'por_horas', label: 'Por horas / medio tiempo' }
 ];
 
-/** Política de geocerca en marcación móvil */
+/** Política de geocerca en marcación móvil. `heredar` usa la del departamento. */
 const POLITICAS_MARCAJE_GEO = [
   {
+    value: 'heredar',
+    label: 'Heredar del departamento'
+  },
+  {
     value: 'subsidiaria_default',
-    label: 'Sucursal / puntos asignados (bloquear si fuera)'
+    label: 'Exigir: trabajador, si no departamento, si no subsidiaria'
   },
   {
     value: 'strict_assignment',
-    label: 'Solo asignaciones vigentes (bloquear si fuera)'
+    label: 'Exigir: solo ubicaciones del trabajador'
   },
   {
     value: 'any_catalog_site',
-    label: 'Cualquier punto/sucursal del catálogo (auto-match)'
+    label: 'Exigir: cualquier ubicación del catálogo'
   },
   {
     value: 'open_with_flag',
-    label: 'Permitir fuera de zona (marcar y auditar)'
+    label: 'Permitir fuera de zona y marcar'
   },
   {
     value: 'disabled',
-    label: 'Sin validación GPS'
+    label: 'Apagada'
   }
+];
+
+/** Interruptor del departamento. El círculo vive en la ubicación, no aquí. */
+const POLITICAS_GEO_DEPARTAMENTO = [
+  { value: 'subsidiaria_default', label: 'Exigir geocerca' },
+  { value: 'open_with_flag', label: 'Permitir fuera de zona y marcar' },
+  { value: 'disabled', label: 'Apagada' }
 ];
 
 const DEFAULT_POLITICA_MARCAJE_GEO = 'open_with_flag';
@@ -93,6 +104,7 @@ module.exports = {
   TIPOS_TURNO,
   MODOS_TOLERANCIA,
   POLITICAS_MARCAJE_GEO,
+  POLITICAS_GEO_DEPARTAMENTO,
   DEFAULT_POLITICA_MARCAJE_GEO,
   HOLGURA_DEFAULT_MIN,
   RECORDATORIO_MINUTOS_ANTES_ENTRADA,

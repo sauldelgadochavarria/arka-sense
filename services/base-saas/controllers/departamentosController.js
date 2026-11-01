@@ -1,22 +1,51 @@
 const getDepartamentoModel = require('../models/departamento');
+const getPuntoAccesoModel = require('../models/puntoAcceso');
+const getSubsidiariaModel = require('../models/subsidiaria');
 const {
   requireEmpresaForTenant,
   findOneByTenant,
-  findOneDocByTenant
+  findOneDocByTenant,
+  sessionSubsidiariaId,
+  scopeDepartamentoFilter,
+  scopeLugarFilter
 } = require('../libs/tenantScope');
-const { trimString, parseOptionalObjectId, parseOptionalLegadoCode } = require('../libs/formHelpers');
+const { trimString, parseOptionalObjectId, parseOptionalLegadoCode, parseObjectIdArray } = require('../libs/formHelpers');
+const { POLITICAS_GEO_DEPARTAMENTO } = require('../config/asistencia');
+
+function politicaDepartamento(body) {
+  const v = trimString(body.marcajePoliticaGeo);
+  return POLITICAS_GEO_DEPARTAMENTO.some((p) => p.value === v) ? v : 'open_with_flag';
+}
+
+async function catalogoUbicaciones(tenantId, empresa, subsidiariaId) {
+  if (!empresa) return { puntosAcceso: [], subMap: new Map() };
+  const Punto = await getPuntoAccesoModel();
+  const Subsidiaria = await getSubsidiariaModel();
+  const lugarQ = scopeLugarFilter(tenantId, subsidiariaId, { incluirCompartidos: true });
+  const [puntosAcceso, subs] = await Promise.all([
+    Punto.find({ ...lugarQ, empresaId: empresa._id, activo: true }).sort({ nombre: 1 }).lean(),
+    Subsidiaria.find({ empresaId: empresa._id }).select('nombre').lean()
+  ]);
+  return {
+    puntosAcceso,
+    subMap: new Map(subs.map((s) => [String(s._id), s.nombre]))
+  };
+}
 
 async function listDepartamentos(req, res) {
   const { empresa, error } = await requireEmpresaForTenant(req);
   const Departamento = await getDepartamentoModel();
-  const departamentos = empresa
-    ? await Departamento.find({ tenantId: req.session.tenantId, empresaId: empresa._id }).sort({ nombre: 1 }).lean()
+  const filtro = scopeDepartamentoFilter(req, empresa);
+  const departamentos = filtro
+    ? await Departamento.find(filtro).sort({ nombre: 1 }).lean()
     : [];
   const parentMap = new Map(departamentos.map((d) => [String(d._id), d.nombre]));
 
+  const geoLabel = new Map(POLITICAS_GEO_DEPARTAMENTO.map((p) => [p.value, p.label]));
   res.render('Personal/departamentos', {
     departamentos,
     parentMap,
+    geoLabel,
     empresa,
     error: error || null,
     session: req.session
@@ -26,12 +55,17 @@ async function listDepartamentos(req, res) {
 async function newDepartamento(req, res) {
   const { empresa, error } = await requireEmpresaForTenant(req);
   const Departamento = await getDepartamentoModel();
-  const departamentos = empresa
-    ? await Departamento.find({ tenantId: req.session.tenantId, empresaId: empresa._id, activo: true }).sort({ nombre: 1 }).lean()
+  const filtro = scopeDepartamentoFilter(req, empresa, { activo: true });
+  const departamentos = filtro
+    ? await Departamento.find(filtro).sort({ nombre: 1 }).lean()
     : [];
 
+  const catalogo = await catalogoUbicaciones(req.session.tenantId, empresa, sessionSubsidiariaId(req));
   res.render('Personal/departamento-nuevo', {
     departamentos,
+    ...catalogo,
+    politicasGeo: POLITICAS_GEO_DEPARTAMENTO,
+    departamento: null,
     empresa,
     error: error || null,
     session: req.session
@@ -46,16 +80,25 @@ async function createDepartamento(req, res) {
       return res.redirect('/personal-departamentos');
     }
 
+    const subId = sessionSubsidiariaId(req);
+    if (!subId) {
+      req.flash('error', 'Elige una subsidiaria antes de crear el departamento');
+      return res.redirect('/personal-departamentos');
+    }
+
     const Departamento = await getDepartamentoModel();
     await Departamento.create({
       tenantId: req.session.tenantId,
       empresaId: empresa._id,
+      subsidiariaId: subId,
       nombre: trimString(req.body.nombre),
       descripcion: trimString(req.body.descripcion),
       parentId: parseOptionalObjectId(req.body.parentId),
       codigoLegado: parseOptionalLegadoCode(req.body.codigoLegado),
       codigoExterno: trimString(req.body.codigoExterno),
       cuentaContableExterna: trimString(req.body.cuentaContableExterna),
+      puntoAccesoIds: parseObjectIdArray(req.body.puntoAccesoIds),
+      marcajePoliticaGeo: politicaDepartamento(req.body),
       activo: true
     });
     req.flash('success', 'Departamento creado');
@@ -73,15 +116,25 @@ async function editDepartamento(req, res) {
   const departamento = await findOneByTenant(Departamento, req.session.tenantId, req.params.id);
   if (!departamento) return res.status(404).send('Departamento no encontrado');
 
+  const subDelDepto = departamento.subsidiariaId || sessionSubsidiariaId(req);
   const departamentos = empresa
-    ? await Departamento.find({ tenantId: req.session.tenantId, activo: true, _id: { $ne: departamento._id } })
+    ? await Departamento.find({
+        tenantId: req.session.tenantId,
+        empresaId: empresa._id,
+        ...(subDelDepto ? { subsidiariaId: subDelDepto } : {}),
+        activo: true,
+        _id: { $ne: departamento._id }
+      })
         .sort({ nombre: 1 })
         .lean()
     : [];
 
+  const catalogo = await catalogoUbicaciones(req.session.tenantId, empresa, subDelDepto);
   res.render('Personal/departamento-edit', {
     departamento,
     departamentos,
+    ...catalogo,
+    politicasGeo: POLITICAS_GEO_DEPARTAMENTO,
     empresa,
     error: error || null,
     session: req.session
@@ -106,6 +159,8 @@ async function updateDepartamento(req, res) {
     departamento.codigoLegado = parseOptionalLegadoCode(req.body.codigoLegado);
     departamento.codigoExterno = trimString(req.body.codigoExterno);
     departamento.cuentaContableExterna = trimString(req.body.cuentaContableExterna);
+    departamento.puntoAccesoIds = parseObjectIdArray(req.body.puntoAccesoIds);
+    departamento.marcajePoliticaGeo = politicaDepartamento(req.body);
     await departamento.save();
 
     req.flash('success', 'Departamento actualizado');

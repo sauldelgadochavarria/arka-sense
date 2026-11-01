@@ -14,6 +14,7 @@
     <option value="<%= d._id %>" <%= departamento.parentId && String(departamento.parentId) === String(d._id) ? 'selected' : '' %>><%= d.nombre %></option>
     <% }); %>
   </select>
+  <%- include('partials/departamento-ubicacion') %>
   <button type="submit">Guardar</button>
 </form>
 <%- include('../Partials/layout-bottom') %>

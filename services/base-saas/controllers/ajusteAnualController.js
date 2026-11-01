@@ -1,6 +1,6 @@
 'use strict';
 
-const { requireEmpresaForTenant } = require('../libs/tenantScope');
+const { requireEmpresaForTenant, sessionSubsidiariaId } = require('../libs/tenantScope');
 const {
   trimString,
   parseOptionalObjectId,
@@ -97,7 +97,7 @@ function parseInput(body, fromPost = false) {
   };
 }
 
-async function loadCatalogs(tenantId, empresa) {
+async function loadCatalogs(tenantId, empresa, subsidiariaId = null) {
   if (!empresa) {
     return {
       departamentos: [],
@@ -113,7 +113,12 @@ async function loadCatalogs(tenantId, empresa) {
   const CentroCosto = await getCentroCostoModel();
   const Subsidiaria = await getSubsidiariaModel();
   const [departamentos, puestos, tiposPeriodo, centrosCosto, subsidiarias, tiposEmpleado] = await Promise.all([
-    Departamento.find({ tenantId, activo: true }).sort({ nombre: 1 }).lean(),
+    Departamento.find({
+      tenantId,
+      activo: true,
+      ...(empresa?._id ? { empresaId: empresa._id } : {}),
+      ...(subsidiariaId ? { subsidiariaId } : {})
+    }).sort({ nombre: 1 }).lean(),
     Puesto.find({ tenantId, activo: true }).sort({ nombre: 1 }).lean(),
     listTiposPeriodo(tenantId, true),
     CentroCosto.find({ tenantId, empresaId: empresa._id, activo: true }).sort({ codigo: 1 }).lean(),
@@ -137,7 +142,7 @@ function viewLocals(extra) {
 
 async function wizard(req, res) {
   const { empresa, error } = await requireEmpresaForTenant(req);
-  const catalogs = await loadCatalogs(req.session.tenantId, empresa);
+  const catalogs = await loadCatalogs(req.session.tenantId, empresa, sessionSubsidiariaId(req));
   const lotes = empresa ? await listLotes(req.session.tenantId, empresa._id) : [];
   const input = parseInput(req.body || {}, req.method === 'POST');
   let preview = null;

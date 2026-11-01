@@ -108,7 +108,12 @@ router.get(['/', '/dashboard', '/inicio', '/nomina/flujo'], async (req, res) => 
     'nomina'
   ]);
   const showKpis = hasAsistenciaPkg || tenantHasFeature(featureFlags, 'reportes');
-  const kpis = empresa && showKpis ? await getDashboardKpis(req.session.tenantId) : null;
+  const kpis = empresa && showKpis
+    ? await getDashboardKpis(req.session.tenantId, {
+        empresaId: empresa._id,
+        subsidiariaId: sessionSubsidiariaId(req)
+      })
+    : null;
   const periodoId = parseOptionalObjectId(req.query.periodoId);
   let cumplimiento = null;
   let flujoNomina = null;

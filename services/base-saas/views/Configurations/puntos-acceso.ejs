@@ -5,9 +5,8 @@
   <a class="btn" href="/config-zonas">Zonas</a>
 </div>
 <p class="muted">
-  Catálogo de geocercas (lat, lng, radio) para validar marcaciones móviles.
-  La decisión de «dentro / fuera» la hace el backend. También puedes configurar
-  radio en cada <a href="/config-subsidiarias">subsidiaria</a>.
+  Ubicaciones de checado. Cada una tiene su geocerca (centro y radio) y pertenece a una subsidiaria.
+  El departamento o el trabajador eligen cuáles aplican. La subsidiaria no es una geocerca.
 </p>
 
 <% if (!empresa) { %>
@@ -20,7 +19,7 @@
   <input name="nombre" placeholder="Nombre (ej. Planta Norte, Cliente X)" required />
   <input name="descripcion" placeholder="Descripción" />
   <select name="subsidiariaId">
-    <option value="">— Sucursal (opcional) —</option>
+    <option value="">— Subsidiaria —</option>
     <% subsidiarias.forEach(function(s) { %>
     <option value="<%= s._id %>"><%= s.nombre %></option>
     <% }); %>
@@ -44,7 +43,7 @@
     <tr>
       <th>Código</th>
       <th>Nombre</th>
-      <th>Sucursal</th>
+      <th>Subsidiaria</th>
       <th>Zona</th>
       <th>Lat / Lng</th>
       <th>Radio</th>

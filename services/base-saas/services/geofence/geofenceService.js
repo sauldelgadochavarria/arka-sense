@@ -8,7 +8,7 @@
 const getPuntoAccesoModel = require('../../models/puntoAcceso');
 const getZonaModel = require('../../models/zona');
 const getAsignacionPuntoAccesoModel = require('../../models/asignacionPuntoAcceso');
-const getSubsidiariaModel = require('../../models/subsidiaria');
+const getDepartamentoModel = require('../../models/departamento');
 const {
   POLITICAS_MARCAJE_GEO,
   DEFAULT_POLITICA_MARCAJE_GEO
@@ -40,30 +40,45 @@ function siteFromPunto(p) {
   };
 }
 
-function siteFromSubsidiaria(s) {
-  if (s.lat == null || s.lng == null) return null;
-  const radio = Number(s.geocercaRadioMetros);
-  if (!Number.isFinite(radio) || radio <= 0) return null;
-  return {
-    id: `sub:${s._id}`,
-    source: 'subsidiaria',
-    nombre: s.nombre,
-    codigo: s.codigo || '',
-    lat: Number(s.lat),
-    lng: Number(s.lng),
-    radioMetros: radio,
-    subsidiariaId: String(s._id)
-  };
+async function loadDepartamento(empleado) {
+  if (!empleado?.departamentoId) return null;
+  const Departamento = await getDepartamentoModel();
+  return Departamento.findById(empleado.departamentoId)
+    .select('puntoAccesoIds marcajePoliticaGeo')
+    .lean();
+}
+
+/** Vacío o «heredar» toma el interruptor del departamento. */
+function politicaEfectiva(empleado, departamento) {
+  const propia = String(empleado?.marcajePoliticaGeo || '').trim();
+  if (!propia || propia === 'heredar') {
+    const delDepto = String(departamento?.marcajePoliticaGeo || '').trim();
+    if (delDepto === 'subsidiaria_default' || delDepto === 'open_with_flag' || delDepto === 'disabled') {
+      return delDepto;
+    }
+    return 'open_with_flag';
+  }
+  return propia;
+}
+
+async function puntosActivos(PuntoAcceso, tenantId, ids) {
+  const list = Array.isArray(ids) ? ids.filter(Boolean) : [];
+  if (!list.length) return [];
+  return PuntoAcceso.find({ _id: { $in: list }, tenantId, activo: true }).lean();
 }
 
 /**
- * Resuelve sitios candidatos según política del empleado.
+ * Ubicaciones candidatas.
+ * 1) Asignación temporal y, si hay, ubicaciones del trabajador.
+ * 2) Si el trabajador no tiene, las del departamento.
+ * 3) Si el departamento tampoco, los puntos de su subsidiaria.
+ * La subsidiaria ya no es una geocerca: el círculo vive en el punto de acceso.
  */
 async function resolveCandidateSites({ tenantId, empleado, at = new Date() }) {
-  const politica = empleado.marcajePoliticaGeo || DEFAULT_POLITICA_MARCAJE_GEO;
+  const departamento = await loadDepartamento(empleado);
+  const politica = politicaEfectiva(empleado, departamento);
   const PuntoAcceso = await getPuntoAccesoModel();
   const Asignacion = await getAsignacionPuntoAccesoModel();
-  const Subsidiaria = await getSubsidiariaModel();
 
   const sites = [];
   const pushUnique = (site) => {
@@ -71,27 +86,20 @@ async function resolveCandidateSites({ tenantId, empleado, at = new Date() }) {
     if (sites.some((s) => s.id === site.id)) return;
     sites.push(site);
   };
+  const pushPuntos = (puntos) => puntos.forEach((p) => pushUnique(siteFromPunto(p)));
 
   if (politica === 'disabled') {
     return { politica, sites: [] };
   }
 
   if (politica === 'any_catalog_site') {
-    const puntos = await PuntoAcceso.find({ tenantId, activo: true }).lean();
-    puntos.forEach((p) => pushUnique(siteFromPunto(p)));
-    // Incluir subsidiarias con geocerca configurada
-    const subs = await Subsidiaria.find({
-      empresaId: empleado.empresaId,
-      activo: true,
-      lat: { $ne: null },
-      lng: { $ne: null }
-    }).lean();
-    for (const s of subs) pushUnique(siteFromSubsidiaria(s));
+    const q = { tenantId, activo: true };
+    if (empleado?.empresaId) q.empresaId = empleado.empresaId;
+    const puntos = await PuntoAcceso.find(q).lean();
+    pushPuntos(puntos);
     return { politica, sites };
   }
 
-  // strict_assignment | open_with_flag | subsidiaria_default
-  // 1) Asignaciones temporales vigentes
   const asignaciones = await Asignacion.find({
     tenantId,
     empleadoId: empleado._id,
@@ -101,36 +109,41 @@ async function resolveCandidateSites({ tenantId, empleado, at = new Date() }) {
   })
     .select('puntoAccesoId')
     .lean();
-
   if (asignaciones.length) {
-    const ids = asignaciones.map((a) => a.puntoAccesoId);
-    const puntos = await PuntoAcceso.find({
-      _id: { $in: ids },
-      tenantId,
-      activo: true
-    }).lean();
-    puntos.forEach((p) => pushUnique(siteFromPunto(p)));
+    pushPuntos(
+      await puntosActivos(
+        PuntoAcceso,
+        tenantId,
+        asignaciones.map((a) => a.puntoAccesoId)
+      )
+    );
   }
 
-  // 2) Puntos fijos en ficha del empleado
   const fijos = Array.isArray(empleado.puntoAccesoIds) ? empleado.puntoAccesoIds : [];
   if (fijos.length) {
-    const puntos = await PuntoAcceso.find({
-      _id: { $in: fijos },
-      tenantId,
-      activo: true
-    }).lean();
-    puntos.forEach((p) => pushUnique(siteFromPunto(p)));
+    pushPuntos(await puntosActivos(PuntoAcceso, tenantId, fijos));
+    return { politica, sites };
   }
 
-  // 3) Geocerca de la subsidiaria del empleado
+  if (politica === 'strict_assignment') {
+    return { politica, sites };
+  }
+
+  const delDepto = Array.isArray(departamento?.puntoAccesoIds) ? departamento.puntoAccesoIds : [];
+  if (delDepto.length) {
+    pushPuntos(await puntosActivos(PuntoAcceso, tenantId, delDepto));
+    return { politica, sites };
+  }
+
   if (empleado.subsidiariaId) {
-    const sub = await Subsidiaria.findById(empleado.subsidiariaId).lean();
-    if (sub) pushUnique(siteFromSubsidiaria(sub));
+    const deLaPlaza = await PuntoAcceso.find({
+      tenantId,
+      activo: true,
+      subsidiariaId: empleado.subsidiariaId
+    }).lean();
+    pushPuntos(deLaPlaza);
   }
 
-  // strict: solo lo asignado (si no hay nada, sites vacío → bloquear o avisar)
-  // open_with_flag / subsidiaria_default: mismos candidatos
   return { politica, sites };
 }
 
@@ -161,7 +174,7 @@ async function validatePunchLocation({
       allowed: false,
       fueraDeZona: true,
       skipped: false,
-      politica: empleado.marcajePoliticaGeo || DEFAULT_POLITICA_MARCAJE_GEO,
+      politica: politicaEfectiva(empleado, null),
       reason: 'Ubicación simulada (Fake GPS) no permitida',
       candidatesChecked: 0,
       isMocked: true

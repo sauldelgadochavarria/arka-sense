@@ -107,6 +107,7 @@ const empleadoSchema = new mongoose.Schema(
     marcajePoliticaGeo: {
       type: String,
       enum: [
+        'heredar',
         'subsidiaria_default',
         'strict_assignment',
         'any_catalog_site',
@@ -114,7 +115,7 @@ const empleadoSchema = new mongoose.Schema(
         'disabled',
         ''
       ],
-      default: 'open_with_flag'
+      default: 'heredar'
     },
     /**
      * Excepción: no exigir registro SMS+UUID aunque la subsidiaria lo tenga activo.

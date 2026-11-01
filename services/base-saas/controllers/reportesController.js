@@ -3,23 +3,25 @@ const getDepartamentoModel = require('../models/departamento');
 const getTurnoModel = require('../models/turno');
 const getTipoIncidenciaModel = require('../models/tipoIncidencia');
 const getPayrollPeriodModel = require('../models/payrollPeriod');
-const { requireEmpresaForTenant } = require('../libs/tenantScope');
+const { requireEmpresaForTenant, scopeDepartamentoFilter, sessionSubsidiariaId } = require('../libs/tenantScope');
 const { parseReportFilters, toDateInputValue } = require('../libs/reportFilters');
 const { REPORTES, REPORTES_BY_SLUG } = require('../config/reportesCatalog');
 const { runReport } = require('../services/reportesService');
 const { getDashboardKpis } = require('../services/dashboardKpiService');
 const { escapeCsv } = require('../services/integration/csvUtils');
 
-async function loadFilterCatalogs(tenantId) {
+async function loadFilterCatalogs(req, empresa) {
   const Empleado = await getEmpleadoModel();
   const Departamento = await getDepartamentoModel();
   const Turno = await getTurnoModel();
   const TipoIncidencia = await getTipoIncidenciaModel();
   const PayrollPeriod = await getPayrollPeriodModel();
 
+  const tenantId = req.session.tenantId;
+  const deptoQ = scopeDepartamentoFilter(req, empresa, { activo: true }) || { tenantId, activo: true };
   const [empleados, departamentos, turnos, tiposIncidencia, periodos] = await Promise.all([
     Empleado.find({ tenantId, estatus: 'activo' }).sort({ lastName: 1 }).lean(),
-    Departamento.find({ tenantId, activo: true }).sort({ nombre: 1 }).lean(),
+    Departamento.find(deptoQ).sort({ nombre: 1 }).lean(),
     Turno.find({ tenantId, activo: true }).sort({ nombre: 1 }).lean(),
     TipoIncidencia.find({ tenantId, activo: true }).sort({ nombre: 1 }).lean(),
     PayrollPeriod.find({ tenantId }).sort({ fechaInicio: -1 }).limit(24).lean()
@@ -40,7 +42,12 @@ async function index(req, res) {
 
 async function dashboardKpis(req, res) {
   const { empresa, error } = await requireEmpresaForTenant(req);
-  const kpis = empresa ? await getDashboardKpis(req.session.tenantId) : null;
+  const kpis = empresa
+    ? await getDashboardKpis(req.session.tenantId, {
+        empresaId: empresa._id,
+        subsidiariaId: sessionSubsidiariaId(req)
+      })
+    : null;
   res.render('Reportes/kpis', {
     kpis,
     empresa,
@@ -58,7 +65,7 @@ async function show(req, res) {
 
   const { empresa, error } = await requireEmpresaForTenant(req);
   const filters = parseReportFilters(req.query);
-  const catalogs = empresa ? await loadFilterCatalogs(req.session.tenantId) : null;
+  const catalogs = empresa ? await loadFilterCatalogs(req, empresa) : null;
   const result = empresa ? await runReport(meta.slug, req.session.tenantId, filters) : null;
 
   const filterValues = {

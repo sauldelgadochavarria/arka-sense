@@ -401,21 +401,25 @@ async function crearYValidarDesdeZip({
   return job;
 }
 
-async function findOrCreateDepto(Departamento, tenantId, empresaId, nombre) {
+async function findOrCreateDepto(Departamento, tenantId, empresaId, nombre, subsidiariaId = null) {
   const n = normName(nombre);
   if (!n) return null;
-  let doc = await Departamento.findOne({ tenantId, nombre: new RegExp(`^${escapeRe(n)}$`, 'i') });
+  const q = { tenantId, nombre: new RegExp(`^${escapeRe(n)}$`, 'i') };
+  if (empresaId) q.empresaId = empresaId;
+  if (subsidiariaId) q.subsidiariaId = subsidiariaId;
+  let doc = await Departamento.findOne(q);
   if (doc) return doc;
   try {
     doc = await Departamento.create({
       tenantId,
       empresaId,
+      subsidiariaId: subsidiariaId || null,
       nombre: n,
       descripcion: 'Importado desde CFDI',
       activo: true
     });
   } catch (_) {
-    doc = await Departamento.findOne({ tenantId, nombre: n });
+    doc = await Departamento.findOne(q);
   }
   return doc;
 }
@@ -949,7 +953,13 @@ async function aplicarJobCfdi(
         if (deptoName && !deptoCache.has(deptoName)) {
           deptoCache.set(
             deptoName,
-            await findOrCreateDepto(Departamento, tenantId, job.empresaId, deptoName)
+            await findOrCreateDepto(
+              Departamento,
+              tenantId,
+              job.empresaId,
+              deptoName,
+              job.resumen?.subsidiariaId || job.subsidiariaId || null
+            )
           );
         }
         if (puestoName && !puestoCache.has(puestoName)) {
