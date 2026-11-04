@@ -137,6 +137,8 @@ router.get(['/', '/dashboard', '/inicio', '/nomina/flujo'], async (req, res) => 
         empresaId: empresa._id,
         subsidiariaId: sessionSubsidiariaId(req),
         hasNomina,
+        hasAsistencia: tenantHasFeature(featureFlags, 'asistencia'),
+        hasIncidencias: tenantHasFeature(featureFlags, 'incidencias'),
         periodoId
       });
     } catch (err) {
@@ -494,13 +496,17 @@ router.post('/asistencia-rotaciones/:id/toggle', rotacionesController.togglePlan
 
 router.get('/asistencia', asistenciaHubController.showHub);
 router.get('/asistencia-autorizaciones', asistenciaHubController.listAutorizaciones);
+router.get('/asistencia-autorizaciones/cambio-turno/:empleadoId', asistenciaHubController.showExcepcionTurno);
 router.post('/asistencia-autorizaciones/cambio-turno', asistenciaHubController.solicitarCambioTurnoAction);
+router.post('/asistencia-autorizaciones/dia/decidir', asistenciaHubController.autorizarDiaAction);
+router.post('/asistencia-autorizaciones/masiva', asistenciaHubController.autorizarMasivaAction);
 router.post('/asistencia-autorizaciones/:id/decidir', asistenciaHubController.decidirAction);
 
 router.get('/asistencia-marcaciones', marcacionesController.listMarcaciones);
 router.get('/asistencia-intentos', marcacionesController.listIntentosDia);
 router.get('/asistencia-marcaciones/:id', marcacionesController.showMarcacionDetalle);
 router.post('/asistencia-marcaciones', marcacionesController.createMarcacion);
+router.post('/asistencia-marcaciones/automaticas', marcacionesController.reprocesarMarcacionesAutomaticas);
 router.post('/asistencia-marcaciones/:id/ajustar', marcacionesController.ajustarMarcacion);
 router.post('/asistencia-marcaciones/:id/anular', marcacionesController.anularMarcacion);
 router.post('/asistencia-marcaciones/:id/eliminar', marcacionesController.borrarMarcacionBloqueado);

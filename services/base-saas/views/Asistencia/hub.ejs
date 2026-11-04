@@ -1,5 +1,5 @@
 <%- include('../Partials/layout-top', { title: 'Asistencia', session }) %>
-<%- include('partials/flujo-asistencia', { pasoActual: 0, fecha: fecha }) %>
+<%- include('partials/flujo-asistencia', { pasoActual: 0, fechaDesde: rango.fechaDesde, fechaHasta: rango.fechaHasta }) %>
 
 <section class="page-header">
   <h1>Asistencia</h1>
@@ -16,11 +16,25 @@
 <p>No hay empresa vinculada a este tenant.</p>
 <% } else { %>
 
-<form method="get" action="/asistencia" class="inline-form" style="margin-bottom:1rem">
-  <label>Fecha
-    <input type="date" name="fecha" value="<%= fecha %>" onchange="this.form.submit()" />
+<form method="get" action="/asistencia" class="form-grid" style="margin-bottom:1rem;align-items:end">
+  <label>Desde
+    <input type="date" name="fechaDesde" value="<%= rango.fechaDesde %>" />
   </label>
+  <label>Hasta
+    <input type="date" name="fechaHasta" value="<%= rango.fechaHasta %>" />
+  </label>
+  <button type="submit">Filtrar</button>
 </form>
+<p class="muted">
+  <% if (rango.origen === 'periodo' && rango.periodoLabel) { %>
+  Rango del período de pre-nómina abierto: <strong><%= rango.periodoLabel %></strong>.
+  <% } else if (rango.origen === 'hoy') { %>
+  Sin período de pre-nómina abierto: el rango es el día de hoy.
+  Si ese día no tiene checadas, los recuadros quedan en cero; amplía Desde y Hasta para ver otros días.
+  <% } else { %>
+  Rango elegido: <%= rango.fechaDesde %> → <%= rango.fechaHasta %>.
+  <% } %>
+</p>
 
 <% if (pendientesCount > 0) { %>
 <div class="alert alert-warning">
@@ -38,10 +52,10 @@
   <div class="card"><strong><%= equipoResumen.faltas %></strong> faltas</div>
   <div class="card"><strong><%= equipoResumen.incompletos %></strong> incompletos</div>
   <% } else { %>
-  <div class="card"><strong><%= alertasHoy.intentosRechazados %></strong> intentos rechazados</div>
-  <div class="card"><strong><%= alertasHoy.fueraZona %></strong> fuera de zona</div>
-  <div class="card"><strong><%= alertasHoy.excede12 %></strong> días &gt;12 h</div>
-  <div class="card"><strong><%= pendientesCount %></strong> por autorizar</div>
+  <a class="card" href="/asistencia-intentos?fechaDesde=<%= rango.fechaDesde %>&amp;fechaHasta=<%= rango.fechaHasta %>"><strong><%= alertasHoy.intentosRechazados %></strong> intentos rechazados</a>
+  <a class="card" href="/asistencia-intentos?fechaDesde=<%= rango.fechaDesde %>&amp;fechaHasta=<%= rango.fechaHasta %>"><strong><%= alertasHoy.fueraZona %></strong> fuera de zona</a>
+  <a class="card" href="/asistencia-registro-jornada?desde=<%= rango.fechaDesde %>&amp;hasta=<%= rango.fechaHasta %>"><strong><%= alertasHoy.excede12 %></strong> días &gt;12 h</a>
+  <a class="card" href="/asistencia-autorizaciones?fechaDesde=<%= rango.fechaDesde %>&amp;fechaHasta=<%= rango.fechaHasta %>"><strong><%= alertasHoy.excepciones %></strong> por autorizar</a>
   <% } %>
 </div>
 

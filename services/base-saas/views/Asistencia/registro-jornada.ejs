@@ -1,5 +1,5 @@
 <%- include('../Partials/layout-top', { title: 'Registro de jornada', session }) %>
-<%- include('partials/flujo-asistencia', { pasoActual: 5, fecha: typeof fecha !== 'undefined' ? fecha : null }) %>
+<%- include('partials/flujo-asistencia', { pasoActual: 5, fechaDesde: filters.desde, fechaHasta: filters.hasta }) %>
 <div class="page-header">
   <h1>Registro de jornada</h1>
   <p class="page-subtitle">

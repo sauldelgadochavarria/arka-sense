@@ -74,8 +74,26 @@ async function listIntentosDeMarcacion(tenantId, marcacion, { windowMinutes = 18
   return AttendanceAttempt.find({ tenantId, $or: or }).sort({ createdAt: 1 }).lean();
 }
 
+async function contarEnRango(tenantId, { empleadoIds = null, desde = null, hasta = null } = {}) {
+  if (Array.isArray(empleadoIds) && !empleadoIds.length) return { rechazados: 0, fueraZona: 0 };
+  const AttendanceAttempt = await getAttendanceAttemptModel();
+  const q = { tenantId };
+  if (Array.isArray(empleadoIds)) q.empleadoId = { $in: empleadoIds };
+  if (desde || hasta) {
+    q.createdAt = {};
+    if (desde) q.createdAt.$gte = new Date(desde);
+    if (hasta) q.createdAt.$lte = new Date(hasta);
+  }
+  const [rechazados, fueraZona] = await Promise.all([
+    AttendanceAttempt.countDocuments({ ...q, resultado: 'rechazado' }),
+    AttendanceAttempt.countDocuments({ ...q, 'geocerca.fueraDeZona': true })
+  ]);
+  return { rechazados, fueraZona };
+}
+
 module.exports = {
   registrarIntento,
   listIntentos,
-  listIntentosDeMarcacion
+  listIntentosDeMarcacion,
+  contarEnRango
 };

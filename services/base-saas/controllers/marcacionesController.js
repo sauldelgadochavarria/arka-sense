@@ -3,7 +3,7 @@
 const getEmpleadoModel = require('../models/empleado');
 const getTurnoModel = require('../models/turno');
 const getAttendanceRecordModel = require('../models/attendanceRecord');
-const { requireEmpresaForTenant, scopeEmpleadosFromReq, sessionSubsidiariaId } = require('../libs/tenantScope');
+const { requireEmpresaForTenant, scopeEmpleadosFromReq, scopeDepartamentoFilter, sessionSubsidiariaId } = require('../libs/tenantScope');
 const { parseOptionalObjectId, trimString } = require('../libs/formHelpers');
 const {
   parseDateTimeLocal,
@@ -29,6 +29,12 @@ const {
   listAuditoriaAsistencia
 } = require('../services/asistenciaAuditoriaService');
 const { listIntentos, listIntentosDeMarcacion } = require('../services/attendanceAttemptService');
+const { resolverRangoAsistencia } = require('../libs/rangoAsistencia');
+const {
+  rangoDe,
+  generarMarcacionesAutomaticas,
+  textoResumen
+} = require('../services/marcacionAutomaticaService');
 
 function defaultFechaQuery(req) {
   return trimString(req.query.fecha) || new Date().toISOString().slice(0, 10);
@@ -96,10 +102,15 @@ async function completarZonas(tenantId, marcaciones) {
 
 async function listMarcaciones(req, res) {
   const { empresa, error } = await requireEmpresaForTenant(req);
-  const ctx = await contextoFecha(req.query.fecha, sessionSubsidiariaId(req));
-  const fechaStr = ctx.ymd;
-  const fecha = ctx.desde;
-  const verAnuladas = trimString(req.query.anuladas) === '1';
+  const rango = await resolverRangoAsistencia(req, empresa);
+  const ctx = { zona: rango.zona, ymd: rango.fechaHasta };
+  const fechaStr = rango.fechaHasta;
+  const anuladasRaw = trimString(req.query.anuladas);
+  const modoAnuladas = anuladasRaw === '1' || anuladasRaw === 'incluir'
+    ? 'incluir'
+    : anuladasRaw === 'reporte' || anuladasRaw === 'solo'
+      ? 'reporte'
+      : 'activas';
   const empleadoFiltro = trimString(req.query.empleadoId) || '';
   const mostrarCaptura = trimString(req.query.nueva) === '1';
   const empleadoPrefill = empleadoFiltro;
@@ -124,10 +135,12 @@ async function listMarcaciones(req, res) {
 
   const marcFilter = {
     tenantId: req.session.tenantId,
-    fecha: { $gte: fecha, $lte: endOfDay(fecha) }
+    fecha: { $gte: rango.desdeUtc, $lte: rango.hastaUtc }
   };
   const and = [];
-  if (!verAnuladas) {
+  if (modoAnuladas === 'reporte') {
+    and.push({ estado: 'anulada' });
+  } else if (modoAnuladas === 'activas') {
     and.push({ $or: [{ estado: 'activa' }, { estado: { $exists: false } }, { estado: null }] });
   }
   const oidFiltro = empleadoFiltro ? parseOptionalObjectId(empleadoFiltro) : null;
@@ -145,7 +158,7 @@ async function listMarcaciones(req, res) {
 
   const dailyFilter = {
     tenantId: req.session.tenantId,
-    fecha: { $gte: fecha, $lte: endOfDay(fecha) }
+    fecha: { $gte: rango.desdeUtc, $lte: rango.hastaUtc }
   };
   if (filtroEnScope) dailyFilter.empleadoId = oidFiltro;
   else if (filtroFuera) dailyFilter.empleadoId = { $in: [] };
@@ -163,8 +176,8 @@ async function listMarcaciones(req, res) {
               : subId
                 ? { empleadoIds: empIds }
                 : {}),
-          fechaDesde: fecha,
-          fechaHasta: endOfDay(fecha),
+          fechaDesde: rango.desdeUtc,
+          fechaHasta: rango.hastaUtc,
           limit: 60
         })
       ])
@@ -178,7 +191,12 @@ async function listMarcaciones(req, res) {
   const empMap = new Map(
     empleadosScope.map((e) => [String(e._id), `${e.firstName} ${e.lastName} (${e.numEmpleado})`])
   );
-  const dailyMap = new Map(diariosScoped.map((d) => [String(d.empleadoId), d]));
+  const dailyMap = new Map();
+  diariosScoped.forEach((d) => {
+    const ymd = d.fecha ? new Date(d.fecha).toISOString().slice(0, 10) : '';
+    dailyMap.set(`${d.empleadoId}|${ymd}`, d);
+    if (rango.unDia) dailyMap.set(String(d.empleadoId), d);
+  });
   const mapaSubs = await mapaZonasPorSubsidiaria(empleadosScope.map((e) => e.subsidiariaId));
   const zonaPorEmp = mapaZonaPorEmpleado(empleadosScope, mapaSubs);
   for (const m of marcacionesScoped) {
@@ -189,11 +207,26 @@ async function listMarcaciones(req, res) {
   }
   await completarZonas(req.session.tenantId, marcacionesScoped);
 
+  const getDepartamentoModel = require('../models/departamento');
+  const getSubsidiariaModel = require('../models/subsidiaria');
+  const Departamento = await getDepartamentoModel();
+  const Subsidiaria = await getSubsidiariaModel();
+  const deptoQ = scopeDepartamentoFilter(req, empresa, { activo: { $ne: false } });
+  const [departamentos, subsidiariaActiva] = empresa
+    ? await Promise.all([
+        deptoQ ? Departamento.find(deptoQ).sort({ nombre: 1 }).select('nombre').lean() : [],
+        subId ? Subsidiaria.findById(subId).lean() : null
+      ])
+    : [[], null];
+  const rangoAuto = subsidiariaActiva ? rangoDe(subsidiariaActiva) : null;
+  const empleadosAuto = empleados.filter((e) => e.marcacionAutomatica).length;
+
   // Contar checadas activas por empleado+tipo (detectar duplicados)
   const dupKeyCount = new Map();
   for (const m of marcacionesScoped) {
     if (m.estado === 'anulada') continue;
-    const k = `${m.empleadoId}|${m.tipoMarcacion}`;
+    const ymdDup = m.fecha ? new Date(m.fecha).toISOString().slice(0, 10) : '';
+    const k = `${m.empleadoId}|${ymdDup}|${m.tipoMarcacion}`;
     dupKeyCount.set(k, (dupKeyCount.get(k) || 0) + 1);
   }
 
@@ -205,7 +238,10 @@ async function listMarcaciones(req, res) {
     bitacora,
     dupKeyCount,
     fecha: fechaStr,
-    verAnuladas,
+    fechaDesde: rango.fechaDesde,
+    fechaHasta: rango.fechaHasta,
+    rango,
+    modoAnuladas,
     empleadoFiltro,
     empleadoPrefill,
     tipoPrefill,
@@ -213,6 +249,10 @@ async function listMarcaciones(req, res) {
     estatusDiarioLabels: ESTATUS_DIARIO,
     tiposMarcacion: TIPOS_MARCACION,
     metodosRegistro: METODOS_REGISTRO,
+    departamentos,
+    rangoAuto,
+    empleadosAuto,
+    subsidiariaNombre: subsidiariaActiva?.nombre || '',
     formatTimeHHMM,
     empresa,
     error: error || null,
@@ -294,9 +334,9 @@ async function showMarcacionDetalle(req, res) {
 
 async function listIntentosDia(req, res) {
   const { empresa, error } = await requireEmpresaForTenant(req);
-  const ctx = await contextoFecha(req.query.fecha, sessionSubsidiariaId(req));
-  const fechaStr = ctx.ymd;
-  const fecha = ctx.desde;
+  const rango = await resolverRangoAsistencia(req, empresa);
+  const ctx = { zona: rango.zona, ymd: rango.fechaHasta };
+  const fechaStr = rango.fechaHasta;
   const empleadoId = parseOptionalObjectId(req.query.empleadoId);
 
   const Empleado = await getEmpleadoModel();
@@ -314,9 +354,9 @@ async function listIntentosDia(req, res) {
   const intentosRaw = empresa
     ? await listIntentos(req.session.tenantId, {
         empleadoId: empleadoId || undefined,
-        fechaDesde: fecha,
-        fechaHasta: endOfDay(fecha),
-        limit: 300
+        fechaDesde: rango.desdeUtc,
+        fechaHasta: rango.hastaUtc,
+        limit: 500
       })
     : [];
   const empIdSet = new Set(empleados.map((e) => String(e._id)));
@@ -332,6 +372,9 @@ async function listIntentosDia(req, res) {
     error: error || null,
     session: req.session,
     fecha: fechaStr,
+    fechaDesde: rango.fechaDesde,
+    fechaHasta: rango.fechaHasta,
+    rango,
     empleadoId: empleadoId ? String(empleadoId) : '',
     empleados,
     empMap,
@@ -682,6 +725,53 @@ async function borrarMarcacionBloqueado(req, res) {
   res.redirect(`/asistencia-marcaciones?fecha=${fechaRedirect}`);
 }
 
+async function reprocesarMarcacionesAutomaticas(req, res) {
+  try {
+    const { empresa, error } = await requireEmpresaForTenant(req);
+    if (error || !empresa) {
+      req.flash('error', error || 'No hay empresa vinculada');
+      return res.redirect('/asistencia-marcaciones');
+    }
+    const subId = sessionSubsidiariaId(req);
+    if (!subId) {
+      req.flash('error', 'Elige una subsidiaria para generar las marcaciones automáticas');
+      return res.redirect('/asistencia-marcaciones');
+    }
+    const ymd = trimString(req.body.fecha);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) {
+      req.flash('error', 'Indica el día a generar');
+      return res.redirect('/asistencia-marcaciones');
+    }
+    const getSubsidiariaModel = require('../models/subsidiaria');
+    const Subsidiaria = await getSubsidiariaModel();
+    const subsidiaria = await Subsidiaria.findById(subId).lean();
+    if (!subsidiaria || String(subsidiaria.empresaId) !== String(empresa._id)) {
+      req.flash('error', 'Subsidiaria no encontrada');
+      return res.redirect('/asistencia-marcaciones');
+    }
+    const { ymdInTimeZone } = require('../libs/timeHelpers');
+    const hoy = ymdInTimeZone(new Date(), subsidiaria.zonaHoraria);
+    if (ymd > hoy) {
+      req.flash('error', 'No se generan marcaciones de un día futuro');
+      return res.redirect(`/asistencia-marcaciones?fechaDesde=${hoy}&fechaHasta=${hoy}`);
+    }
+    const resumen = await generarMarcacionesAutomaticas({
+      tenantId: req.session.tenantId,
+      subsidiaria,
+      ymd,
+      departamentoId: parseOptionalObjectId(req.body.departamentoId),
+      modo: 'reproceso',
+      actor: sessionActor(req)
+    });
+    req.flash('success', textoResumen(resumen, true));
+    return res.redirect(`/asistencia-marcaciones?fechaDesde=${ymd}&fechaHasta=${ymd}`);
+  } catch (err) {
+    console.error('[marcaciones-auto]', err);
+    req.flash('error', 'No se pudieron generar las marcaciones automáticas');
+    return res.redirect('/asistencia-marcaciones');
+  }
+}
+
 module.exports = {
   listMarcaciones,
   showMarcacionDetalle,
@@ -689,5 +779,6 @@ module.exports = {
   createMarcacion,
   ajustarMarcacion,
   anularMarcacion,
-  borrarMarcacionBloqueado
+  borrarMarcacionBloqueado,
+  reprocesarMarcacionesAutomaticas
 };

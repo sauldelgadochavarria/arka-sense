@@ -68,8 +68,10 @@ async function reorganizeMenuPackages(Menu, adminRoleId) {
   await setRootMeta(Menu, 'Pre-nómina', {
     orden: 21,
     modulePackage: 'asistencia_prenomina',
+    modulePackages: ['asistencia_prenomina', 'nomina'],
     activo: true,
-    requiredFeatureKeys: ['prenomina']
+    requiredFeatureKeys: [],
+    requiredFeatureKeysAny: ['prenomina', 'nomina']
   });
   await setRootMeta(Menu, 'Incidencias', {
     orden: 22,
@@ -363,7 +365,12 @@ async function reorganizeMenuPackages(Menu, adminRoleId) {
 
   // —— Pre-nómina ——
   if (prenomina) {
-    const prCommon = { activo: true, requiredFeatureKeys: ['prenomina'], roles: [] };
+    const prCommon = {
+      activo: true,
+      requiredFeatureKeys: [],
+      requiredFeatureKeysAny: ['prenomina', 'nomina'],
+      roles: []
+    };
     const orgAny = {
       activo: true,
       requiredFeatureKeysAny: ['personal', 'prenomina', 'nomina', 'asistencia'],
@@ -372,10 +379,12 @@ async function reorganizeMenuPackages(Menu, adminRoleId) {
     };
 
     const prenOps = await ensureGroup(Menu, prenomina._id, 'Operación', 10, {
-      requiredFeatureKeys: ['prenomina']
+      requiredFeatureKeys: [],
+      requiredFeatureKeysAny: ['prenomina', 'nomina']
     });
     const prenCfg = await ensureGroup(Menu, prenomina._id, 'Configuración', 20, {
-      requiredFeatureKeys: ['prenomina']
+      requiredFeatureKeys: [],
+      requiredFeatureKeysAny: ['prenomina', 'nomina']
     });
 
     await upsertByRuta(Menu, {
@@ -395,7 +404,10 @@ async function reorganizeMenuPackages(Menu, adminRoleId) {
       esCategoria: false
     });
     await upsertByRuta(Menu, {
-      ...prCommon,
+      activo: true,
+      requiredFeatureKeys: ['prenomina'],
+      requiredFeatureKeysAny: [],
+      roles: [],
       menuPrincipal: 'Exportar a nómina',
       rutaApp: '/integraciones/exportacion',
       parentId: prenOps,

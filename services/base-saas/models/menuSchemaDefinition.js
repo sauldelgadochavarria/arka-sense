@@ -23,7 +23,12 @@ const menuSchema = new mongoose.Schema(
       type: String,
       enum: ['nucleo', 'asistencia_prenomina', 'nomina'],
       required: false
-    }
+    },
+    /**
+     * Si tiene valores, la raíz se muestra en cada uno de esos paquetes.
+     * La pre-nómina vive en Asistencia-Prenómina y en Nómina.
+     */
+    modulePackages: [{ type: String, enum: ['nucleo', 'asistencia_prenomina', 'nomina'] }]
   },
   { collection: 'mainmenu' }
 );

@@ -167,6 +167,7 @@ function buildEmpleadoPayload(body, tenantId, empresaId) {
     activo: estatus !== 'baja',
     codigoExterno: trimString(body.codigoExterno),
     tipoRegistro: tipoRegistroFinal,
+    marcacionAutomatica: parseCheckbox(body, 'marcacionAutomatica'),
     grupoDispositivosId: parseOptionalObjectId(body.grupoDispositivosId),
     marcajePoliticaGeo: (() => {
       const v = trimString(body.marcajePoliticaGeo);

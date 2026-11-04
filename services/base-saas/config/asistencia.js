@@ -11,7 +11,8 @@ const METODOS_REGISTRO = [
   { value: 'manual', label: 'Manual (web)' },
   { value: 'biometrico', label: 'Biométrico' },
   { value: 'movil', label: 'App móvil' },
-  { value: 'rfid', label: 'RFID / tarjeta' }
+  { value: 'rfid', label: 'RFID / tarjeta' },
+  { value: 'automatico', label: 'Automática' }
 ];
 
 const DIAS_SEMANA = [
@@ -32,7 +33,8 @@ const ESTATUS_DIARIO = {
   descanso: 'Descanso',
   registro_parcial: 'Registro parcial',
   fuera_de_rango: 'Fuera de rango',
-  vacaciones: 'De vacaciones'
+  vacaciones: 'De vacaciones',
+  anulada: 'Checada anulada'
 };
 
 const MODOS_TOLERANCIA = [

@@ -85,9 +85,14 @@ async function recalcularSaldoEmpleado(tenantId, empleadoId, anio = new Date().g
   ).lean();
 }
 
-async function recalcularSaldosTenant(tenantId, anio = new Date().getFullYear()) {
+async function recalcularSaldosTenant(tenantId, anio = new Date().getFullYear(), empleadoIds = null) {
   const Empleado = await getEmpleadoModel();
-  const empleados = await Empleado.find({ tenantId, estatus: 'activo', activo: true }).lean();
+  const q = { tenantId, estatus: 'activo', activo: true };
+  if (Array.isArray(empleadoIds)) {
+    if (!empleadoIds.length) return [];
+    q._id = { $in: empleadoIds };
+  }
+  const empleados = await Empleado.find(q).lean();
   const results = [];
   for (const e of empleados) {
     results.push(await recalcularSaldoEmpleado(tenantId, e._id, anio));

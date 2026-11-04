@@ -43,6 +43,13 @@ function scopeDepartamentoFilter(req, empresa, extra = {}) {
   return { ...base, ...extra };
 }
 
+/** Turnos de la empresa y, si hay subsidiaria activa, solo de esa plaza. */
+function scopeTurnoFilter(req, empresa, extra = {}) {
+  const base = scopeEmpresaFilter(req, empresa);
+  if (!base) return null;
+  return { ...base, ...extra };
+}
+
 function scopeEmpresaFilter(req, empresa, { includeSubsidiaria = true } = {}) {
   if (!empresa) return null;
   const filter = {
@@ -294,6 +301,7 @@ module.exports = {
   sessionSubsidiariaId,
   scopeEmpresaFilter,
   scopeDepartamentoFilter,
+  scopeTurnoFilter,
   scopeEmpleadosFilter,
   scopeEmpleadosFromReq,
   scopeLugarFilter,

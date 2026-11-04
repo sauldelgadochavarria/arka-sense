@@ -1,6 +1,6 @@
 <%- include('../Partials/layout-top', { title: 'Marcaciones', session }) %>
-<%- include('partials/flujo-asistencia', { pasoActual: 1, fecha: fecha }) %>
-<h1>Marcaciones del día</h1>
+<%- include('partials/flujo-asistencia', { pasoActual: 1, fechaDesde: fechaDesde, fechaHasta: fechaHasta }) %>
+<h1>Marcaciones</h1>
 <% if (!empresa) { %>
 <p>No hay empresa vinculada a este tenant.</p>
 <% } else {
@@ -11,8 +11,11 @@
 %>
 <div class="toolbar" style="flex-wrap:wrap;gap:.5rem;align-items:flex-end">
   <form method="get" action="/asistencia-marcaciones" class="inline-form form-grid" style="max-width:none;display:flex;flex-wrap:wrap;gap:.5rem;align-items:flex-end">
-    <label>Fecha
-      <input type="date" name="fecha" value="<%= fecha %>" />
+    <label>Desde
+      <input type="date" name="fechaDesde" value="<%= fechaDesde %>" />
+    </label>
+    <label>Hasta
+      <input type="date" name="fechaHasta" value="<%= fechaHasta %>" />
     </label>
     <label>Empleado
       <select name="empleadoId">
@@ -24,25 +27,67 @@
         <% }); %>
       </select>
     </label>
-    <% if (verAnuladas) { %><input type="hidden" name="anuladas" value="1" /><% } %>
+    <label>Anuladas
+      <select name="anuladas">
+        <% const modoA = typeof modoAnuladas !== 'undefined' ? modoAnuladas : 'activas'; %>
+        <option value="" <%= modoA === 'activas' ? 'selected' : '' %>>Ocultar</option>
+        <option value="incluir" <%= modoA === 'incluir' ? 'selected' : '' %>>Incluir en el listado</option>
+        <option value="reporte" <%= modoA === 'reporte' ? 'selected' : '' %>>Solo reporte de anuladas</option>
+      </select>
+    </label>
     <button type="submit">Filtrar</button>
   </form>
-  <a class="btn" href="/asistencia-diaria?fecha=<%= fecha %>">Asistencia del día</a>
-  <a class="btn" href="/asistencia-marcaciones?fecha=<%= fecha %>&amp;nueva=1#captura">+ Nueva marcación</a>
-  <% if (verAnuladas) { %>
-  <a class="btn" href="/asistencia-marcaciones?fecha=<%= fecha %><%= empF ? '&empleadoId=' + empF : '' %>">Ocultar anuladas</a>
-  <% } else { %>
-  <a class="btn" href="/asistencia-marcaciones?fecha=<%= fecha %>&amp;anuladas=1<%= empF ? '&empleadoId=' + empF : '' %>">Ver anuladas</a>
-  <% } %>
+  <a class="btn" href="/asistencia-diaria?fechaDesde=<%= fechaDesde %>&amp;fechaHasta=<%= fechaHasta %>">Asistencia del día</a>
+  <a class="btn" href="/asistencia-marcaciones?fechaDesde=<%= fechaDesde %>&amp;fechaHasta=<%= fechaHasta %>&amp;nueva=1#captura">+ Nueva marcación</a>
 </div>
 
 <p class="muted">
   Cada fila tiene <strong>Corregir</strong> para cambiar hora o tipo, o para anular. «Nueva marcación» solo agrega otra checada.
+  <% if (modoA === 'reporte') { %>
+  Este listado es el reporte de anuladas del rango: no entran al cálculo del día.
+  <% } else if (modoA === 'incluir') { %>
+  Las anuladas van en el mismo listado, marcadas, y no entran al cálculo del día.
+  <% } %>
 </p>
+
+<section class="panel" id="automaticas">
+  <h2 class="panel-title">Marcación automática</h2>
+  <% if (!rangoAuto) { %>
+  <p class="muted" style="margin:0">Elige una subsidiaria. El rango aleatorio de entrada y salida se define en esa plaza.</p>
+  <% } else { %>
+  <p class="muted">
+    <%= subsidiariaNombre %>: la entrada se sortea entre
+    <strong><%= rangoAuto.entradaAntesMin %> min antes</strong> y
+    <strong><%= rangoAuto.entradaDespuesMin %> min después</strong> de la hora del turno;
+    la salida, entre <strong><%= rangoAuto.salidaAntesMin %> min antes</strong> y
+    <strong><%= rangoAuto.salidaDespuesMin %> min después</strong>.
+    Empleados con la casilla activa: <strong><%= empleadosAuto %></strong>.
+    El sistema las crea al llegar esa hora.
+    Reprocesar vuelve a sortear el día y no toca checadas de app, manuales ni ya corregidas.
+    Si el turno pide comida checada, también genera esas dos marcas.
+    <a href="/config-subsidiarias">Ajustar el rango</a>
+  </p>
+  <form method="post" action="/asistencia-marcaciones/automaticas" class="inline-form" style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:flex-end">
+    <label>Día
+      <input type="date" name="fecha" value="<%= fechaHasta %>" required />
+    </label>
+    <label>Departamento
+      <select name="departamentoId">
+        <option value="">— Todos —</option>
+        <% (departamentos || []).forEach(function(d) { %>
+        <option value="<%= d._id %>"><%= d.nombre %></option>
+        <% }); %>
+      </select>
+    </label>
+    <button type="submit">Generar / reprocesar</button>
+  </form>
+  <% } %>
+</section>
 
 <table id="lista">
   <thead>
     <tr>
+      <th>Fecha</th>
       <th>Hora</th>
       <th>Original</th>
       <th>Empleado</th>
@@ -56,16 +101,17 @@
   </thead>
   <tbody>
     <% if (!marcaciones.length) { %>
-    <tr><td colspan="9" class="muted">Sin marcaciones para este filtro. <a href="#captura">Registrar una</a>.</td></tr>
+    <tr><td colspan="10" class="muted"><%= modoA === 'reporte' ? 'No hay marcaciones anuladas en este rango.' : 'Sin marcaciones para este filtro.' %> <% if (modoA !== 'reporte') { %><a href="#captura">Registrar una</a><% } %></td></tr>
     <% } %>
     <% marcaciones.forEach(function(m) {
-         const daily = dailyMap.get(String(m.empleadoId));
+         const ymdM = m.fecha ? new Date(m.fecha).toISOString().slice(0, 10) : '';
+         const daily = dailyMap.get(String(m.empleadoId) + '|' + ymdM) || dailyMap.get(String(m.empleadoId));
          const estLabel = daily
            ? ((estatusDiarioLabels && estatusDiarioLabels[daily.estatus]) || daily.estatus)
            : 'Sin resumen';
          const anulada = m.estado === 'anulada';
          const tsOrig = m.timestampOriginal || m.timestamp;
-         const dupKey = String(m.empleadoId) + '|' + m.tipoMarcacion;
+         const dupKey = String(m.empleadoId) + '|' + ymdM + '|' + m.tipoMarcacion;
          const dupCount = (!anulada && dupKeyCount) ? (dupKeyCount.get(dupKey) || 0) : 0;
          const esUltimaUsada = daily && !anulada && m.tipoMarcacion === 'salida' && daily.salidaReal
            && new Date(daily.salidaReal).getTime() === new Date(m.timestamp).getTime();
@@ -73,8 +119,10 @@
            && new Date(daily.entradaReal).getTime() === new Date(m.timestamp).getTime();
     %>
     <tr class="<%= anulada ? 'row-muted' : '' %>">
+      <td><%= ymdM || '—' %></td>
       <td>
         <a href="/asistencia-marcaciones/<%= m._id %>"><%= formatTimeHHMM(m.timestamp, m.zonaHoraria) %></a>
+        <% if (m.metodo === 'automatico') { %> <span class="badge" title="Generada con el rango de la subsidiaria">auto</span><% } %>
         <% if (m.origen === 'ajuste') { %> <span class="badge">ajuste</span><% } %>
         <% if (esUltimaUsada || esUltimaEntrada) { %> <span class="badge badge-activo" title="Esta es la checada que usa el resumen del día">en uso</span><% } %>
         <% if (dupCount > 1) { %> <span class="badge badge-suspendido" title="Hay varias del mismo tipo; el día usa la última">×<%= dupCount %></span><% } %>
@@ -106,7 +154,7 @@
         <details style="display:inline-block;vertical-align:top">
           <summary style="cursor:pointer">Corregir</summary>
           <form method="post" action="/asistencia-marcaciones/<%= m._id %>/ajustar?fecha=<%= fecha %>" class="form-grid" style="margin-top:0.5rem;min-width:240px">
-            <input type="datetime-local" name="timestamp" value="<%= fecha %>T<%= formatTimeHHMM(m.timestamp, m.zonaHoraria) %>" required />
+            <input type="datetime-local" name="timestamp" value="<%= (ymdM || fecha) %>T<%= formatTimeHHMM(m.timestamp, m.zonaHoraria) %>" required />
             <span class="muted small"><%= m.zonaHoraria || '' %></span>
             <select name="tipoMarcacion" required>
               <% tiposMarcacion.forEach(function(t) { %>
@@ -188,7 +236,7 @@
     </label>
     <label>Método
       <select name="metodo">
-        <% metodosRegistro.forEach(function(m) { %>
+        <% metodosRegistro.forEach(function(m) { if (m.value === 'automatico') return; %>
         <option value="<%= m.value %>" <%= m.value === 'manual' ? 'selected' : '' %>><%= m.label %></option>
         <% }); %>
       </select>

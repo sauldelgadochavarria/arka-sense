@@ -298,6 +298,16 @@ async function showPeriodo(req, res) {
   );
   const scopeIds = empleadosScope.map((e) => e._id);
 
+  if (periodo.estatus !== 'cerrado' && scopeIds.length) {
+    const { completarDescansosRango } = require('../services/attendanceProcessingService');
+    await completarDescansosRango(
+      req.session.tenantId,
+      scopeIds,
+      ymdAncla(periodo.fechaInicio),
+      ymdAncla(periodo.fechaFin)
+    );
+  }
+
   const dailies = await DailyAttendance.find({
     tenantId: req.session.tenantId,
     fecha: { $gte: inicio, $lte: fin },

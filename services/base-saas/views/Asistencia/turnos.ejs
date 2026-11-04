@@ -4,7 +4,13 @@
 <div class="page-header" style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:0.75rem">
   <div>
     <h1 style="margin:0">Turnos y horarios</h1>
-    <p class="muted" style="margin:0.35rem 0 0">Horarios, tolerancias y esquema de jornada (46 / 9 / 12).</p>
+    <p class="muted" style="margin:0.35rem 0 0">
+      Horarios de la subsidiaria
+      <% if (session.subsidiariaActiva && session.subsidiariaActiva.nombre) { %>
+      <strong><%= session.subsidiariaActiva.nombre %></strong>
+      <% } %>.
+      Tolerancias y esquema de jornada (46 / 9 / 12).
+    </p>
   </div>
   <% if (empresa) { %>
   <a class="btn" href="/asistencia-turnos/nuevo">+ Nuevo turno</a>

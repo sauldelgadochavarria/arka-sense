@@ -3,9 +3,9 @@ const getTurnoModel = require('../models/turno');
 const getDailyAttendanceModel = require('../models/dailyAttendance');
 const getDepartamentoModel = require('../models/departamento');
 const getPayrollPeriodModel = require('../models/payrollPeriod');
-const { requireEmpresaForTenant, scopeEmpresaFilter, scopeEmpleadosFromReq, sessionSubsidiariaId } = require('../libs/tenantScope');
+const { requireEmpresaForTenant, scopeEmpresaFilter, scopeTurnoFilter, scopeEmpleadosFromReq, sessionSubsidiariaId } = require('../libs/tenantScope');
 const { trimString, parseOptionalObjectId } = require('../libs/formHelpers');
-const { parseDateTimeLocal, startOfDay, endOfDay, formatTimeHHMM, ymdAncla } = require('../libs/timeHelpers');
+const { formatTimeHHMM, ymdAncla } = require('../libs/timeHelpers');
 const {
   contextoFecha,
   mapaZonasPorSubsidiaria,
@@ -13,6 +13,7 @@ const {
 } = require('../services/zonaHorariaService');
 const { ESTATUS_DIARIO } = require('../config/asistencia');
 const { recalculateDayForTenant } = require('../services/attendanceProcessingService');
+const { resolverRangoAsistencia } = require('../libs/rangoAsistencia');
 const { listTiposPeriodo } = require('../services/tipoPeriodoNominaService');
 
 function defaultFechaQuery(req) {
@@ -32,9 +33,10 @@ function labelPeriodo(p, tipoMap) {
 
 async function listDiaria(req, res) {
   const { empresa, error } = await requireEmpresaForTenant(req);
-  const ctx = await contextoFecha(req.query.fecha, sessionSubsidiariaId(req));
-  let fechaStr = ctx.ymd;
-  const zonaPagina = ctx.zona;
+  const rango = await resolverRangoAsistencia(req, empresa);
+  let fechaDesde = rango.fechaDesde;
+  let fechaHasta = rango.fechaHasta;
+  const zonaPagina = rango.zona;
   const estatusFiltro = trimString(req.query.estatus);
   const departamentoId = parseOptionalObjectId(req.query.departamentoId);
   let tipoPeriodoId = parseOptionalObjectId(req.query.tipoPeriodoId);
@@ -58,19 +60,23 @@ async function listDiaria(req, res) {
       if (periodoSel.tipoPeriodoId && !tipoPeriodoId) {
         tipoPeriodoId = periodoSel.tipoPeriodoId;
       }
-      const ini = startOfDay(periodoSel.fechaInicio);
-      const fin = startOfDay(periodoSel.fechaFin);
-      let fecha = startOfDay(parseDateTimeLocal(`${fechaStr}T12:00`, zonaPagina) || new Date());
-      if (fecha < ini || fecha > fin) {
-        const hoy = startOfDay(parseDateTimeLocal(`${ymdAncla(new Date(), zonaPagina)}T12:00`, zonaPagina) || new Date());
-        fecha = hoy >= ini && hoy <= fin ? hoy : ini;
-        fechaStr = ymdAncla(fecha, zonaPagina);
-        fechaAjustadaPorPeriodo = true;
+      const ini = ymdAncla(periodoSel.fechaInicio, zonaPagina);
+      const fin = ymdAncla(periodoSel.fechaFin, zonaPagina);
+      const antes = `${fechaDesde}|${fechaHasta}`;
+      if (ini && fechaDesde < ini) fechaDesde = ini;
+      if (fin && fechaHasta > fin) fechaHasta = fin;
+      if (fechaDesde > fechaHasta) {
+        fechaDesde = ini || fechaDesde;
+        fechaHasta = fin || fechaHasta;
       }
+      fechaAjustadaPorPeriodo = antes !== `${fechaDesde}|${fechaHasta}`;
     }
   }
 
-  const fecha = startOfDay(parseDateTimeLocal(`${fechaStr}T12:00`, zonaPagina) || new Date());
+  const unDia = fechaDesde === fechaHasta;
+  const fecha = new Date(`${fechaDesde}T00:00:00.000Z`);
+  const fechaFin = new Date(`${fechaHasta}T23:59:59.999Z`);
+  const fechaStr = fechaHasta;
 
   const empQuery = scopeEmpleadosFromReq(req, empresa, { soloActivos: true }) || {
     tenantId: req.session.tenantId,
@@ -86,10 +92,10 @@ async function listDiaria(req, res) {
   const [empleadosRaw, turnos, resumenes, departamentos, tiposPeriodo, periodos] = empresa
     ? await Promise.all([
         Empleado.find(empQuery).sort({ lastName: 1, firstName: 1 }).lean(),
-        Turno.find({ tenantId: req.session.tenantId }).lean(),
+        Turno.find(scopeTurnoFilter(req, empresa) || { tenantId: req.session.tenantId }).lean(),
         DailyAttendance.find({
           tenantId: req.session.tenantId,
-          fecha: { $gte: fecha, $lte: endOfDay(fecha) }
+          fecha: { $gte: fecha, $lte: fechaFin }
         }).lean(),
         Departamento.find({ ...(scopePeriodos || { tenantId: req.session.tenantId }), activo: { $ne: false } })
           .sort({ nombre: 1 })
@@ -127,6 +133,7 @@ async function listDiaria(req, res) {
   const resumenMap = new Map(resumenes.map((r) => [String(r.empleadoId), r]));
   const empIdSet = new Set(empleados.map((e) => String(e._id)));
   const resumenesScope = resumenes.filter((r) => empIdSet.has(String(r.empleadoId)));
+  const empById = new Map(empleados.map((e) => [String(e._id), e]));
 
   const mostrarComida =
     turnos.some((t) => t.comidaChecada) ||
@@ -136,12 +143,12 @@ async function listDiaria(req, res) {
 
   const mapaSubs = await mapaZonasPorSubsidiaria(empleados.map((e) => e.subsidiariaId));
   const zonaPorEmp = mapaZonaPorEmpleado(empleados, mapaSubs);
-  const todasFilas = empleados.map((empleado) => {
-    const resumen = resumenMap.get(String(empleado._id)) || null;
+  function filaDe(empleado, resumen) {
     const turno = empleado.turnoId ? turnoById.get(String(empleado.turnoId)) : null;
     return {
       empleado,
       resumen,
+      fechaYmd: resumen && resumen.fecha ? new Date(resumen.fecha).toISOString().slice(0, 10) : fechaDesde,
       zonaHoraria: (resumen && resumen.zonaHoraria) || zonaPorEmp.get(String(empleado._id)) || zonaPagina,
       comidaChecada: Boolean(turno?.comidaChecada),
       departamentoNombre: empleado.departamentoId
@@ -152,7 +159,26 @@ async function listDiaria(req, res) {
         : '—',
       periodoNombre: periodoLabel || '—'
     };
-  });
+  }
+
+  const todasFilas = unDia
+    ? empleados.map((empleado) => filaDe(empleado, resumenMap.get(String(empleado._id)) || null))
+    : resumenesScope
+        .map((resumen) => {
+          const empleado = empById.get(String(resumen.empleadoId));
+          return empleado ? filaDe(empleado, resumen) : null;
+        })
+        .filter(Boolean)
+        .sort((a, b) => String(b.fechaYmd).localeCompare(String(a.fechaYmd)));
+
+  const sinTurno = empleados
+    .filter((e) => !e.turnoId)
+    .map((e) => ({
+      id: e._id,
+      nombre: `${e.firstName || ''} ${e.lastName || ''}`.trim(),
+      num: e.numEmpleado || '',
+      departamento: e.departamentoId ? deptoMap.get(String(e.departamentoId)) || '—' : '—'
+    }));
 
   const stats = {
     total: todasFilas.length,
@@ -176,6 +202,9 @@ async function listDiaria(req, res) {
   res.render('Asistencia/diaria', {
     filas,
     fecha: fechaStr,
+    fechaDesde,
+    fechaHasta,
+    unDia,
     stats,
     estatusFiltro,
     departamentoId: departamentoId ? String(departamentoId) : '',
@@ -189,6 +218,7 @@ async function listDiaria(req, res) {
     periodos,
     labelPeriodo: (p) => labelPeriodo(p, tipoPeriodoMap),
     turnoMap,
+    sinTurno,
     mostrarComida,
     estatusLabels: ESTATUS_DIARIO,
     formatTimeHHMM,

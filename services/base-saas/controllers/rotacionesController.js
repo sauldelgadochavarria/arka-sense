@@ -4,7 +4,7 @@ const getOverrideTurnoModel = require('../models/overrideTurno');
 const getEmpleadoModel = require('../models/empleado');
 const getDepartamentoModel = require('../models/departamento');
 const getTurnoModel = require('../models/turno');
-const { requireEmpresaForTenant, findOneByTenant, findOneDocByTenant, scopeEmpleadosFromReq, scopeDepartamentoFilter } = require('../libs/tenantScope');
+const { requireEmpresaForTenant, findOneByTenant, findOneDocByTenant, scopeEmpleadosFromReq, scopeDepartamentoFilter, scopeTurnoFilter } = require('../libs/tenantScope');
 const { trimString, parseOptionalObjectId, parseDate } = require('../libs/formHelpers');
 const { startOfDay, endOfDay } = require('../libs/timeHelpers');
 const { DIAS_SEMANA } = require('../config/asistencia');
@@ -42,12 +42,19 @@ async function empleadoEnSesion(req, empresa, empleadoId) {
   return Empleado.findOne({ ...q, _id: empleadoId }).select('_id').lean();
 }
 
-async function loadTurnosMap(tenantId) {
+async function loadTurnosMap(req, empresa) {
   const Turno = await getTurnoModel();
-  const turnos = await Turno.find({ tenantId, activo: true }).sort({ nombre: 1 }).lean();
+  const q = scopeTurnoFilter(req, empresa, { activo: true }) || {
+    tenantId: req.session.tenantId,
+    activo: true
+  };
+  const [turnos, todos] = await Promise.all([
+    Turno.find(q).sort({ nombre: 1 }).lean(),
+    Turno.find({ tenantId: req.session.tenantId }).select('nombre').lean()
+  ]);
   return {
     turnos,
-    turnoMap: new Map(turnos.map((t) => [String(t._id), t.nombre]))
+    turnoMap: new Map(todos.map((t) => [String(t._id), t.nombre]))
   };
 }
 
@@ -55,7 +62,7 @@ async function listRotaciones(req, res) {
   const { empresa, error } = await requireEmpresaForTenant(req);
   const PlantillaRotacion = await getPlantillaRotacionModel();
   const AsignacionRotacion = await getAsignacionRotacionModel();
-  const { turnoMap } = await loadTurnosMap(req.session.tenantId);
+  const { turnoMap } = await loadTurnosMap(req, empresa);
 
   const empleadosSesion = empresa ? await empleadosDeSesion(req, empresa, { soloActivos: false }) : [];
   const empIds = empleadosSesion.map((e) => e._id);
@@ -132,7 +139,7 @@ async function editPlantilla(req, res) {
   const plantilla = await findOneByTenant(PlantillaRotacion, req.session.tenantId, req.params.id);
   if (!plantilla) return res.status(404).send('Plantilla no encontrada');
 
-  const { turnos, turnoMap } = await loadTurnosMap(req.session.tenantId);
+  const { turnos, turnoMap } = await loadTurnosMap(req, empresa);
   const slotMap = slotMapFromPlantilla(plantilla);
   const tipo = getPlantillaTipo(plantilla);
   const previewAncla = startOfDay(new Date());
@@ -200,7 +207,7 @@ async function listAsignaciones(req, res) {
   const PlantillaRotacion = await getPlantillaRotacionModel();
   const AsignacionRotacion = await getAsignacionRotacionModel();
   const Departamento = await getDepartamentoModel();
-  const { turnoMap } = await loadTurnosMap(req.session.tenantId);
+  const { turnoMap } = await loadTurnosMap(req, empresa);
 
   const empleados = empresa ? await empleadosDeSesion(req, empresa, { soloActivos: true }) : [];
   const empIds = empleados.map((e) => e._id);
@@ -327,7 +334,7 @@ async function toggleAsignacion(req, res) {
 async function listCambios(req, res) {
   const { empresa, error } = await requireEmpresaForTenant(req);
   const OverrideTurno = await getOverrideTurnoModel();
-  const { turnos, turnoMap } = await loadTurnosMap(req.session.tenantId);
+  const { turnos, turnoMap } = await loadTurnosMap(req, empresa);
 
   const desde = parseDate(req.query.desde) || startOfDay(new Date());
   const hasta = parseDate(req.query.hasta) || endOfDay(new Date(Date.now() + 30 * 86400000));
@@ -438,7 +445,7 @@ async function showMatriz(req, res) {
   const diasVista = Math.min(28, Math.max(7, Number(req.query.dias) || 14));
 
   const AsignacionRotacion = await getAsignacionRotacionModel();
-  const { turnoMap } = await loadTurnosMap(req.session.tenantId);
+  const { turnoMap } = await loadTurnosMap(req, empresa);
 
   const empleadosSesion = empresa ? await empleadosDeSesion(req, empresa, { soloActivos: false }) : [];
   const empIds = empleadosSesion.map((e) => e._id);

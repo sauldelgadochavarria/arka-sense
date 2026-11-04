@@ -332,7 +332,11 @@ async function loadEmpleadoCatalogs(tenantId, empresa, subsidiariaId = null) {
     }).sort({ nombre: 1 }).lean(),
     Puesto.find({ ...empresaScope, activo: true }).sort({ nombre: 1 }).lean(),
     Subsidiaria.find({ empresaId: empresa._id, activo: true }).sort({ nombre: 1 }).lean(),
-    Turno.find({ tenantId, activo: true }).sort({ nombre: 1 }).lean(),
+    Turno.find({
+      tenantId,
+      activo: true,
+      ...(subsidiariaId ? { subsidiariaId } : {})
+    }).sort({ nombre: 1 }).lean(),
     GrupoDispositivos.find({ tenantId, activo: true }).sort({ nombre: 1 }).lean(),
     PuntoAcceso.find({ tenantId, activo: true }).sort({ nombre: 1 }).lean(),
     loadPlantillasActivas(tenantId),

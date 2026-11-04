@@ -57,6 +57,39 @@
   </label>
 
   <fieldset style="grid-column:1/-1;margin-top:12px;border:1px solid var(--border, #ddd);padding:12px;border-radius:8px;">
+    <legend><strong>Horas extra y checada fuera de horario</strong></legend>
+    <p class="muted small">
+      Las horas extra solo piden aprobación en Autorizar si llegan a este mínimo.
+      Por debajo quedan como nota. Una checada fuera del horario del turno también queda como nota, no como retardo por autorizar.
+    </p>
+    <label>Minutos mínimos de horas extra para autorizar
+      <input name="heMinutosParaAutorizar" type="number" min="0" max="180" value="<%= subsidiaria.heMinutosParaAutorizar != null ? subsidiaria.heMinutosParaAutorizar : 15 %>" />
+    </label>
+  </fieldset>
+
+  <fieldset style="grid-column:1/-1;margin-top:12px;border:1px solid var(--border, #ddd);padding:12px;border-radius:8px;">
+    <legend><strong>Marcación automática (entrada y salida)</strong></legend>
+    <% const auto = subsidiaria.marcacionAutomatica || {}; %>
+    <p class="muted small">
+      Minutos de margen alrededor de la hora del turno. Cada empleado con la casilla en su ficha
+      recibe una hora al azar dentro de este rango. Se generan en Marcaciones y se pueden reprocesar por día y departamento.
+      Si el “después” de la entrada supera la tolerancia del turno, el día queda como retardo.
+    </p>
+    <label>Entrada: minutos antes
+      <input name="autoEntradaAntes" type="number" min="0" max="180" value="<%= auto.entradaAntesMin != null ? auto.entradaAntesMin : 10 %>" />
+    </label>
+    <label>Entrada: minutos después
+      <input name="autoEntradaDespues" type="number" min="0" max="180" value="<%= auto.entradaDespuesMin != null ? auto.entradaDespuesMin : 5 %>" />
+    </label>
+    <label>Salida: minutos antes
+      <input name="autoSalidaAntes" type="number" min="0" max="180" value="<%= auto.salidaAntesMin != null ? auto.salidaAntesMin : 5 %>" />
+    </label>
+    <label>Salida: minutos después
+      <input name="autoSalidaDespues" type="number" min="0" max="180" value="<%= auto.salidaDespuesMin != null ? auto.salidaDespuesMin : 10 %>" />
+    </label>
+  </fieldset>
+
+  <fieldset style="grid-column:1/-1;margin-top:12px;border:1px solid var(--border, #ddd);padding:12px;border-radius:8px;">
     <legend><strong>Módulos en esta subsidiaria</strong></legend>
     <input type="hidden" name="modulosForm" value="1" />
     <p class="muted small">

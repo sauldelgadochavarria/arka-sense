@@ -22,9 +22,9 @@
     {
       n: 1,
       titulo: 'Asistencia',
-      desc: 'Marcaciones, turnos y asistencia del día',
+      desc: 'Marcaciones, día y jornada',
       href: '/asistencia',
-      requireFeature: 'asistencia',
+      visible: hasAsistencia,
       links: [
         { label: 'Inicio', href: '/asistencia' },
         { label: 'Del día', href: '/asistencia-diaria' },
@@ -34,32 +34,34 @@
     },
     {
       n: 2,
-      titulo: 'Pre-nómina',
-      desc: 'Períodos y conceptos de asistencia',
-      href: '/prenomina-periodos',
-      requireFeature: 'prenomina',
+      titulo: 'Incidencias',
+      desc: 'Autorizar faltas, vacaciones y HE',
+      href: '/incidencias/pendientes',
+      visible: hasAsistencia || hasIncidencias,
       links: [
-        { label: 'Períodos', href: '/prenomina-periodos' },
-        { label: 'Conceptos', href: '/prenomina-conceptos' }
+        { label: 'Por autorizar', href: '/incidencias/pendientes' },
+        { label: 'Vacaciones', href: '/incidencias/vacaciones', requireFeature: 'vacaciones' }
       ]
     },
     {
       n: 3,
-      titulo: 'Incidencias',
-      desc: 'Autorizar faltas, vacaciones y HE antes del cálculo formal',
-      href: '/incidencias/pendientes',
-      requireFeature: 'incidencias',
+      titulo: 'Pre-nómina',
+      desc: 'Días, HE y excepciones del período',
+      href: '/prenomina-periodos',
+      visible: hasPrenomina || hasNomina || hasAsistencia,
       links: [
-        { label: 'Pendientes', href: '/incidencias/pendientes' },
-        { label: 'Vacaciones', href: '/incidencias/vacaciones', requireFeature: 'vacaciones' }
+        { label: 'Períodos', href: '/prenomina-periodos' },
+        { label: 'Movimientos', href: '/prenomina/movimientos' },
+        { label: 'Conceptos', href: '/prenomina-conceptos' }
       ]
     },
     {
       n: 4,
       titulo: 'Cálculo',
-      desc: 'Nómina formal y conceptos fiscales',
+      desc: 'Nómina formal e impuestos',
       href: hasNomina ? '/nomina/periodos' : '/nomina',
       requireNomina: true,
+      visible: true,
       links: [
         { label: 'Períodos', href: '/nomina/periodos' },
         { label: 'Conceptos', href: '/nomina/conceptos' }
@@ -67,44 +69,28 @@
     },
     {
       n: 5,
-      titulo: 'Revisión',
-      desc: 'Reportes y validación del período',
-      href: hasNomina ? '/nomina/reportes' : (hasReportes ? '/reportes' : '#'),
-      requireFeature: hasNomina ? 'nomina' : 'reportes',
+      titulo: 'Revisión y cierre',
+      desc: 'Auditar, validar y bloquear el período',
+      href: flujo && flujo.periodo ? ('/nomina/periodos/' + flujo.periodo.id) : (hasNomina ? '/nomina/reportes' : '#'),
+      requireNomina: true,
+      visible: true,
       links: [
-        { label: 'Reportes nómina', href: '/nomina/reportes', requireNomina: true },
+        { label: 'Reportes', href: '/nomina/reportes', requireNomina: true },
         { label: 'Acumulados', href: '/nomina/reportes/acumulados', requireNomina: true },
-        { label: 'KPIs', href: '/reportes/kpis', requireFeature: 'reportes' }
+        { label: 'KPIs', href: '/reportes/kpis', requireFeature: 'reportes' },
+        { label: 'Período', href: flujo && flujo.periodo ? ('/nomina/periodos/' + flujo.periodo.id) : '/nomina/periodos', requireNomina: true }
       ]
     },
     {
       n: 6,
-      titulo: 'Cierre',
-      desc: 'Autorizar y cerrar el período',
-      href: flujo && flujo.periodo ? ('/nomina/periodos/' + flujo.periodo.id) : '/nomina/periodos',
-      requireNomina: true,
-      links: [
-        { label: 'Períodos', href: '/nomina/periodos' }
-      ]
-    },
-    {
-      n: 7,
-      titulo: 'Bancos',
-      desc: 'Layouts y dispersión bancaria',
+      titulo: 'Bancos y CFDI',
+      desc: 'Dispersión y timbrado',
       href: '/nomina/dispersion-bancaria',
       requireNomina: true,
+      visible: true,
       links: [
         { label: 'Dispersión', href: '/nomina/dispersion-bancaria' },
-        { label: 'Layouts', href: '/nomina/layouts-bancarios' }
-      ]
-    },
-    {
-      n: 8,
-      titulo: 'CFDI',
-      desc: 'Timbrar y emitir recibos',
-      href: '/nomina/timbrado',
-      requireNomina: true,
-      links: [
+        { label: 'Layouts', href: '/nomina/layouts-bancarios' },
         { label: 'Timbrar', href: '/nomina/timbrado' },
         { label: 'PDF', href: '/nomina/recibos-pdf' },
         { label: 'Correo', href: '/nomina/envio-correo' }
@@ -114,7 +100,6 @@
 
   function pasoLocked(paso) {
     if (paso.requireNomina && !hasNomina) return true;
-    if (paso.requireFeature && !ff[paso.requireFeature]) return true;
     return false;
   }
 
@@ -128,8 +113,8 @@
 <section class="dash-flow">
   <div class="section-header flow-header-row">
     <div>
-      <h2>Flujo del ciclo de nómina</h2>
-      <span class="muted small">Del registro de asistencia al CFDI</span>
+      <h2>Flujo del ciclo</h2>
+      <span class="muted small"><%= hasAsistencia ? 'De la asistencia al CFDI' : 'De la pre-nómina al CFDI' %><% if (typeof session !== 'undefined' && session && session.subsidiariaActiva) { %> · <%= session.subsidiariaActiva.nombre %><% } %></span>
     </div>
     <% if (periodosOpts.length) { %>
     <form method="get" action="<%= basePath %>" class="flow-periodo-form">
@@ -180,20 +165,16 @@
   <% } %>
 
   <ol class="flow-track">
-    <% flujoPasos.forEach(function(paso, idx) {
+    <% flujoPasos.filter(function(p) { return p.visible !== false; }).forEach(function(paso, idx) {
       const locked = pasoLocked(paso);
       const isCurrent = !locked && pasoActual === paso.n;
-      const isDone = !locked && (pasosDone.has(paso.n) || (cicloCompleto && paso.n <= 8));
+      const isDone = !locked && (pasosDone.has(paso.n) || (cicloCompleto && paso.n <= 6));
       let cls = 'flow-step';
       if (locked) cls += ' is-locked';
       if (isCurrent && !cicloCompleto) cls += ' is-current';
       if (isDone && !isCurrent) cls += ' is-done';
       if (cicloCompleto && isCurrent) cls += ' is-done is-current';
-      let lockMsg = 'Módulo no activo en la licencia';
-      if (paso.requireNomina && !hasNomina) lockMsg = 'Activa el módulo Nómina';
-      else if (paso.requireFeature === 'asistencia' || paso.requireFeature === 'prenomina' || paso.requireFeature === 'incidencias') {
-        lockMsg = 'Activa Asistencia-Prenómina';
-      }
+      const lockMsg = 'Activa el módulo Nómina';
     %>
     <li class="<%= cls %>">
       <% if (idx > 0) { %><span class="flow-arrow" aria-hidden="true">→</span><% } %>

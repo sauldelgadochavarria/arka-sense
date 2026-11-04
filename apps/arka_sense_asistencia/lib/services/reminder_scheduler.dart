@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -17,8 +18,9 @@ class ReminderScheduler {
   static final ReminderScheduler instance = ReminderScheduler._();
 
   static const _prefsKey = 'aska_reminders_cache_v1';
-  static const _channelId = 'checada_horarios';
+  static const _channelId = 'checada_horarios_v2';
   static const _channelName = 'Recordatorios de checada';
+  static final Int64List _vibracion = Int64List.fromList(const [0, 450, 180, 450, 180, 700]);
 
   final FlutterLocalNotificationsPlugin _plugin = FlutterLocalNotificationsPlugin();
   bool _ready = false;
@@ -46,11 +48,15 @@ class ReminderScheduler {
         AndroidFlutterLocalNotificationsPlugin>();
     await androidPlugin?.requestNotificationsPermission();
     await androidPlugin?.createNotificationChannel(
-      const AndroidNotificationChannel(
+      AndroidNotificationChannel(
         _channelId,
         _channelName,
         description: 'Avisos de entrada y salida según tu turno',
         importance: Importance.high,
+        playSound: true,
+        enableVibration: true,
+        vibrationPattern: _vibracion,
+        audioAttributesUsage: AudioAttributesUsage.alarm,
       ),
     );
 
@@ -172,9 +178,18 @@ class ReminderScheduler {
               channelDescription: 'Avisos de entrada y salida según tu turno',
               importance: Importance.high,
               priority: Priority.high,
+              playSound: true,
+              enableVibration: true,
+              vibrationPattern: _vibracion,
+              audioAttributesUsage: AudioAttributesUsage.alarm,
+              category: AndroidNotificationCategory.reminder,
               icon: '@mipmap/ic_launcher',
             ),
-            iOS: const DarwinNotificationDetails(),
+            iOS: const DarwinNotificationDetails(
+              presentAlert: true,
+              presentSound: true,
+              presentBadge: true,
+            ),
           ),
           androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
           uiLocalNotificationDateInterpretation:

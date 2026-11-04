@@ -1,14 +1,16 @@
 'use strict';
 
 /**
- * Resuelve en qué paso del flujo de nómina está el tenant / un período concreto.
- * Pasos: 1 Asistencia → 2 Pre-nómina → 3 Incidencias → 4 Cálculo →
- *        5 Revisión → 6 Cierre → 7 Bancos → 8 CFDI
+ * Resuelve en qué paso del ciclo está la subsidiaria activa.
+ * 1 Asistencia → 2 Incidencias → 3 Pre-nómina → 4 Cálculo →
+ * 5 Revisión y cierre → 6 Bancos y CFDI
+ * Sin asistencia, el paso 1 no aplica. Sin supervisión, las excepciones se capturan en pre-nómina.
  */
 
 const getPeriodoNominaModel = require('../models/periodoNomina');
 const getPayrollPeriodModel = require('../models/payrollPeriod');
 const getIncidenciaModel = require('../models/incidencia');
+const getEmpleadoModel = require('../models/empleado');
 const getTimbradoLoteModel = require('../models/timbradoLote');
 const { startOfDay, endOfDay } = require('../libs/timeHelpers');
 
@@ -110,25 +112,36 @@ async function resolverPeriodo({ tenantId, empresaId, subsidiariaId = null, peri
   return null;
 }
 
-/**
- * @returns {Promise<object>}
- */
+async function idsEmpleadosAlcance(tenantId, empresaId, subsidiariaId) {
+  const Empleado = await getEmpleadoModel();
+  const q = { tenantId };
+  if (empresaId) q.empresaId = empresaId;
+  if (subsidiariaId) q.subsidiariaId = subsidiariaId;
+  const rows = await Empleado.find(q).select('_id').lean();
+  return rows.map((e) => e._id);
+}
+
 async function getFlujoNominaActual({
   tenantId,
   empresaId,
   subsidiariaId = null,
   hasNomina = true,
+  hasAsistencia = true,
+  hasIncidencias = true,
   periodoId = null
 } = {}) {
+  const puedeSupervisar = Boolean(hasAsistencia || hasIncidencias);
   const empty = {
-    pasoActual: 1,
+    pasoActual: hasAsistencia ? 1 : 3,
     pasosCompletados: [],
     periodo: null,
     periodos: [],
     acciones: [],
-    label: 'Asistencia',
-    detalle: 'Inicia el ciclo con marcaciones y asistencia del día',
-    href: '/asistencia-diaria'
+    label: hasAsistencia ? 'Asistencia' : 'Pre-nómina',
+    detalle: hasAsistencia
+      ? 'Inicia el ciclo con marcaciones y asistencia del día'
+      : 'Captura los días y las excepciones del período',
+    href: hasAsistencia ? '/asistencia-diaria' : '/prenomina-periodos'
   };
 
   if (!tenantId || !empresaId) return empty;
@@ -152,39 +165,42 @@ async function getFlujoNominaActual({
   ]);
 
   // Incidencias pendientes que cruzan el período de nómina formal (no todo el histórico)
+  const empIds = await idsEmpleadosAlcance(tenantId, empresaId, subsidiariaId);
   let pendientes = 0;
   let pendientesFilterHref = '/incidencias/pendientes';
+  const incBase = {
+    tenantId,
+    estatus: 'pendiente',
+    empleadoId: { $in: empIds }
+  };
   if (periodo) {
-    pendientes = await Incidencia.countDocuments({
-      tenantId,
-      estatus: 'pendiente',
-      fechaInicio: { $lte: endOfDay(periodo.fechaFin) },
-      fechaFin: { $gte: startOfDay(periodo.fechaInicio) }
-    });
+    if (empIds.length) {
+      pendientes = await Incidencia.countDocuments({
+        ...incBase,
+        fechaInicio: { $lte: endOfDay(periodo.fechaFin) },
+        fechaFin: { $gte: startOfDay(periodo.fechaInicio) }
+      });
+    }
     pendientesFilterHref = `/incidencias/pendientes?periodoId=${periodo._id}`;
-  } else {
-    pendientes = await Incidencia.countDocuments({ tenantId, estatus: 'pendiente' });
+  } else if (empIds.length) {
+    pendientes = await Incidencia.countDocuments(incBase);
   }
 
   const LABEL = {
     1: 'Asistencia',
-    2: 'Pre-nómina',
-    3: 'Incidencias',
+    2: 'Incidencias y supervisión',
+    3: 'Pre-nómina',
     4: 'Cálculo',
-    5: 'Revisión',
-    6: 'Cierre',
-    7: 'Bancos',
-    8: 'CFDI'
+    5: 'Revisión y cierre',
+    6: 'Bancos y CFDI'
   };
   const HREF = {
     1: '/asistencia-diaria',
-    2: '/prenomina-periodos',
-    3: pendientesFilterHref,
+    2: pendientesFilterHref,
+    3: '/prenomina-periodos',
     4: periodo ? `/nomina/periodos/${periodo._id}` : '/nomina/periodos',
     5: '/nomina/reportes',
-    6: periodo ? `/nomina/periodos/${periodo._id}` : '/nomina/periodos',
-    7: '/nomina/dispersion-bancaria',
-    8: '/nomina/timbrado'
+    6: '/nomina/dispersion-bancaria'
   };
 
   function pack(paso, detalle, extra = {}) {
@@ -206,9 +222,9 @@ async function getFlujoNominaActual({
             omitirDispersionBancaria: Boolean(periodo.omitirDispersionBancaria)
           }
         : null,
-      label: LABEL[paso] || 'Asistencia',
+      label: LABEL[paso] || 'Pre-nómina',
       detalle,
-      href: HREF[paso] || '/asistencia-diaria',
+      href: HREF[paso] || '/prenomina-periodos',
       acciones: extra.acciones || [],
       cicloCompleto: false,
       ...extra
@@ -216,16 +232,19 @@ async function getFlujoNominaActual({
   }
 
   if (!hasNomina || !periodo) {
-    if (pendientes > 0) {
-      return pack(3, `${pendientes} incidencia(s) pendiente(s) de aprobar`);
+    if (puedeSupervisar && pendientes > 0) {
+      return pack(2, `${pendientes} incidencia(s) pendiente(s) de aprobar en esta subsidiaria`);
     }
     if (prenominaAbierta) {
       return pack(
-        2,
+        3,
         `Pre-nómina abierta · ${formatRango(prenominaAbierta.fechaInicio, prenominaAbierta.fechaFin)}`
       );
     }
-    return pack(1, 'Sin período de nómina abierto · revisa asistencia del día');
+    if (hasAsistencia) {
+      return pack(1, 'Sin período de nómina abierto · revisa asistencia del día');
+    }
+    return pack(3, 'Captura los días y las excepciones del período en la pre-nómina');
   }
 
   const est = String(periodo.estatus || '').toLowerCase();
@@ -234,13 +253,25 @@ async function getFlujoNominaActual({
   const pid = String(periodo._id);
 
   if (est === 'abierto' || est === 'calculando') {
-    if (pendientes > 0) {
+    if (est !== 'calculando' && puedeSupervisar && pendientes > 0) {
       return pack(
-        3,
-        `${pendientes} incidencia(s) del período por autorizar (vacaciones, faltas, HE…) antes del cálculo formal · nómina ${num} ${rango}`,
+        2,
+        `${pendientes} incidencia(s) del período por autorizar (vacaciones, faltas, HE) antes de la pre-nómina · nómina ${num} ${rango}`,
         {
           acciones: [
             { tipo: 'link', label: 'Ir a bandeja del período', href: pendientesFilterHref },
+            { tipo: 'link', label: 'Ver período nómina', href: `/nomina/periodos/${pid}` }
+          ]
+        }
+      );
+    }
+    if (est !== 'calculando' && prenominaAbierta) {
+      return pack(
+        3,
+        `Pre-nómina abierta · consolida días e incidencias antes de calcular ${num} ${rango}`,
+        {
+          acciones: [
+            { tipo: 'link', label: 'Abrir pre-nómina', href: '/prenomina-periodos' },
             { tipo: 'link', label: 'Ver período nómina', href: `/nomina/periodos/${pid}` }
           ]
         }
@@ -250,7 +281,7 @@ async function getFlujoNominaActual({
       4,
       est === 'calculando'
         ? `Calculando nómina ${num} ${rango}`
-        : `Período de nómina abierto ${num} ${rango} · listo para calcular (pre-nómina ya puede estar cerrada)`,
+        : `Período de nómina abierto ${num} ${rango} · listo para calcular`,
       {
         acciones: [
           { tipo: 'link', label: 'Ir a calcular', href: `/nomina/periodos/${pid}` }
@@ -274,7 +305,8 @@ async function getFlujoNominaActual({
         ]
       });
     }
-    return pack(6, `Revisión OK · período ${num} ${rango} · autoriza y cierra`, {
+    return pack(5, `Revisión OK · período ${num} ${rango} · autoriza y cierra`, {
+      href: `/nomina/periodos/${pid}`,
       acciones: [
         {
           tipo: 'post',
@@ -294,7 +326,7 @@ async function getFlujoNominaActual({
     omitirBanco || String(periodo.layoutBancario?.estatus || '') === 'generado';
 
   if (!bancoOk) {
-    return pack(7, `Período cerrado ${num} ${rango} · genera archivo bancario (o marca omisión)`, {
+    return pack(6, `Período cerrado ${num} ${rango} · genera archivo bancario (o marca omisión)`, {
       acciones: [
         { tipo: 'link', label: 'Dispersión bancaria', href: '/nomina/dispersion-bancaria' },
         {
@@ -325,15 +357,16 @@ async function getFlujoNominaActual({
   }
 
   if (!timbradoOk) {
-    return pack(8, `Dispersión lista · emite CFDI del período ${num} ${rango}`, {
+    return pack(6, `Dispersión lista · emite CFDI del período ${num} ${rango}`, {
+      href: '/nomina/timbrado',
       acciones: [
         { tipo: 'link', label: 'Ir a timbrar', href: '/nomina/timbrado' }
       ]
     });
   }
 
-  const done = pack(8, `Ciclo completo · período ${num} ${rango} (dispersión + CFDI)`);
-  done.pasosCompletados = [1, 2, 3, 4, 5, 6, 7, 8];
+  const done = pack(6, `Ciclo completo · período ${num} ${rango} (dispersión + CFDI)`);
+  done.pasosCompletados = [1, 2, 3, 4, 5, 6];
   done.cicloCompleto = true;
   return done;
 }

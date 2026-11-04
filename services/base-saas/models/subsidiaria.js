@@ -20,6 +20,18 @@ const subsidiariaSchema = new mongoose.Schema(
      * Ej. America/Mexico_City, America/Tijuana, America/Cancun.
      */
     zonaHoraria: { type: String, trim: true, default: 'America/Mexico_City' },
+    /**
+     * Margen aleatorio (minutos) alrededor de la hora del turno
+     * para empleados con marcación automática.
+     */
+    /** Horas extra por debajo de este valor quedan como nota y no piden autorización. */
+    heMinutosParaAutorizar: { type: Number, default: 15, min: 0, max: 480 },
+    marcacionAutomatica: {
+      entradaAntesMin: { type: Number, default: 10, min: 0, max: 180 },
+      entradaDespuesMin: { type: Number, default: 5, min: 0, max: 180 },
+      salidaAntesMin: { type: Number, default: 5, min: 0, max: 180 },
+      salidaDespuesMin: { type: Number, default: 10, min: 0, max: 180 }
+    },
     /** Seguridad app móvil (registro de dispositivo estilo WhatsApp). */
     seguridadMovil: {
       exigirRegistroDispositivo: { type: Boolean, default: false }

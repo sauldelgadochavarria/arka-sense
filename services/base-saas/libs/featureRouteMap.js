@@ -18,8 +18,8 @@ const FEATURE_ROUTE_RULES = [
   { prefix: '/incidencias/vacaciones', allOf: ['vacaciones'] },
   { prefix: '/incidencias', allOf: ['incidencias'] },
 
-  { prefix: '/prenomina', allOf: ['prenomina'] },
-  { prefix: '/catalogos/periodos', allOf: ['prenomina'] },
+  { prefix: '/prenomina', anyOf: ['prenomina', 'nomina'] },
+  { prefix: '/catalogos/periodos', anyOf: ['prenomina', 'nomina'] },
 
   { prefix: '/reportes', allOf: ['reportes'] },
 

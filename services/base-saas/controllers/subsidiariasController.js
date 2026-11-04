@@ -8,9 +8,18 @@ const { trimString, parsePositiveNumber, parseOptionalLegadoCode } = require('..
 const { SUBSIDIARY_MODULE_KEYS } = require('../config/subsidiaryModules');
 const { tenantLicensesModule } = require('../libs/tenantFeatureFlags');
 
+function minutosRango(value, fallback) {
+  if (value === '' || value === undefined || value === null) return fallback;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) return fallback;
+  return Math.min(180, Math.round(n));
+}
+
 function parseModuloFlag(body, key) {
   const nested = body.modulos && typeof body.modulos === 'object' ? body.modulos[key] : undefined;
-  const raw = nested !== undefined ? nested : body[`modulo_${key}`];
+  // urlencoded sin extended deja la casilla como "modulos[asistencia]", no como objeto.
+  const bracket = body[`modulos[${key}]`];
+  const raw = nested !== undefined ? nested : bracket !== undefined ? bracket : body[`modulo_${key}`];
   return raw === 'on' || raw === 'true' || raw === true || raw === '1';
 }
 
@@ -95,6 +104,13 @@ function buildSubsidiariaPayload(body) {
     })(),
     seguridadMovil: {
       exigirRegistroDispositivo
+    },
+    heMinutosParaAutorizar: minutosRango(body.heMinutosParaAutorizar, 15),
+    marcacionAutomatica: {
+      entradaAntesMin: minutosRango(body.autoEntradaAntes, 10),
+      entradaDespuesMin: minutosRango(body.autoEntradaDespues, 5),
+      salidaAntesMin: minutosRango(body.autoSalidaAntes, 5),
+      salidaDespuesMin: minutosRango(body.autoSalidaDespues, 10)
     },
     modulos: modulosFromBody(body)
   };
@@ -184,8 +200,11 @@ async function updateSubsidiaria(req, res) {
     subsidiaria.geocercaRadioMetros = payload.geocercaRadioMetros;
     subsidiaria.zonaHoraria = payload.zonaHoraria;
     subsidiaria.seguridadMovil = payload.seguridadMovil;
+    subsidiaria.heMinutosParaAutorizar = payload.heMinutosParaAutorizar;
+    subsidiaria.marcacionAutomatica = payload.marcacionAutomatica;
     subsidiaria.modulos = payload.modulos;
     subsidiaria.markModified('seguridadMovil');
+    subsidiaria.markModified('marcacionAutomatica');
     subsidiaria.markModified('modulos');
     await subsidiaria.save();
 

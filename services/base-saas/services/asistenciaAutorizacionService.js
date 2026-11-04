@@ -85,10 +85,18 @@ async function syncFueraZonaOpcional(tenantId, empleado, daily, marcacionGeo) {
   }
 }
 
-async function listPendientes(tenantId, { supervisorId = null, equipoIds = null, empleadoIds = null, limit = 80 } = {}) {
+async function listPendientes(
+  tenantId,
+  { supervisorId = null, equipoIds = null, empleadoIds = null, desde = null, hasta = null, limit = 80 } = {}
+) {
   if (Array.isArray(empleadoIds) && !empleadoIds.length) return [];
   const AsistenciaAutorizacion = await getAsistenciaAutorizacionModel();
   const q = { tenantId, estado: 'pendiente' };
+  if (desde || hasta) {
+    q.fecha = {};
+    if (desde) q.fecha.$gte = new Date(desde);
+    if (hasta) q.fecha.$lte = new Date(hasta);
+  }
   if (Array.isArray(empleadoIds)) q.empleadoId = { $in: empleadoIds };
   const or = [];
   if (supervisorId) or.push({ supervisorId });
@@ -113,6 +121,50 @@ async function countPendientes(tenantId, opts = {}) {
   if (or.length === 1 && !q.empleadoId) Object.assign(q, or[0]);
   else if (or.length) q.$or = or;
   return AsistenciaAutorizacion.countDocuments(q);
+}
+
+function claveDia(empleadoId, fecha) {
+  const d = new Date(fecha);
+  if (Number.isNaN(d.getTime())) return `${empleadoId}|`;
+  return `${empleadoId}|${d.toISOString().slice(0, 10)}`;
+}
+
+/**
+ * Registros del día en el rango, con la solicitud de autorización si existe.
+ * La fecha guardada es medianoche UTC del día laboral.
+ */
+async function listRegistroYAutorizaciones(tenantId, { empleadoIds = null, desde = null, hasta = null, limit = 400 } = {}) {
+  if (!Array.isArray(empleadoIds) || !empleadoIds.length || (!desde && !hasta)) return [];
+  const DailyAttendance = await getDailyAttendanceModel();
+  const AsistenciaAutorizacion = await getAsistenciaAutorizacionModel();
+  const fecha = {};
+  if (desde) fecha.$gte = new Date(desde);
+  if (hasta) fecha.$lte = new Date(hasta);
+  const q = { tenantId, empleadoId: { $in: empleadoIds }, fecha };
+  const [dailies, auths] = await Promise.all([
+    DailyAttendance.find(q).sort({ fecha: -1 }).limit(limit).lean(),
+    AsistenciaAutorizacion.find(q).sort({ fecha: -1 }).limit(limit).lean()
+  ]);
+  const dailyPorDia = new Map(dailies.map((d) => [claveDia(d.empleadoId, d.fecha), d]));
+  const diasConSolicitud = new Set();
+  const filas = [];
+  auths.forEach((auth) => {
+    const clave = claveDia(auth.empleadoId, auth.fecha);
+    diasConSolicitud.add(clave);
+    filas.push({
+      fecha: auth.fecha,
+      empleadoId: auth.empleadoId,
+      daily: dailyPorDia.get(clave) || null,
+      auth
+    });
+  });
+  dailies.forEach((daily) => {
+    const clave = claveDia(daily.empleadoId, daily.fecha);
+    if (diasConSolicitud.has(clave)) return;
+    filas.push({ fecha: daily.fecha, empleadoId: daily.empleadoId, daily, auth: null });
+  });
+  filas.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+  return filas.slice(0, limit);
 }
 
 async function solicitarCambioTurno({
@@ -196,15 +248,18 @@ async function decidirAutorizacion({
     );
   }
 
-  if (aprobar && doc.tipo === 'retardo' && doc.dailyAttendanceId) {
+  if (doc.dailyAttendanceId) {
     const DailyAttendance = await getDailyAttendanceModel();
+    const daily = await DailyAttendance.findOne({ _id: doc.dailyAttendanceId, tenantId })
+      .select('notas')
+      .lean();
+    const marca = aprobar
+      ? `Autorizado (${doc.motivoDecision})`
+      : `Rechazado (${doc.motivoDecision})`;
+    const notas = [daily?.notas, marca].filter(Boolean).join(' · ').slice(0, 500);
     await DailyAttendance.updateOne(
       { _id: doc.dailyAttendanceId, tenantId },
-      {
-        $set: {
-          notas: `Retardo autorizado por supervisor (${doc.motivoDecision})`.slice(0, 500)
-        }
-      }
+      { $set: { notas } }
     );
   }
 
@@ -228,7 +283,179 @@ async function decidirAutorizacion({
   return doc.toObject();
 }
 
-async function resumenEquipoHoy(tenantId, equipoIds, fecha = new Date()) {
+function heMinimosDe(valor) {
+  const n = Number(valor);
+  if (!Number.isFinite(n) || n < 0) return 15;
+  return Math.min(180, Math.round(n));
+}
+
+/**
+ * Separa lo que se autoriza de lo que solo se anota.
+ * Horas extra bajo el mínimo de la subsidiaria, y la checada fuera del horario, son nota.
+ */
+function clasificarAutorizacion(daily, heMinutos = 15) {
+  const minimo = heMinimosDe(heMinutos);
+  if (!daily) {
+    return { requiere: false, tipo: null, observacion: '' };
+  }
+  const he = Number(daily.minutosHorasExtra) || 0;
+  const ret = Number(daily.minutosRetardo) || 0;
+  const fuera = daily.estatus === 'fuera_de_rango' || daily.marcajesFueraDeRango === true;
+  const notas = [];
+  let tipo = null;
+  let requiere = false;
+
+  if (fuera) {
+    notas.push(
+      ret > 0
+        ? `Retardo por checada fuera de rango (${ret} min). Queda como nota.`
+        : 'Checada fuera del horario del turno. Queda como nota.'
+    );
+  } else if (daily.estatus === 'retardo' || ret > 0) {
+    tipo = 'retardo';
+    requiere = true;
+    notas.push(`Retardo: ${ret} min`);
+  }
+
+  if (he > 0 && he < minimo) {
+    notas.push(`Horas extra: ${he} min. Bajo el mínimo de ${minimo} min; queda como nota.`);
+  } else if (he >= minimo && he > 0) {
+    if (!tipo) tipo = 'horas_extra';
+    if (!fuera) requiere = true;
+    notas.push(`Horas extra: ${he} min. Pide autorización (mínimo ${minimo} min).`);
+  }
+
+  const etiquetas = {
+    falta: 'Falta',
+    incompleto: 'Incompleto',
+    registro_parcial: 'Registro parcial',
+    anulada: 'Checada anulada'
+  };
+  if (!fuera && etiquetas[daily.estatus]) {
+    requiere = true;
+    if (!tipo) tipo = 'otro';
+    notas.unshift(etiquetas[daily.estatus]);
+  }
+
+  if (fuera) {
+    requiere = false;
+    tipo = null;
+  }
+
+  return { requiere, tipo, observacion: notas.join(' ') };
+}
+
+function diaRequiereAutorizacion(daily, heMinutos = 15) {
+  return clasificarAutorizacion(daily, heMinutos).requiere;
+}
+
+/**
+ * Abre la solicitud del día (si no existe) y la decide en el mismo paso.
+ */
+async function autorizarDia({
+  tenantId,
+  empleadoId,
+  fecha,
+  aprobar,
+  motivoDecision = '',
+  userId = '',
+  decididoPorEmpleadoId = null,
+  empresaId = null
+}) {
+  const DailyAttendance = await getDailyAttendanceModel();
+  const dia = startOfDay(fecha);
+  const daily = await DailyAttendance.findOne({
+    tenantId,
+    empleadoId,
+    fecha: { $gte: dia, $lte: endOfDay(fecha) }
+  }).lean();
+  if (!daily) throw new Error('DIA_NOT_FOUND');
+
+  const Empleado = await getEmpleadoModel();
+  const getSubsidiariaModel = require('../models/subsidiaria');
+  const empleado = await Empleado.findOne({ _id: empleadoId, tenantId })
+    .select('supervisorId subsidiariaId')
+    .lean();
+  let heMinutos = 15;
+  if (empleado?.subsidiariaId) {
+    const Subsidiaria = await getSubsidiariaModel();
+    const sub = await Subsidiaria.findById(empleado.subsidiariaId).select('heMinutosParaAutorizar').lean();
+    heMinutos = heMinimosDe(sub?.heMinutosParaAutorizar);
+  }
+  const clase = clasificarAutorizacion(daily, heMinutos);
+  if (!clase.requiere || !clase.tipo) throw new Error('DIA_NO_REQUIERE');
+  const tipo = clase.tipo;
+  const AsistenciaAutorizacion = await getAsistenciaAutorizacionModel();
+  const fechaDia = startOfDay(daily.fecha);
+  let doc = await AsistenciaAutorizacion.findOne({ tenantId, empleadoId, fecha: fechaDia, tipo });
+  if (doc && doc.estado !== 'pendiente') throw new Error('NOT_PENDING');
+  if (!doc) {
+    doc = await AsistenciaAutorizacion.create({
+      tenantId,
+      empleadoId,
+      supervisorId: empleado?.supervisorId || null,
+      tipo,
+      estado: 'pendiente',
+      fecha: fechaDia,
+      dailyAttendanceId: daily._id,
+      minutosRetardo: Number(daily.minutosRetardo) || 0,
+      minutosHE: Number(daily.minutosHorasExtra) || 0,
+      motivoSolicitud: clase.observacion || `Registro ${daily.estatus || 'del día'}`,
+      solicitadoPorUserId: userId,
+      detalle: { estatus: daily.estatus || '', origen: 'listado' }
+    });
+  } else if (!doc.dailyAttendanceId) {
+    doc.dailyAttendanceId = daily._id;
+    await doc.save();
+  }
+
+  return decidirAutorizacion({
+    tenantId,
+    id: doc._id,
+    aprobar,
+    motivoDecision,
+    userId,
+    decididoPorEmpleadoId,
+    empresaId
+  });
+}
+
+async function autorizarDias(tenantId, filas, opts) {
+  let hechas = 0;
+  let omitidas = 0;
+  for (const fila of filas || []) {
+    if (!diaRequiereAutorizacion(fila.daily)) {
+      omitidas += 1;
+      continue;
+    }
+    if (fila.auth && fila.auth.estado !== 'pendiente') {
+      omitidas += 1;
+      continue;
+    }
+    try {
+      await autorizarDia({
+        tenantId,
+        empleadoId: fila.empleadoId,
+        fecha: fila.fecha,
+        aprobar: opts.aprobar,
+        motivoDecision: opts.motivoDecision,
+        userId: opts.userId,
+        decididoPorEmpleadoId: opts.decididoPorEmpleadoId,
+        empresaId: opts.empresaId
+      });
+      hechas += 1;
+    } catch (err) {
+      if (err.message === 'NOT_PENDING' || err.message === 'DIA_NO_REQUIERE' || err.message === 'DIA_NOT_FOUND') {
+        omitidas += 1;
+        continue;
+      }
+      throw err;
+    }
+  }
+  return { hechas, omitidas };
+}
+
+async function resumenEquipoHoy(tenantId, equipoIds, fecha = new Date(), hasta = null) {
   if (!equipoIds?.length) {
     return { presentes: 0, retardos: 0, faltas: 0, incompletos: 0, total: 0 };
   }
@@ -236,7 +463,7 @@ async function resumenEquipoHoy(tenantId, equipoIds, fecha = new Date()) {
   const diarios = await DailyAttendance.find({
     tenantId,
     empleadoId: { $in: equipoIds },
-    fecha: { $gte: startOfDay(fecha), $lte: endOfDay(fecha) }
+    fecha: { $gte: new Date(fecha), $lte: hasta ? new Date(hasta) : endOfDay(fecha) }
   })
     .select('estatus')
     .lean();
@@ -255,8 +482,14 @@ module.exports = {
   syncRetardoDesdeDaily,
   syncFueraZonaOpcional,
   listPendientes,
+  listRegistroYAutorizaciones,
   countPendientes,
   solicitarCambioTurno,
   decidirAutorizacion,
+  autorizarDia,
+  autorizarDias,
+  clasificarAutorizacion,
+  heMinimosDe,
+  diaRequiereAutorizacion,
   resumenEquipoHoy
 };

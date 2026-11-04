@@ -31,7 +31,7 @@ const attendanceRecordSchema = new mongoose.Schema(
     },
     metodo: {
       type: String,
-      enum: ['manual', 'biometrico', 'movil', 'rfid'],
+      enum: ['manual', 'biometrico', 'movil', 'rfid', 'automatico'],
       default: 'manual'
     },
     registradoPorUserId: { type: String, default: '' },

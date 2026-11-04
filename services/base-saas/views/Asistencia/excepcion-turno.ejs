@@ -1,0 +1,42 @@
+<%- include('../Partials/layout-top', { title: 'Excepción de turno', session }) %>
+<%- include('partials/flujo-asistencia', { pasoActual: 3, fecha: fechaDefault }) %>
+
+<section class="page-header">
+  <h1>Excepción de turno</h1>
+  <p class="muted">
+    <%= empleado.firstName %> <%= empleado.lastName %> · No. <%= empleado.numEmpleado %>
+  </p>
+</section>
+
+<p>
+  <a href="/personal-empleados/<%= empleado._id %>">← Ficha del colaborador</a>
+  · <a href="/asistencia-autorizaciones">Autorizaciones</a>
+</p>
+
+<section class="card-block">
+  <h2>Solicitar cambio / excepción</h2>
+  <p class="muted">Queda pendiente hasta que un supervisor o RRHH lo apruebe. No cambia el turno hasta esa decisión.</p>
+  <form method="post" action="/asistencia-autorizaciones/cambio-turno" class="form-grid form-wide">
+    <input type="hidden" name="empleadoId" value="<%= empleado._id %>" />
+    <label>Fecha
+      <input type="date" name="fecha" required value="<%= fechaDefault %>" />
+    </label>
+    <label>Turno propuesto
+      <select name="turnoPropuestoId">
+        <option value="">— Turno propuesto —</option>
+        <% turnos.forEach(function(t) { %>
+        <option value="<%= t._id %>"><%= t.nombre %></option>
+        <% }); %>
+      </select>
+    </label>
+    <label class="inline-check">
+      <input type="checkbox" name="esDescanso" value="1" /> Marcar como descanso
+    </label>
+    <label>Motivo
+      <input name="motivo" placeholder="Motivo de la excepción" required />
+    </label>
+    <button type="submit">Enviar a autorización</button>
+  </form>
+</section>
+
+<%- include('../Partials/layout-bottom') %>

@@ -65,6 +65,12 @@ app.listen(PORT, () => {
   const { iniciarWorkerNomina } = require('./services/nomina/nominaCalculoJobService');
   iniciarWorkerNomina();
   try {
+    const { iniciarWorkerMarcacionAutomatica } = require('./services/marcacionAutomaticaService');
+    iniciarWorkerMarcacionAutomatica();
+  } catch (err) {
+    console.warn('[marcacion-auto] worker no iniciado:', err.message);
+  }
+  try {
     const { iniciarWorkerCfdiMasivo } = require('./services/cargas/cfdiNominaMasivoService');
     iniciarWorkerCfdiMasivo();
   } catch (err) {

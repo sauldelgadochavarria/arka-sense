@@ -96,6 +96,8 @@ const empleadoSchema = new mongoose.Schema(
       enum: ['ninguno', 'rol_turnos', 'planilla'],
       default: 'rol_turnos'
     },
+    /** El sistema genera entrada y salida dentro del rango de la subsidiaria. */
+    marcacionAutomatica: { type: Boolean, default: false },
     grupoDispositivosId: { type: mongoose.Schema.Types.ObjectId, ref: 'GrupoDispositivos' },
     exportarFaltas: { type: Boolean, default: true },
     exportarRetardos: { type: Boolean, default: true },

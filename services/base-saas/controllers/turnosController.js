@@ -2,7 +2,9 @@ const getTurnoModel = require('../models/turno');
 const {
   requireEmpresaForTenant,
   findOneByTenant,
-  findOneDocByTenant
+  findOneDocByTenant,
+  sessionSubsidiariaId,
+  scopeTurnoFilter
 } = require('../libs/tenantScope');
 const { buildTurnoPayload } = require('../libs/turnoPayload');
 const { describeVentanaTurno, labelTipoTurno } = require('../libs/turnoHelpers');
@@ -32,8 +34,9 @@ function flashTurnoError(req, err, fallback) {
 async function listTurnos(req, res) {
   const { empresa, error } = await requireEmpresaForTenant(req);
   const Turno = await getTurnoModel();
-  const turnos = empresa
-    ? await Turno.find({ tenantId: req.session.tenantId }).sort({ nombre: 1 }).lean()
+  const filtro = scopeTurnoFilter(req, empresa);
+  const turnos = filtro
+    ? await Turno.find(filtro).sort({ nombre: 1 }).lean()
     : [];
 
   res.render('Asistencia/turnos', {
@@ -77,9 +80,15 @@ async function createTurno(req, res) {
       return res.redirect('/asistencia-turnos/nuevo');
     }
 
+    const subId = sessionSubsidiariaId(req);
+    if (!subId) {
+      req.flash('error', 'Elige una subsidiaria antes de crear el turno');
+      return res.redirect('/asistencia-turnos');
+    }
+
     const Turno = await getTurnoModel();
     const built = stripInternal(buildTurnoPayload(req.body, req.session.tenantId, empresa._id));
-    await Turno.create({ ...built.data, activo: true });
+    await Turno.create({ ...built.data, subsidiariaId: subId, activo: true });
     if (built.warnings.length) {
       req.flash('success', `Turno creado. Aviso: ${built.warnings.join(' · ')}`);
     } else {
@@ -97,7 +106,10 @@ async function editTurno(req, res) {
   const { empresa, error } = await requireEmpresaForTenant(req);
   const Turno = await getTurnoModel();
   const turno = await findOneByTenant(Turno, req.session.tenantId, req.params.id);
-  if (!turno) return res.status(404).send('Turno no encontrado');
+  const subId = sessionSubsidiariaId(req);
+  if (!turno || (subId && String(turno.subsidiariaId || '') !== String(subId))) {
+    return res.status(404).send('Turno no encontrado');
+  }
 
   res.render('Asistencia/turno-edit', {
     turno,
@@ -122,7 +134,10 @@ async function updateTurno(req, res) {
 
     const Turno = await getTurnoModel();
     const turno = await findOneDocByTenant(Turno, req.session.tenantId, req.params.id);
-    if (!turno) return res.status(404).send('Turno no encontrado');
+    const subId = sessionSubsidiariaId(req);
+    if (!turno || (subId && String(turno.subsidiariaId || '') !== String(subId))) {
+      return res.status(404).send('Turno no encontrado');
+    }
 
     const built = stripInternal(buildTurnoPayload(req.body, req.session.tenantId, empresa._id));
     Object.assign(turno, built.data);
@@ -144,7 +159,10 @@ async function updateTurno(req, res) {
 async function toggleTurno(req, res) {
   const Turno = await getTurnoModel();
   const turno = await findOneDocByTenant(Turno, req.session.tenantId, req.params.id);
-  if (!turno) return res.status(404).send('Turno no encontrado');
+  const subId = sessionSubsidiariaId(req);
+  if (!turno || (subId && String(turno.subsidiariaId || '') !== String(subId))) {
+    return res.status(404).send('Turno no encontrado');
+  }
 
   turno.activo = !turno.activo;
   await turno.save();

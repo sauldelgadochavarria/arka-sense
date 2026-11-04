@@ -1,21 +1,28 @@
 <%
   const paso = typeof pasoActual !== 'undefined' ? Number(pasoActual) : 0;
-  const fechaQ = typeof fecha !== 'undefined' && fecha ? fecha : new Date().toISOString().slice(0, 10);
+  const desde = (typeof fechaDesde !== 'undefined' && fechaDesde)
+    ? fechaDesde
+    : ((typeof fecha !== 'undefined' && fecha) ? fecha : '');
+  const hasta = (typeof fechaHasta !== 'undefined' && fechaHasta) ? fechaHasta : desde;
+  const qs = (desde || hasta)
+    ? 'fechaDesde=' + encodeURIComponent(desde) + '&fechaHasta=' + encodeURIComponent(hasta || desde)
+    : '';
   const pasos = [
-    { n: 1, titulo: 'Marcaciones', href: '/asistencia-marcaciones?fecha=' + fechaQ },
-    { n: 2, titulo: 'Del día', href: '/asistencia-diaria?fecha=' + fechaQ },
-    { n: 3, titulo: 'Autorizar', href: '/asistencia-autorizaciones' },
-    { n: 4, titulo: 'Evidencia', href: '/asistencia-intentos?fecha=' + fechaQ },
-    { n: 5, titulo: 'Jornada', href: '/asistencia-registro-jornada' }
+    { n: 1, titulo: 'Marcaciones', href: '/asistencia-marcaciones' + (qs ? '?' + qs : '') },
+    { n: 2, titulo: 'Del día', href: '/asistencia-diaria' + (qs ? '?' + qs : '') },
+    { n: 3, titulo: 'Autorizar', href: '/asistencia-autorizaciones' + (qs ? '?' + qs : '') },
+    { n: 4, titulo: 'Evidencia', href: '/asistencia-intentos' + (qs ? '?' + qs : '') },
+    { n: 5, titulo: 'Jornada', href: '/asistencia-registro-jornada' + (qs ? '?desde=' + encodeURIComponent(desde) + '&hasta=' + encodeURIComponent(hasta || desde) : '') }
   ];
 %>
 <nav class="flujo-asistencia" aria-label="Flujo de asistencia" style="margin:0 0 1.25rem;padding:.75rem 1rem;border:1px solid #e5e7eb;border-radius:8px;background:#fafafa">
   <div style="display:flex;flex-wrap:wrap;gap:.5rem 1rem;align-items:center;margin-bottom:.35rem">
-    <strong><a href="/asistencia">Asistencia</a></strong>
-    <span class="muted small">Un solo recorrido</span>
+    <strong><a href="/asistencia<%= qs ? '?' + qs : '' %>">Asistencia</a></strong>
+    <span class="muted small">Paso 1 del ciclo · esta subsidiaria</span>
   </div>
   <p class="muted small" style="margin:0 0 .5rem">
     1 corrige la checada · 2 revisa el día · 3 autoriza la excepción
+    <% if (desde) { %> · <%= desde %> → <%= hasta || desde %><% } %>
   </p>
   <ol style="display:flex;flex-wrap:wrap;gap:.5rem;list-style:none;margin:0;padding:0">
     <% pasos.forEach(function(p) { %>

@@ -60,11 +60,13 @@ function resolveMenuModuleView(raw, featureFlags) {
 
 /** ¿El nodo raíz debe mostrarse con la vista activa? */
 function rootVisibleForModuleView(root, moduleView) {
-  const pkg = root.modulePackage || 'nucleo';
+  const packages =
+    Array.isArray(root.modulePackages) && root.modulePackages.length
+      ? root.modulePackages
+      : [root.modulePackage || 'nucleo'];
   if (moduleView === 'ambos') return true;
-  if (moduleView === 'nucleo') return pkg === 'nucleo' || !root.modulePackage;
-  // Vista de un módulo de producto: ese módulo + núcleo compartido
-  return pkg === moduleView || pkg === 'nucleo';
+  if (moduleView === 'nucleo') return packages.includes('nucleo') || !root.modulePackage;
+  return packages.includes(moduleView) || packages.includes('nucleo');
 }
 
 module.exports = {

@@ -328,6 +328,13 @@
     <label><input type="checkbox" name="exportarRetardos" value="1" <%= !empleado || empleado.exportarRetardos !== false ? 'checked' : '' %> /> Exportar retardos a nómina</label>
     <label><input type="checkbox" name="exportarHorasExtra" value="1" <%= !empleado || empleado.exportarHorasExtra !== false ? 'checked' : '' %> /> Exportar horas extra a nómina</label>
     <label>
+      <input type="checkbox" name="marcacionAutomatica" value="1" <%= empleado && empleado.marcacionAutomatica ? 'checked' : '' %> />
+      Marcación automática de entrada y salida
+      <span class="muted small" style="display:block;font-weight:normal;">
+        El sistema checa dentro del rango aleatorio de su subsidiaria, según el turno del día. No usa la app.
+      </span>
+    </label>
+    <label>
       <input type="checkbox" name="exentoRegistroDispositivo" value="1" <%= empleado && empleado.exentoRegistroDispositivo ? 'checked' : '' %> />
       Exento de registro de dispositivo (SMS + UUID)
       <span class="muted small" style="display:block;font-weight:normal;">

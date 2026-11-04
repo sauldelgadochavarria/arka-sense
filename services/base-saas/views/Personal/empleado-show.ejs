@@ -10,6 +10,7 @@
 <div class="actions-bar actions-bar-top">
   <a class="btn" data-ficha-edit href="/personal-empleados/<%= empleado._id %>/edit">Editar</a>
   <a class="btn" href="/personal-empleados/<%= empleado._id %>/biometria-facial">Biometría facial</a>
+  <a class="btn" href="/asistencia-autorizaciones/cambio-turno/<%= empleado._id %>">Excepción de turno</a>
   <% if (empleado.estatus === 'baja') { %>
   <form method="post" action="/personal-empleados/<%= empleado._id %>/reactivar" class="inline-form">
     <button type="submit">Reactivar</button>
@@ -186,6 +187,7 @@
         <strong><%= turnoVigenteLabel %></strong>
         <span class="muted">(<%= turnoVigenteOrigen %>)</span>
         <a href="/asistencia-rotaciones/cambios" class="muted"> · Cambio puntual</a>
+        <a href="/asistencia-autorizaciones/cambio-turno/<%= empleado._id %>"> · Solicitar excepción</a>
       </dd>
       <dt>Supervisor</dt><dd><%= empleado.supervisorId ? (supervisorMap.get(String(empleado.supervisorId)) || '—') : '—' %></dd>
     </dl>
@@ -200,6 +202,7 @@
     <dl>
       <dt>Código externo</dt><dd><%= empleado.codigoExterno || '—' %></dd>
       <dt>Tipo de registro</dt><dd><%= tipoRegistroLabel %></dd>
+      <dt>Marcación automática</dt><dd><%= empleado.marcacionAutomatica ? 'Sí' : 'No' %></dd>
       <dt>Grupo de dispositivos</dt><dd><%= grupoNombre %></dd>
       <dt>Exportar faltas</dt><dd><%= empleado.exportarFaltas !== false ? 'Sí' : 'No' %></dd>
       <dt>Exportar retardos</dt><dd><%= empleado.exportarRetardos !== false ? 'Sí' : 'No' %></dd>

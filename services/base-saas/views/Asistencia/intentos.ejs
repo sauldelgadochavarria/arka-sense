@@ -1,5 +1,5 @@
 <%- include('../Partials/layout-top', { title: 'Intentos de checado', session }) %>
-<%- include('partials/flujo-asistencia', { pasoActual: 4, fecha: typeof fecha !== 'undefined' ? fecha : null }) %>
+<%- include('partials/flujo-asistencia', { pasoActual: 4, fechaDesde: typeof fechaDesde !== 'undefined' ? fechaDesde : '', fechaHasta: typeof fechaHasta !== 'undefined' ? fechaHasta : '' }) %>
 <%
   const resultadoLabel = {
     aceptado: 'Aceptado',
@@ -18,8 +18,10 @@
 <% } else { %>
 <div class="toolbar">
   <form method="get" action="/asistencia-intentos" class="inline-form">
-    <label>Fecha</label>
-    <input type="date" name="fecha" value="<%= fecha %>" />
+    <label>Desde</label>
+    <input type="date" name="fechaDesde" value="<%= fechaDesde %>" />
+    <label>Hasta</label>
+    <input type="date" name="fechaHasta" value="<%= fechaHasta %>" />
     <label>Empleado</label>
     <select name="empleadoId">
       <option value="">— Todos —</option>
@@ -52,7 +54,7 @@
     <% } %>
     <% intentos.forEach(function(i) { %>
     <tr class="<%= i.resultado === 'rechazado' || i.resultado === 'error' ? 'row-muted' : '' %>">
-      <td><%= formatTimeHHMM(i.createdAt, i.zonaHoraria) %></td>
+      <td><%= i.createdAt ? new Date(i.createdAt).toISOString().slice(0, 10) : '—' %> <%= formatTimeHHMM(i.createdAt, i.zonaHoraria) %></td>
       <td><%= empMap.get(String(i.empleadoId)) || '—' %></td>
       <td><code><%= i.etapa %></code></td>
       <td>

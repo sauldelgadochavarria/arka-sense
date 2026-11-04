@@ -1,5 +1,5 @@
 <%- include('../Partials/layout-top', { title: 'Asistencia diaria', session }) %>
-<%- include('partials/flujo-asistencia', { pasoActual: 2, fecha: fecha }) %>
+<%- include('partials/flujo-asistencia', { pasoActual: 2, fechaDesde: fechaDesde, fechaHasta: fechaHasta }) %>
 <h1>Asistencia del día</h1>
 <% if (!empresa) { %>
 <p>No hay empresa vinculada a este tenant.</p>
@@ -9,6 +9,9 @@
   const depId = typeof departamentoId !== 'undefined' ? departamentoId : '';
   const tipId = typeof tipoPeriodoId !== 'undefined' ? tipoPeriodoId : '';
   const perId = typeof periodoId !== 'undefined' ? periodoId : '';
+  const desdeQ = typeof fechaDesde !== 'undefined' ? fechaDesde : fecha;
+  const hastaQ = typeof fechaHasta !== 'undefined' ? fechaHasta : fecha;
+  const variosDias = typeof unDia !== 'undefined' && !unDia;
   function qsExtra() {
     let s = '';
     if (depId) s += '&departamentoId=' + encodeURIComponent(depId);
@@ -17,7 +20,7 @@
     return s;
   }
   function filtroHref(key) {
-    const base = '/asistencia-diaria?fecha=' + fecha + qsExtra();
+    const base = '/asistencia-diaria?fechaDesde=' + desdeQ + '&fechaHasta=' + hastaQ + qsExtra();
     return key ? base + '&estatus=' + key : base;
   }
   function cardClass(key, tone) {
@@ -26,7 +29,7 @@
     if (filtro === key || (!filtro && key === '')) c += ' is-active';
     return c;
   }
-  const colSpan = 3 + ((typeof mostrarComida !== 'undefined' && mostrarComida) ? 2 : 0) + 8;
+  const colSpan = 3 + ((typeof mostrarComida !== 'undefined' && mostrarComida) ? 2 : 0) + 9;
 %>
 <div class="toolbar" style="flex-wrap:wrap;gap:.75rem;align-items:flex-end">
   <form method="get" action="/asistencia-diaria" class="inline-form form-grid" style="max-width:none;display:flex;flex-wrap:wrap;gap:.5rem;align-items:flex-end">
@@ -40,13 +43,11 @@
         <% }); %>
       </select>
     </label>
-    <label>Fecha
-      <input type="date" name="fecha" value="<%= fecha %>"
-        <% if (periodoSel) { %>
-        min="<%= new Date(periodoSel.fechaInicio).toISOString().slice(0,10) %>"
-        max="<%= new Date(periodoSel.fechaFin).toISOString().slice(0,10) %>"
-        <% } %>
-      />
+    <label>Desde
+      <input type="date" name="fechaDesde" value="<%= desdeQ %>" />
+    </label>
+    <label>Hasta
+      <input type="date" name="fechaHasta" value="<%= hastaQ %>" />
     </label>
     <label>Departamento
       <select name="departamentoId">
@@ -67,12 +68,14 @@
     <% if (filtro) { %><input type="hidden" name="estatus" value="<%= filtro %>" /><% } %>
     <button type="submit">Filtrar</button>
     <% if (depId || tipId || perId || filtro) { %>
-    <a class="btn" href="/asistencia-diaria?fecha=<%= fecha %>" style="background:transparent;color:inherit;border:1px solid var(--color-border)">Limpiar</a>
+    <a class="btn" href="/asistencia-diaria?fechaDesde=<%= desdeQ %>&amp;fechaHasta=<%= hastaQ %>" style="background:transparent;color:inherit;border:1px solid var(--color-border)">Limpiar</a>
     <% } %>
   </form>
-  <form method="post" action="/asistencia-diaria/reprocesar?fecha=<%= fecha %><%= qsExtra() %>" class="inline-form">
+  <% if (!variosDias) { %>
+  <form method="post" action="/asistencia-diaria/reprocesar?fecha=<%= hastaQ %><%= qsExtra() %>" class="inline-form">
     <button type="submit">Reprocesar día</button>
   </form>
+  <% } %>
 </div>
 
 <% if (periodoSel) { %>
@@ -90,10 +93,29 @@
 <p class="muted">
   Resumen desde marcaciones. Usa departamento y tipo de período para acotar equipos grandes.
   Solo <strong>presente</strong> o <strong>retardo</strong> cuentan como día trabajado en pre-nómina.
+  Si el día solo tiene checadas anuladas, no se reporta como falta.
+  Si cuentas con empleados sin turno, tendrás marcaciones incompletas; favor de asignar turnos.
   <% if (typeof mostrarComida !== 'undefined' && mostrarComida) { %>
   Hay turnos con <strong>comida checada</strong>: se muestran salida/regreso de comida.
   <% } %>
 </p>
+
+<section class="panel">
+  <h2 class="panel-title">Empleados sin turno <span class="muted">(<%= (sinTurno || []).length %>)</span></h2>
+  <% if (!(sinTurno || []).length) { %>
+  <p class="muted" style="margin:0">Ninguno en este alcance.</p>
+  <% } else { %>
+  <ul style="margin:0;padding-left:1.1rem;columns:2;gap:1.5rem">
+    <% sinTurno.forEach(function(e) { %>
+    <li style="margin:.2rem 0;break-inside:avoid">
+      <a href="/personal-empleados/<%= e.id %>"><%= e.nombre %></a>
+      <% if (e.num) { %><span class="muted small"> #<%= e.num %></span><% } %>
+      <span class="muted small"> · <%= e.departamento %></span>
+    </li>
+    <% }); %>
+  </ul>
+  <% } %>
+</section>
 
 <div class="summary-cards diaria-filtros" role="group" aria-label="Filtrar por estatus">
   <a class="<%= cardClass('', '') %>" href="<%= filtroHref('') %>">
@@ -132,13 +154,14 @@
   <% if (depId) { %> · depto filtrado<% } %>
   <% if (tipId) { %> · tipo período filtrado<% } %>
   <% if (filtro) { %> · estatus: <strong><%= filtro === 'sin_procesar' ? 'Sin procesar' : (estatusLabels[filtro] || filtro) %></strong><% } %>
-  · <a href="/asistencia-diaria?fecha=<%= fecha %>">Quitar filtros</a>
+  · <a href="/asistencia-diaria?fechaDesde=<%= desdeQ %>&amp;fechaHasta=<%= hastaQ %>">Quitar filtros</a>
 </p>
 <% } %>
 
 <table>
   <thead>
     <tr>
+      <% if (variosDias) { %><th>Fecha</th><% } %>
       <th>Empleado</th>
       <th>Departamento</th>
       <th>Tipo período</th>
@@ -150,6 +173,7 @@
       <th>Regreso comida</th>
       <% } %>
       <th>Salida</th>
+      <th>Jornada</th>
       <th>Retardo</th>
       <th>HE</th>
       <th>Estatus</th>
@@ -157,14 +181,15 @@
     </tr>
   </thead>
   <tbody>
-    <% const span = colSpan + (perId ? 1 : 0); %>
+    <% const span = colSpan + (perId ? 1 : 0) + (variosDias ? 1 : 0); %>
     <% if (!filas.length) { %>
     <tr><td colspan="<%= span %>" class="muted">Nadie con estos filtros en la fecha.</td></tr>
     <% } %>
     <% filas.forEach(function(fila) { %>
     <% const r = fila.resumen; %>
     <% const est = r ? r.estatus : 'sin_procesar'; %>
-    <tr class="<%= (!r || est === 'falta' || est === 'registro_parcial' || est === 'fuera_de_rango' || est === 'sin_procesar' || est === 'incompleto') ? 'row-muted' : '' %>">
+    <tr class="<%= (!r || est === 'falta' || est === 'anulada' || est === 'registro_parcial' || est === 'fuera_de_rango' || est === 'sin_procesar' || est === 'incompleto') ? 'row-muted' : '' %>">
+      <% if (variosDias) { %><td><%= fila.fechaYmd || '—' %></td><% } %>
       <td>
         <%= fila.empleado.firstName %> <%= fila.empleado.lastName %>
         <% if (fila.empleado.numEmpleado) { %>
@@ -183,6 +208,8 @@
         <%= fila.empleado.turnoId ? (turnoMap.get(String(fila.empleado.turnoId)) || '—') : '—' %>
         <% if (fila.comidaChecada) { %>
         <br><span class="muted small" title="El turno exige 4 marcajes">4 checadas</span>
+        <% } else if (!fila.empleado.turnoId) { %>
+        <br><span class="muted small">Sin turno · 2 checadas</span>
         <% } %>
       </td>
       <td><%= r && r.entradaReal ? formatTimeHHMM(r.entradaReal, fila.zonaHoraria) : '—' %></td>
@@ -195,16 +222,26 @@
       </td>
       <% } %>
       <td><%= r && r.salidaReal ? formatTimeHHMM(r.salidaReal, fila.zonaHoraria) : '—' %></td>
+      <td class="small">
+        <% if (r && r.entradaReal && r.salidaReal) {
+             let ms = new Date(r.salidaReal) - new Date(r.entradaReal);
+             if (r.salidaComida && r.regresoComida) ms -= (new Date(r.regresoComida) - new Date(r.salidaComida));
+             const min = Math.max(0, Math.round(ms / 60000));
+        %>
+        <%= Math.floor(min / 60) %>h <%= String(min % 60).padStart(2, '0') %>m
+        <% } else { %>—<% } %>
+      </td>
       <td><%= r && r.minutosRetardo ? r.minutosRetardo + ' min' : '—' %></td>
       <td><%= r && r.minutosHorasExtra ? r.minutosHorasExtra + ' min' : '—' %></td>
       <td>
         <% if (r) { %>
         <span class="badge badge-<%= r.estatus %>"><%= estatusLabels[r.estatus] || r.estatus %></span>
+        <% if (r.notas) { %><br><span class="muted small"><%= r.notas %></span><% } %>
         <% } else { %>
         <span class="badge badge-sin_procesar" title="No hay daily_attendance para este día. Reprocesar o asignar turno.">Sin procesar</span>
         <% } %>
         <br>
-        <a class="muted small" href="/asistencia-marcaciones?fecha=<%= fecha %>&amp;empleadoId=<%= fila.empleado._id %>">Corregir</a>
+        <a class="muted small" href="/asistencia-marcaciones?fechaDesde=<%= fila.fechaYmd || desdeQ %>&amp;fechaHasta=<%= fila.fechaYmd || hastaQ %>&amp;empleadoId=<%= fila.empleado._id %>">Corregir</a>
       </td>
       <td><%= r && r.incidenciasAutomaticas && r.incidenciasAutomaticas.length ? r.incidenciasAutomaticas.join(', ') : '—' %></td>
     </tr>

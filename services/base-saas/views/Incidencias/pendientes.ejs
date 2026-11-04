@@ -26,7 +26,7 @@
   <%= idx ? ' · ' : '' %><code><%= k %></code> ×<%= porCodigo[k] %>
   <% }); %>
   <% if (porCodigo.HED || porCodigo.HEF || porCodigo.HEO) { %>
-  — las HE se generan solas desde checadas; aquí decides si se pagan / autorizan.
+  — solo aparecen las horas extra que llegan al mínimo de la subsidiaria; por debajo quedan como nota en el día.
   <% } %>
 </p>
 <% } %>
@@ -44,7 +44,7 @@
           <input type="checkbox" id="select-all" />
         </label>
       </th>
-      <th>Fecha</th><th>Empleado</th><th>Tipo</th><th>Días</th><th>Motivo</th><th>Acciones</th>
+      <th>Fecha</th><th>Empleado</th><th>Tipo</th><th>Días / min</th><th>Motivo</th><th>Acciones</th>
     </tr>
   </thead>
   <tbody>
@@ -54,7 +54,7 @@
       <td><%= new Date(i.fechaInicio).toLocaleDateString('es-MX') %></td>
       <td><%= empMap.get(String(i.empleadoId)) || '—' %></td>
       <td><code><%= i.codigo %></code></td>
-      <td><%= i.diasAfectados || 1 %></td>
+      <td><% if ((i.minutosAfectados || 0) > 0) { %><%= i.minutosAfectados %> min<% } else { %><%= i.diasAfectados || 1 %><% } %></td>
       <td><%= i.motivo || '—' %></td>
       <td class="actions">
         <form method="post" action="/incidencias/<%= i._id %>/aprobar" class="inline-form">

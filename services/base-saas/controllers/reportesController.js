@@ -3,7 +3,7 @@ const getDepartamentoModel = require('../models/departamento');
 const getTurnoModel = require('../models/turno');
 const getTipoIncidenciaModel = require('../models/tipoIncidencia');
 const getPayrollPeriodModel = require('../models/payrollPeriod');
-const { requireEmpresaForTenant, scopeDepartamentoFilter, sessionSubsidiariaId } = require('../libs/tenantScope');
+const { requireEmpresaForTenant, scopeDepartamentoFilter, scopeTurnoFilter, sessionSubsidiariaId } = require('../libs/tenantScope');
 const { parseReportFilters, toDateInputValue } = require('../libs/reportFilters');
 const { REPORTES, REPORTES_BY_SLUG } = require('../config/reportesCatalog');
 const { runReport } = require('../services/reportesService');
@@ -19,10 +19,11 @@ async function loadFilterCatalogs(req, empresa) {
 
   const tenantId = req.session.tenantId;
   const deptoQ = scopeDepartamentoFilter(req, empresa, { activo: true }) || { tenantId, activo: true };
+  const turnoQ = scopeTurnoFilter(req, empresa, { activo: true }) || { tenantId, activo: true };
   const [empleados, departamentos, turnos, tiposIncidencia, periodos] = await Promise.all([
     Empleado.find({ tenantId, estatus: 'activo' }).sort({ lastName: 1 }).lean(),
     Departamento.find(deptoQ).sort({ nombre: 1 }).lean(),
-    Turno.find({ tenantId, activo: true }).sort({ nombre: 1 }).lean(),
+    Turno.find(turnoQ).sort({ nombre: 1 }).lean(),
     TipoIncidencia.find({ tenantId, activo: true }).sort({ nombre: 1 }).lean(),
     PayrollPeriod.find({ tenantId }).sort({ fechaInicio: -1 }).limit(24).lean()
   ]);

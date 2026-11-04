@@ -1,7 +1,7 @@
 const getIncidenciaModel = require('../models/incidencia');
 const getEmpleadoModel = require('../models/empleado');
 const getTipoIncidenciaModel = require('../models/tipoIncidencia');
-const { requireEmpresaForTenant, scopeEmpleadosFromReq, findOneByTenant, findOneDocByTenant } = require('../libs/tenantScope');
+const { requireEmpresaForTenant, scopeEmpleadosFromReq, sessionSubsidiariaId, findOneByTenant, findOneDocByTenant } = require('../libs/tenantScope');
 const { ensureTiposIncidenciaForTenant, listAllTiposForTenant } = require('../services/tiposIncidenciaService');
 const { recalcularSaldoEmpleado, calcularDiasSolicitud } = require('../services/vacacionesService');
 const { parseOptionalObjectId, trimString, parseDate, parseCheckbox } = require('../libs/formHelpers');
@@ -140,10 +140,12 @@ async function listPendientes(req, res) {
   if (periodoId && empresa) {
     const getPeriodoNominaModel = require('../models/periodoNomina');
     const PeriodoNomina = await getPeriodoNominaModel();
+    const subId = sessionSubsidiariaId(req);
     periodoNomina = await PeriodoNomina.findOne({
       _id: periodoId,
       tenantId: req.session.tenantId,
-      empresaId: empresa._id
+      empresaId: empresa._id,
+      ...(subId ? { subsidiariaId: subId } : {})
     }).lean();
     if (periodoNomina) {
       rangoFiltro = {

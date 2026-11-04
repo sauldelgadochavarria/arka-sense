@@ -6,6 +6,7 @@ const turnoSchema = new mongoose.Schema(
   {
     tenantId: { type: String, required: true, trim: true, index: true },
     empresaId: { type: mongoose.Schema.Types.ObjectId, ref: 'Empresa', required: true },
+    subsidiariaId: { type: mongoose.Schema.Types.ObjectId, ref: 'Subsidiaria', default: null, index: true },
     nombre: { type: String, required: true, trim: true },
     tipo: {
       type: String,
@@ -49,7 +50,7 @@ const turnoSchema = new mongoose.Schema(
   { timestamps: true, collection: COLLECTION_TURNOS }
 );
 
-turnoSchema.index({ tenantId: 1, nombre: 1 }, { unique: true });
+turnoSchema.index({ tenantId: 1, subsidiariaId: 1, nombre: 1 }, { unique: true });
 
 async function getTurnoModel() {
   const conn = await getFixedMongooseConnection(FIXED_CONNECTIONS.CONFIG);

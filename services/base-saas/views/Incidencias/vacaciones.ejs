@@ -5,6 +5,9 @@
   · <a href="/incidencias/dias-inhabiles">Días inhábiles</a>
 </p>
 <h1>Saldos de vacaciones <%= anio %></h1>
+<% if (session && session.subsidiariaActiva) { %>
+<p class="muted">De la subsidiaria <strong><%= session.subsidiariaActiva.nombre %></strong>.</p>
+<% } %>
 
 <form method="post" action="/incidencias/vacaciones/recalcular" class="toolbar inline-form">
   <input type="hidden" name="anio" value="<%= anio %>" />
@@ -27,6 +30,9 @@
       <td><%= f.saldo.primaVacacionalPct %>%</td>
     </tr>
     <% }); %>
+    <% if (!filas.length) { %>
+    <tr><td colspan="7" class="muted">Ningún empleado activo en esta subsidiaria.</td></tr>
+    <% } %>
   </tbody>
 </table>
 <%- include('../Partials/layout-bottom') %>
