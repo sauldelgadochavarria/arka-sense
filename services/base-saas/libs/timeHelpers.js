@@ -235,6 +235,25 @@ function parseFechaCalendario(value, timeZone = DEFAULT_TZ) {
   return parseDateTimeLocal(raw, timeZone);
 }
 
+/** Valor para input datetime-local: YYYY-MM-DDTHH:mm en la zona laboral. */
+function formatDateTimeLocal(date, timeZone = DEFAULT_TZ) {
+  if (!date) return '';
+  const d = new Date(date);
+  if (Number.isNaN(d.getTime())) return '';
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timeZone || DEFAULT_TZ,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23'
+  }).formatToParts(d);
+  const get = (type) => parts.find((p) => p.type === type)?.value || '';
+  const hour = get('hour') === '24' ? '00' : get('hour');
+  return `${get('year')}-${get('month')}-${get('day')}T${hour}:${get('minute')}`;
+}
+
 /** Reloj de pared para la app y las pantallas: instante UTC + hora de la zona. */
 function relojEnZona(date, timeZone = DEFAULT_TZ) {
   const d = date ? new Date(date) : new Date();
@@ -264,6 +283,7 @@ module.exports = {
   parseDateTimeLocal,
   parseFechaCalendario,
   formatTimeHHMM,
+  formatDateTimeLocal,
   formatDateTimeMX,
   formatDateMX,
   calendarDateInTimeZone,

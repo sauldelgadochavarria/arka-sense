@@ -106,6 +106,7 @@ async function generarMarcacionesAutomaticas({
   subsidiaria,
   ymd,
   departamentoId = null,
+  empleadoId = null,
   modo = 'auto',
   actor = {}
 }) {
@@ -138,6 +139,7 @@ async function generarMarcacionesAutomaticas({
     tipoRegistro: { $ne: 'ninguno' }
   };
   if (departamentoId) empQ.departamentoId = departamentoId;
+  if (empleadoId) empQ._id = empleadoId;
 
   const empleados = await Empleado.find(empQ).select(
     'turnoId subsidiariaId tipoRegistro departamentoId'

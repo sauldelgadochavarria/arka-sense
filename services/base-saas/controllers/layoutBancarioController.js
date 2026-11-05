@@ -361,6 +361,18 @@ async function generarDispersion(req, res) {
     const userLabel =
       req.session.userLabel || (userId ? await resolveUserLabel(userId) : '') || '';
 
+    const Periodo = await getPeriodoNominaModel();
+    const periodoDisp = await Periodo.findOne({
+      tenantId: req.session.tenantId,
+      _id: req.body.periodoId
+    }).lean();
+    if (!periodoDisp) throw new Error('Período no encontrado');
+    if (periodoDisp.estatus !== 'cerrado') {
+      const { bloqueoPrenominaCerrada } = require('../services/nomina/nominaPreflightService');
+      const bloqueoDisp = await bloqueoPrenominaCerrada(req.session.tenantId, periodoDisp);
+      if (bloqueoDisp) throw new Error(bloqueoDisp.mensaje);
+    }
+
     const result = await generarDispersionBancaria({
       tenantId: req.session.tenantId,
       periodoId: req.body.periodoId,

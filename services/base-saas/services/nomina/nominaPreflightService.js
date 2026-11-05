@@ -53,6 +53,48 @@ async function validarClavesSat(conceptos, fechaRef) {
   return advertencias;
 }
 
+const ESTATUS_PRENOMINA_LABEL = {
+  pendiente: 'Pendiente',
+  abierto: 'Abierto',
+  borrador: 'Borrador',
+  cerrado: 'Cerrado'
+};
+
+function omiteCierrePrenomina(periodo) {
+  const tipo = String(periodo?.tipoNomina || '').toLowerCase();
+  return tipo === 'finiquito' || tipo === 'indemnizacion';
+}
+
+/** Bloqueo si la nómina ordinaria no tiene una pre-nómina vinculada y cerrada. */
+async function bloqueoPrenominaCerrada(tenantId, periodo) {
+  if (omiteCierrePrenomina(periodo)) return null;
+  if (!periodo?.payrollPeriodId) {
+    return {
+      codigo: 'PRENOMINA_REQUERIDA',
+      mensaje: 'Vincula una pre-nómina y ciérrala antes de calcular la nómina.'
+    };
+  }
+  const PayrollPeriod = await getPayrollPeriodModel();
+  const pre = await PayrollPeriod.findOne({ tenantId, _id: periodo.payrollPeriodId })
+    .select('estatus numeroPeriodo')
+    .lean();
+  if (!pre) {
+    return {
+      codigo: 'PRENOMINA_NO_ENCONTRADA',
+      mensaje: 'La pre-nómina vinculada ya no existe. Vincula una pre-nómina cerrada.'
+    };
+  }
+  if (pre.estatus !== 'cerrado') {
+    const label = ESTATUS_PRENOMINA_LABEL[pre.estatus] || pre.estatus;
+    const num = pre.numeroPeriodo != null ? ` #${pre.numeroPeriodo}` : '';
+    return {
+      codigo: 'PRENOMINA_NO_CERRADA',
+      mensaje: `La pre-nómina${num} está en «${label}». Ciérrala antes de calcular la nómina.`
+    };
+  }
+  return null;
+}
+
 async function validatePeriodoForCalculo(tenantId, periodo) {
   const bloqueos = [];
   const advertencias = [];
@@ -174,20 +216,13 @@ async function validatePeriodoForCalculo(tenantId, periodo) {
     });
   }
 
-  if (periodo.payrollPeriodId) {
+  const bloqueoPre = await bloqueoPrenominaCerrada(tenantId, periodo);
+  if (bloqueoPre) {
+    bloqueos.push(bloqueoPre);
+  } else if (periodo.payrollPeriodId) {
     const PayrollPeriod = await getPayrollPeriodModel();
     const pre = await PayrollPeriod.findOne({ tenantId, _id: periodo.payrollPeriodId }).lean();
-    if (!pre) {
-      advertencias.push({
-        codigo: 'PRENOMINA_NO_ENCONTRADA',
-        mensaje: 'El período de pre-nómina vinculado ya no existe'
-      });
-    } else if (pre.estatus === 'abierto') {
-      advertencias.push({
-        codigo: 'PRENOMINA_ABIERTA',
-        mensaje: 'La pre-nómina vinculada aún está abierta; calcula y cierra pre-nómina para mejores insumos'
-      });
-    } else {
+    if (pre && pre.estatus === 'cerrado') {
       try {
         const { validateJornadaForPeriod } = require('../payrollPreflightService');
         const jornada = await validateJornadaForPeriod(pre, tenantId);
@@ -225,4 +260,4 @@ async function validatePeriodoForCalculo(tenantId, periodo) {
   };
 }
 
-module.exports = { validatePeriodoForCalculo, validarClavesSat };
+module.exports = { validatePeriodoForCalculo, validarClavesSat, bloqueoPrenominaCerrada };

@@ -220,4 +220,39 @@
 </section>
 <% } %>
 
+<% if (marcacion.estado !== 'anulada') { %>
+<section class="card-block" id="corregir">
+  <h2>Corregir fecha y hora</h2>
+  <p class="muted small">
+    La fecha y la hora de este formulario son las que quedan en la checada.
+    El día laboral sigue a esa hora, en <%= typeof zonaHoraria !== 'undefined' ? zonaHoraria : 'la zona de la subsidiaria' %>.
+  </p>
+  <form method="post" action="/asistencia-marcaciones/<%= marcacion._id %>/ajustar" class="form-grid" style="max-width:28rem">
+    <input type="hidden" name="origenVista" value="detalle" />
+    <label>Fecha y hora
+      <input type="datetime-local" name="timestamp" value="<%= formatDateTimeLocal(marcacion.timestamp, zonaHoraria) %>" required />
+    </label>
+    <label>Tipo
+      <select name="tipoMarcacion" required>
+        <% (tiposMarcacion || []).forEach(function(t) { %>
+        <option value="<%= t.value %>" <%= t.value === marcacion.tipoMarcacion ? 'selected' : '' %>><%= t.label %></option>
+        <% }); %>
+      </select>
+    </label>
+    <label>Motivo
+      <input name="motivo" placeholder="Motivo del ajuste (obligatorio)" required />
+    </label>
+    <label>Notas
+      <input name="notas" value="<%= marcacion.notas || '' %>" />
+    </label>
+    <button type="submit">Guardar ajuste</button>
+  </form>
+  <form method="post" action="/asistencia-marcaciones/<%= marcacion._id %>/anular?fecha=<%= fecha %>" class="form-grid" style="max-width:28rem;margin-top:1rem" onsubmit="return confirm('¿Anular esta marcación? Quedará en el historial.');">
+    <label>Anular esta checada
+      <input name="motivo" placeholder="Motivo de anulación (obligatorio)" required />
+    </label>
+    <button type="submit" class="btn-danger">Anular</button>
+  </form>
+</section>
+<% } %>
 <%- include('../Partials/layout-bottom') %>

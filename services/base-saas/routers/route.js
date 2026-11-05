@@ -298,6 +298,7 @@ router.post('/personal-puestos/:id', puestosController.updatePuesto);
 router.post('/personal-puestos/:id/toggle', puestosController.togglePuesto);
 
 router.get('/personal-empleados', empleadosController.listEmpleados);
+router.get('/personal-empleados/nuevo', empleadosController.showNuevoEmpleado);
 router.post('/personal-empleados', empleadosController.createEmpleado);
 router.get('/personal-empleados/:id', empleadosController.showEmpleado);
 router.get('/personal-empleados/:id/edit', empleadosController.editEmpleado);
@@ -628,6 +629,7 @@ router.post('/prenomina-periodos/:id/reprocesar-asistencia', prenominaController
 router.post('/prenomina-periodos/:id/calcular', prenominaController.calcularPeriodo);
 router.post('/prenomina-periodos/:id/cerrar', prenominaController.cerrarPeriodo);
 router.get('/prenomina-periodos/:periodId/comprobante/:empleadoId', prenominaController.showComprobante);
+router.post('/prenomina-periodos/:id/ajuste-masivo', prenominaController.aplicarAjusteMasivo);
 router.post('/prenomina-periodos/:id/ajuste/:empleadoId', prenominaController.aplicarAjuste);
 router.get('/prenomina-conceptos', prenominaController.listConceptos);
 router.get('/prenomina-conceptos/nuevo', prenominaController.newConcepto);
@@ -649,6 +651,7 @@ mountTiposPeriodoRoutes('/nomina');
 
 router.get('/catalogos/periodos', periodoAdministracionController.list);
 router.get('/catalogos/periodos/generar', periodoAdministracionController.generarForm);
+router.get('/catalogos/periodos/sugerencia', periodoAdministracionController.sugerenciaApi);
 router.post('/catalogos/periodos/preview', periodoAdministracionController.previewApi);
 router.post('/catalogos/periodos/generar', periodoAdministracionController.generar);
 router.post('/catalogos/periodos/:id/abrir', periodoAdministracionController.abrir);

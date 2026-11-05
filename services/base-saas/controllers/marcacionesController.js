@@ -10,7 +10,10 @@ const {
   startOfDay,
   endOfDay,
   formatTimeHHMM,
+  formatDateTimeLocal,
   ymdAncla,
+  ymdInTimeZone,
+  addDaysYmd,
   calendarDateInTimeZone
 } = require('../libs/timeHelpers');
 const {
@@ -38,6 +41,11 @@ const {
 
 function defaultFechaQuery(req) {
   return trimString(req.query.fecha) || new Date().toISOString().slice(0, 10);
+}
+
+function pideHoraServidor(value) {
+  const raw = Array.isArray(value) ? value[value.length - 1] : value;
+  return raw === '1' || raw === 'on' || raw === true || raw === 'true';
 }
 
 function sessionActor(req) {
@@ -254,6 +262,7 @@ async function listMarcaciones(req, res) {
     empleadosAuto,
     subsidiariaNombre: subsidiariaActiva?.nombre || '',
     formatTimeHHMM,
+    formatDateTimeLocal,
     empresa,
     error: error || null,
     session: req.session
@@ -328,7 +337,9 @@ async function showMarcacionDetalle(req, res) {
     fecha: fechaStr,
     zonaHoraria,
     estatusDiarioLabels: ESTATUS_DIARIO,
-    formatTimeHHMM: formatTime
+    tiposMarcacion: TIPOS_MARCACION,
+    formatTimeHHMM: formatTime,
+    formatDateTimeLocal
   });
 }
 
@@ -393,11 +404,7 @@ async function createMarcacion(req, res) {
 
     const empleadoId = parseOptionalObjectId(req.body.empleadoId);
     const tipoMarcacion = trimString(req.body.tipoMarcacion);
-    const usarHoraServidor =
-      req.body.usarHoraServidor === undefined ||
-      req.body.usarHoraServidor === '1' ||
-      req.body.usarHoraServidor === 'on' ||
-      req.body.usarHoraServidor === true;
+    const usarHoraServidor = pideHoraServidor(req.body.usarHoraServidor);
     const ahoraServidor = new Date();
     const motivoHoraManual = trimString(req.body.motivoHoraManual);
 
@@ -565,9 +572,13 @@ async function ajustarMarcacion(req, res) {
     const zona = doc.zonaHoraria
       ? normalizarZona(doc.zonaHoraria)
       : await zonaDeSubsidiariaId(doc.subsidiariaId || empleadoZona?.subsidiariaId);
-    const timestamp = trimString(req.body.timestamp)
-      ? parseDateTimeLocal(req.body.timestamp, zona)
-      : null;
+    const timestampRaw = trimString(req.body.timestamp);
+    const timestamp = timestampRaw ? parseDateTimeLocal(timestampRaw, zona) : null;
+    if (timestampRaw && !timestamp) {
+      req.flash('error', 'La fecha y hora del ajuste no son válidas');
+      const detalle = trimString(req.body.origenVista) === 'detalle';
+      return res.redirect(detalle ? `/asistencia-marcaciones/${id}` : `/asistencia-marcaciones?fecha=${fechaRedirect}`);
+    }
 
     if (timestamp) {
       doc.timestamp = timestamp;
@@ -632,8 +643,12 @@ async function ajustarMarcacion(req, res) {
     }
 
     req.flash('success', flash);
+    const ymdAjuste = ymdAncla(doc.fecha, zona);
+    if (trimString(req.body.origenVista) === 'detalle') {
+      return res.redirect(`/asistencia-marcaciones/${doc._id}`);
+    }
     res.redirect(
-      `/asistencia-marcaciones?fecha=${ymdAncla(doc.fecha, zona)}&empleadoId=${doc.empleadoId}`
+      `/asistencia-marcaciones?fecha=${ymdAjuste}&empleadoId=${doc.empleadoId}`
     );
   } catch (err) {
     console.error('[marcaciones.ajustar]', err);
@@ -737,10 +752,17 @@ async function reprocesarMarcacionesAutomaticas(req, res) {
       req.flash('error', 'Elige una subsidiaria para generar las marcaciones automáticas');
       return res.redirect('/asistencia-marcaciones');
     }
-    const ymd = trimString(req.body.fecha);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) {
-      req.flash('error', 'Indica el día a generar');
+    const ymdRe = /^\d{4}-\d{2}-\d{2}$/;
+    let desde = trimString(req.body.fechaDesde) || trimString(req.body.fecha);
+    let hasta = trimString(req.body.fechaHasta) || desde;
+    if (!ymdRe.test(desde) || !ymdRe.test(hasta)) {
+      req.flash('error', 'Indica el desde y el hasta del rango');
       return res.redirect('/asistencia-marcaciones');
+    }
+    if (desde > hasta) {
+      const tmp = desde;
+      desde = hasta;
+      hasta = tmp;
     }
     const getSubsidiariaModel = require('../models/subsidiaria');
     const Subsidiaria = await getSubsidiariaModel();
@@ -749,22 +771,51 @@ async function reprocesarMarcacionesAutomaticas(req, res) {
       req.flash('error', 'Subsidiaria no encontrada');
       return res.redirect('/asistencia-marcaciones');
     }
-    const { ymdInTimeZone } = require('../libs/timeHelpers');
     const hoy = ymdInTimeZone(new Date(), subsidiaria.zonaHoraria);
-    if (ymd > hoy) {
-      req.flash('error', 'No se generan marcaciones de un día futuro');
-      return res.redirect(`/asistencia-marcaciones?fechaDesde=${hoy}&fechaHasta=${hoy}`);
+    if (desde > hoy) {
+      req.flash('error', 'No se generan marcaciones de días futuros');
+      return res.redirect(`/asistencia-marcaciones?fechaDesde=${hoy}&fechaHasta=${hoy}#automaticas`);
     }
-    const resumen = await generarMarcacionesAutomaticas({
-      tenantId: req.session.tenantId,
-      subsidiaria,
-      ymd,
-      departamentoId: parseOptionalObjectId(req.body.departamentoId),
-      modo: 'reproceso',
-      actor: sessionActor(req)
-    });
-    req.flash('success', textoResumen(resumen, true));
-    return res.redirect(`/asistencia-marcaciones?fechaDesde=${ymd}&fechaHasta=${ymd}`);
+    const hastaGen = hasta > hoy ? hoy : hasta;
+    const dias = [];
+    for (let ymd = desde; ymd && ymd <= hastaGen; ymd = addDaysYmd(ymd, 1)) {
+      dias.push(ymd);
+      if (dias.length > 62) break;
+    }
+    if (dias.length > 62) {
+      req.flash('error', 'El rango máximo es de 62 días. Acórtalo y vuelve a generar.');
+      return res.redirect(`/asistencia-marcaciones?fechaDesde=${desde}&fechaHasta=${hasta}#automaticas`);
+    }
+    const acum = {
+      creadas: 0,
+      empleados: 0,
+      descanso: 0,
+      sinTurno: 0,
+      sinHorario: 0,
+      conservadas: 0,
+      pendientes: 0
+    };
+    const departamentoId = parseOptionalObjectId(req.body.departamentoId);
+    const empleadoId = parseOptionalObjectId(req.body.empleadoId);
+    for (const ymd of dias) {
+      const resumen = await generarMarcacionesAutomaticas({
+        tenantId: req.session.tenantId,
+        subsidiaria,
+        ymd,
+        departamentoId,
+        empleadoId,
+        modo: 'reproceso',
+        actor: sessionActor(req)
+      });
+      Object.keys(acum).forEach((k) => {
+        acum[k] += Number(resumen[k]) || 0;
+      });
+    }
+    let mensaje = `${desde} → ${hastaGen} (${dias.length} día(s)). ${textoResumen(acum, true)}`;
+    if (hasta > hoy) mensaje += ` Los días posteriores a hoy (${hoy}) quedaron fuera.`;
+    req.flash('success', mensaje);
+    const qsEmp = empleadoId ? `&empleadoId=${empleadoId}` : '';
+    return res.redirect(`/asistencia-marcaciones?fechaDesde=${desde}&fechaHasta=${hastaGen}${qsEmp}#automaticas`);
   } catch (err) {
     console.error('[marcaciones-auto]', err);
     req.flash('error', 'No se pudieron generar las marcaciones automáticas');

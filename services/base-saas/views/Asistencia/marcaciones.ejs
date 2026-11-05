@@ -1,13 +1,15 @@
 <%- include('../Partials/layout-top', { title: 'Marcaciones', session }) %>
 <%- include('partials/flujo-asistencia', { pasoActual: 1, fechaDesde: fechaDesde, fechaHasta: fechaHasta }) %>
 <h1>Marcaciones</h1>
+<p class="page-subtitle">Revisa las checadas del rango. Registrar a mano y generar automáticas son acciones distintas.</p>
 <% if (!empresa) { %>
 <p>No hay empresa vinculada a este tenant.</p>
 <% } else {
   const empF = typeof empleadoFiltro !== 'undefined' ? empleadoFiltro : '';
   const tipoSel = (typeof tipoPrefill !== 'undefined' && tipoPrefill) ? tipoPrefill : (empF ? 'salida' : 'entrada');
   const openCaptura = typeof mostrarCaptura !== 'undefined' && mostrarCaptura;
-
+  const tipoLabel = {};
+  (tiposMarcacion || []).forEach(function(t) { tipoLabel[t.value] = t.label; });
 %>
 <div class="toolbar" style="flex-wrap:wrap;gap:.5rem;align-items:flex-end">
   <form method="get" action="/asistencia-marcaciones" class="inline-form form-grid" style="max-width:none;display:flex;flex-wrap:wrap;gap:.5rem;align-items:flex-end">
@@ -38,51 +40,105 @@
     <button type="submit">Filtrar</button>
   </form>
   <a class="btn" href="/asistencia-diaria?fechaDesde=<%= fechaDesde %>&amp;fechaHasta=<%= fechaHasta %>">Asistencia del día</a>
-  <a class="btn" href="/asistencia-marcaciones?fechaDesde=<%= fechaDesde %>&amp;fechaHasta=<%= fechaHasta %>&amp;nueva=1#captura">+ Nueva marcación</a>
 </div>
 
-<p class="muted">
-  Cada fila tiene <strong>Corregir</strong> para cambiar hora o tipo, o para anular. «Nueva marcación» solo agrega otra checada.
-  <% if (modoA === 'reporte') { %>
-  Este listado es el reporte de anuladas del rango: no entran al cálculo del día.
-  <% } else if (modoA === 'incluir') { %>
-  Las anuladas van en el mismo listado, marcadas, y no entran al cálculo del día.
-  <% } %>
-</p>
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1rem;margin:0 0 1.25rem">
+  <details id="captura" class="panel" style="margin:0;border-left:4px solid #0f766e" <%= openCaptura ? 'open' : '' %>>
+    <summary style="cursor:pointer;font-weight:700">Registrar una checada a mano</summary>
+    <p class="muted small">Una checada de un empleado, con la fecha y la hora que escribas. No genera el resto del turno.</p>
+    <form method="post" action="/asistencia-marcaciones" class="form-grid" style="margin-top:.75rem">
+      <label>Empleado
+        <select name="empleadoId" required>
+          <option value="">— Empleado —</option>
+          <% empleados.forEach(function(e) { %>
+          <option value="<%= e._id %>" <%= String(e._id) === String(empleadoPrefill || '') ? 'selected' : '' %>>
+            <%= e.firstName %> <%= e.lastName %> (<%= e.numEmpleado %>)
+          </option>
+          <% }); %>
+        </select>
+      </label>
+      <label>Tipo
+        <select name="tipoMarcacion" required>
+          <% tiposMarcacion.forEach(function(t) { %>
+          <option value="<%= t.value %>" <%= t.value === tipoSel ? 'selected' : '' %>><%= t.label %></option>
+          <% }); %>
+        </select>
+      </label>
+      <label>Fecha y hora
+        <input type="datetime-local" name="timestamp" id="marcacion-timestamp" value="<%= fecha %>T08:00" required />
+      </label>
+      <label class="inline-check">
+        <input type="hidden" name="usarHoraServidor" value="0" />
+        <input type="checkbox" name="usarHoraServidor" value="1" id="usarHoraServidor" />
+        Usar la hora de este momento
+      </label>
+      <label>Motivo
+        <input name="motivoHoraManual" id="marcacion-motivo" placeholder="Por qué no es la hora de este momento" required />
+      </label>
+      <label>Método
+        <select name="metodo">
+          <% metodosRegistro.forEach(function(m) { if (m.value === 'automatico') return; %>
+          <option value="<%= m.value %>" <%= m.value === 'manual' ? 'selected' : '' %>><%= m.label %></option>
+          <% }); %>
+        </select>
+      </label>
+      <label>Notas
+        <input name="notas" placeholder="Opcional" />
+      </label>
+      <button type="submit">Registrar esta checada</button>
+    </form>
+  </details>
 
-<section class="panel" id="automaticas">
-  <h2 class="panel-title">Marcación automática</h2>
-  <% if (!rangoAuto) { %>
-  <p class="muted" style="margin:0">Elige una subsidiaria. El rango aleatorio de entrada y salida se define en esa plaza.</p>
-  <% } else { %>
-  <p class="muted">
-    <%= subsidiariaNombre %>: la entrada se sortea entre
-    <strong><%= rangoAuto.entradaAntesMin %> min antes</strong> y
-    <strong><%= rangoAuto.entradaDespuesMin %> min después</strong> de la hora del turno;
-    la salida, entre <strong><%= rangoAuto.salidaAntesMin %> min antes</strong> y
-    <strong><%= rangoAuto.salidaDespuesMin %> min después</strong>.
-    Empleados con la casilla activa: <strong><%= empleadosAuto %></strong>.
-    El sistema las crea al llegar esa hora.
-    Reprocesar vuelve a sortear el día y no toca checadas de app, manuales ni ya corregidas.
-    Si el turno pide comida checada, también genera esas dos marcas.
-    <a href="/config-subsidiarias">Ajustar el rango</a>
-  </p>
-  <form method="post" action="/asistencia-marcaciones/automaticas" class="inline-form" style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:flex-end">
-    <label>Día
-      <input type="date" name="fecha" value="<%= fechaHasta %>" required />
-    </label>
-    <label>Departamento
-      <select name="departamentoId">
-        <option value="">— Todos —</option>
-        <% (departamentos || []).forEach(function(d) { %>
-        <option value="<%= d._id %>"><%= d.nombre %></option>
-        <% }); %>
-      </select>
-    </label>
-    <button type="submit">Generar / reprocesar</button>
-  </form>
-  <% } %>
-</section>
+  <details id="automaticas" class="panel" style="margin:0;border-left:4px solid #b45309">
+    <summary style="cursor:pointer;font-weight:700">Generar checadas automáticas</summary>
+    <% if (!rangoAuto) { %>
+    <p class="muted" style="margin:.75rem 0 0">Elige una subsidiaria. El rango aleatorio de entrada y salida se define en esa plaza.</p>
+    <% } else { %>
+    <p class="muted small">
+      <%= subsidiariaNombre %>: solo empleados con la casilla activa (<%= empleadosAuto %>).
+      Entrada entre <%= rangoAuto.entradaAntesMin %> min antes y <%= rangoAuto.entradaDespuesMin %> min después del turno;
+      salida entre <%= rangoAuto.salidaAntesMin %> min antes y <%= rangoAuto.salidaDespuesMin %> min después.
+      No toca checadas de app, manuales ni ya corregidas.
+      Los días de descanso se saltan. No genera días futuros. Máximo 62 días.
+      <a href="/config-subsidiarias">Ajustar el rango de minutos</a>
+    </p>
+    <form method="post" action="/asistencia-marcaciones/automaticas" class="form-grid" style="margin-top:.75rem">
+      <label>Desde
+        <input type="date" name="fechaDesde" value="<%= fechaDesde %>" required />
+      </label>
+      <label>Hasta
+        <input type="date" name="fechaHasta" value="<%= fechaHasta %>" required />
+      </label>
+      <label>Departamento
+        <select name="departamentoId" id="auto-depto">
+          <option value="">— Todos —</option>
+          <% (departamentos || []).forEach(function(d) { %>
+          <option value="<%= d._id %>"><%= d.nombre %></option>
+          <% }); %>
+        </select>
+      </label>
+      <label>Empleado
+        <select name="empleadoId" id="auto-empleado">
+          <option value="">— Todos —</option>
+          <% empleados.forEach(function(e) { if (!e.marcacionAutomatica) return; %>
+          <option value="<%= e._id %>" data-depto="<%= e.departamentoId || '' %>">
+            <%= e.firstName %> <%= e.lastName %> (<%= e.numEmpleado %>)
+          </option>
+          <% }); %>
+        </select>
+      </label>
+      <button type="submit">Generar / reprocesar el rango</button>
+    </form>
+    <% } %>
+  </details>
+</div>
+
+<h2 style="margin-bottom:.35rem">Listado</h2>
+<p class="muted small">
+  Para cambiar hora o anular, abre la checada. El formulario de arriba no edita estas filas.
+  <% if (modoA === 'reporte') { %>Este listado es solo de anuladas: no entran al cálculo.<% } %>
+  <% if (modoA === 'incluir') { %>Las anuladas aparecen marcadas y no entran al cálculo.<% } %>
+</p>
 
 <table id="lista">
   <thead>
@@ -129,7 +185,7 @@
       </td>
       <td class="muted small"><%= formatTimeHHMM(tsOrig, m.zonaHoraria) %></td>
       <td><%= empMap.get(String(m.empleadoId)) || '—' %></td>
-      <td><%= m.tipoMarcacion %></td>
+      <td><%= tipoLabel[m.tipoMarcacion] || m.tipoMarcacion %></td>
       <td><%= (m.geocerca && m.geocerca.zonaNombre) || '—' %></td>
       <td>
         <span class="badge badge-<%= anulada ? 'suspendido' : 'activo' %>">
@@ -148,28 +204,10 @@
         <% if (!m.motivoAjuste && !m.motivoAnulacion) { %><%= m.notas || '—' %><% } %>
       </td>
       <td>
-        <a href="/asistencia-marcaciones/<%= m._id %>">Detalle / bitácora</a>
         <% if (!anulada) { %>
-        ·
-        <details style="display:inline-block;vertical-align:top">
-          <summary style="cursor:pointer">Corregir</summary>
-          <form method="post" action="/asistencia-marcaciones/<%= m._id %>/ajustar?fecha=<%= fecha %>" class="form-grid" style="margin-top:0.5rem;min-width:240px">
-            <input type="datetime-local" name="timestamp" value="<%= (ymdM || fecha) %>T<%= formatTimeHHMM(m.timestamp, m.zonaHoraria) %>" required />
-            <span class="muted small"><%= m.zonaHoraria || '' %></span>
-            <select name="tipoMarcacion" required>
-              <% tiposMarcacion.forEach(function(t) { %>
-              <option value="<%= t.value %>" <%= t.value === m.tipoMarcacion ? 'selected' : '' %>><%= t.label %></option>
-              <% }); %>
-            </select>
-            <input name="motivo" placeholder="Motivo del ajuste (obligatorio)" required />
-            <input name="notas" placeholder="Notas" value="<%= m.notas || '' %>" />
-            <button type="submit">Guardar ajuste</button>
-          </form>
-          <form method="post" action="/asistencia-marcaciones/<%= m._id %>/anular?fecha=<%= fecha %>" class="form-grid" style="margin-top:0.5rem" onsubmit="return confirm('¿Anular esta marcación? Quedará en historial.');">
-            <input name="motivo" placeholder="Motivo de anulación (obligatorio)" required />
-            <button type="submit" class="btn-danger">Anular</button>
-          </form>
-        </details>
+        <a href="/asistencia-marcaciones/<%= m._id %>#corregir">Corregir</a>
+        <% } else { %>
+        <a href="/asistencia-marcaciones/<%= m._id %>">Ver</a>
         <% } %>
       </td>
     </tr>
@@ -178,7 +216,8 @@
 </table>
 
 <% if (bitacora && bitacora.length) { %>
-<h2>Bitácora del día<%= empF ? ' (empleado filtrado)' : '' %></h2>
+<details class="panel">
+<summary style="cursor:pointer;font-weight:700">Bitácora del rango<%= empF ? ' (empleado filtrado)' : '' %></summary>
 <table>
   <thead>
     <tr><th>Hora</th><th>Acción</th><th>Usuario</th><th>Motivo</th><th>Detalle</th></tr>
@@ -202,51 +241,64 @@
     <% }); %>
   </tbody>
 </table>
+</details>
 <% } %>
 
-<details id="captura" <%= openCaptura ? 'open' : '' %>>
-  <summary><strong>Registrar marcación manual</strong></summary>
-  <form method="post" action="/asistencia-marcaciones" class="form-grid form-wide" style="margin-top:.75rem">
-    <label>Empleado
-      <select name="empleadoId" required>
-        <option value="">— Empleado —</option>
-        <% empleados.forEach(function(e) { %>
-        <option value="<%= e._id %>" <%= String(e._id) === String(empleadoPrefill || '') ? 'selected' : '' %>>
-          <%= e.firstName %> <%= e.lastName %> (<%= e.numEmpleado %>)
-        </option>
-        <% }); %>
-      </select>
-    </label>
-    <label>Tipo
-      <select name="tipoMarcacion" required>
-        <% tiposMarcacion.forEach(function(t) { %>
-        <option value="<%= t.value %>" <%= t.value === tipoSel ? 'selected' : '' %>><%= t.label %></option>
-        <% }); %>
-      </select>
-    </label>
-    <label class="inline-check" style="grid-column:1/-1">
-      <input type="checkbox" name="usarHoraServidor" value="1" checked />
-      Usar hora del servidor (recomendado)
-    </label>
-    <label>Hora (si no usas servidor)
-      <input type="datetime-local" name="timestamp" value="<%= fecha %>T17:00" />
-    </label>
-    <label>Motivo hora distinta
-      <input name="motivoHoraManual" placeholder="Obligatorio si desmarcas hora del servidor" />
-    </label>
-    <label>Método
-      <select name="metodo">
-        <% metodosRegistro.forEach(function(m) { if (m.value === 'automatico') return; %>
-        <option value="<%= m.value %>" <%= m.value === 'manual' ? 'selected' : '' %>><%= m.label %></option>
-        <% }); %>
-      </select>
-    </label>
-    <label>Notas
-      <input name="notas" placeholder="Notas / justificación (opcional)" />
-    </label>
-    <button type="submit">Registrar marcación</button>
-  </form>
-  <p class="muted small">Usa la <strong>fecha del día incompleto</strong> (no el día siguiente). Luego revisa asistencia del día.</p>
-</details>
+<script>
+(function () {
+  var chk = document.getElementById('usarHoraServidor');
+  var ts = document.getElementById('marcacion-timestamp');
+  var mot = document.getElementById('marcacion-motivo');
+  if (!chk || !ts) return;
+  function sync() {
+    var ahora = chk.checked;
+    ts.disabled = ahora;
+    ts.required = !ahora;
+    if (mot) mot.required = !ahora;
+  }
+  chk.addEventListener('change', sync);
+  sync();
+})();
+(function () {
+  var paneles = ['captura', 'automaticas'];
+  if (location.hash === '#automaticas') {
+    var auto = document.getElementById('automaticas');
+    if (auto) auto.open = true;
+  }
+  var autoDepto = document.getElementById('auto-depto');
+  var autoEmp = document.getElementById('auto-empleado');
+  function syncAutoEmp() {
+    if (!autoDepto || !autoEmp) return;
+    var id = autoDepto.value;
+    Array.prototype.forEach.call(autoEmp.options, function (opt) {
+      if (!opt.value) return;
+      var ok = !id || opt.getAttribute('data-depto') === id;
+      opt.hidden = !ok;
+      opt.disabled = !ok;
+      if (!ok && opt.selected) autoEmp.value = '';
+    });
+  }
+  if (autoDepto) autoDepto.addEventListener('change', syncAutoEmp);
+  syncAutoEmp();
+  document.querySelectorAll('a[href="#captura"]').forEach(function (a) {
+    a.addEventListener('click', function () {
+      var captura = document.getElementById('captura');
+      if (captura) captura.open = true;
+    });
+  });
+  paneles.forEach(function (id) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('toggle', function () {
+      if (!el.open) return;
+      paneles.forEach(function (otroId) {
+        if (otroId === id) return;
+        var otro = document.getElementById(otroId);
+        if (otro) otro.open = false;
+      });
+    });
+  });
+})();
+</script>
 <% } %>
 <%- include('../Partials/layout-bottom') %>

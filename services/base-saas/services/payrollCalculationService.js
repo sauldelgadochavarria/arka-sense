@@ -13,6 +13,9 @@ const {
 } = require('./movimientoAsistenciaNominaService');
 const { validatePeriodClose } = require('./payrollPreflightService');
 const { startOfDay, endOfDay, ymdInTimeZone } = require('../libs/timeHelpers');
+const { isDiaLaborable } = require('./attendanceProcessingService');
+const { calcularDiasPagados } = require('../libs/diasPagadosMotor');
+const { heMinimosDe } = require('./asistenciaAutorizacionService');
 const { filterEmpleadosByTipoMotor } = require('../libs/empleadoTipoPeriodo');
 const { listTiposPeriodo } = require('./tipoPeriodoNominaService');
 const { clasificarHorasExtraPeriodo, minutosExtraDesdeDaily } = require('../libs/horasExtraClasificacion');
@@ -31,6 +34,19 @@ function getHorasJornada(turno) {
 
 function dateKey(d) {
   return startOfDay(d).toISOString().slice(0, 10);
+}
+
+function estructuraTurnoEnRango(turno, inicio, fin, diasTrabajadosKeys) {
+  let diasProgramados = 0;
+  let diasDescanso = 0;
+  if (!turno) return { diasProgramados: 0, diasDescanso: 0 };
+  eachDayInRange(inicio, fin, (d) => {
+    const ymd = dateKey(d);
+    const ancla = new Date(`${ymd}T12:00:00.000Z`);
+    if (isDiaLaborable(turno, ancla)) diasProgramados += 1;
+    else if (!diasTrabajadosKeys.has(ymd)) diasDescanso += 1;
+  });
+  return { diasProgramados, diasDescanso };
 }
 
 function eachDayInRange(inicio, fin, fn) {
@@ -275,6 +291,33 @@ async function calculatePayrollPeriod(periodId, tenantId, userId = '') {
   const inicio = startOfDay(period.fechaInicio);
   const fin = endOfDay(period.fechaFin);
   const usaAsistencia = period.aplicaAsistenciaPrenomina !== false;
+  let heMinimo = 15;
+  if (period.subsidiariaId) {
+    const getSubsidiariaModel = require('../models/subsidiaria');
+    const Subsidiaria = await getSubsidiariaModel();
+    const sub = await Subsidiaria.findById(period.subsidiariaId).select('heMinutosParaAutorizar').lean();
+    heMinimo = heMinimosDe(sub?.heMinutosParaAutorizar);
+  }
+  const getAsistenciaAutorizacionModel = require('../models/asistenciaAutorizacion');
+  const AsistenciaAutorizacion = await getAsistenciaAutorizacionModel();
+  const autorizadasHe = await AsistenciaAutorizacion.find({
+    tenantId,
+    tipo: 'horas_extra',
+    estado: 'aprobada',
+    empleadoId: { $in: empleados.map((e) => e._id) },
+    fecha: { $gte: inicio, $lte: fin }
+  })
+    .select('empleadoId fecha')
+    .lean();
+  const heAutorizada = new Set(autorizadasHe.map((a) => `${a.empleadoId}|${dateKey(a.fecha)}`));
+
+  let politicaDias = {};
+  if (period.empresaId) {
+    const getEmpresaModel = require('../models/empresa');
+    const Empresa = await getEmpresaModel();
+    const empresaDoc = await Empresa.findById(period.empresaId).select('nominaDias').lean();
+    politicaDias = empresaDoc?.nominaDias || {};
+  }
 
   let weekStartsOnPeriod = 1;
   if (period.tipoPeriodoId) {
@@ -322,6 +365,24 @@ async function calculatePayrollPeriod(periodId, tenantId, userId = '') {
       empleado.turnoId ? Turno.findById(empleado.turnoId).lean() : null
     ]);
 
+    let minutosNota = 0;
+    let minutosSinAutorizar = 0;
+    const dailiesPago = dailies.map((day) => {
+      const min = minutosExtraDesdeDaily(day);
+      let pagable = 0;
+      if (min > 0 && min < heMinimo) minutosNota += min;
+      else if (min >= heMinimo && min > 0) {
+        if (heAutorizada.has(`${empleado._id}|${dateKey(day.fecha)}`)) pagable = min;
+        else minutosSinAutorizar += min;
+      }
+      return {
+        ...day,
+        minutosHorasExtra: pagable,
+        minutosHEOrdinaria: 0,
+        minutosHEDoble: 0,
+        minutosHETriple: 0
+      };
+    });
     const tipoEmp = empleado.tipoPeriodoId
       ? tiposById.get(String(empleado.tipoPeriodoId))
       : null;
@@ -330,7 +391,45 @@ async function calculatePayrollPeriod(periodId, tenantId, userId = '') {
       weekStartsOnPeriod
     );
 
-    let calc = calcularEmpleadoPeriodo(empleado, turno, dailies, incidencias, weekStartsOn);
+    let calc = calcularEmpleadoPeriodo(empleado, turno, dailiesPago, incidencias, weekStartsOn);
+    const trabajadosKeys = new Set(
+      dailies
+        .filter((day) => day.estatus === 'presente' || day.estatus === 'retardo')
+        .map((day) => dateKey(day.fecha))
+    );
+    const estructura = estructuraTurnoEnRango(turno, inicio, fin, trabajadosKeys);
+    const descansoPago = turno
+      ? calcularDiasPagados({
+          periodo: {
+            diasPeriodo: estructura.diasProgramados + estructura.diasDescanso,
+            tipoPeriodo: period.tipo || 'semanal'
+          },
+          tipoPeriodoRef: {
+            diasLaborables: estructura.diasProgramados,
+            esSeptimo: estructura.diasDescanso > 0
+          },
+          politica: politicaDias,
+          diasLaborados: calc.diasTrabajados,
+          faltasInjustificadas: calc.diasFalta
+        })
+      : null;
+    calc.diasDescanso = descansoPago ? descansoPago.diasDescanso : 0;
+    calc.diasDescansoPagados = descansoPago ? descansoPago.diasDescansoPagados : 0;
+    calc.diasProgramadosTurno = estructura.diasProgramados;
+    if (calc.diasDescansoPagados > 0 && calc.salarioDiario > 0) {
+      const montoSeptimo = roundMoney(calc.salarioDiario * calc.diasDescansoPagados);
+      calc.percepciones.push({
+        clave: 'P003',
+        nombre: 'Séptimo día',
+        tipo: 'percepcion',
+        monto: montoSeptimo,
+        formula: 'septimo_dia'
+      });
+      calc.totalPercepciones = roundMoney(calc.totalPercepciones + montoSeptimo);
+      calc.netoPagar = roundMoney(calc.totalPercepciones - calc.totalDeducciones);
+    }
+    calc.minutosHorasExtraNota = minutosNota;
+    calc.minutosHorasExtraSinAutorizar = minutosSinAutorizar;
     const movsEmp = movPorEmpleado.get(String(empleado._id)) || [];
     if (movsEmp.length) {
       calc = aplicarMovimientosAlCalculo(calc, movsEmp, conceptosMap);

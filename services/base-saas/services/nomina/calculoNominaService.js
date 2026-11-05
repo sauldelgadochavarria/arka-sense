@@ -187,6 +187,19 @@ async function calcularReciboEmpleado(
     diasVacaciones,
     diasPermisoConGoce
   });
+  if (insumos.fuente === 'prenomina' && insumos.diasDescansoPagados != null) {
+    const pagados = Number(insumos.diasDescansoPagados) || 0;
+    diasPago.diasDescanso = Number(insumos.diasDescanso) || pagados;
+    diasPago.diasDescansoPagados = pagados;
+    if (insumos.diasProgramadosTurno != null) {
+      diasPago.diasProgramados = Number(insumos.diasProgramadosTurno) || diasPago.diasProgramados;
+    }
+    diasPago.diasPagados = Math.round((Number(diasPago.diasLaborados) + pagados) * 100) / 100;
+    const politicaCotiza = mergePolitica(diasOpts.politica || {});
+    diasPago.diasCotizacion = politicaCotiza.imssUsaDiasPagados
+      ? diasPago.diasPagados
+      : diasPago.diasLaborados;
+  }
 
   const sueldoDiario = insumos.sueldoDiario ?? empleado.salarioDiario ?? 0;
   const horasJornada =
@@ -695,6 +708,38 @@ async function calcularReciboEmpleado(
   return recibo;
 }
 
+/**
+ * La subsidiaria puede reutilizar un código del catálogo de empresa con otro tipo y otra clave SAT.
+ * Ejemplo: 045 es devolución FONACOT (otro pago) en el catálogo, e ISR (deducción 002) en Janneth.
+ * Sin este ajuste el ISR se suma como percepción y no baja el neto.
+ */
+async function aplicarTipoSubsidiaria(conceptos, { tenantId, empresaId, subsidiariaId }) {
+  if (!subsidiariaId || !empresaId || !conceptos?.length) return;
+  const getSubsidiaryConceptConfigModel = require('../../models/subsidiaryConceptConfig');
+  const SubCfg = await getSubsidiaryConceptConfigModel();
+  const rows = await SubCfg.find({
+    tenantId,
+    empresaId,
+    subsidiariaId,
+    activo: true,
+    deshabilitado: { $ne: true },
+    tipo: { $in: ['percepcion', 'deduccion', 'otro_pago'] }
+  })
+    .select('conceptoCodigo tipo claveSat')
+    .lean();
+  const byCodigo = new Map(conceptos.map((c) => [String(c.codigo).toUpperCase(), c]));
+  for (const row of rows) {
+    const concepto = byCodigo.get(String(row.conceptoCodigo || '').toUpperCase());
+    if (!concepto || !row.tipo || row.tipo === concepto.tipo) continue;
+    concepto.tipo = row.tipo;
+    const clave = String(row.claveSat || '').trim();
+    if (clave) {
+      concepto.claveSAT = clave;
+      concepto.sat = { ...(concepto.sat || {}), clave, tipo: row.tipo };
+    }
+  }
+}
+
 async function calcularPeriodo(tenantId, periodoId, options = {}) {
   const PeriodoNomina = await getPeriodoNominaModel();
   const ConceptoNomina = await getConceptoNominaModel();
@@ -703,6 +748,9 @@ async function calcularPeriodo(tenantId, periodoId, options = {}) {
   const periodo = await PeriodoNomina.findOne({ tenantId, _id: periodoId }).lean();
   if (!periodo) throw new Error('Período no encontrado');
   if (periodo.estatus === 'cerrado') throw new Error('El período está cerrado');
+  const { bloqueoPrenominaCerrada } = require('./nominaPreflightService');
+  const bloqueoPre = await bloqueoPrenominaCerrada(tenantId, periodo);
+  if (bloqueoPre) throw new Error(bloqueoPre.mensaje);
 
   // Corregir diasPeriodo si quedó mal (conteo México vs fechas UTC de negocio)
   const { diasPeriodoUtc } = require('../../libs/periodoNumero');
@@ -822,6 +870,11 @@ async function calcularPeriodo(tenantId, periodoId, options = {}) {
     activo: true,
     $or: [{ aplicaEn: 'nomina' }, { aplicaEn: 'ambos' }, { aplicaEn: { $exists: false } }]
   }).lean();
+  await aplicarTipoSubsidiaria(conceptos, {
+    tenantId,
+    empresaId: periodo.empresaId,
+    subsidiariaId: periodo.subsidiariaId
+  });
   const tiposPorCodigo = new Map(conceptos.map((c) => [c.codigo, c.tipo]));
   const conceptosByCodigo = new Map(conceptos.map((c) => [c.codigo, c]));
   const informativos = new Set(
@@ -1084,6 +1137,9 @@ async function cerrarPeriodo(tenantId, periodoId, userId = '', userLabel = '') {
   if (periodo.estatus !== 'calculado') {
     throw new Error('Solo se pueden cerrar períodos en estatus calculado');
   }
+  const { bloqueoPrenominaCerrada } = require('./nominaPreflightService');
+  const bloqueoPreCierre = await bloqueoPrenominaCerrada(tenantId, periodo);
+  if (bloqueoPreCierre) throw new Error(bloqueoPreCierre.mensaje);
 
   const label =
     userLabel || (await require('../../libs/userLabel').resolveUserLabel(userId));

@@ -99,8 +99,14 @@
 </div>
 <% } } %>
 
+<div class="toolbar">
+  <a class="btn" href="/prenomina-periodos">← Períodos</a>
+</div>
+
+<details class="panel" id="opciones-calculo">
+  <summary style="cursor:pointer;font-weight:700">Opciones de cálculo</summary>
 <% if (typeof cobertura !== 'undefined' && cobertura) { %>
-<section class="panel">
+<section class="panel" style="margin-top:.75rem">
   <h2 class="panel-title">Ligación con asistencia</h2>
   <p class="muted small">
     Cadena recomendada:
@@ -135,15 +141,17 @@
 </section>
 <% } %>
 
-<div class="toolbar">
-  <a class="btn" href="/prenomina-periodos">← Períodos</a>
+<div class="toolbar" style="flex-wrap:wrap;align-items:flex-start;gap:.75rem;margin-top:.75rem">
   <% if (periodo.estatus === 'abierto' || periodo.estatus === 'borrador') { %>
   <form method="post" action="/prenomina-periodos/<%= periodo._id %>/reprocesar-asistencia" class="inline-form"
-        onsubmit="return confirm('¿Reprocesar asistencia diaria de todo el rango del período a partir de las marcaciones?');">
-    <button type="submit">1. Reprocesar asistencia del período</button>
+        onsubmit="return confirm('¿Reprocesar la asistencia de todo el período a partir de las checadas? Los montos de pre-nómina no cambian.');">
+    <button type="submit">Reprocesar asistencia</button>
+    <span class="muted small" style="display:block;max-width:16rem">Arma otra vez los días (presente, falta, horas extra) desde las checadas. No toca los montos.</span>
   </form>
-  <form method="post" action="/prenomina-periodos/<%= periodo._id %>/calcular" class="inline-form">
-    <button type="submit"><%= periodo.estatus === 'borrador' ? '2. Recalcular pre-nómina' : '2. Calcular pre-nómina' %></button>
+  <form method="post" action="/prenomina-periodos/<%= periodo._id %>/calcular" class="inline-form"
+        onsubmit="return confirm('¿Calcular la pre-nómina con la asistencia ya armada? Se sustituye el pre-cálculo anterior, ajustes manuales incluidos.');">
+    <button type="submit"><%= periodo.estatus === 'borrador' ? 'Recalcular pre-nómina' : 'Calcular pre-nómina' %></button>
+    <span class="muted small" style="display:block;max-width:16rem">Lee la asistencia ya armada y calcula percepciones, deducciones y neto. No vuelve a leer las checadas.</span>
   </form>
   <% } %>
   <% if (periodo.estatus === 'borrador' || periodo.estatus === 'cerrado') { %>
@@ -160,6 +168,7 @@
   <% } %>
   <% } %>
 </div>
+</details>
 
 <% if (periodo.totales) { %>
 <div class="summary-cards">
@@ -170,201 +179,57 @@
 </div>
 <% } %>
 
-<% if (typeof cobertura !== 'undefined' && cobertura && cobertura.usaAsistencia) { %>
-<section class="panel" style="margin-top:1.5rem">
-  <h2 class="panel-title">Asistencia del período</h2>
+<% const puedeAjustar = periodo.estatus !== 'cerrado' && detalles.length; %>
+<%- include('./partials/revision-calculo', { puedeAjustar: puedeAjustar }) %>
+<% if (puedeAjustar) { %>
+<details class="panel" id="ajuste-masivo" style="margin-top:1rem">
+  <summary><strong>Ajuste masivo</strong> — mismo concepto para los empleados marcados</summary>
   <p class="muted small">
-    Vista de checadas / días del rango
-    (<%= cobertura.fechaInicioStr %> → <%= cobertura.fechaFinStr %>,
-    <%= (fechasYmd && fechasYmd.length) || 0 %> día(s)).
-    Revisa <strong>antes</strong> de calcular y vuelve a consultar <strong>después</strong> de reprocesar.
-    Pulsa <strong>+</strong> para ver el detalle día a día.
+    Marca filas en la columna Masivo. Quien no tenga pre-cálculo no está en la tabla.
+    La reclasificación y «usar el importe de P002» solo se aplican a quienes tienen horas extra en este cálculo.
   </p>
-
-  <table class="asistencia-periodo-table">
-    <thead>
-      <tr>
-        <th style="width:2rem"></th>
-        <th>Empleado</th>
-        <th>Días trab.</th>
-        <th>Faltas</th>
-        <th>Incomp.</th>
-        <th>Sin proc.</th>
-        <th>Retardo (min)</th>
-        <th>HE (min)</th>
-      </tr>
-    </thead>
-    <tbody>
-      <% if (!asistenciaFilas || !asistenciaFilas.length) { %>
-      <tr><td colspan="8" class="muted">No hay empleados activos en el alcance de este tipo de período.</td></tr>
-      <% } %>
-      <% (asistenciaFilas || []).forEach(function(fila) {
-        const r = fila.resumen;
-        const rowId = 'asist-det-' + fila.empleadoId;
-      %>
-      <tr>
-        <td>
-          <button type="button" class="btn-expand" data-target="<%= rowId %>" aria-expanded="false" title="Ver detalle diario">+</button>
-        </td>
-        <td>
-          <%= fila.nombre %>
-          <% if (fila.numEmpleado) { %><span class="muted small"> #<%= fila.numEmpleado %></span><% } %>
-        </td>
-        <td><%= r.diasTrabajados %></td>
-        <td><%= r.faltas %></td>
-        <td><%= r.incompletos %></td>
-        <td class="<%= r.sinProcesar ? 'warn-text' : '' %>"><%= r.sinProcesar %></td>
-        <td><%= r.minutosRetardo %></td>
-        <td><%= r.minutosHE %></td>
-      </tr>
-      <tr id="<%= rowId %>" class="expand-row" hidden>
-        <td colspan="8">
-          <table class="nested-table" style="margin:.5rem 0 .75rem;width:100%">
-            <thead>
-              <tr>
-                <th>Fecha</th>
-                <th>Entrada</th>
-                <th>Salida comida</th>
-                <th>Regreso</th>
-                <th>Salida</th>
-                <th>Retardo</th>
-                <th>HE</th>
-                <th>Estatus</th>
-                <th>Incidencias</th>
-              </tr>
-            </thead>
-            <tbody>
-              <% fila.dias.forEach(function(dia) {
-                const estLabel = dia.estatus === 'sin_procesar'
-                  ? 'Sin procesar'
-                  : ((estatusDiarioLabels && estatusDiarioLabels[dia.estatus]) || dia.estatus);
-                const warnRow = ['falta', 'registro_parcial', 'fuera_de_rango', 'incompleto', 'sin_procesar'].includes(dia.estatus);
-              %>
-              <tr class="<%= warnRow ? 'row-muted' : '' %>">
-                <td>
-                  <a href="/asistencia-diaria?fecha=<%= dia.ymd %>&amp;periodoId=<%= periodo._id %>"><%= dia.ymd %></a>
-                </td>
-                <td><%= dia.entrada && formatTimeHHMM ? formatTimeHHMM(dia.entrada, fila.zonaHoraria) : '—' %></td>
-                <td><%= dia.salidaComida && formatTimeHHMM ? formatTimeHHMM(dia.salidaComida, fila.zonaHoraria) : '—' %></td>
-                <td><%= dia.regresoComida && formatTimeHHMM ? formatTimeHHMM(dia.regresoComida, fila.zonaHoraria) : '—' %></td>
-                <td><%= dia.salida && formatTimeHHMM ? formatTimeHHMM(dia.salida, fila.zonaHoraria) : '—' %></td>
-                <td><%= dia.minutosRetardo ? dia.minutosRetardo + ' min' : '—' %></td>
-                <td><%= dia.minutosHorasExtra ? dia.minutosHorasExtra + ' min' : '—' %></td>
-                <td><span class="badge badge-<%= dia.estatus %>"><%= estLabel %></span></td>
-                <td class="muted small"><%= dia.incidencias && dia.incidencias.length ? dia.incidencias.join(', ') : '—' %></td>
-              </tr>
-              <% }); %>
-            </tbody>
-          </table>
-        </td>
-      </tr>
-      <% }); %>
-    </tbody>
-  </table>
-</section>
+  <p>
+    <button type="button" class="btn" id="btn-marcar-he">Marcar quienes tienen horas extra</button>
+    <button type="button" class="btn" id="btn-limpiar-marcas">Quitar marcas</button>
+  </p>
+  <form method="post" action="/prenomina-periodos/<%= periodo._id %>/ajuste-masivo" class="form-grid" id="form-ajuste-masivo">
+    <label class="inline-check" style="max-width:42rem">
+      <input type="checkbox" name="usarImporteHe" value="1" />
+      Usar el importe de horas extra (P002) de cada empleado, en lugar del monto
+    </label>
+    <%- include('./partials/ajuste-form-fields', { conceptosAjuste, submitLabel: 'Aplicar a los marcados', montoRequired: false }) %>
+  </form>
+</details>
 <script>
 (function () {
-  document.querySelectorAll('.btn-expand[data-target]').forEach(function (btn) {
-    btn.addEventListener('click', function () {
-      var row = document.getElementById(btn.getAttribute('data-target'));
-      if (!row) return;
-      var open = row.hasAttribute('hidden');
-      if (open) {
-        row.removeAttribute('hidden');
-        btn.textContent = '−';
-        btn.setAttribute('aria-expanded', 'true');
-      } else {
-        row.setAttribute('hidden', '');
-        btn.textContent = '+';
-        btn.setAttribute('aria-expanded', 'false');
-      }
+  function cajas() {
+    return Array.prototype.slice.call(document.querySelectorAll('input[name="empleadoIds"][form="form-ajuste-masivo"]'));
+  }
+  var marcar = document.getElementById('btn-marcar-he');
+  var limpiar = document.getElementById('btn-limpiar-marcas');
+  if (marcar) marcar.addEventListener('click', function () {
+    cajas().forEach(function (c) {
+      var fila = c.closest('tr');
+      if (fila && fila.classList.contains('rev-off')) { c.checked = false; return; }
+      c.checked = c.getAttribute('data-he') === '1';
     });
+  });
+  if (limpiar) limpiar.addEventListener('click', function () {
+    cajas().forEach(function (c) { c.checked = false; });
+  });
+  if (location.hash === '#ajuste-masivo') {
+    var panel = document.getElementById('ajuste-masivo');
+    if (panel) panel.open = true;
+  }
+  var form = document.getElementById('form-ajuste-masivo');
+  if (form) form.addEventListener('submit', function (ev) {
+    var alguno = cajas().some(function (c) { return c.checked; });
+    if (!alguno) {
+      ev.preventDefault();
+      window.alert('Marca al menos un empleado en la columna Masivo.');
+    }
   });
 })();
 </script>
 <% } %>
-
-<h2>Pre-cálculo por empleado<%= detalles.length ? '' : ' (pendiente)' %></h2>
-<% if (!detalles.length) { %>
-<p class="muted">Aún no hay cálculo monetario. Revisa la asistencia arriba, luego usa «Calcular pre-nómina».</p>
-<% } %>
-<table>
-  <thead>
-    <tr><th>Empleado</th><th>Días trab.</th><th>Faltas</th><th>Retardo (min)</th><th>HE (min)</th><th>Percepciones</th><th>Deducciones</th><th>Neto</th><th></th></tr>
-  </thead>
-  <tbody>
-    <% if (!detalles.length) { %>
-    <tr><td colspan="9" class="muted">Sin cálculo. Usa «Calcular pre-nómina».</td></tr>
-    <% } %>
-    <% detalles.forEach(function(d) {
-      const emp = empMap.get(String(d.empleadoId));
-      const nombre = emp ? (emp.firstName + ' ' + emp.lastName) : '—';
-    %>
-    <tr>
-      <td><%= nombre %></td>
-      <td><%= d.diasTrabajados %></td>
-      <td><%= d.diasFalta %></td>
-      <td><%= d.minutosRetardo %></td>
-      <td><%= d.minutosHorasExtra %></td>
-      <td>$<%= d.totalPercepciones.toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></td>
-      <td>$<%= d.totalDeducciones.toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></td>
-      <td><strong>$<%= d.netoPagar.toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></strong></td>
-      <td>
-        <a href="/prenomina-periodos/<%= periodo._id %>/comprobante/<%= d.empleadoId %>">Comprobante</a>
-        <% if (periodo.estatus !== 'cerrado') { %>
-        · <a href="#ajuste-<%= d.empleadoId %>">Ajustar</a>
-        <% } %>
-      </td>
-    </tr>
-    <% if (periodo.estatus !== 'cerrado') { %>
-    <tr id="ajuste-<%= d.empleadoId %>">
-      <td colspan="9">
-        <form method="post" action="/prenomina-periodos/<%= periodo._id %>/ajuste/<%= d.empleadoId %>" class="form-grid" style="margin-top:.5rem">
-          <label>Concepto (catálogo)
-            <select name="conceptoClave" required>
-              <option value="">— Selecciona —</option>
-              <% (conceptosAjuste || []).forEach(function(c) {
-                const k = (c.clave || c.codigo || '').toUpperCase();
-                if (!k || k === 'P001' || k === 'P002') return;
-              %>
-              <option value="<%= k %>" data-tipo="<%= c.tipo %>">
-                <%= k %> — <%= c.nombre %> (<%= c.tipo === 'deduccion' ? 'deducción' : 'percepción' %>)
-              </option>
-              <% }); %>
-            </select>
-          </label>
-          <input type="hidden" name="tipo" value="percepcion" class="ajuste-tipo-<%= d.empleadoId %>" />
-          <input type="number" name="monto" step="0.01" min="0" placeholder="Monto" required />
-          <input name="nota" placeholder="Nota / autorización" />
-          <label class="inline-check" style="max-width:42rem">
-            <input type="checkbox" name="reclasificarHe" value="1" />
-            Reclasificar HE (quita P002) → este concepto
-            <span class="muted small">Úsalo cuando no quieras pagar el excedente como horas extra (p. ej. bono), no solo por “exceder” el tope.</span>
-          </label>
-          <label class="inline-check" style="max-width:42rem">
-            <input type="checkbox" name="acceptDisclaimerHe" value="1" />
-            Acepto el disclaimer: modificar la naturaleza fiscal del tiempo extraordinario genera discrepancias en CFDI 4.0, afecta SBC y expone a multas por simulación. La acción es responsabilidad del administrador.
-          </label>
-          <button type="submit">Aplicar ajuste</button>
-        </form>
-      </td>
-    </tr>
-    <% } %>
-    <% }); %>
-  </tbody>
-</table>
-<script>
-(function () {
-  document.querySelectorAll('select[name="conceptoClave"]').forEach(function (sel) {
-    sel.addEventListener('change', function () {
-      var opt = sel.options[sel.selectedIndex];
-      var tipo = (opt && opt.getAttribute('data-tipo')) || 'percepcion';
-      var form = sel.closest('form');
-      if (!form) return;
-      var hidden = form.querySelector('input[name="tipo"]');
-      if (hidden) hidden.value = tipo === 'deduccion' ? 'deduccion' : 'percepcion';
-    });
-  });
-})();
-</script>
 <%- include('../Partials/layout-bottom') %>

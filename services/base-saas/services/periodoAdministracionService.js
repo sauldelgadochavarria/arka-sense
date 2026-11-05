@@ -1,9 +1,10 @@
 'use strict';
 
 const getPayrollPeriodModel = require('../models/payrollPeriod');
+const getPeriodoNominaModel = require('../models/periodoNomina');
 const { startOfDay, endOfDay } = require('../libs/timeHelpers');
 const { generarBloquesPeriodoAnio } = require('../libs/generarPeriodosAnio');
-const { sugerirFechaPago } = require('../libs/calendarioPeriodo');
+const { sugerirFechaPago, addDays } = require('../libs/calendarioPeriodo');
 const {
   ESTATUS_PERIODO_OCUPA_VENTANA,
   ESTATUS_PERIODO_CALCULABLE
@@ -26,11 +27,150 @@ async function listarPeriodos(tenantId, filtros = {}) {
     .lean();
 }
 
+function ymdUtc(date) {
+  const d = new Date(date);
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  return `${d.getUTCFullYear()}-${m}-${day}`;
+}
+
+function scopePeriodo(tenantId, empresaId, subsidiariaId) {
+  const scope = { tenantId, empresaId };
+  if (subsidiariaId) scope.subsidiariaId = subsidiariaId;
+  return scope;
+}
+
+async function buscarPeriodoEn(Model, scope, tipoFiltro, tipoNomina, bloque) {
+  const porNumero = await Model.findOne({
+    ...scope,
+    ...tipoFiltro,
+    tipoNomina,
+    anio: bloque.anio,
+    numeroPeriodo: bloque.numeroPeriodo
+  }).lean();
+  if (porNumero) return { doc: porNumero, motivo: 'Ya existe el número' };
+
+  const overlap = await Model.findOne({
+    ...scope,
+    ...tipoFiltro,
+    tipoNomina,
+    fechaInicio: { $lte: endOfDay(bloque.fechaFin) },
+    fechaFin: { $gte: startOfDay(bloque.fechaInicio) }
+  }).lean();
+  if (overlap) return { doc: overlap, motivo: 'Solapa fechas' };
+  return null;
+}
+
+function resolverDestino(payload) {
+  const raw = String(payload.destino || '').toLowerCase();
+  if (raw === 'prenomina' || raw === 'nomina' || raw === 'ambos') return raw;
+  return payload.tipoPeriodoRef?.compartirConNomina !== false ? 'ambos' : 'prenomina';
+}
+
+function anclaDeGeneracion(destino, ultimaPrenomina, ultimaNomina) {
+  if (destino === 'nomina') return ultimaNomina || ultimaPrenomina || null;
+  if (destino === 'prenomina') return ultimaPrenomina || ultimaNomina || null;
+  if (ultimaPrenomina && ultimaNomina) {
+    return new Date(ultimaNomina.fechaFin).getTime() < new Date(ultimaPrenomina.fechaFin).getTime()
+      ? ultimaNomina
+      : ultimaPrenomina;
+  }
+  return ultimaPrenomina || ultimaNomina || null;
+}
+
+async function sugerirInicioGeneracion(tenantId, empresaId, payload) {
+  const { tipoPeriodoRef, anio, tipoNomina = 'ordinaria', subsidiariaId = null } = payload;
+  if (!tipoPeriodoRef) throw new Error('Tipo de período requerido');
+  const anioNum = Number(anio);
+  const destino = resolverDestino(payload);
+  const scope = scopePeriodo(tenantId, empresaId, subsidiariaId);
+  const PayrollPeriod = await getPayrollPeriodModel();
+  const PeriodoNomina = await getPeriodoNominaModel();
+  const filtroTipo = { tipoPeriodoId: tipoPeriodoRef._id, tipoNomina, anio: anioNum };
+
+  const [ultimaPrenomina, ultimaNomina] = await Promise.all([
+    PayrollPeriod.findOne({ ...scope, ...filtroTipo }).sort({ fechaFin: -1, numeroPeriodo: -1 }).lean(),
+    PeriodoNomina.findOne({ ...scope, ...filtroTipo }).sort({ fechaFin: -1, numeroPeriodo: -1 }).lean()
+  ]);
+
+  const ancla = anclaDeGeneracion(destino, ultimaPrenomina, ultimaNomina);
+  const numeroInicial = (Number(ancla?.numeroPeriodo) || 0) + 1;
+  return {
+    destino,
+    fechaInicial: ancla ? ymdUtc(addDays(startOfDay(ancla.fechaFin), 1)) : '',
+    numeroInicial,
+    prenomina: ultimaPrenomina
+      ? {
+          numeroPeriodo: ultimaPrenomina.numeroPeriodo,
+          fechaInicio: ymdUtc(ultimaPrenomina.fechaInicio),
+          fechaFin: ymdUtc(ultimaPrenomina.fechaFin)
+        }
+      : null,
+    nomina: ultimaNomina
+      ? {
+          numeroPeriodo: ultimaNomina.numeroPeriodo,
+          fechaInicio: ymdUtc(ultimaNomina.fechaInicio),
+          fechaFin: ymdUtc(ultimaNomina.fechaFin)
+        }
+      : null
+  };
+}
+
+async function buscarNominaExistente(PeriodoNomina, scope, tipoPeriodoRef, tipoNomina, bloque) {
+  const porNumero = await PeriodoNomina.findOne({
+    ...scope,
+    tipoPeriodo: tipoPeriodoRef.tipoMotor,
+    tipoNomina,
+    anio: bloque.anio,
+    numeroPeriodo: bloque.numeroPeriodo
+  }).lean();
+  if (porNumero) return { doc: porNumero, motivo: 'Ya existe el número' };
+
+  const overlap = await PeriodoNomina.findOne({
+    ...scope,
+    tipoPeriodoId: tipoPeriodoRef._id,
+    tipoNomina,
+    fechaInicio: { $lte: endOfDay(bloque.fechaFin) },
+    fechaFin: { $gte: startOfDay(bloque.fechaInicio) }
+  }).lean();
+  if (overlap) return { doc: overlap, motivo: 'Solapa fechas' };
+  return null;
+}
+
+async function clasificarBloquesPeriodo(tenantId, empresaId, payload, bloques) {
+  const { tipoPeriodoRef, tipoNomina = 'ordinaria', subsidiariaId = null } = payload;
+  const PayrollPeriod = await getPayrollPeriodModel();
+  const PeriodoNomina = await getPeriodoNominaModel();
+  const scope = scopePeriodo(tenantId, empresaId, subsidiariaId);
+  const tipoPay = { tipoPeriodoId: tipoPeriodoRef._id };
+  const destino = resolverDestino(payload);
+  const quierePre = destino === 'prenomina' || destino === 'ambos';
+  const quiereNom = destino === 'nomina' || destino === 'ambos';
+  const filas = [];
+
+  for (const bloque of bloques) {
+    const pre = await buscarPeriodoEn(PayrollPeriod, scope, tipoPay, tipoNomina, bloque);
+    const nom = await buscarNominaExistente(PeriodoNomina, scope, tipoPeriodoRef, tipoNomina, bloque);
+    filas.push({
+      ...bloque,
+      destino,
+      aplicaPrenomina: quierePre,
+      aplicaNomina: quiereNom,
+      crearPrenomina: quierePre && !pre,
+      crearNomina: quiereNom && !nom,
+      prenomina: pre ? { motivo: pre.motivo, numeroPeriodo: pre.doc.numeroPeriodo } : null,
+      nomina: nom ? { motivo: nom.motivo, numeroPeriodo: nom.doc.numeroPeriodo } : null
+    });
+  }
+  return filas;
+}
+
 async function generarPeriodosAnuales(tenantId, empresaId, payload) {
   const {
     tipoPeriodoRef,
     anio,
     fechaInicial,
+    numeroInicial = 1,
     tipoNomina = 'ordinaria',
     notas = '',
     subsidiariaId = null
@@ -43,64 +183,114 @@ async function generarPeriodosAnuales(tenantId, empresaId, payload) {
     diasPeriodo: tipoPeriodoRef.diasPeriodo,
     fechaInicial,
     anio,
-    tipoPeriodoRef
+    tipoPeriodoRef,
+    numeroInicial
   });
 
   const PayrollPeriod = await getPayrollPeriodModel();
-  const insertados = [];
+  const PeriodoNomina = await getPeriodoNominaModel();
+  const filas = await clasificarBloquesPeriodo(tenantId, empresaId, payload, bloques);
+  const destino = resolverDestino(payload);
+  const compartir = tipoPeriodoRef.compartirConNomina !== false || destino !== 'prenomina';
+  let insertadosPrenomina = 0;
+  let insertadosNomina = 0;
   const omitidos = [];
-  const scopeBase = { tenantId, empresaId };
-  if (subsidiariaId) scopeBase.subsidiariaId = subsidiariaId;
+  const scope = scopePeriodo(tenantId, empresaId, subsidiariaId);
 
-  for (const bloque of bloques) {
-    const dup = await PayrollPeriod.findOne({
-      ...scopeBase,
-      tipoPeriodoId: tipoPeriodoRef._id,
-      tipoNomina,
-      anio: bloque.anio,
-      numeroPeriodo: bloque.numeroPeriodo
-    }).lean();
+  for (const bloque of filas) {
+    let payrollId = null;
+    if (bloque.aplicaPrenomina && bloque.crearPrenomina) {
+      const doc = await PayrollPeriod.create({
+        tenantId,
+        empresaId,
+        subsidiariaId: subsidiariaId || null,
+        tipo: tipoPeriodoRef.tipoMotor,
+        tipoPeriodoId: tipoPeriodoRef._id,
+        codigoLegadoTipoPeriodo: tipoPeriodoRef.codigoLegado,
+        anio: bloque.anio,
+        numeroPeriodo: bloque.numeroPeriodo,
+        fechaInicio: startOfDay(bloque.fechaInicio),
+        fechaFin: endOfDay(bloque.fechaFin),
+        fechaPago: sugerirFechaPago(bloque.fechaFin, tipoPeriodoRef),
+        tipoNomina,
+        estatus: 'pendiente',
+        aplicaAsistenciaPrenomina: tipoPeriodoRef.aplicaAsistenciaPrenomina !== false,
+        compartirConNomina: compartir,
+        notas: notas || ''
+      });
+      payrollId = doc._id;
+      insertadosPrenomina += 1;
+    } else if (bloque.aplicaPrenomina || bloque.aplicaNomina) {
+      const existente = await PayrollPeriod.findOne({
+        ...scope,
+        tipoPeriodoId: tipoPeriodoRef._id,
+        tipoNomina,
+        anio: bloque.anio,
+        numeroPeriodo: bloque.numeroPeriodo
+      }).select('_id').lean();
+      payrollId = existente?._id || null;
+      if (bloque.aplicaPrenomina) {
+        omitidos.push({
+          numeroPeriodo: bloque.numeroPeriodo,
+          lado: 'prenomina',
+          motivo: bloque.prenomina?.motivo || 'Ya existe'
+        });
+      }
+    }
 
-    if (dup) {
-      omitidos.push({ numeroPeriodo: bloque.numeroPeriodo, motivo: 'Ya existe' });
+    if (!bloque.aplicaNomina) continue;
+    if (!bloque.crearNomina) {
+      if (payrollId && bloque.nomina && bloque.nomina.numeroPeriodo === bloque.numeroPeriodo) {
+        await PeriodoNomina.updateOne(
+          {
+            ...scope,
+            tipoPeriodoId: tipoPeriodoRef._id,
+            tipoNomina,
+            anio: bloque.anio,
+            numeroPeriodo: bloque.nomina.numeroPeriodo,
+            $or: [{ payrollPeriodId: null }, { payrollPeriodId: { $exists: false } }]
+          },
+          { $set: { payrollPeriodId: payrollId } }
+        );
+      }
+      omitidos.push({
+        numeroPeriodo: bloque.numeroPeriodo,
+        lado: 'nomina',
+        motivo: bloque.nomina?.motivo || 'Ya existe'
+      });
       continue;
     }
 
-    const overlap = await PayrollPeriod.findOne({
-      ...scopeBase,
-      tipoPeriodoId: tipoPeriodoRef._id,
-      tipoNomina,
-      fechaInicio: { $lte: endOfDay(bloque.fechaFin) },
-      fechaFin: { $gte: startOfDay(bloque.fechaInicio) }
-    }).lean();
-
-    if (overlap) {
-      omitidos.push({ numeroPeriodo: bloque.numeroPeriodo, motivo: 'Solapamiento de fechas' });
-      continue;
-    }
-
-    const doc = await PayrollPeriod.create({
+    const diasPeriodo = Math.round((startOfDay(bloque.fechaFin) - startOfDay(bloque.fechaInicio)) / 86400000) + 1;
+    await PeriodoNomina.create({
       tenantId,
       empresaId,
       subsidiariaId: subsidiariaId || null,
-      tipo: tipoPeriodoRef.tipoMotor,
+      tipoPeriodo: tipoPeriodoRef.tipoMotor,
       tipoPeriodoId: tipoPeriodoRef._id,
-      codigoLegadoTipoPeriodo: tipoPeriodoRef.codigoLegado,
-      anio: bloque.anio,
-      numeroPeriodo: bloque.numeroPeriodo,
+      tipoNomina,
+      periodicidadPagoSat: tipoPeriodoRef.periodicidadPagoSat ?? null,
       fechaInicio: startOfDay(bloque.fechaInicio),
       fechaFin: endOfDay(bloque.fechaFin),
       fechaPago: sugerirFechaPago(bloque.fechaFin, tipoPeriodoRef),
-      tipoNomina,
-      estatus: 'pendiente',
-      aplicaAsistenciaPrenomina: tipoPeriodoRef.aplicaAsistenciaPrenomina !== false,
-      compartirConNomina: tipoPeriodoRef.compartirConNomina !== false,
+      anio: bloque.anio,
+      numeroPeriodo: bloque.numeroPeriodo,
+      diasPeriodo,
+      estatus: 'abierto',
+      payrollPeriodId: payrollId,
       notas: notas || ''
     });
-    insertados.push(doc);
+    insertadosNomina += 1;
   }
 
-  return { insertados: insertados.length, omitidos, bloques: bloques.length };
+  return {
+    destino,
+    insertados: insertadosPrenomina,
+    insertadosPrenomina,
+    insertadosNomina,
+    omitidos,
+    bloques: bloques.length
+  };
 }
 
 async function findPeriodoDoc(tenantId, id, empresaId = null, subsidiariaId = null) {
@@ -199,6 +389,8 @@ async function cerrarPeriodoAdmin(tenantId, periodoId, userId = '') {
 
 module.exports = {
   listarPeriodos,
+  sugerirInicioGeneracion,
+  clasificarBloquesPeriodo,
   generarPeriodosAnuales,
   getContextoPeriodo,
   abrirPeriodo,

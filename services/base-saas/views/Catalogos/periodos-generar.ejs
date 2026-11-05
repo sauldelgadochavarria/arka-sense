@@ -5,8 +5,9 @@
 <p>No hay empresa vinculada.</p>
 <% } else { %>
 <p class="muted">
-  Se crearán todos los períodos del año para el tipo seleccionado, en estatus <strong>pendiente</strong>,
-  calculando fechas a partir de la fecha inicial del primer período.
+  Completa los períodos que faltan desde la fecha y el número que indiques, hasta el 31 de diciembre.
+  Elige si se crean en pre-nómina, en nómina o en ambas. Lo que ya exista en ese lado se omite.
+  El calendario por días respeta la fecha inicial y no la recorre al lunes.
 </p>
 
 <form method="post" action="/catalogos/periodos/generar" class="form-grid form-wide" id="form-generar">
@@ -36,19 +37,32 @@
         Compartir con nómina
       </label>
     </span>
-  <p class="muted small">Se copiarán automáticamente del tipo de período y quedarán guardados en cada período generado.</p>
+    <p class="muted small">El tipo propone el destino. Puedes cambiarlo: esta generación crea solo el lado que elijas.</p>
   </div>
+  <label>
+    Generar en *
+    <select name="destino" id="destino" required>
+      <option value="ambos">Pre-nómina y nómina</option>
+      <option value="prenomina">Solo pre-nómina</option>
+      <option value="nomina">Solo nómina</option>
+    </select>
+  </label>
   <label>
     Año *
     <input type="number" name="anio" id="anio" min="2000" max="2100" value="<%= anioActual %>" required />
   </label>
   <label>
-    Fecha inicial del primer período *
+    Fecha inicial del primer período faltante *
     <input type="date" name="fechaInicial" id="fechaInicial" required />
   </label>
   <label>
+    Número donde empieza *
+    <input type="number" name="numeroInicial" id="numeroInicial" min="1" max="9999" required />
+  </label>
+  <p class="muted small" id="sugerencia-periodo"></p>
+  <label>
     Tipo de nómina
-    <select name="tipoNomina">
+    <select name="tipoNomina" id="tipoNomina">
       <optgroup label="Ordinarios">
         <% tiposNominaOrdinarios.forEach(function(tn) { %>
         <option value="<%= tn.value %>" <%= tn.value === 'ordinaria' ? 'selected' : '' %>><%= tn.label %></option>
@@ -92,17 +106,69 @@
     panel.hidden = false;
   }
 
-  selectTipo.addEventListener('change', syncTipoFlags);
+  function destinoDelTipo() {
+    const opt = selectTipo.options[selectTipo.selectedIndex];
+    if (!opt || !opt.value) return 'ambos';
+    const aplica = opt.dataset.aplicaAsistencia === '1';
+    const compartir = opt.dataset.compartirNomina === '1';
+    if (aplica && compartir) return 'ambos';
+    if (compartir) return 'nomina';
+    return 'prenomina';
+  }
+
+  selectTipo.addEventListener('change', function() {
+    syncTipoFlags();
+    document.getElementById('destino').value = destinoDelTipo();
+    cargarSugerencia();
+  });
+  document.getElementById('anio').addEventListener('change', cargarSugerencia);
+  document.getElementById('tipoNomina').addEventListener('change', cargarSugerencia);
+  document.getElementById('destino').addEventListener('change', cargarSugerencia);
   syncTipoFlags();
+
+  const nota = document.getElementById('sugerencia-periodo');
+  function fmtUltimo(lado, row) {
+    if (!row) return lado + ': sin períodos en ' + document.getElementById('anio').value;
+    return lado + ' llega al #' + row.numeroPeriodo + ' (' + row.fechaInicio + ' – ' + row.fechaFin + ')';
+  }
+  async function cargarSugerencia() {
+    const tipoPeriodoId = document.getElementById('tipoPeriodoId').value;
+    const anio = document.getElementById('anio').value;
+    const tipoNomina = document.getElementById('tipoNomina').value;
+    const destino = document.getElementById('destino').value;
+    if (!tipoPeriodoId || !anio) return;
+    try {
+      const q = new URLSearchParams({ tipoPeriodoId, anio, tipoNomina, destino });
+      const res = await fetch('/catalogos/periodos/sugerencia?' + q.toString());
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Error');
+      if (data.fechaInicial) document.getElementById('fechaInicial').value = data.fechaInicial;
+      if (data.numeroInicial) document.getElementById('numeroInicial').value = data.numeroInicial;
+      nota.textContent = fmtUltimo('Pre-nómina', data.prenomina) + '. ' + fmtUltimo('Nómina', data.nomina) + '.';
+    } catch (e) {
+      nota.textContent = e.message;
+    }
+  }
 
   const btn = document.getElementById('btn-preview');
   const box = document.getElementById('preview-box');
+  const destinoLabel = { ambos: 'Pre-nómina y nómina', prenomina: 'Solo pre-nómina', nomina: 'Solo nómina' };
+  function marca(aplica, crear, info) {
+    if (!aplica) {
+      return info && info.numeroPeriodo ? 'No se toca (existe #' + info.numeroPeriodo + ')' : 'No se genera';
+    }
+    if (crear) return 'Se crea';
+    return 'Ya existe' + (info && info.numeroPeriodo ? ' (#' + info.numeroPeriodo + ')' : '');
+  }
   btn.addEventListener('click', async function() {
     const tipoPeriodoId = document.getElementById('tipoPeriodoId').value;
     const anio = document.getElementById('anio').value;
     const fechaInicial = document.getElementById('fechaInicial').value;
-    if (!tipoPeriodoId || !anio || !fechaInicial) {
-      box.textContent = 'Complete tipo, año y fecha inicial.';
+    const numeroInicial = document.getElementById('numeroInicial').value;
+    const tipoNomina = document.getElementById('tipoNomina').value;
+    const destino = document.getElementById('destino').value;
+    if (!tipoPeriodoId || !anio || !fechaInicial || !numeroInicial || !destino) {
+      box.textContent = 'Complete tipo, destino, año, fecha inicial y número.';
       return;
     }
     box.textContent = 'Calculando…';
@@ -110,7 +176,7 @@
       const res = await fetch('/catalogos/periodos/preview', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tipoPeriodoId, anio, fechaInicial })
+        body: JSON.stringify({ tipoPeriodoId, anio, fechaInicial, numeroInicial, tipoNomina, destino })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Error');
@@ -122,11 +188,14 @@
       const flagsHtml = tp.nombre
         ? '<p class="tipo-preview-flags"><strong>' + tp.codigoLegado + ' — ' + tp.nombre + '</strong> · ' +
           'Asistencia/pre-nómina: <strong>' + (tp.aplicaAsistenciaPrenomina ? 'Sí' : 'No') + '</strong> · ' +
-          'Compartir nómina: <strong>' + (tp.compartirConNomina ? 'Sí' : 'No') + '</strong></p>'
+          'Compartir nómina: <strong>' + (tp.compartirConNomina ? 'Sí' : 'No') + '</strong> · ' +
+          'Esta generación: <strong>' + (destinoLabel[data.destino] || data.destino) + '</strong></p>'
         : '';
-      box.innerHTML = flagsHtml + '<p><strong>' + data.total + ' períodos</strong></p><table><thead><tr><th>#</th><th>Inicio</th><th>Fin</th></tr></thead><tbody>' +
+      box.innerHTML = flagsHtml + '<p><strong>' + data.porCrear + '</strong> de ' + data.total + ' bloques traen algo nuevo</p><table><thead><tr><th>#</th><th>Inicio</th><th>Fin</th><th>Pre-nómina</th><th>Nómina</th></tr></thead><tbody>' +
         data.bloques.map(function(b) {
-          return '<tr><td>' + b.numeroPeriodo + '</td><td>' + b.fechaInicio + '</td><td>' + b.fechaFin + '</td></tr>';
+          return '<tr><td>' + b.numeroPeriodo + '</td><td>' + b.fechaInicio + '</td><td>' + b.fechaFin + '</td><td>' +
+            marca(b.aplicaPrenomina, b.crearPrenomina, b.prenomina) + '</td><td>' +
+            marca(b.aplicaNomina, b.crearNomina, b.nomina) + '</td></tr>';
         }).join('') + '</tbody></table>';
     } catch (e) {
       box.textContent = e.message;

@@ -11,6 +11,8 @@ const {
 } = require('../services/tipoPeriodoNominaService');
 const {
   listarPeriodos,
+  sugerirInicioGeneracion,
+  clasificarBloquesPeriodo,
   generarPeriodosAnuales,
   getContextoPeriodo,
   abrirPeriodo,
@@ -87,35 +89,87 @@ async function generarForm(req, res) {
   });
 }
 
+function ymdDeBloque(date) {
+  return new Date(date).toISOString().slice(0, 10);
+}
+
+async function sugerenciaApi(req, res) {
+  try {
+    const { empresa, error } = await requireEmpresaForTenant(req);
+    if (error || !empresa) return res.status(400).json({ error: error || 'No hay empresa vinculada' });
+    const tipoPeriodoRef = await getTipoPeriodoById(req.session.tenantId, req.query.tipoPeriodoId);
+    if (!tipoPeriodoRef) return res.status(400).json({ error: 'Tipo de período no encontrado' });
+    const anio = parsePositiveNumber(req.query.anio);
+    if (!anio) return res.status(400).json({ error: 'Año requerido' });
+    const sugerencia = await sugerirInicioGeneracion(req.session.tenantId, empresa._id, {
+      tipoPeriodoRef,
+      anio,
+      tipoNomina: trimString(req.query.tipoNomina) || 'ordinaria',
+      destino: trimString(req.query.destino),
+      subsidiariaId: sessionSubsidiariaId(req)
+    });
+    res.json(sugerencia);
+  } catch (err) {
+    res.status(400).json({ error: err.message || 'No se pudo sugerir el inicio' });
+  }
+}
+
 async function previewApi(req, res) {
   try {
+    const { empresa, error } = await requireEmpresaForTenant(req);
+    if (error || !empresa) return res.status(400).json({ error: error || 'No hay empresa vinculada' });
     const tipoPeriodoRef = await getTipoPeriodoById(req.session.tenantId, req.body.tipoPeriodoId);
     if (!tipoPeriodoRef) return res.status(400).json({ error: 'Tipo de período no encontrado' });
 
     const fechaInicial = parseDate(req.body.fechaInicial);
     const anio = parsePositiveNumber(req.body.anio);
+    const numeroInicial = parsePositiveNumber(req.body.numeroInicial);
     if (!fechaInicial || !anio) return res.status(400).json({ error: 'Fecha inicial y año requeridos' });
+    if (!numeroInicial || numeroInicial < 1) {
+      return res.status(400).json({ error: 'Indica el número del primer período a generar' });
+    }
 
     const bloques = generarBloquesPeriodoAnio({
       tipoMotor: tipoPeriodoRef.tipoMotor,
       diasPeriodo: tipoPeriodoRef.diasPeriodo,
       fechaInicial,
       anio,
-      tipoPeriodoRef
+      tipoPeriodoRef,
+      numeroInicial
     });
+    const filas = await clasificarBloquesPeriodo(
+      req.session.tenantId,
+      empresa._id,
+      {
+        tipoPeriodoRef,
+        tipoNomina: trimString(req.body.tipoNomina) || 'ordinaria',
+        destino: trimString(req.body.destino),
+        subsidiariaId: sessionSubsidiariaId(req)
+      },
+      bloques
+    );
+    const porCrear = filas.filter((b) => b.crearPrenomina || b.crearNomina).length;
 
     res.json({
-      total: bloques.length,
+      total: filas.length,
+      porCrear,
       tipoPeriodo: {
         nombre: tipoPeriodoRef.nombre,
         codigoLegado: tipoPeriodoRef.codigoLegado,
         aplicaAsistenciaPrenomina: tipoPeriodoRef.aplicaAsistenciaPrenomina !== false,
         compartirConNomina: tipoPeriodoRef.compartirConNomina !== false
       },
-      bloques: bloques.map((b) => ({
+      destino: filas[0]?.destino || trimString(req.body.destino) || 'ambos',
+      bloques: filas.map((b) => ({
         numeroPeriodo: b.numeroPeriodo,
-        fechaInicio: b.fechaInicio.toISOString().slice(0, 10),
-        fechaFin: b.fechaFin.toISOString().slice(0, 10)
+        fechaInicio: ymdDeBloque(b.fechaInicio),
+        fechaFin: ymdDeBloque(b.fechaFin),
+        aplicaPrenomina: b.aplicaPrenomina,
+        aplicaNomina: b.aplicaNomina,
+        crearPrenomina: b.crearPrenomina,
+        crearNomina: b.crearNomina,
+        prenomina: b.prenomina,
+        nomina: b.nomina
       }))
     });
   } catch (err) {
@@ -140,8 +194,13 @@ async function generar(req, res) {
 
     const fechaInicial = parseDate(req.body.fechaInicial);
     const anio = parsePositiveNumber(req.body.anio);
+    const numeroInicial = parsePositiveNumber(req.body.numeroInicial);
     if (!fechaInicial || !anio) {
       req.flash('error', 'Fecha inicial y año son obligatorios');
+      return res.redirect('/catalogos/periodos/generar');
+    }
+    if (!numeroInicial || numeroInicial < 1) {
+      req.flash('error', 'Indica el número donde empieza la generación');
       return res.redirect('/catalogos/periodos/generar');
     }
 
@@ -149,15 +208,21 @@ async function generar(req, res) {
       tipoPeriodoRef,
       anio,
       fechaInicial,
+      numeroInicial,
       tipoNomina: trimString(req.body.tipoNomina) || 'ordinaria',
+      destino: trimString(req.body.destino),
       notas: trimString(req.body.notas),
-      subsidiariaId: req.session.subsidiariaActiva?._id || null
+      subsidiariaId: sessionSubsidiariaId(req)
     });
 
+    const donde = { prenomina: 'solo pre-nómina', nomina: 'solo nómina', ambos: 'pre-nómina y nómina' };
     req.flash(
       'success',
-      `Generados ${result.insertados} períodos en estatus pendiente. Ábralos en Catálogos o en Pre-nómina / Pre-cálculo para operar. Omitidos: ${result.omitidos.length}`
+      `Generación (${donde[result.destino] || result.destino}). Pre-nómina: ${result.insertadosPrenomina} nuevo(s). Nómina: ${result.insertadosNomina} nuevo(s). Omitidos por ya existir: ${result.omitidos.length}.`
     );
+    if (result.destino === 'nomina') {
+      return res.redirect(`/nomina/periodos?anio=${anio}`);
+    }
     res.redirect(`/catalogos/periodos?tipoPeriodoId=${tipoPeriodoId}&anio=${anio}&estatus=pendiente`);
   } catch (err) {
     req.flash('error', err.message || 'Error al generar períodos');
@@ -212,4 +277,4 @@ async function cerrar(req, res) {
   res.redirect(req.get('Referer') || '/catalogos/periodos');
 }
 
-module.exports = { list, generarForm, previewApi, generar, abrir, cerrar };
+module.exports = { list, generarForm, sugerenciaApi, previewApi, generar, abrir, cerrar };

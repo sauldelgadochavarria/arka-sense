@@ -47,6 +47,9 @@ function buildTiempoClasificado(detail, he) {
     minutos_retardo: Number(detail?.minutosRetardo) || 0,
     minutos_salida_anticipada: Number(detail?.minutosSalidaAnticipada) || 0,
     dias_trabajados: detail?.diasTrabajados != null ? Number(detail.diasTrabajados) : 0,
+    dias_descanso: detail?.diasDescanso != null ? Number(detail.diasDescanso) : 0,
+    dias_descanso_pagados:
+      detail?.diasDescansoPagados != null ? Number(detail.diasDescansoPagados) : 0,
     valor_hora: Number(detail?.valorHora) || null,
     horas_jornada: Number(detail?.horasJornada) || null,
     max_horas_ordinarias_semana: Number(detail?.maxHorasOrdinariasSemana) || null,
@@ -72,6 +75,9 @@ async function obtenerInsumosPrenomina(tenantId, empleadoId, payrollPeriodId) {
     horasExtraTriples: 0,
     minutosRetardo: 0,
     minutosSalidaAnticipada: 0,
+    diasDescanso: null,
+    diasDescansoPagados: null,
+    diasProgramadosTurno: null,
     sueldoDiario: null,
     horasJornada: null,
     valorHora: null,
@@ -116,6 +122,11 @@ async function obtenerInsumosPrenomina(tenantId, empleadoId, payrollPeriodId) {
     horasExtraTriples: he.horasExtraTriples,
     minutosRetardo: detail.minutosRetardo || 0,
     minutosSalidaAnticipada: detail.minutosSalidaAnticipada || 0,
+    diasDescanso: detail.diasDescanso != null ? Number(detail.diasDescanso) : 0,
+    diasDescansoPagados:
+      detail.diasDescansoPagados != null ? Number(detail.diasDescansoPagados) : 0,
+    diasProgramadosTurno:
+      detail.diasProgramadosTurno != null ? Number(detail.diasProgramadosTurno) : 0,
     sueldoDiario: detail.salarioDiario || null,
     horasJornada: detail.horasJornada != null ? Number(detail.horasJornada) : null,
     valorHora: detail.valorHora != null ? Number(detail.valorHora) : null,

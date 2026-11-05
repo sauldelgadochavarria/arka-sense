@@ -53,6 +53,7 @@
   <a class="btn" href="/nomina">← Nómina</a>
   <% if (_canEdit && empresa) { %>
   <a class="btn btn-primary" href="/nomina/periodos?nuevo=1<%= F.anio ? '&anio=' + encodeURIComponent(F.anio) : '' %>#nuevo-periodo">+ Nuevo período</a>
+  <a class="btn" href="/catalogos/periodos/generar">Generar períodos del año</a>
   <a class="btn" href="#organizar-periodos">Organizar períodos</a>
   <% } %>
 </div>
@@ -450,7 +451,8 @@
     </label>
     <label>Estatus
       <select name="estatus">
-        <option value="">Todos</option>
+        <option value="no_cerrados" <%= F.estatus === 'no_cerrados' ? 'selected' : '' %>>No cerrados</option>
+        <option value="" <%= F.estatus === '' ? 'selected' : '' %>>Todos</option>
         <% Object.keys(estatusLabels).forEach(function(k) { %>
         <option value="<%= k %>" <%= F.estatus === k ? 'selected' : '' %>><%= estatusLabels[k] %></option>
         <% }); %>
@@ -494,9 +496,10 @@
     <label>Buscar
       <input type="search" name="q" value="<%= F.q || '' %>" placeholder="Notas / usuario…" />
     </label>
-    <div style="align-self:end;display:flex;gap:.5rem">
+    <div style="align-self:end;display:flex;gap:.5rem;flex-wrap:wrap">
       <button type="submit" class="btn btn-primary">Filtrar</button>
       <a class="btn" href="/nomina/periodos">Limpiar</a>
+      <span class="muted small">Al entrar solo se listan períodos que no están cerrados.</span>
     </div>
   </form>
 </section>
@@ -515,6 +518,7 @@
       <th><a href="<%= sortHref('fechaInicio') %>">Inicio<%= sortMark('fechaInicio') %></a></th>
       <th><a href="<%= sortHref('fechaFin') %>">Fin<%= sortMark('fechaFin') %></a></th>
       <th><a href="<%= sortHref('estatus') %>">Estatus<%= sortMark('estatus') %></a></th>
+      <th>Pre-nómina</th>
       <th>Dispersión</th>
       <th><a href="<%= sortHref('empleados') %>">Empleados<%= sortMark('empleados') %></a></th>
       <th><a href="<%= sortHref('neto') %>">Neto<%= sortMark('neto') %></a></th>
@@ -523,7 +527,7 @@
   </thead>
   <tbody>
     <% if (!periodos.length) { %>
-    <tr><td colspan="14" class="muted">Sin períodos con estos filtros.</td></tr>
+    <tr><td colspan="15" class="muted">Sin períodos con estos filtros.</td></tr>
     <% } %>
     <% periodos.forEach(function(p) {
          const lb = p.layoutBancario || {};
@@ -568,6 +572,18 @@
       <td><%= new Date(p.fechaInicio).toLocaleDateString('es-MX') %></td>
       <td><%= new Date(p.fechaFin).toLocaleDateString('es-MX') %></td>
       <td><span class="badge badge-<%= p.estatus === 'cerrado' ? 'baja' : p.estatus === 'calculado' ? 'activo' : 'suspendido' %>"><%= estatusLabels[p.estatus] || p.estatus %></span></td>
+      <td>
+        <% if (!p.payrollPeriodId) { %>
+        <span class="badge badge-suspendido">Sin vincular</span>
+        <% } else if (!p.prenomina) { %>
+        <span class="badge badge-baja">No encontrada</span>
+        <% } else if (p.prenomina.estatus === 'cerrado') { %>
+        <span class="badge badge-activo">Cerrada<% if (p.prenomina.numeroPeriodo != null) { %> #<%= p.prenomina.numeroPeriodo %><% } %></span>
+        <% } else { %>
+        <span class="badge badge-suspendido"><%= p.prenomina.estatus === 'borrador' ? 'Borrador' : p.prenomina.estatus === 'abierto' ? 'Abierta' : p.prenomina.estatus === 'pendiente' ? 'Pendiente' : p.prenomina.estatus %><% if (p.prenomina.numeroPeriodo != null) { %> #<%= p.prenomina.numeroPeriodo %><% } %></span>
+        <div class="muted small">Ciérrala para calcular</div>
+        <% } %>
+      </td>
       <td>
         <% if (lb.estatus === 'generado') { %>
         <span class="badge badge-activo">Generado</span>

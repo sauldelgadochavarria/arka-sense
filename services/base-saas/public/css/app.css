@@ -921,6 +921,17 @@ button:hover,
   color: #fff;
 }
 
+button:disabled,
+button:disabled:hover,
+.btn.is-disabled,
+.btn.is-disabled:hover {
+  background: #d5d8de;
+  color: #5c6570;
+  cursor: not-allowed;
+  pointer-events: none;
+  box-shadow: none;
+}
+
 .btn-secondary {
   background: var(--color-surface);
   color: var(--color-text);

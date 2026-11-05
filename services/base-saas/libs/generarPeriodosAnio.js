@@ -2,7 +2,7 @@
 
 const { startOfDay, endOfDay } = require('./timeHelpers');
 const { resolvePeriodRange } = require('./payrollPeriodDates');
-const { normalizeWeekday, startOfWeekOn, addDays } = require('./calendarioPeriodo');
+const { normalizeWeekday, startOfWeekOn, addDays, resolveModoCalendario } = require('./calendarioPeriodo');
 
 function defaultDiasPorTipo(tipoMotor) {
   const map = {
@@ -33,6 +33,7 @@ function inYear(date, anio) {
  * @param {Date|string} opts.fechaInicial
  * @param {number} opts.anio
  * @param {object|null} [opts.tipoPeriodoRef]
+ * @param {number} [opts.numeroInicial] Número del primer bloque (la carga histórica no empieza en 1).
  * @param {number} [opts.maxPeriodos]
  */
 function generarBloquesPeriodoAnio({
@@ -41,6 +42,7 @@ function generarBloquesPeriodoAnio({
   fechaInicial,
   anio,
   tipoPeriodoRef = null,
+  numeroInicial = 1,
   maxPeriodos = 60
 }) {
   const anioNum = Number(anio);
@@ -59,8 +61,10 @@ function generarBloquesPeriodoAnio({
   }
 
   const tipoNorm = String(refTipo.tipoMotor || tipoMotor || '').toLowerCase();
+  const modo = resolveModoCalendario(refTipo, tipoNorm);
   const weekStartsOn = normalizeWeekday(refTipo.diaInicioSemana, 1);
-  if (tipoNorm === 'semanal') {
+  // por_dias conserva el ancla (p. ej. domingo 4 oct). Alinear al lunes recorre el período ya cargado.
+  if (tipoNorm === 'semanal' && modo !== 'por_dias') {
     inicio = startOfWeekOn(inicio, weekStartsOn);
   }
 
@@ -68,7 +72,8 @@ function generarBloquesPeriodoAnio({
   const dias = Number(diasPeriodo) > 0 ? Number(diasPeriodo) : defaultDiasPorTipo(tipoNorm);
   const bloques = [];
   let cursor = inicio;
-  let numero = 1;
+  const numeroBase = Math.round(Number(numeroInicial));
+  let numero = Number.isFinite(numeroBase) && numeroBase >= 1 ? numeroBase : 1;
 
   while (bloques.length < maxPeriodos && cursor <= finAnio) {
     let fechaInicio;

@@ -192,6 +192,7 @@ function buildAsistenciaPeriodoFilas(empleadosScope, dailies, fechasYmd, zonaPor
       let incompletos = 0;
       let sinProcesar = 0;
       let minutosRetardo = 0;
+      let minutosSalidaAnticipada = 0;
       let minutosHE = 0;
 
       const dias = fechasYmd.map((ymd) => {
@@ -206,6 +207,7 @@ function buildAsistenciaPeriodoFilas(empleadosScope, dailies, fechasYmd, zonaPor
             salidaComida: null,
             regresoComida: null,
             minutosRetardo: 0,
+            minutosSalidaAnticipada: 0,
             minutosHorasExtra: 0,
             incidencias: []
           };
@@ -214,6 +216,7 @@ function buildAsistenciaPeriodoFilas(empleadosScope, dailies, fechasYmd, zonaPor
         if (['falta', 'registro_parcial', 'fuera_de_rango'].includes(d.estatus)) faltas += 1;
         if (d.estatus === 'incompleto') incompletos += 1;
         minutosRetardo += Number(d.minutosRetardo) || 0;
+        minutosSalidaAnticipada += Number(d.minutosSalidaAnticipada) || 0;
         minutosHE += Number(d.minutosHorasExtra) || 0;
         return {
           ymd,
@@ -223,6 +226,7 @@ function buildAsistenciaPeriodoFilas(empleadosScope, dailies, fechasYmd, zonaPor
           salidaComida: d.salidaComida || null,
           regresoComida: d.regresoComida || null,
           minutosRetardo: Number(d.minutosRetardo) || 0,
+          minutosSalidaAnticipada: Number(d.minutosSalidaAnticipada) || 0,
           minutosHorasExtra: Number(d.minutosHorasExtra) || 0,
           incidencias: d.incidenciasAutomaticas || []
         };
@@ -239,6 +243,7 @@ function buildAsistenciaPeriodoFilas(empleadosScope, dailies, fechasYmd, zonaPor
           incompletos,
           sinProcesar,
           minutosRetardo,
+          minutosSalidaAnticipada,
           minutosHE,
           conRegistro: dayMap.size
         },
@@ -286,6 +291,12 @@ async function showPeriodo(req, res) {
   ]);
 
   const empMap = new Map(empleadosAll.map((e) => [String(e._id), e]));
+  const getDepartamentoModel = require('../models/departamento');
+  const Departamento = await getDepartamentoModel();
+  const deptIds = [...new Set(empleadosAll.map((e) => e.departamentoId).filter(Boolean))];
+  const departamentos = deptIds.length
+    ? await Departamento.find({ _id: { $in: deptIds } }).select('nombre').sort({ nombre: 1 }).lean()
+    : [];
   const inicio = startOfDay(periodo.fechaInicio);
   const fin = endOfDay(periodo.fechaFin);
   const fechasYmd = eachYmdInclusive(periodo.fechaInicio, periodo.fechaFin);
@@ -366,6 +377,7 @@ async function showPeriodo(req, res) {
     periodo,
     detalles,
     empMap,
+    departamentos,
     cobertura,
     asistenciaFilas,
     fechasYmd,
@@ -502,46 +514,72 @@ async function showComprobante(req, res) {
 
   if (!detalle || !empleado) return res.status(404).send('Comprobante no encontrado');
 
-  res.render('Prenomina/comprobante', { periodo, detalle, empleado, session: req.session });
+  let conceptosAjuste = [];
+  if (periodo.estatus !== 'cerrado') {
+    await ensurePayrollConceptsForTenant(req.session.tenantId, empresa._id);
+    conceptosAjuste = await listPrenominaConceptos(req.session.tenantId, { soloActivos: true });
+  }
+
+  res.render('Prenomina/comprobante', {
+    periodo,
+    detalle,
+    empleado,
+    conceptosAjuste,
+    session: req.session
+  });
+}
+
+function leerDisclaimer(body) {
+  return body.acceptDisclaimerHe === '1' || body.acceptDisclaimerHe === 'on' || body.acceptDisclaimerHe === true;
+}
+
+async function conceptoDesdeBody(tenantId, body) {
+  const claveSel = trimString(body.conceptoClave).toUpperCase();
+  let conceptoNombre = trimString(body.concepto);
+  let tipo = trimString(body.tipo);
+  let clave = claveSel || trimString(body.clave) || undefined;
+
+  if (claveSel) {
+    const conceptos = await listPrenominaConceptos(tenantId, { soloActivos: true });
+    const cat = conceptos.find(
+      (c) => String(c.clave || '').toUpperCase() === claveSel || String(c.codigo || '').toUpperCase() === claveSel
+    );
+    if (cat) {
+      conceptoNombre = cat.nombre;
+      tipo = cat.tipo === 'deduccion' ? 'deduccion' : 'percepcion';
+      clave = cat.clave || cat.codigo || claveSel;
+    }
+  }
+  return { conceptoNombre, tipo, clave };
+}
+
+function idsMarcados(body) {
+  return []
+    .concat(body.empleadoIds || [])
+    .map((id) => String(id || '').trim())
+    .filter(Boolean);
+}
+
+function volverAjuste(req) {
+  return `/prenomina-periodos/${req.params.id}/comprobante/${req.params.empleadoId}#ajuste`;
 }
 
 async function aplicarAjuste(req, res) {
+  const volver = () => res.redirect(volverAjuste(req));
   try {
-    const monto = Number(req.body.monto);
-    const acceptDisclaimerHe =
-      req.body.acceptDisclaimerHe === '1' ||
-      req.body.acceptDisclaimerHe === 'on' ||
-      req.body.acceptDisclaimerHe === true;
-
-    const claveSel = trimString(req.body.conceptoClave).toUpperCase();
-    let conceptoNombre = trimString(req.body.concepto);
-    let tipo = trimString(req.body.tipo);
-    let clave = claveSel || trimString(req.body.clave) || undefined;
-
-    if (claveSel) {
-      const conceptos = await listPrenominaConceptos(req.session.tenantId, { soloActivos: true });
-      const cat = conceptos.find(
-        (c) => String(c.clave || '').toUpperCase() === claveSel || String(c.codigo || '').toUpperCase() === claveSel
-      );
-      if (cat) {
-        conceptoNombre = cat.nombre;
-        tipo = cat.tipo === 'deduccion' ? 'deduccion' : 'percepcion';
-        clave = cat.clave || cat.codigo || claveSel;
-      }
-    }
-
+    const { conceptoNombre, tipo, clave } = await conceptoDesdeBody(req.session.tenantId, req.body);
     if (!conceptoNombre) {
       req.flash('error', 'Selecciona un concepto del catálogo');
-      return res.redirect(`/prenomina-periodos/${req.params.id}`);
+      return volver();
     }
-
+    const acceptDisclaimerHe = leerDisclaimer(req.body);
     await applyManualAdjustment(
       req.params.id,
       req.session.tenantId,
       req.params.empleadoId,
       {
         concepto: conceptoNombre,
-        monto,
+        monto: Number(req.body.monto),
         tipo,
         nota: trimString(req.body.nota),
         reclasificarHe: Boolean(req.body.reclasificarHe),
@@ -552,8 +590,8 @@ async function aplicarAjuste(req, res) {
       },
       req.session.userid || ''
     );
-    req.flash('success', 'Ajuste manual aplicado');
-    res.redirect(`/prenomina-periodos/${req.params.id}`);
+    req.flash('success', 'Ajuste aplicado a este cálculo');
+    return volver();
   } catch (err) {
     console.error('[prenomina]', err);
     if (err.message === 'DISCLAIMER_HE_REQUERIDO') {
@@ -565,7 +603,103 @@ async function aplicarAjuste(req, res) {
     } else {
       req.flash('error', err.message === 'PERIOD_CLOSED' ? 'Período cerrado' : 'Error al aplicar ajuste');
     }
-    res.redirect(`/prenomina-periodos/${req.params.id}`);
+    return volver();
+  }
+}
+
+async function aplicarAjusteMasivo(req, res) {
+  const volver = `/prenomina-periodos/${req.params.id}#ajuste-masivo`;
+  try {
+    const ids = idsMarcados(req.body);
+    if (!ids.length) {
+      req.flash('error', 'Marca al menos un empleado para el ajuste masivo');
+      return res.redirect(volver);
+    }
+    const { conceptoNombre, tipo, clave } = await conceptoDesdeBody(req.session.tenantId, req.body);
+    if (!conceptoNombre) {
+      req.flash('error', 'Selecciona un concepto del catálogo');
+      return res.redirect(volver);
+    }
+
+    const usarImporteHe = req.body.usarImporteHe === '1' || req.body.usarImporteHe === 'on';
+    const reclasificarHe = Boolean(req.body.reclasificarHe) || usarImporteHe;
+    const acceptDisclaimerHe = leerDisclaimer(req.body);
+    const montoComun = Number(req.body.monto);
+    if (!usarImporteHe && !(montoComun > 0)) {
+      req.flash('error', 'Indica el monto, o marca usar el importe de horas extra de cada empleado');
+      return res.redirect(volver);
+    }
+    const pideDisclaimer =
+      reclasificarHe ||
+      /bono|gratific/i.test(conceptoNombre) ||
+      String(clave || '').toUpperCase() === 'BONO';
+    if (pideDisclaimer && !acceptDisclaimerHe) {
+      req.flash(
+        'error',
+        'Debes aceptar el disclaimer legal para reclasificar horas extra a bono u otro concepto.'
+      );
+      return res.redirect(volver);
+    }
+
+    const PayrollDetail = await getPayrollDetailModel();
+    let aplicados = 0;
+    let sinHorasExtra = 0;
+    let sinMonto = 0;
+    for (const empleadoId of ids) {
+      const detail = await PayrollDetail.findOne({
+        tenantId: req.session.tenantId,
+        periodId: req.params.id,
+        empleadoId
+      }).lean();
+      if (!detail) continue;
+      const p002 = (detail.percepciones || []).find((p) => p.clave === 'P002');
+      const tieneHe = Number(detail.minutosHorasExtra) > 0 || Number(p002 && p002.monto) > 0;
+      if (reclasificarHe && !tieneHe) {
+        sinHorasExtra += 1;
+        continue;
+      }
+      const monto = usarImporteHe ? Number(p002 && p002.monto) : montoComun;
+      if (!(monto > 0)) {
+        sinMonto += 1;
+        continue;
+      }
+      await applyManualAdjustment(
+        req.params.id,
+        req.session.tenantId,
+        empleadoId,
+        {
+          concepto: conceptoNombre,
+          monto,
+          tipo,
+          nota: trimString(req.body.nota),
+          reclasificarHe,
+          aceptarDisclaimerHe: acceptDisclaimerHe,
+          acceptDisclaimerHe,
+          clave,
+          reducirHe: true
+        },
+        req.session.userid || ''
+      );
+      aplicados += 1;
+    }
+
+    const partes = [`Ajuste masivo aplicado a ${aplicados} empleado(s).`];
+    if (sinHorasExtra) partes.push(`${sinHorasExtra} omitido(s) por no tener horas extra.`);
+    if (sinMonto) partes.push(`${sinMonto} omitido(s) sin monto de horas extra.`);
+    req.flash(aplicados ? 'success' : 'error', partes.join(' '));
+    return res.redirect(volver);
+  } catch (err) {
+    console.error('[prenomina]', err);
+    if (err.message === 'DISCLAIMER_HE_REQUERIDO') {
+      req.flash(
+        'error',
+        err.disclaimer ||
+          'Debes aceptar el disclaimer legal para reclasificar horas extra a bono/otro concepto.'
+      );
+    } else {
+      req.flash('error', err.message === 'PERIOD_CLOSED' ? 'Período cerrado' : 'Error al aplicar el ajuste masivo');
+    }
+    return res.redirect(volver);
   }
 }
 
@@ -760,6 +894,7 @@ module.exports = {
   cerrarPeriodo,
   showComprobante,
   aplicarAjuste,
+  aplicarAjusteMasivo,
   listConceptos,
   newConcepto,
   createConcepto,

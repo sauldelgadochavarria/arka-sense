@@ -1,0 +1,300 @@
+<%
+  const deptoNombre = {};
+  (departamentos || []).forEach(function(d) { deptoNombre[String(d._id)] = d.nombre; });
+  const asistPorEmp = {};
+  (asistenciaFilas || []).forEach(function(f) { asistPorEmp[String(f.empleadoId)] = f; });
+  const calcPorEmp = {};
+  (detalles || []).forEach(function(d) { calcPorEmp[String(d.empleadoId)] = d; });
+  const orden = [];
+  const visto = {};
+  (asistenciaFilas || []).forEach(function(f) {
+    const id = String(f.empleadoId);
+    if (!visto[id]) { visto[id] = 1; orden.push(id); }
+  });
+  (detalles || []).forEach(function(d) {
+    const id = String(d.empleadoId);
+    if (!visto[id]) { visto[id] = 1; orden.push(id); }
+  });
+  const cols = puedeAjustar ? 12 : 11;
+  function money(n) {
+    return '$' + Number(n || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 });
+  }
+%>
+<style>
+  button.rev-chip { border:1px solid #d1d5db; background:#fff; color:#111827; border-radius:999px; padding:.3rem .75rem; cursor:pointer; font:inherit; font-weight:600; }
+  button.rev-chip:hover { background:#f3f4f6; color:#111827; }
+  button.rev-chip.is-on, button.rev-chip.is-on:hover { background:#0f766e; color:#fff; border-color:#0f766e; }
+  .rev-filtros { display:flex; flex-wrap:wrap; gap:.4rem; align-items:center; margin:.6rem 0 1rem; }
+  #rev-tabla tr.rev-off { display:none !important; }
+</style>
+<h2>Cálculo del período<%= orden.length ? '' : ' (pendiente)' %></h2>
+<p class="muted small">
+  Una fila por trabajador, con sus horas extra en el mismo cálculo.
+  Se paga el excedente que llega al mínimo de la subsidiaria y que asistencia autorizó.
+  <% if (typeof cobertura !== 'undefined' && cobertura) { %>
+  Rango <%= cobertura.fechaInicioStr %> → <%= cobertura.fechaFinStr %>.
+  <% } %>
+  Pulsa + para el día y los conceptos.
+</p>
+<% if (!orden.length) { %>
+<p class="muted">Aún no hay empleados en este período. Revisa la asistencia y luego calcula la pre-nómina.</p>
+<% } else { %>
+<div class="rev-filtros">
+  <label>Departamento
+    <select id="rev-depto">
+      <option value="">Todos</option>
+      <%
+        const deptosEnVista = [];
+        const deptosVistos = {};
+        orden.forEach(function(id) {
+          const emp = empMap && empMap.get ? empMap.get(id) : null;
+          const raw = emp && emp.departamentoId ? emp.departamentoId : null;
+          const deptoId = raw ? String(raw._id || raw) : '';
+          if (deptosVistos[deptoId]) return;
+          deptosVistos[deptoId] = 1;
+          deptosEnVista.push({ id: deptoId, nombre: deptoId ? (deptoNombre[deptoId] || 'Departamento') : 'Sin departamento' });
+        });
+        deptosEnVista.forEach(function(d) { %>
+      <option value="<%= d.id %>"><%= d.nombre %></option>
+      <% }); %>
+    </select>
+  </label>
+  <button type="button" class="rev-chip is-on" data-filtro="todos">Todos</button>
+  <button type="button" class="rev-chip" data-filtro="he">Horas extra</button>
+  <button type="button" class="rev-chip" data-filtro="faltas">Faltas</button>
+  <button type="button" class="rev-chip" data-filtro="retardos">Retardos</button>
+  <button type="button" class="rev-chip" data-filtro="salidas">Salidas anticipadas</button>
+  <button type="button" class="rev-chip" data-filtro="incompletos">Incompletos</button>
+  <button type="button" class="rev-chip" data-filtro="ajustes">Ajustes</button>
+  <span id="rev-cuenta" class="muted small"></span>
+</div>
+<table id="rev-tabla">
+  <thead>
+    <tr>
+      <th style="width:2rem"></th>
+      <% if (puedeAjustar) { %><th title="Incluir en el ajuste masivo">Masivo</th><% } %>
+      <th>Empleado</th>
+      <th>Días</th>
+      <th>Faltas</th>
+      <th>Retardo</th>
+      <th>Salida ant.</th>
+      <th>Horas extra</th>
+      <th>Percepciones</th>
+      <th>Deducciones</th>
+      <th>Neto</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <% orden.forEach(function(id) {
+      const fila = asistPorEmp[id] || null;
+      const d = calcPorEmp[id] || null;
+      const emp = empMap.get(id);
+      const nombre = fila ? fila.nombre : (emp ? ((emp.firstName || '') + ' ' + (emp.lastName || '')).trim() : '—');
+      const num = (fila && fila.numEmpleado) || (emp && emp.numEmpleado) || '';
+      const deptoId = emp && emp.departamentoId ? String(emp.departamentoId._id || emp.departamentoId) : '';
+      const depto = deptoId ? (deptoNombre[deptoId] || '—') : 'Sin departamento';
+      const r = fila ? fila.resumen : null;
+      const dias = d ? d.diasTrabajados : (r ? r.diasTrabajados : 0);
+      const faltas = d ? d.diasFalta : (r ? r.faltas : 0);
+      const retardo = Math.max(d ? (Number(d.minutosRetardo) || 0) : 0, r ? (Number(r.minutosRetardo) || 0) : 0);
+      const salidaAnt = Math.max(d ? (Number(d.minutosSalidaAnticipada) || 0) : 0, r ? (Number(r.minutosSalidaAnticipada) || 0) : 0);
+      const pagar = d ? (Number(d.minutosHorasExtra) || 0) : 0;
+      const nota = d ? (Number(d.minutosHorasExtraNota) || 0) : 0;
+      const sinAut = d ? (Number(d.minutosHorasExtraSinAutorizar) || 0) : 0;
+      const checadas = r ? (Number(r.minutosHE) || 0) : (pagar + nota + sinAut);
+      const incompletos = r ? (Number(r.incompletos) || 0) : 0;
+      const sinProc = r ? (Number(r.sinProcesar) || 0) : 0;
+      const diasFila = (fila && fila.dias) ? fila.dias : [];
+      const faltaDias = diasFila.some(function(dia) {
+        return ['falta', 'registro_parcial', 'fuera_de_rango'].indexOf(dia.estatus) >= 0;
+      });
+      const tieneHe = pagar || nota || sinAut || checadas || diasFila.some(function(dia) { return dia.minutosHorasExtra; });
+      const tieneRetardo = retardo || diasFila.some(function(dia) { return dia.minutosRetardo || dia.estatus === 'retardo'; });
+      const tieneSalida = salidaAnt || diasFila.some(function(dia) {
+        return dia.minutosSalidaAnticipada || (dia.incidencias || []).indexOf('SA') >= 0;
+      });
+      const tieneIncompleto = incompletos || sinProc || diasFila.some(function(dia) {
+        return dia.estatus === 'incompleto' || dia.estatus === 'sin_procesar';
+      });
+      const nAjustes = d ? (d.ajustesManuales || []).length : 0;
+      const rowDet = 'rev-det-' + id;
+      const zona = fila ? fila.zonaHoraria : '';
+    %>
+    <tr class="rev-emp"
+        data-det="<%= rowDet %>"
+        data-depto="<%= deptoId %>"
+        data-he="<%= tieneHe ? '1' : '0' %>"
+        data-faltas="<%= (faltas || faltaDias) ? '1' : '0' %>"
+        data-retardos="<%= tieneRetardo ? '1' : '0' %>"
+        data-salidas="<%= tieneSalida ? '1' : '0' %>"
+        data-incompletos="<%= tieneIncompleto ? '1' : '0' %>"
+        data-ajustes="<%= nAjustes ? '1' : '0' %>">
+      <td>
+        <button type="button" class="btn-expand" data-target="<%= rowDet %>" aria-expanded="false" title="Ver días y conceptos">+</button>
+      </td>
+      <% if (puedeAjustar) { %>
+      <td>
+        <% if (d) { %>
+        <input form="form-ajuste-masivo" type="checkbox" name="empleadoIds" value="<%= id %>" data-he="<%= pagar ? '1' : '0' %>" aria-label="Incluir <%= nombre %>" />
+        <% } %>
+      </td>
+      <% } %>
+      <td>
+        <%= nombre %><% if (num) { %> <span class="muted small">#<%= num %></span><% } %>
+        <div class="muted small"><%= depto %></div>
+      </td>
+      <td>
+        <%= d || r ? dias : '—' %>
+        <% if (d && d.diasDescansoPagados) { %>
+        <div class="muted small"><%= d.diasDescansoPagados %> séptimo</div>
+        <% } %>
+      </td>
+      <td>
+        <%= d || r ? faltas : '—' %>
+        <% if (incompletos || sinProc) { %>
+        <div class="muted small"><% if (incompletos) { %><%= incompletos %> incompl.<% } %><% if (sinProc) { %> <%= sinProc %> sin proc.<% } %></div>
+        <% } %>
+      </td>
+      <td><%= d || r ? (retardo ? retardo + ' min' : '0') : '—' %></td>
+      <td><%= d || r ? (salidaAnt ? salidaAnt + ' min' : '0') : '—' %></td>
+      <td>
+        <% if (d) { %>
+        <strong><%= pagar %></strong> min a pagar
+        <% if (nota) { %><div class="muted small"><%= nota %> min en nota</div><% } %>
+        <% if (sinAut) { %><div class="muted small"><%= sinAut %> min sin autorizar</div><% } %>
+        <% if (checadas && checadas !== pagar + nota + sinAut) { %>
+        <div class="muted small"><%= checadas %> min en checadas</div>
+        <% } %>
+        <% } else if (checadas) { %>
+        <%= checadas %> min en checadas
+        <div class="muted small">Aún sin pre-cálculo</div>
+        <% } else { %>—<% } %>
+      </td>
+      <td><%= d ? money(d.totalPercepciones) : '—' %></td>
+      <td><%= d ? money(d.totalDeducciones) : '—' %></td>
+      <td><% if (d) { %><strong><%= money(d.netoPagar) %></strong><% } else { %>—<% } %></td>
+      <td>
+        <% if (d) { %>
+        <a href="/prenomina-periodos/<%= periodo._id %>/comprobante/<%= id %>">Comprobante</a>
+        <% if (periodo.estatus !== 'cerrado') { %>
+        · <a href="/prenomina-periodos/<%= periodo._id %>/comprobante/<%= id %>#ajuste">Ajustar</a>
+        <% } %>
+        <% if (nAjustes) { %><div class="muted small"><%= nAjustes %> ajuste(s)</div><% } %>
+        <% } else { %><span class="muted">Sin cálculo</span><% } %>
+      </td>
+    </tr>
+    <tr id="<%= rowDet %>" class="rev-det rev-off">
+      <td colspan="<%= cols %>">
+        <% if (d && ((d.percepciones && d.percepciones.length) || (d.deducciones && d.deducciones.length))) { %>
+        <p class="muted small" style="margin:.5rem 0 .25rem">Conceptos de este cálculo</p>
+        <table class="nested-table" style="margin:0 0 .75rem;width:auto">
+          <tbody>
+            <% (d.percepciones || []).forEach(function(l) { %>
+            <tr><td><%= l.clave %></td><td><%= l.nombre %></td><td><%= money(l.monto) %></td></tr>
+            <% }); %>
+            <% (d.deducciones || []).forEach(function(l) { %>
+            <tr>
+              <td><%= l.clave %></td>
+              <td>
+                <%= l.nombre %>
+                <% if (l.clave === 'D003' && d.minutosSalidaAnticipada) { %>
+                <span class="muted small">(<%= d.minutosSalidaAnticipada %> min)</span>
+                <% } %>
+              </td>
+              <td>− <%= money(l.monto) %></td>
+            </tr>
+            <% }); %>
+          </tbody>
+        </table>
+        <% } %>
+        <% if (fila && fila.dias && fila.dias.length) { %>
+        <table class="nested-table" style="margin:0 0 .75rem;width:100%">
+          <thead>
+            <tr>
+              <th>Fecha</th><th>Entrada</th><th>Salida comida</th><th>Regreso</th><th>Salida</th>
+              <th>Retardo</th><th>Salida ant.</th><th>HE</th><th>Estatus</th><th>Incidencias</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% fila.dias.forEach(function(dia) {
+              const estLabel = dia.estatus === 'sin_procesar'
+                ? 'Sin procesar'
+                : ((estatusDiarioLabels && estatusDiarioLabels[dia.estatus]) || dia.estatus);
+              const warnRow = ['falta', 'registro_parcial', 'fuera_de_rango', 'incompleto', 'sin_procesar'].includes(dia.estatus);
+            %>
+            <tr class="<%= warnRow ? 'row-muted' : '' %>">
+              <td><a href="/asistencia-diaria?fecha=<%= dia.ymd %>&amp;periodoId=<%= periodo._id %>"><%= dia.ymd %></a></td>
+              <td><%= dia.entrada && formatTimeHHMM ? formatTimeHHMM(dia.entrada, zona) : '—' %></td>
+              <td><%= dia.salidaComida && formatTimeHHMM ? formatTimeHHMM(dia.salidaComida, zona) : '—' %></td>
+              <td><%= dia.regresoComida && formatTimeHHMM ? formatTimeHHMM(dia.regresoComida, zona) : '—' %></td>
+              <td><%= dia.salida && formatTimeHHMM ? formatTimeHHMM(dia.salida, zona) : '—' %></td>
+              <td><%= dia.minutosRetardo ? dia.minutosRetardo + ' min' : '—' %></td>
+              <td><%= dia.minutosSalidaAnticipada ? dia.minutosSalidaAnticipada + ' min' : '—' %></td>
+              <td><%= dia.minutosHorasExtra ? dia.minutosHorasExtra + ' min' : '—' %></td>
+              <td><span class="badge badge-<%= dia.estatus %>"><%= estLabel %></span></td>
+              <td class="muted small"><%= dia.incidencias && dia.incidencias.length ? dia.incidencias.join(', ') : '—' %></td>
+            </tr>
+            <% }); %>
+          </tbody>
+        </table>
+        <% } %>
+      </td>
+    </tr>
+    <% }); %>
+    <tr id="rev-vacio" class="rev-off"><td colspan="<%= cols %>" class="muted">Nadie coincide con este filtro.</td></tr>
+  </tbody>
+</table>
+<script>
+(function () {
+  var filtro = 'todos';
+  var depto = '';
+  var chips = document.querySelectorAll('.rev-chip');
+  var sel = document.getElementById('rev-depto');
+  var cuenta = document.getElementById('rev-cuenta');
+  function aplicar() {
+    var total = 0;
+    var vis = 0;
+    document.querySelectorAll('tr.rev-emp').forEach(function (row) {
+      total += 1;
+      var okF = filtro === 'todos' || row.getAttribute('data-' + filtro) === '1';
+      var okD = !depto || row.getAttribute('data-depto') === depto;
+      var show = okF && okD;
+      row.classList.toggle('rev-off', !show);
+      var det = document.getElementById(row.getAttribute('data-det'));
+      var btn = row.querySelector('.btn-expand');
+      if (!show && det) {
+        det.classList.add('rev-off');
+        if (btn) {
+          btn.textContent = '+';
+          btn.setAttribute('aria-expanded', 'false');
+        }
+      }
+      if (show) vis += 1;
+    });
+    var vacio = document.getElementById('rev-vacio');
+    if (vacio) vacio.classList.toggle('rev-off', vis !== 0);
+    if (cuenta) cuenta.textContent = vis + ' de ' + total;
+  }
+  chips.forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      filtro = btn.getAttribute('data-filtro');
+      chips.forEach(function (c) { c.classList.toggle('is-on', c === btn); });
+      aplicar();
+    });
+  });
+  if (sel) sel.addEventListener('change', function () { depto = sel.value; aplicar(); });
+  document.querySelectorAll('.btn-expand[data-target]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var row = document.getElementById(btn.getAttribute('data-target'));
+      if (!row) return;
+      var open = row.classList.contains('rev-off');
+      row.classList.toggle('rev-off', !open);
+      btn.textContent = open ? '−' : '+';
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
+  });
+  aplicar();
+})();
+</script>
+<% } %>

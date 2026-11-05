@@ -659,6 +659,9 @@ async function generarTimbrado(req, res) {
     if (!okSub) {
       throw new Error('El período no pertenece a la subsidiaria activa');
     }
+    const { bloqueoPrenominaCerrada } = require('../services/nomina/nominaPreflightService');
+    const bloqueoTimb = await bloqueoPrenominaCerrada(req.session.tenantId, periodo);
+    if (bloqueoTimb) throw new Error(bloqueoTimb.mensaje);
 
     const result = await crearYProcesarLote({
       tenantId: req.session.tenantId,

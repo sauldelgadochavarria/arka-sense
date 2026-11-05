@@ -186,11 +186,15 @@ async function periodos(req, res) {
   const sortBy = SORT_ALLOWED.has(sortByRaw) ? sortByRaw : 'fechaInicio';
   const sortDir = String(req.query.dir || 'desc').toLowerCase() === 'asc' ? 1 : -1;
 
+  const estatusQuery = Object.prototype.hasOwnProperty.call(req.query, 'estatus')
+    ? trimString(req.query.estatus)
+    : 'no_cerrados';
+
   const filtros = {
     anio: trimString(req.query.anio),
     tipoPeriodo: trimString(req.query.tipoPeriodo),
     tipoNomina: trimString(req.query.tipoNomina),
-    estatus: trimString(req.query.estatus),
+    estatus: estatusQuery,
     tipoNominaCfdi: trimString(req.query.tipoNominaCfdi).toUpperCase(),
     periodicidadPagoSat: trimString(req.query.periodicidadPagoSat),
     clasificacionLaboral: trimString(req.query.clasificacionLaboral).toLowerCase(),
@@ -221,7 +225,8 @@ async function periodos(req, res) {
   if (filtros.anio && /^\d{4}$/.test(filtros.anio)) filter.anio = Number(filtros.anio);
   if (filtros.tipoPeriodo) filter.tipoPeriodo = filtros.tipoPeriodo;
   if (filtros.tipoNomina) filter.tipoNomina = filtros.tipoNomina;
-  if (filtros.estatus) filter.estatus = filtros.estatus;
+  if (filtros.estatus === 'no_cerrados') filter.estatus = { $ne: 'cerrado' };
+  else if (filtros.estatus) filter.estatus = filtros.estatus;
   if (filtros.tipoNominaCfdi === 'O' || filtros.tipoNominaCfdi === 'E') {
     filter.tipoNominaCfdi = filtros.tipoNominaCfdi;
   }
@@ -254,6 +259,18 @@ async function periodos(req, res) {
         limit: 200
       })
     : [];
+  if (empresa && periodosList.length) {
+    const preIds = periodosList.map((p) => p.payrollPeriodId).filter(Boolean);
+    const preDocs = preIds.length
+      ? await PayrollPeriod.find({ tenantId, _id: { $in: preIds } })
+          .select('estatus numeroPeriodo')
+          .lean()
+      : [];
+    const preById = new Map(preDocs.map((p) => [String(p._id), p]));
+    for (const p of periodosList) {
+      p.prenomina = p.payrollPeriodId ? preById.get(String(p.payrollPeriodId)) || null : null;
+    }
+  }
   const prenominaQ = { tenantId, empresaId: empresa._id, compartirConNomina: true };
   if (subId) prenominaQ.subsidiariaId = subId;
   const prenominaPeriodos = empresa
@@ -1851,6 +1868,26 @@ async function showRecibo(req, res) {
     conceptos = await ConceptoAplicado.find({ tenantId, reciboId: recibo._id })
       .sort({ conceptoCodigo: 1 })
       .lean();
+  }
+
+  if (periodo && periodo.subsidiariaId && empScope.empresa) {
+    const getSubsidiaryConceptConfigModel = require('../models/subsidiaryConceptConfig');
+    const SubCfg = await getSubsidiaryConceptConfigModel();
+    const aliasRows = await SubCfg.find({
+      tenantId,
+      empresaId: empScope.empresa._id,
+      subsidiariaId: periodo.subsidiariaId,
+      activo: true,
+      deshabilitado: { $ne: true },
+      aliasNombre: { $nin: ['', null] }
+    })
+      .select('conceptoCodigo aliasNombre')
+      .lean();
+    const byCodigo = new Map(catalogo.map((c) => [String(c.codigo).toUpperCase(), c]));
+    for (const row of aliasRows) {
+      const concepto = byCodigo.get(String(row.conceptoCodigo || '').toUpperCase());
+      if (concepto && row.aliasNombre) concepto.nombre = row.aliasNombre;
+    }
   }
 
   const conceptosMeta = {};

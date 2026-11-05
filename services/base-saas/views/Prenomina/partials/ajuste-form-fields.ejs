@@ -1,0 +1,45 @@
+<label>Concepto (catálogo)
+  <select name="conceptoClave" required>
+    <option value="">— Selecciona —</option>
+    <% (conceptosAjuste || []).forEach(function(c) {
+      const k = (c.clave || c.codigo || '').toUpperCase();
+      if (!k || k === 'P001' || k === 'P002') return;
+    %>
+    <option value="<%= k %>" data-tipo="<%= c.tipo %>">
+      <%= k %> — <%= c.nombre %> (<%= c.tipo === 'deduccion' ? 'deducción' : 'percepción' %>)
+    </option>
+    <% }); %>
+  </select>
+</label>
+<input type="hidden" name="tipo" value="percepcion" />
+<label>Monto
+  <input type="number" name="monto" step="0.01" min="0" placeholder="0.00" <%= (typeof montoRequired === 'undefined' || montoRequired !== false) ? 'required' : '' %> />
+</label>
+<label>Nota / autorización
+  <input name="nota" placeholder="Quién autoriza y por qué" />
+</label>
+<label class="inline-check" style="max-width:42rem">
+  <input type="checkbox" name="reclasificarHe" value="1" />
+  Reclasificar horas extra (quita P002) y pásalas a este concepto
+</label>
+<label class="inline-check" style="max-width:42rem">
+  <input type="checkbox" name="acceptDisclaimerHe" value="1" />
+  Acepto el disclaimer: modificar la naturaleza fiscal del tiempo extraordinario genera discrepancias en CFDI 4.0, afecta el SBC y expone a multas por simulación. La acción es responsabilidad del administrador.
+</label>
+<button type="submit"><%= submitLabel || 'Aplicar ajuste' %></button>
+<script>
+(function () {
+  document.querySelectorAll('select[name="conceptoClave"]').forEach(function (sel) {
+    if (sel.dataset.tipoBound) return;
+    sel.dataset.tipoBound = '1';
+    sel.addEventListener('change', function () {
+      var opt = sel.options[sel.selectedIndex];
+      var tipo = (opt && opt.getAttribute('data-tipo')) || 'percepcion';
+      var form = sel.closest('form');
+      if (!form) return;
+      var hidden = form.querySelector('input[name="tipo"]');
+      if (hidden) hidden.value = tipo === 'deduccion' ? 'deduccion' : 'percepcion';
+    });
+  });
+})();
+</script>

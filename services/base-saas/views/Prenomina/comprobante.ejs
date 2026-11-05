@@ -13,6 +13,7 @@
 <h2>Resumen de asistencia</h2>
 <ul>
   <li>Días trabajados: <%= detalle.diasTrabajados %></li>
+  <li>Séptimo día: <%= detalle.diasDescansoPagados || 0 %> <span class="muted small">de <%= detalle.diasDescanso || 0 %> descansos del turno</span></li>
   <li>Faltas (informativo): <%= detalle.diasFalta %> <span class="muted small">— no se descuentan si el sueldo ya es solo por días trabajados</span></li>
   <li>Retardo (min): <%= detalle.minutosRetardo %></li>
   <li>Horas extra (min): <%= detalle.minutosHorasExtra %></li>
@@ -43,6 +44,22 @@
 </table>
 
 <p class="neto-total"><strong>Neto a pagar: $<%= detalle.netoPagar.toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></strong></p>
+
+<% if (periodo.estatus !== 'cerrado') { %>
+<section class="panel" id="ajuste">
+  <h2 class="panel-title">Ajuste de este cálculo</h2>
+  <p class="muted small">
+    Úsalo para sumar o restar un concepto que el pre-cálculo no incluyó.
+    Reclasificar horas extra quita P002 y pasa ese pago a otro concepto: solo cuando ese tiempo no debe pagarse como hora extra.
+    Corregir una checada o una falta se hace en asistencia y luego se recalcula el período.
+  </p>
+  <form method="post" action="/prenomina-periodos/<%= periodo._id %>/ajuste/<%= empleado._id %>" class="form-grid">
+    <%- include('./partials/ajuste-form-fields', { conceptosAjuste: typeof conceptosAjuste !== 'undefined' ? conceptosAjuste : [], submitLabel: 'Aplicar ajuste' }) %>
+  </form>
+</section>
+<% } else { %>
+<p class="muted">Período cerrado: este cálculo ya no admite ajustes.</p>
+<% } %>
 
 <% if (detalle.ajustesManuales && detalle.ajustesManuales.length) { %>
 <h2>Bitácora de ajustes manuales</h2>

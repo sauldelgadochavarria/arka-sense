@@ -4,6 +4,7 @@
 <p>No hay empresa vinculada a este tenant. Activa el tenant desde Arka-Presence Admin.</p>
 <% } else { %>
 <div class="toolbar">
+  <a class="btn" href="/personal-empleados/nuevo">Nuevo empleado</a>
   <form method="get" action="/personal-empleados" class="inline-form">
     <label>Estatus</label>
     <select name="estatus" onchange="this.form.submit()">
@@ -54,30 +55,5 @@
     <% }); %>
   </tbody>
 </table>
-
-<h2>Nuevo empleado</h2>
-<form method="post" action="/personal-empleados" class="form-fichas">
-  <%- include('partials/empleado-fields', {
-    empleado: null,
-    subsidiarias, departamentos, puestos, turnos,
-    centrosCosto: typeof centrosCosto !== 'undefined' ? centrosCosto : [],
-    tiposPeriodo: typeof tiposPeriodo !== 'undefined' ? tiposPeriodo : [],
-    supervisores, gruposDispositivos, plantillas,
-    asignacionCtx: null,
-    tiposRegistro,
-    tiposContrato,
-    tiposEmpleado: typeof tiposEmpleado !== 'undefined' ? tiposEmpleado : [],
-    toDateInputValue,
-    showNominaConfig,
-    tiposCreditoInfonavit,
-    entidadesFederativas: typeof entidadesFederativas !== 'undefined' ? entidadesFederativas : [],
-    estadosCiviles: typeof estadosCiviles !== 'undefined' ? estadosCiviles : [],
-    tiposBaseCotizacion: typeof tiposBaseCotizacion !== 'undefined' ? tiposBaseCotizacion : [],
-    umaVigente: typeof umaVigente !== 'undefined' ? umaVigente : 0
-  }) %>
-  <div class="ficha-savebar">
-    <button type="submit">Crear empleado</button>
-  </div>
-</form>
 <% } %>
 <%- include('../Partials/layout-bottom') %>

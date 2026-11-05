@@ -409,8 +409,6 @@ async function listEmpleados(req, res) {
   const { empresa, error } = await requireEmpresaForTenant(req);
   const estatus = String(req.query.estatus || 'activo').trim();
   const Empleado = await getEmpleadoModel();
-  const catalogs = await loadEmpleadoCatalogs(req.session.tenantId, empresa, sessionSubsidiariaId(req));
-
   let filter = { tenantId: req.session.tenantId };
   if (empresa) filter.empresaId = empresa._id;
   const subId = sessionSubsidiariaId(req);
@@ -427,17 +425,27 @@ async function listEmpleados(req, res) {
     ? await loadCatalogMaps(req.session.tenantId, empresa._id)
     : { ...buildLookupMaps([], [], [], []), turnoMap: new Map(), tipoPeriodoMap: new Map() };
 
-  const enumsEmp = await loadEmpleadoEnums();
-  const umaVigente = await loadUmaVigente(req.session.tenantId);
-
   res.render('Personal/empleados', {
-    ...catalogs,
     ...maps,
-    ...enumsEmp,
-    ...empleadoFormExtras(umaVigente),
     empleados,
     empresa,
     estatus,
+    error: error || null,
+    session: req.session
+  });
+}
+
+async function showNuevoEmpleado(req, res) {
+  const { empresa, error } = await requireEmpresaForTenant(req);
+  const catalogs = await loadEmpleadoCatalogs(req.session.tenantId, empresa, sessionSubsidiariaId(req));
+  const enumsEmp = await loadEmpleadoEnums();
+  const umaVigente = await loadUmaVigente(req.session.tenantId);
+
+  res.render('Personal/empleado-nuevo', {
+    ...catalogs,
+    ...enumsEmp,
+    ...empleadoFormExtras(umaVigente),
+    empresa,
     estatusOptions: ESTATUS_EMPLEADO,
     tiposRegistro: TIPOS_REGISTRO,
     politicasMarcajeGeo: POLITICAS_MARCAJE_GEO,
@@ -483,7 +491,7 @@ async function createEmpleado(req, res) {
   } catch (err) {
     console.error('[empleados]', err);
     req.flash('error', mensajeErrorGuardarEmpleado(err, 'Error al crear empleado'));
-    res.redirect('/personal-empleados');
+    res.redirect('/personal-empleados/nuevo');
   }
 }
 
@@ -798,6 +806,7 @@ async function calcularSdiAction(req, res) {
 
 module.exports = {
   listEmpleados,
+  showNuevoEmpleado,
   createEmpleado,
   showEmpleado,
   editEmpleado,

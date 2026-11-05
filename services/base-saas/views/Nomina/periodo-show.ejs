@@ -24,7 +24,9 @@
     try { return new Date(d).toISOString().slice(0, 10); } catch (_) { return ''; }
   }
 %>
-<section class="panel" style="margin:1rem 0" id="editar-periodo">
+<details class="panel" id="modificar-periodo" style="margin:1rem 0">
+  <summary style="cursor:pointer;font-weight:700">Modificar período</summary>
+<section class="panel" style="margin:1rem 0 0" id="editar-periodo">
   <h2 class="panel-title">Tipo de período (catálogo) y parámetros</h2>
   <dl class="flag-labels" style="margin:0 0 .75rem">
     <div>Tipo catálogo vinculado:
@@ -230,6 +232,7 @@
   <% } %>
   <% } %>
 </section>
+</details>
 
 <% if (prenominaPeriodo) { %>
 <p class="muted">
@@ -241,14 +244,18 @@
   <%= new Date(prenominaPeriodo.fechaFin).toLocaleDateString('es-MX') %>.
   Solo se calculan empleados con <strong>días trabajados, HE o percepciones</strong> en esa pre-nómina
   (quien solo tiene faltas / ceros no entra).
+  <% if (prenominaPeriodo.estatus === 'cerrado') { %>
+  <strong>Cerrada: ya se puede calcular la nómina.</strong>
+  <% } else { %>
+  <span class="warn-text">Está en «<%= prenominaPeriodo.estatus %>». Ciérrala antes de calcular la nómina.</span>
+  <% } %>
 </p>
 <% } else if (periodo.payrollPeriodId) { %>
 <p class="muted warn-text">Pre-nómina vinculada no encontrada.</p>
 <% } else { %>
 <div class="alert alert-warning">
   <strong>Sin pre-nómina vinculada.</strong>
-  El recálculo usa calendario/expediente (todos los activos, <%= periodo.diasPeriodo %> días).
-  La asistencia de pre-nómina <em>no</em> aplica hasta vincular.
+  Hay que vincular una pre-nómina y cerrarla antes de calcular la nómina.
   <% if (_canEdit && typeof prenominaCandidatos !== 'undefined' && prenominaCandidatos.length) { %>
   <p class="muted small" style="grid-column:1/-1">
     Solo puedes vincular una pre-nómina del <strong>mismo tipo</strong> (<%= periodo.tipoPeriodo %>).
@@ -303,6 +310,21 @@
   <ul id="progress-errores" class="alert-list-compact"></ul>
 </div>
 
+<%
+  const _tipoNomAcc = String(periodo.tipoNomina || '').toLowerCase();
+  const _omitePrenominaAcc = _tipoNomAcc === 'finiquito' || _tipoNomAcc === 'indemnizacion';
+  const _prenominaCerradaAcc = !!(typeof prenominaPeriodo !== 'undefined' && prenominaPeriodo && prenominaPeriodo.estatus === 'cerrado');
+  const _bloqueaAcciones = !_omitePrenominaAcc && periodo.estatus !== 'cerrado' && !_prenominaCerradaAcc;
+  const _motivoAcciones = _bloqueaAcciones
+    ? (typeof prenominaPeriodo !== 'undefined' && prenominaPeriodo
+        ? ('La pre-nómina está en «' + prenominaPeriodo.estatus + '». Ciérrala para calcular, cerrar, dispersar y timbrar.')
+        : 'Vincula y cierra la pre-nómina para calcular, cerrar, dispersar y timbrar.')
+    : '';
+  const _calculoBloqueado = _bloqueaAcciones || (preflight && !preflight.ok);
+  const _tituloCalculo = _calculoBloqueado
+    ? (_motivoAcciones || (preflight && preflight.bloqueos ? preflight.bloqueos.map(function(b){ return b.mensaje; }).join(' · ') : 'No se puede calcular'))
+    : 'Calcula con la pre-nómina ya cerrada';
+%>
 <div class="toolbar">
   <a class="btn" href="/nomina/periodos">← Períodos</a>
   <% if (!_canEdit) { %>
@@ -316,25 +338,41 @@
   </p>
   <% } else { %>
   <form method="post" action="/nomina/periodos/<%= periodo._id %>/calcular" class="inline-form">
-    <button type="submit" <%= preflight && !preflight.ok ? 'disabled' : '' %>>Calcular nómina (async)</button>
+    <button type="submit" class="<%= _calculoBloqueado ? 'is-disabled' : '' %>" <%= _calculoBloqueado ? 'disabled' : '' %>
+      title="<%= _tituloCalculo %>">Calcular nómina (async)</button>
   </form>
   <% } %>
   <% } %>
   <% if (_canEdit && periodo.estatus === 'calculado') { %>
+  <% if (_bloqueaAcciones) { %>
+  <button type="button" class="is-disabled" disabled title="<%= _motivoAcciones %>">Cerrar período</button>
+  <% } else { %>
   <form method="post" action="/nomina/periodos/<%= periodo._id %>/cerrar" class="inline-form" onsubmit="return confirm('¿Cerrar período? Los recibos se moverán al histórico (copiar + borrar del temporal), se actualizarán acumulados y no se podrá recalcular.');">
     <button type="submit">Cerrar período</button>
   </form>
+  <% } %>
   <% } %>
   <% if (_canEdit && (periodo.estatus === 'calculado' || periodo.estatus === 'cerrado')) { %>
   <% if (periodo.omitirDispersionBancaria) { %>
   <p class="muted small" style="margin:0 0 .5rem">Dispersión bancaria opcional (finiquito/cheque a la firma). Puedes generar layout si aplica.</p>
   <% } %>
+  <% if (_bloqueaAcciones) { %>
+  <button type="button" class="is-disabled" disabled title="<%= _motivoAcciones %>">Generar archivo bancario</button>
+  <button type="button" class="is-disabled" disabled title="<%= _motivoAcciones %>">Timbrar</button>
+  <% } else { %>
   <a class="btn btn-primary" href="/nomina/dispersion-bancaria?periodoId=<%= periodo._id %>">Generar archivo bancario</a>
+  <% if (periodo.estatus === 'cerrado') { %>
+  <a class="btn" href="/nomina/timbrado">Timbrar</a>
+  <% } %>
+  <% } %>
   <% } %>
   <% if (_canEdit && periodo.estatus === 'cerrado') { %>
   <a class="btn" href="/nomina/envio-correo?periodoId=<%= periodo._id %>"><%= (periodo.correo && periodo.correo.estatus === 'enviado') ? 'Reenviar correos' : 'Enviar recibos por correo' %></a>
   <% } %>
 </div>
+<% if (_bloqueaAcciones) { %>
+<p class="muted small"><%= _motivoAcciones %></p>
+<% } %>
 
 <% if (periodo.totales && periodo.totales.empleados) { %>
 <div class="summary-cards">

@@ -29,10 +29,19 @@ const payrollDetailSchema = new mongoose.Schema(
     periodId: { type: mongoose.Schema.Types.ObjectId, ref: 'PayrollPeriod', required: true, index: true },
     empleadoId: { type: mongoose.Schema.Types.ObjectId, ref: 'Empleado', required: true, index: true },
     diasTrabajados: { type: Number, default: 0 },
+    /** Descansos del turno dentro del período (sábado y domingo, si el turno descansa ambos). */
+    diasDescanso: { type: Number, default: 0 },
+    /** Descansos que sí se pagan como séptimo día, según la política de la empresa. */
+    diasDescansoPagados: { type: Number, default: 0 },
+    diasProgramadosTurno: { type: Number, default: 0 },
     diasFalta: { type: Number, default: 0 },
     diasConRetardo: { type: Number, default: 0 },
     minutosRetardo: { type: Number, default: 0 },
     minutosHorasExtra: { type: Number, default: 0 },
+    /** Excedente bajo el mínimo de la subsidiaria: se anota y no se paga. */
+    minutosHorasExtraNota: { type: Number, default: 0 },
+    /** Excedente que alcanza el mínimo y sigue sin autorización de asistencia. */
+    minutosHorasExtraSinAutorizar: { type: Number, default: 0 },
     minutosHEOrdinaria: { type: Number, default: 0 },
     minutosHEDoble: { type: Number, default: 0 },
     minutosHETriple: { type: Number, default: 0 },
