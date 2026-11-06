@@ -99,12 +99,13 @@ function mapConceptosNomina(conceptos = [], catalogoMeta = {}, opts = {}) {
         ImporteGravado: money(g),
         ImporteExento: money(e)
       };
-      // NOM84: TipoPercepcion 019 exige elemento(s) HorasExtra.
+      // NOM84: TipoPercepcion 019 exige HorasExtra, solo si hay horas reales.
       if (String(claveSat).padStart(3, '0') === '019') {
-        perc.HorasExtra = buildHorasExtraForPercepcion(c, {
+        const hx = buildHorasExtraForPercepcion(c, {
           importePagado: money(g + e),
           insumos
         });
+        if (hx) perc.HorasExtra = hx;
       }
       percepciones.push(perc);
     }
@@ -185,19 +186,20 @@ function ensureSubsidioEmpleoOtroPago(mapped, { tipoNomina = 'O', conceptos = []
 /**
  * Nodo nomina12:HorasExtra (obligatorio si TipoPercepcion=019).
  * TipoHoras: 01 dobles, 02 triples, 03 sencillas.
+ * Solo horas ya calculadas. No inventa 1 hora ni las deduce del importe:
+ * el séptimo día y otras percepciones no deben salir como tiempo extra.
+ * @returns {Array|null}
  */
 function buildHorasExtraForPercepcion(c = {}, { importePagado = 0, insumos = {} } = {}) {
-  const code = String(c.conceptoCodigo || c.codigo || '').toUpperCase();
+  const code = String(c.conceptoCodigo || c.codigo || c.codigoMotor || '').toUpperCase();
   const vars = c.variablesUsadas || {};
   const inc = vars.INCIDENCIAS || vars.incidencias || {};
-  const emp = vars.EMPLEADO || vars.empleado || {};
 
   let tipoHoras = '01';
   if (/TRIPLE/.test(code)) tipoHoras = '02';
   else if (/SENCIL/.test(code)) tipoHoras = '03';
-  else if (/DOBLE/.test(code) || /HORAS_EXTRA/.test(code)) tipoHoras = '01';
 
-  let horas = Number(
+  const raw = Number(
     c.horasExtra ??
       c.horas ??
       (tipoHoras === '02'
@@ -207,21 +209,12 @@ function buildHorasExtraForPercepcion(c = {}, { importePagado = 0, insumos = {} 
           : inc.horasExtraDobles ?? insumos.horasExtraDobles) ??
       0
   );
-  if (!(horas > 0) && importePagado > 0) {
-    const horasJornada = Number(emp.horasJornada || emp.atributos?.horasJornada || 8) || 8;
-    const sd = Number(emp.salarioDiario || emp.sueldoDiario || insumos.sueldoDiario || 0);
-    const valorHora = sd > 0 && horasJornada > 0 ? sd / horasJornada : 0;
-    const factor = tipoHoras === '02' ? 3 : tipoHoras === '03' ? 1 : 2;
-    if (valorHora > 0 && factor > 0) {
-      horas = importePagado / (valorHora * factor);
-    }
-  }
   // XSD nómina12: HorasExtra y Dias son xs:int (no decimales).
-  horas = Math.max(1, Math.round(Number(horas) || 0));
+  const horas = Math.round(raw);
+  if (!(horas > 0)) return null;
 
   let dias = Number(c.diasHorasExtra ?? c.dias ?? inc.diasHorasExtra ?? insumos.diasHorasExtra ?? 0);
   if (!(dias > 0)) {
-    // Estimación conservadora: al menos 1 día; tope 3 h dobles/día típico
     dias = Math.max(1, Math.min(7, Math.ceil(horas / 3)));
   }
   dias = Math.max(1, Math.round(dias));
@@ -269,6 +262,20 @@ function totalesDeducciones(deducciones) {
 /**
  * Arma contexto canónico desde recibo / histórico + empresa.
  */
+const UUID_RELACION_RE = /^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/;
+
+/** TipoRelacion 04 = sustitución de los CFDI previos. El UUID es el del comprobante que sigue vigente. */
+function uuidsRelacionadosTipo04(list) {
+  const uuids = [];
+  for (const raw of list || []) {
+    const uuid = String(raw || '').trim().toUpperCase();
+    if (!UUID_RELACION_RE.test(uuid) || uuids.includes(uuid)) continue;
+    uuids.push(uuid);
+  }
+  if (!uuids.length) return null;
+  return { tipoRelacion: '04', uuids };
+}
+
 function buildNomina12Context({
   empresa = {},
   empleado = {},
@@ -279,7 +286,8 @@ function buildNomina12Context({
   separacionIndemnizacion = null,
   serie = '',
   folio = '',
-  fechaEmision = new Date()
+  fechaEmision = new Date(),
+  uuidsRelacionados = []
 } = {}) {
   const emp = empleado || {};
   const dom = emp.domicilio || {};
@@ -387,7 +395,10 @@ function buildNomina12Context({
     );
   }
 
+  const relacionados = uuidsRelacionadosTipo04(uuidsRelacionados);
+
   return {
+    relacionados,
     comprobante: {
       Version: '4.0',
       Serie: String(serie || ''),
@@ -475,12 +486,17 @@ function toCfdiJson(ctx) {
           ImporteExento: moneyStr(p.ImporteExento)
         };
         if (Array.isArray(p.HorasExtra) && p.HorasExtra.length) {
-          row.HorasExtra = p.HorasExtra.map((h) => ({
-            Dias: Math.max(1, Math.round(Number(h.Dias) || 1)),
-            TipoHoras: String(h.TipoHoras || '01').padStart(2, '0').slice(-2),
-            HorasExtra: Math.max(1, Math.round(Number(h.HorasExtra) || 0)),
-            ImportePagado: moneyStr(h.ImportePagado)
-          }));
+          const horasExtra = p.HorasExtra.map((h) => {
+            const horas = Math.round(Number(h.HorasExtra) || 0);
+            if (!(horas > 0)) return null;
+            return {
+              Dias: Math.max(1, Math.round(Number(h.Dias) || 1)),
+              TipoHoras: String(h.TipoHoras || '01').padStart(2, '0').slice(-2),
+              HorasExtra: horas,
+              ImportePagado: moneyStr(h.ImportePagado)
+            };
+          }).filter(Boolean);
+          if (horasExtra.length) row.HorasExtra = horasExtra;
         }
         return row;
       })
@@ -529,15 +545,22 @@ function toCfdiJson(ctx) {
     };
   }
 
-  return {
-    ...ctx.comprobante,
-    Emisor: ctx.emisor,
-    Receptor: ctx.receptor,
-    Conceptos: [ctx.concepto],
-    Complemento: {
-      Any: [{ 'Nomina12:Nomina': nominaNode }]
-    }
+  const json = { ...ctx.comprobante };
+  if (ctx.relacionados) {
+    json.CfdiRelacionados = [
+      {
+        TipoRelacion: '04',
+        CfdiRelacionado: ctx.relacionados.uuids.map((uuid) => ({ UUID: uuid }))
+      }
+    ];
+  }
+  json.Emisor = ctx.emisor;
+  json.Receptor = ctx.receptor;
+  json.Conceptos = [ctx.concepto];
+  json.Complemento = {
+    Any: [{ 'Nomina12:Nomina': nominaNode }]
   };
+  return json;
 }
 
 function attrsXml(obj) {
@@ -559,14 +582,20 @@ function toCfdiXml(ctx, { incluirTfdSimulado = false, uuidSimulado = '' } = {}) 
         ` Concepto="${escXml(p.Concepto)}" ImporteGravado="${moneyStr(p.ImporteGravado)}"` +
         ` ImporteExento="${moneyStr(p.ImporteExento)}"`;
       if (Array.isArray(p.HorasExtra) && p.HorasExtra.length) {
-        const heXml = p.HorasExtra.map(
-          (h) =>
-            `<nomina12:HorasExtra Dias="${Math.max(1, Math.round(Number(h.Dias) || 1))}"` +
-            ` TipoHoras="${escXml(String(h.TipoHoras || '01').padStart(2, '0').slice(-2))}"` +
-            ` HorasExtra="${Math.max(1, Math.round(Number(h.HorasExtra) || 0))}"` +
-            ` ImportePagado="${moneyStr(h.ImportePagado)}"/>`
-        ).join('\n          ');
-        return `${open}>\n          ${heXml}\n        </nomina12:Percepcion>`;
+        const heXml = p.HorasExtra
+          .map((h) => {
+            const horas = Math.round(Number(h.HorasExtra) || 0);
+            if (!(horas > 0)) return '';
+            return (
+              `<nomina12:HorasExtra Dias="${Math.max(1, Math.round(Number(h.Dias) || 1))}"` +
+              ` TipoHoras="${escXml(String(h.TipoHoras || '01').padStart(2, '0').slice(-2))}"` +
+              ` HorasExtra="${horas}"` +
+              ` ImportePagado="${moneyStr(h.ImportePagado)}"/>`
+            );
+          })
+          .filter(Boolean)
+          .join('\n          ');
+        if (heXml) return `${open}>\n          ${heXml}\n        </nomina12:Percepcion>`;
       }
       return `${open}/>`;
     })
@@ -633,6 +662,11 @@ function toCfdiXml(ctx, { incluirTfdSimulado = false, uuidSimulado = '' } = {}) 
       : '';
 
   const nomAttrs = attrsXml(ctx.nomina.attrs);
+  const relacionadosXml = ctx.relacionados
+    ? `  <cfdi:CfdiRelacionados TipoRelacion="04">\n${ctx.relacionados.uuids
+        .map((uuid) => `    <cfdi:CfdiRelacionado UUID="${escXml(uuid)}"/>`)
+        .join('\n')}\n  </cfdi:CfdiRelacionados>\n`
+    : '';
 
   return `<?xml version="1.0" encoding="utf-8"?>
 <cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4"
@@ -641,7 +675,7 @@ function toCfdiXml(ctx, { incluirTfdSimulado = false, uuidSimulado = '' } = {}) 
   xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital"
   xsi:schemaLocation="${SCHEMA_CFDI} ${SCHEMA_NOMINA}"
   ${attrsXml({ ...c, Sello: '', NoCertificado: '', Certificado: '' })}>
-  <cfdi:Emisor ${attrsXml(ctx.emisor)}/>
+${relacionadosXml}  <cfdi:Emisor ${attrsXml(ctx.emisor)}/>
   <cfdi:Receptor ${attrsXml(ctx.receptor)}/>
   <cfdi:Conceptos>
     <cfdi:Concepto ${attrsXml(ctx.concepto)}/>

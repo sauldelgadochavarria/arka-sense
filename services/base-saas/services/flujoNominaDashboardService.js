@@ -12,6 +12,7 @@ const getPayrollPeriodModel = require('../models/payrollPeriod');
 const getIncidenciaModel = require('../models/incidencia');
 const getEmpleadoModel = require('../models/empleado');
 const getTimbradoLoteModel = require('../models/timbradoLote');
+const getDailyAttendanceModel = require('../models/dailyAttendance');
 const { startOfDay, endOfDay } = require('../libs/timeHelpers');
 
 function formatRango(inicio, fin) {
@@ -203,12 +204,72 @@ async function getFlujoNominaActual({
     6: '/nomina/dispersion-bancaria'
   };
 
+  const prenominaVinculada = periodo?.payrollPeriodId
+    ? await PayrollPeriod.findOne({ tenantId, _id: periodo.payrollPeriodId }).lean()
+    : null;
+  const prenomina = prenominaVinculada || prenominaAbierta;
+  const rangoAsistencia = prenomina || periodo;
+  let diasAsistencia = 0;
+  if (rangoAsistencia && empIds.length) {
+    const DailyAttendance = await getDailyAttendanceModel();
+    diasAsistencia = await DailyAttendance.countDocuments({
+      tenantId,
+      empleadoId: { $in: empIds },
+      fecha: {
+        $gte: startOfDay(rangoAsistencia.fechaInicio),
+        $lte: endOfDay(rangoAsistencia.fechaFin)
+      }
+    });
+  }
+
+  const est = String(periodo?.estatus || '').toLowerCase();
+  const prenominaCalc = Boolean(
+    prenomina && ['borrador', 'cerrado'].includes(String(prenomina.estatus || ''))
+  );
+  const asistenciaEnPrenomina = diasAsistencia > 0 || prenominaCalc;
+  const nominaCalculada = est === 'calculado' || est === 'cerrado';
+  const nominaCerrada = est === 'cerrado';
+  const bancoOk = Boolean(
+    periodo &&
+      (periodo.omitirDispersionBancaria ||
+        String(periodo.layoutBancario?.estatus || '') === 'generado')
+  );
+
+  let timbradoOk = false;
+  if (nominaCerrada && periodo) {
+    try {
+      const TimbradoLote = await getTimbradoLoteModel();
+      const lote = await TimbradoLote.findOne({
+        tenantId,
+        periodoId: periodo._id,
+        estatus: { $in: ['completado', 'completado_parcial'] },
+        'totales.timbrados': { $gt: 0 }
+      })
+        .sort({ createdAt: -1 })
+        .select('_id')
+        .lean();
+      timbradoOk = Boolean(lote);
+    } catch {
+      timbradoOk = false;
+    }
+  }
+
+  const completados = [];
+  if (periodo || prenomina) completados.push(1);
+  if (asistenciaEnPrenomina) completados.push(2);
+  if (prenominaCalc) completados.push(3);
+  if (nominaCalculada) completados.push(4);
+  if (nominaCerrada) completados.push(5);
+  if (timbradoOk) completados.push(6);
+  const pasoParcial = nominaCerrada && bancoOk && !timbradoOk ? 6 : 0;
+  const pasoReal = pasoParcial || [1, 2, 3, 4, 5, 6].find((n) => !completados.includes(n)) || 6;
+
   function pack(paso, detalle, extra = {}) {
-    const completados = [];
-    for (let i = 1; i < paso; i += 1) completados.push(i);
+    const mostrado = pasoReal || paso;
     return {
-      pasoActual: paso,
+      pasoActual: mostrado,
       pasosCompletados: completados,
+      pasoParcial,
       periodos,
       periodo: periodo
         ? {
@@ -222,9 +283,9 @@ async function getFlujoNominaActual({
             omitirDispersionBancaria: Boolean(periodo.omitirDispersionBancaria)
           }
         : null,
-      label: LABEL[paso] || 'Pre-nómina',
+      label: LABEL[mostrado] || 'Pre-nómina',
       detalle,
-      href: HREF[paso] || '/prenomina-periodos',
+      href: extra.href || HREF[mostrado] || HREF[paso] || '/prenomina-periodos',
       acciones: extra.acciones || [],
       cicloCompleto: false,
       ...extra
@@ -247,7 +308,6 @@ async function getFlujoNominaActual({
     return pack(3, 'Captura los días y las excepciones del período en la pre-nómina');
   }
 
-  const est = String(periodo.estatus || '').toLowerCase();
   const rango = formatRango(periodo.fechaInicio, periodo.fechaFin);
   const num = periodo.numeroPeriodo != null ? `#${periodo.numeroPeriodo}` : '';
   const pid = String(periodo._id);
@@ -320,11 +380,6 @@ async function getFlujoNominaActual({
     });
   }
 
-  // cerrado → dispersión → timbrado
-  const omitirBanco = Boolean(periodo.omitirDispersionBancaria);
-  const bancoOk =
-    omitirBanco || String(periodo.layoutBancario?.estatus || '') === 'generado';
-
   if (!bancoOk) {
     return pack(6, `Período cerrado ${num} ${rango} · genera archivo bancario (o marca omisión)`, {
       acciones: [
@@ -338,22 +393,6 @@ async function getFlujoNominaActual({
         }
       ]
     });
-  }
-
-  let timbradoOk = false;
-  try {
-    const TimbradoLote = await getTimbradoLoteModel();
-    const lote = await TimbradoLote.findOne({
-      tenantId,
-      periodoId: periodo._id,
-      estatus: { $in: ['completado', 'completado_parcial'] },
-      'totales.timbrados': { $gt: 0 }
-    })
-      .sort({ createdAt: -1 })
-      .lean();
-    timbradoOk = Boolean(lote);
-  } catch {
-    timbradoOk = false;
   }
 
   if (!timbradoOk) {

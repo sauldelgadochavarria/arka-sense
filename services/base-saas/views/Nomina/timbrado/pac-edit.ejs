@@ -72,8 +72,14 @@
       Ref. <a href="https://developers.sw.com.mx/knowledge-base/nomina-1-2/" target="_blank" rel="noopener">Nómina 1.2 SW</a>.
     </p>
     <label>URL Cancelación
-      <input name="urlCancelacion" value="<%= P.urlCancelacion || '' %>" style="min-width:28rem" />
+      <input name="urlCancelacion" value="<%= P.urlCancelacion || '' %>" style="min-width:28rem" placeholder="…/cfdi33/cancel" />
     </label>
+    <p class="muted small" style="grid-column:1/-1">
+      SW cancela por UUID (CSD ya cargado en la cuenta): <code>POST …/cfdi33/cancel/{rfc}/{uuid}/{motivo}</code>, sin cuerpo.
+      La nómina no requiere aceptación. Si la URL termina en <code>/csd</code>, <code>/pfx</code> o <code>/xml</code>, se usa igual la cancelación por UUID.
+      Otro PAC recibe JSON <code>{ rfc, uuid, motivo }</code> en su URL.
+      <a href="https://developers.sw.com.mx/knowledge-base/cancelacion-cfdi/" target="_blank" rel="noopener">Cancelación SW</a>.
+    </p>
     <label>URL Consulta
       <input name="urlConsulta" value="<%= P.urlConsulta || '' %>" style="min-width:28rem" />
     </label>

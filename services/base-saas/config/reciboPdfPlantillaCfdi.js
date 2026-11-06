@@ -19,8 +19,15 @@ const PLANTILLA_PDF_CFDI = `<!DOCTYPE html>
   .val { font-weight: bold; }
   .num { text-align: right; white-space: nowrap; }
   .tiny { font-size: 7px; }
-  .row2 { display: flex; gap: 0; }
-  .row2 > div { flex: 1; }
+  .row2 { display: flex; gap: 6px; align-items: flex-start; }
+  .row2 > div { flex: 1 1 0; min-width: 0; }
+  table.movs { table-layout: fixed; width: 100%; }
+  table.movs th.desc, table.movs td.desc {
+    width: 42%;
+    white-space: normal;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
   .kv td { padding: 1px 4px; vertical-align: top; }
   .grid6 { display: grid; grid-template-columns: repeat(6, 1fr); }
   .grid6 div, .grid4 div { border: 1px solid #111; border-top: 0; padding: 2px 4px; }
@@ -148,16 +155,16 @@ const PLANTILLA_PDF_CFDI = `<!DOCTYPE html>
 
   <div class="row2" style="margin-top:4px">
     <div>
-      <table>
+      <table class="movs">
         <thead>
           <tr><th colspan="6" class="hdr">PERCEPCIONES</th></tr>
-          <tr><th>SAT</th><th>DESCRIPCIÓN</th><th>GRAVADO</th><th>EXENTO</th><th>IMPORTE</th><th>SALDO/ACUM</th></tr>
+          <tr><th>SAT</th><th class="desc">DESCRIPCIÓN</th><th>GRAVADO</th><th>EXENTO</th><th>IMPORTE</th><th>SALDO/ACUM</th></tr>
         </thead>
         <tbody>
 {{#percepciones}}
           <tr>
             <td>{{sat}}</td>
-            <td>{{nombre}}</td>
+            <td class="desc">{{descripcion}}</td>
             <td class="num">{{gravado}}</td>
             <td class="num">{{exento}}</td>
             <td class="num">{{importe}}</td>
@@ -173,16 +180,16 @@ const PLANTILLA_PDF_CFDI = `<!DOCTYPE html>
       </table>
     </div>
     <div>
-      <table>
+      <table class="movs">
         <thead>
           <tr><th colspan="4" class="hdr">DEDUCCIONES</th></tr>
-          <tr><th>SAT</th><th>DESCRIPCIÓN</th><th>IMPORTE</th><th>SALDO/ACUM</th></tr>
+          <tr><th>SAT</th><th class="desc">DESCRIPCIÓN</th><th>IMPORTE</th><th>SALDO/ACUM</th></tr>
         </thead>
         <tbody>
 {{#deducciones}}
           <tr>
             <td>{{sat}}</td>
-            <td>{{nombre}}</td>
+            <td class="desc">{{descripcion}}</td>
             <td class="num">{{importe}}</td>
             <td class="num">{{acumulado}}</td>
           </tr>
@@ -204,7 +211,7 @@ const PLANTILLA_PDF_CFDI = `<!DOCTYPE html>
     </thead>
     <tbody>
 {{#otrosPagos}}
-      <tr><td>{{sat}}</td><td>{{codigo}}</td><td>{{nombre}}</td><td class="num">{{importe}}</td></tr>
+      <tr><td>{{sat}}</td><td>{{codigo}}</td><td class="desc">{{descripcion}}</td><td class="num">{{importe}}</td></tr>
 {{/otrosPagos}}
       <tr>
         <td colspan="2"><span class="lab">SUBSIDIO AL EMPLEO</span> {{recibo.subsidioEmpleo}}</td>

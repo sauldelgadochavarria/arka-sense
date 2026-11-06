@@ -12,6 +12,7 @@
 <%
   const pasoActual = flujo && flujo.pasoActual ? Number(flujo.pasoActual) : 0;
   const pasosDone = new Set((flujo && flujo.pasosCompletados) || []);
+  const pasoParcial = flujo && flujo.pasoParcial ? Number(flujo.pasoParcial) : 0;
   const cicloCompleto = !!(flujo && flujo.cicloCompleto);
   const periodosOpts = (flujo && flujo.periodos) || [];
   const periodoSel = flujo && flujo.periodo ? flujo.periodo.id : '';
@@ -168,10 +169,12 @@
     <% flujoPasos.filter(function(p) { return p.visible !== false; }).forEach(function(paso, idx) {
       const locked = pasoLocked(paso);
       const isCurrent = !locked && pasoActual === paso.n;
-      const isDone = !locked && (pasosDone.has(paso.n) || (cicloCompleto && paso.n <= 6));
+      const isPartial = !locked && pasoParcial === paso.n && !cicloCompleto;
+      const isDone = !locked && !isPartial && (pasosDone.has(paso.n) || (cicloCompleto && paso.n <= 6));
       let cls = 'flow-step';
       if (locked) cls += ' is-locked';
-      if (isCurrent && !cicloCompleto) cls += ' is-current';
+      if (isPartial) cls += ' is-partial';
+      else if (isCurrent && !cicloCompleto) cls += ' is-current';
       if (isDone && !isCurrent) cls += ' is-done';
       if (cicloCompleto && isCurrent) cls += ' is-done is-current';
       const lockMsg = 'Activa el módulo Nómina';
@@ -179,10 +182,11 @@
     <li class="<%= cls %>">
       <% if (idx > 0) { %><span class="flow-arrow" aria-hidden="true">→</span><% } %>
       <a class="flow-card" href="<%= locked ? '#' : paso.href %>"<%= locked ? ' aria-disabled="true" tabindex="-1"' : '' %>>
-        <span class="flow-num"><% if (isDone && !(isCurrent && !cicloCompleto)) { %>✓<% } else { %><%= paso.n %><% } %></span>
+        <span class="flow-num"><% if (isDone && !isPartial && !(isCurrent && !cicloCompleto)) { %>✓<% } else { %><%= paso.n %><% } %></span>
         <span class="flow-title"><%= paso.titulo %></span>
         <span class="flow-desc"><%= paso.desc %></span>
-        <% if (isCurrent && !cicloCompleto) { %><span class="flow-badge">Ahora</span><% } %>
+        <% if (isPartial) { %><span class="flow-badge is-parcial">Archivo bancario</span><% } %>
+        <% if (isCurrent && !isPartial && !cicloCompleto) { %><span class="flow-badge">Ahora</span><% } %>
         <% if (!locked && paso.links && paso.links.length) { %>
         <span class="flow-links">
           <% paso.links.forEach(function(l) {

@@ -1,5 +1,22 @@
 <%- include('../../Partials/layout-top', { title: 'Lote de timbrado', session }) %>
-<% const L = lote || {}; const T = L.totales || {}; const F = filtros || { departamentos: [], entidades: [] }; %>
+<%
+  const L = lote || {};
+  const T = L.totales || {};
+  const F = filtros || { departamentos: [], entidades: [] };
+  const P = typeof periodo !== 'undefined' ? periodo : null;
+  function fmtDia(d) {
+    return d ? new Date(d).toLocaleDateString('es-MX') : '';
+  }
+  const periodoEtiqueta = P
+    ? [
+        [P.tipoPeriodo, P.numeroPeriodo != null ? ('#' + P.numeroPeriodo) : ''].filter(Boolean).join(' '),
+        P.anio || '',
+        P.tipoNomina || '',
+        [fmtDia(P.fechaInicio), fmtDia(P.fechaFin)].filter(Boolean).join(' – '),
+        P.estatus || ''
+      ].filter(Boolean).join(' · ')
+    : '';
+%>
 <div class="page-header">
   <h1>Lote de timbrado</h1>
   <p class="page-subtitle">Estatus: <strong><%= L.estatus %></strong> · Modo: <%= L.modo %> · Serie: <%= L.serie || '—' %></p>
@@ -8,18 +25,86 @@
   <a class="btn" href="/nomina/timbrado">← Timbrado</a>
 </div>
 
+<% if (P) { %>
+<div class="report-summary">
+  <p>
+    <strong>Período</strong>
+    <%= periodoEtiqueta %>
+    <% if (subsidiariaNombre) { %> · <%= subsidiariaNombre %><% } %>
+    <% if (P.fechaPago) { %> · Pago <%= fmtDia(P.fechaPago) %><% } %>
+  </p>
+  <p class="muted small" style="margin:0"><a href="/nomina/periodos/<%= P._id %>">Abrir el período</a></p>
+</div>
+<% } %>
+
 <div class="report-summary">
   <p>
     Recibos: <%= T.recibos || 0 %>
     · Timbrados: <%= T.timbrados || 0 %>
     · Errores: <%= T.errores || 0 %>
     · Omitidos: <%= T.omitidos || 0 %>
+    · Cancelados: <%= T.cancelados || 0 %>
     · Neto: $<%= Number(T.neto || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 }) %>
   </p>
   <% if (L.errorMensaje) { %><p class="alert"><%= L.errorMensaje %></p><% } %>
 </div>
 
-<form id="form-descarga-masiva" method="post" action="/nomina/timbrado/lotes/<%= L._id %>/descargar-masivo" class="filter-form form-grid" style="margin-bottom:1rem">
+<%
+  const S = typeof sustitucion !== 'undefined' && sustitucion ? sustitucion : { origenes: [], pendientesAqui: [] };
+  const origenesCancelar = S.origenes || [];
+  const pendientesAqui = S.pendientesAqui || [];
+%>
+<% if (origenesCancelar.length) { %>
+<div class="alert alert-warning">
+  <p style="margin:0 0 0.5rem"><strong>Motivo 01, paso 2.</strong> Este lote es el CFDI nuevo. No se cancela aquí. El que se cancela es el lote original del mismo período, con motivo 01 y el UUID de cada recibo nuevo.</p>
+  <% origenesCancelar.forEach(function (o) { %>
+  <p style="margin:0.5rem 0">
+    Período <strong><%= periodoEtiqueta || '—' %></strong>
+    <% if (subsidiariaNombre) { %> · <%= subsidiariaNombre %><% } %>
+    · lote original <%= o.serie || 'sin serie' %><% if (o.createdAt) { %> del <%= new Date(o.createdAt).toLocaleString('es-MX') %><% } %>
+    · <%= o.filas.length %> CFDI por cancelar
+  </p>
+  <ul style="margin:0.25rem 0 0.75rem">
+    <% o.filas.forEach(function (f) { %>
+    <li><%= f.numEmpleado %> <%= f.nombre %>: cancela <code><%= f.uuidOriginal %></code> con el nuevo <code><%= f.uuidNuevo %></code></li>
+    <% }); %>
+  </ul>
+  <p style="margin:0"><a class="btn btn-primary" href="/nomina/timbrado/lotes/<%= o._id %>?cancelar=01">Cancelar ese lote con motivo 01</a></p>
+  <% }); %>
+</div>
+<% } %>
+<% if (pendientesAqui.length) { %>
+<div class="alert alert-warning" id="aviso-motivo-01">
+  <p style="margin:0 0 0.5rem"><strong>Este es el lote que se cancela.</strong> Período <strong><%= periodoEtiqueta || '—' %></strong><% if (subsidiariaNombre) { %> · <%= subsidiariaNombre %><% } %>. El CFDI nuevo ya existe. Cancela aquí con motivo 01; cada recibo usa su propio UUID nuevo.</p>
+  <ul style="margin:0.25rem 0 0.75rem">
+    <% pendientesAqui.forEach(function (f) { %>
+    <li><%= f.numEmpleado %> <%= f.nombre %>: original <code><%= f.uuidOriginal %></code> → nuevo <code><%= f.uuidNuevo %></code></li>
+    <% }); %>
+  </ul>
+  <p style="margin:0"><button type="button" class="btn btn-primary" id="btn-abrir-motivo-01">Cancelar estos con motivo 01</button></p>
+  <p id="estado-cancelacion" class="alert" hidden style="margin:0.75rem 0 0"></p>
+</div>
+<% } %>
+
+<style>
+  .lote-acciones { margin: 1rem 0; }
+  .lote-acciones h2 { margin: 0 0 0.5rem; font-size: 1.05rem; }
+  .lote-modo { margin: 0.75rem 0 0; }
+  #lote-vista.cancelacion-abierta #panel-descarga { display: none; }
+  #lote-vista.cancelacion-abierta .lote-acciones .filter-form,
+  #lote-vista.cancelacion-abierta .lote-acciones .form-grid { max-width: none; }
+  .col-cancelar { display: none; }
+  #lote-vista.cancelacion-abierta .col-cancelar { display: table-cell; }
+  #lote-vista.cancelacion-abierta .col-descarga { display: none; }
+</style>
+<div id="lote-vista">
+<div class="lote-modo">
+  <button type="button" class="btn" id="btn-mostrar-cancelacion">Cancelar CFDI</button>
+</div>
+<div class="lote-acciones">
+<div id="panel-descarga">
+<h2>Descarga</h2>
+<form id="form-descarga-masiva" method="post" action="/nomina/timbrado/lotes/<%= L._id %>/descargar-masivo" class="filter-form form-grid" style="margin-bottom:0">
   <label>Buscar empleado
     <input type="search" id="filtro-empleado" placeholder="No. o nombre" autocomplete="off" />
   </label>
@@ -50,14 +135,64 @@
     <button type="button" class="btn" id="btn-limpiar-sel">Limpiar</button>
     <button type="submit" class="btn btn-primary" id="btn-descargar">Descargar ZIP</button>
   </div>
-  <p class="muted small" style="grid-column:1/-1;margin:0" id="sel-count">0 seleccionados</p>
+  <p class="muted small" style="grid-column:1/-1;margin:0" id="sel-count-dl">0 para descargar</p>
 </form>
+</div>
+<div id="panel-cancelacion" hidden>
+<h2>Cancelación</h2>
+<form id="form-sustituir" method="post" action="/nomina/timbrado/lotes/<%= L._id %>/sustituir" class="filter-form form-grid" style="margin-bottom:0.75rem" data-modo="<%= L.modo || '' %>" data-periodo="<%= periodoEtiqueta %>">
+  <p style="grid-column:1/-1;margin:0">
+    <strong>Motivo 01, paso 1.</strong>
+    Emite el CFDI nuevo y correcto. Lleva CFDI relacionado tipo 04 con el UUID del original, que sigue vigente.
+    <% if (periodoEtiqueta) { %>Período <strong><%= periodoEtiqueta %></strong><% if (subsidiariaNombre) { %> de <strong><%= subsidiariaNombre %></strong><% } %>.<% } %>
+  </p>
+  <div style="align-self:end">
+    <button type="submit" class="btn">Emitir CFDI de sustitución</button>
+  </div>
+  <p class="muted small" style="grid-column:1/-1;margin:0">
+    Después, en este mismo lote, cancela el original con motivo 01 y el UUID del recibo nuevo.
+    El motivo 02 no usa este botón: se cancela primero y el siguiente timbrado no lleva relación.
+  </p>
+</form>
+
+<form id="form-cancelar" method="post" action="/nomina/timbrado/lotes/<%= L._id %>/cancelar" class="filter-form form-grid" style="margin-bottom:0" data-modo="<%= L.modo || '' %>" data-periodo="<%= periodoEtiqueta %>">
+  <% if (periodoEtiqueta) { %>
+  <p style="grid-column:1/-1;margin:0">
+    Se cancelan CFDI del período <strong><%= periodoEtiqueta %></strong><% if (subsidiariaNombre) { %> de <strong><%= subsidiariaNombre %></strong><% } %>.
+  </p>
+  <% } %>
+  <label>Motivo SAT
+    <select name="motivo" id="motivo-cancelacion">
+      <% (motivosCancelacion || []).forEach(function(m) { %>
+      <option value="<%= m.value %>" <%= m.value === '02' ? 'selected' : '' %>><%= m.label %></option>
+      <% }); %>
+    </select>
+  </label>
+  <label id="folio-sustitucion-wrap" hidden>UUID que sustituye
+    <input name="folioSustitucion" id="folio-sustitucion" placeholder="UUID del CFDI nuevo" autocomplete="off" />
+  </label>
+  <div style="align-self:end;display:flex;gap:0.5rem;flex-wrap:wrap">
+    <button type="button" class="btn" id="btn-sel-cancel">Seleccionar vigentes</button>
+    <button type="button" class="btn" id="btn-limpiar-cancel">Limpiar</button>
+    <button type="submit" class="btn btn-primary" id="btn-enviar-cancelacion">Cancelar seleccionados</button>
+  </div>
+  <p class="muted small" style="grid-column:1/-1;margin:0" id="sel-count-cancel">0 para cancelar o sustituir</p>
+  <p class="muted small" style="grid-column:1/-1;margin:0">
+    La nómina se cancela directo ante el SAT: el trabajador no tiene que aceptar.
+    El lote conserva UUID, motivo, acuse y XML.
+    Motivo 02 o 03: cancela y luego timbra otro recibo, sin relación.
+    Motivo 01: el CFDI nuevo ya debe existir con relación 04. Aquí se cancela el original y se indica el UUID nuevo.
+  </p>
+</form>
+</div>
+</div>
 
 <div class="table-scroll">
 <table class="data-table" id="tabla-lote">
   <thead>
     <tr>
-      <th><input type="checkbox" id="check-all" title="Seleccionar todos los visibles" /></th>
+      <th class="col-descarga"><input type="checkbox" id="check-all-dl" title="Seleccionar visibles con archivo" /><br><span class="muted small">Descarga</span></th>
+      <th class="col-cancelar"><input type="checkbox" id="check-all-cancel" title="Seleccionar vigentes visibles" /><br><span class="muted small">Cancelar</span></th>
       <th>Empleado</th>
       <th>Nombre</th>
       <th>Departamento</th>
@@ -76,6 +211,7 @@
       const hasXml = !!it.archivoXmlId;
       const hasPdf = !!it.archivoPdfId;
       const canDl = hasXml || hasPdf;
+      const canCancel = it.estatus === 'timbrado' && !!it.uuid;
     %>
     <tr
       data-depto="<%= it.departamentoKey || it.departamentoNombre || it.departamentoId || '' %>"
@@ -85,9 +221,16 @@
       data-has-pdf="<%= hasPdf ? '1' : '0' %>"
       class="lote-row"
     >
-      <td>
+      <td class="col-descarga">
         <% if (canDl) { %>
-        <input type="checkbox" class="row-check" name="itemIds" value="<%= it._id %>" form="form-descarga-masiva" />
+        <input type="checkbox" class="row-check-dl" name="itemIds" value="<%= it._id %>" form="form-descarga-masiva" />
+        <% } else { %>
+        <span class="muted">—</span>
+        <% } %>
+      </td>
+      <td class="col-cancelar">
+        <% if (canCancel) { %>
+        <input type="checkbox" class="row-check-cancel" value="<%= it._id %>" data-uuid-sustituto="<%= it.uuidSustituto || '' %>" />
         <% } else { %>
         <span class="muted">—</span>
         <% } %>
@@ -97,7 +240,15 @@
       <td><%= it.departamentoNombre || '—' %></td>
       <td><%= it.entidadLabel || it.entidadFederativa || '—' %></td>
       <td class="num">$<%= Number(it.netoPagar || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></td>
-      <td><%= it.estatus %><% if (it.estatus === 'omitido' && it.errorMensaje) { %><br /><span class="muted small"><%= it.errorMensaje %></span><% } %></td>
+      <td>
+        <%= it.estatus %>
+        <% if (it.estatus === 'cancelado') { %>
+        <br /><span class="muted small">Motivo <%= it.motivoCancelacion || '—' %><% if (it.codigoCancelacion) { %> · SAT <%= it.codigoCancelacion %><% } %><% if (it.fechaCancelacion) { %> · <%= new Date(it.fechaCancelacion).toLocaleString('es-MX') %><% } %></span>
+        <% } %>
+        <% if (it.estatus === 'omitido' && it.errorMensaje) { %><br /><span class="muted small"><%= it.errorMensaje %></span><% } %>
+        <% if (it.uuidSustituye) { %><br /><span class="muted small">Relación 04 · sustituye <%= it.uuidSustituye %></span><% } %>
+        <% if (it.uuidSustituto) { %><br /><span class="muted small">CFDI nuevo <%= it.uuidSustituto %> · cancela este con motivo 01</span><% } %>
+      </td>
       <td><code class="small"><%= it.uuid || '—' %></code></td>
       <td><%= (it.serie || '') + (it.folio ? ('-' + it.folio) : '') %></td>
       <td class="muted"><%= it.estatus !== 'omitido' ? (it.errorMensaje || '') : '' %></td>
@@ -124,6 +275,7 @@
   </tbody>
 </table>
 </div>
+</div>
 <p class="muted small">
   XML y PDF/HTML se guardan en Mongo (<code>nomina_cfdi_archivos</code>), fuera del histórico.
   El “PDF” actual es HTML de la plantilla (imprimir → Guardar como PDF); binario nativo pendiente.
@@ -135,13 +287,29 @@
   var filtroDepto = document.getElementById('filtro-depto');
   var filtroEntidad = document.getElementById('filtro-entidad');
   var filtroEmp = document.getElementById('filtro-empleado');
-  var checkAll = document.getElementById('check-all');
-  var selCount = document.getElementById('sel-count');
+  var checkAllDl = document.getElementById('check-all-dl');
+  var checkAllCancel = document.getElementById('check-all-cancel');
+  var selCountDl = document.getElementById('sel-count-dl');
+  var selCountCancel = document.getElementById('sel-count-cancel');
   var form = document.getElementById('form-descarga-masiva');
   var rows = Array.prototype.slice.call(document.querySelectorAll('#tabla-lote tbody tr.lote-row'));
 
   function visibleRows() {
     return rows.filter(function (tr) { return tr.style.display !== 'none'; });
+  }
+
+  function boxes(selector, onlyVisible) {
+    var list = onlyVisible ? visibleRows() : rows;
+    var found = [];
+    list.forEach(function (tr) {
+      var cb = tr.querySelector(selector);
+      if (cb) found.push(cb);
+    });
+    return found;
+  }
+
+  function setChecked(list, checked) {
+    list.forEach(function (cb) { cb.checked = checked; });
   }
 
   function applyFilters() {
@@ -156,59 +324,211 @@
       var show = okDepto && okEnt && okEmp;
       tr.style.display = show ? '' : 'none';
       if (!show) {
-        var cb = tr.querySelector('.row-check');
-        if (cb) cb.checked = false;
+        tr.querySelectorAll('.row-check-dl, .row-check-cancel').forEach(function (cb) { cb.checked = false; });
       }
     });
-    if (checkAll) checkAll.checked = false;
+    if (checkAllDl) checkAllDl.checked = false;
+    if (checkAllCancel) checkAllCancel.checked = false;
     updateCount();
   }
 
   function updateCount() {
-    var n = document.querySelectorAll('.row-check:checked').length;
-    if (selCount) selCount.textContent = n + ' seleccionado' + (n === 1 ? '' : 's');
+    var nDl = document.querySelectorAll('.row-check-dl:checked').length;
+    var nCancel = document.querySelectorAll('.row-check-cancel:checked').length;
+    if (selCountDl) selCountDl.textContent = nDl + ' para descargar';
+    if (selCountCancel) selCountCancel.textContent = nCancel + ' para cancelar o sustituir';
   }
 
   if (filtroDepto) filtroDepto.addEventListener('change', applyFilters);
   if (filtroEntidad) filtroEntidad.addEventListener('change', applyFilters);
   if (filtroEmp) filtroEmp.addEventListener('input', applyFilters);
 
-  if (checkAll) {
-    checkAll.addEventListener('change', function () {
-      visibleRows().forEach(function (tr) {
-        var cb = tr.querySelector('.row-check');
-        if (cb) cb.checked = checkAll.checked;
-      });
+  if (checkAllDl) {
+    checkAllDl.addEventListener('change', function () {
+      setChecked(boxes('.row-check-dl', true), checkAllDl.checked);
+      updateCount();
+    });
+  }
+  if (checkAllCancel) {
+    checkAllCancel.addEventListener('change', function () {
+      setChecked(boxes('.row-check-cancel', true), checkAllCancel.checked);
       updateCount();
     });
   }
 
   document.getElementById('btn-sel-visibles')?.addEventListener('click', function () {
-    visibleRows().forEach(function (tr) {
-      var cb = tr.querySelector('.row-check');
-      if (cb) cb.checked = true;
+    setChecked(boxes('.row-check-dl', true), true);
+    updateCount();
+  });
+  document.getElementById('btn-limpiar-sel')?.addEventListener('click', function () {
+    setChecked(boxes('.row-check-dl', false), false);
+    if (checkAllDl) checkAllDl.checked = false;
+    updateCount();
+  });
+  var vista = document.getElementById('lote-vista');
+  var panelCancel = document.getElementById('panel-cancelacion');
+  var btnMostrarCancel = document.getElementById('btn-mostrar-cancelacion');
+  function setCancelacionAbierta(abierta) {
+    if (vista) vista.classList.toggle('cancelacion-abierta', abierta);
+    if (panelCancel) panelCancel.hidden = !abierta;
+    if (btnMostrarCancel) btnMostrarCancel.textContent = abierta ? 'Volver a descarga' : 'Cancelar CFDI';
+    if (abierta) {
+      setChecked(boxes('.row-check-dl', false), false);
+      if (checkAllDl) checkAllDl.checked = false;
+    } else {
+      setChecked(boxes('.row-check-cancel', false), false);
+      if (checkAllCancel) checkAllCancel.checked = false;
+    }
+    updateCount();
+  }
+  function abrirMotivo01() {
+    setCancelacionAbierta(true);
+    if (motivoSel) {
+      motivoSel.value = '01';
+      if (typeof syncFolio === 'function') syncFolio();
+    }
+    setChecked(boxes('.row-check-cancel', false), false);
+    boxes('.row-check-cancel', false).forEach(function (cb) {
+      if (/^[0-9a-f-]{36}$/i.test(String(cb.getAttribute('data-uuid-sustituto') || '').trim())) cb.checked = true;
     });
     updateCount();
-  });
+    var aviso = document.getElementById('aviso-motivo-01');
+    if (aviso && aviso.scrollIntoView) aviso.scrollIntoView({ block: 'nearest' });
+  }
+  if (btnMostrarCancel) {
+    btnMostrarCancel.addEventListener('click', function () {
+      setCancelacionAbierta(!(vista && vista.classList.contains('cancelacion-abierta')));
+    });
+  }
+  var btnMotivo01 = document.getElementById('btn-abrir-motivo-01');
 
-  document.getElementById('btn-limpiar-sel')?.addEventListener('click', function () {
-    document.querySelectorAll('.row-check').forEach(function (cb) { cb.checked = false; });
-    if (checkAll) checkAll.checked = false;
+  document.getElementById('btn-sel-cancel')?.addEventListener('click', function () {
+    setChecked(boxes('.row-check-cancel', true), true);
+    updateCount();
+  });
+  document.getElementById('btn-limpiar-cancel')?.addEventListener('click', function () {
+    setChecked(boxes('.row-check-cancel', false), false);
+    if (checkAllCancel) checkAllCancel.checked = false;
     updateCount();
   });
 
-  document.querySelectorAll('.row-check').forEach(function (cb) {
+  document.querySelectorAll('.row-check-dl, .row-check-cancel').forEach(function (cb) {
     cb.addEventListener('change', updateCount);
   });
 
+  function pickedCancel() {
+    return Array.prototype.filter.call(document.querySelectorAll('.row-check-cancel:checked'), function (cb) {
+      return true;
+    });
+  }
+
+  function copyIds(formEl, picked, flag) {
+    picked.forEach(function (cb) {
+      var hidden = document.createElement('input');
+      hidden.type = 'hidden';
+      hidden.name = 'itemIds';
+      hidden.value = cb.value;
+      hidden.setAttribute(flag, '1');
+      formEl.appendChild(hidden);
+    });
+  }
+
+  var motivoSel = document.getElementById('motivo-cancelacion');
+  var folioWrap = document.getElementById('folio-sustitucion-wrap');
+  var formCancel = document.getElementById('form-cancelar');
+  function syncFolio() {
+    if (!motivoSel || !folioWrap) return;
+    folioWrap.hidden = motivoSel.value !== '01';
+  }
+  if (motivoSel) motivoSel.addEventListener('change', syncFolio);
+  syncFolio();
+
+  if (formCancel) {
+    formCancel.addEventListener('submit', function (ev) {
+      formCancel.querySelectorAll('input[data-cancel-copy]').forEach(function (el) { el.remove(); });
+      var picked = pickedCancel();
+      if (!picked.length) {
+        ev.preventDefault();
+        alert('En la columna Cancelar, marca los CFDI vigentes.');
+        return;
+      }
+      if (motivoSel && motivoSel.value === '01') {
+        var folio = document.getElementById('folio-sustitucion');
+        var sust = picked.map(function (cb) { return String(cb.getAttribute('data-uuid-sustituto') || '').trim(); });
+        var todosPropios = sust.length === picked.length && sust.every(function (s) { return /^[0-9a-f-]{36}$/i.test(s); });
+        var comun = todosPropios && sust.every(function (s) { return s.toUpperCase() === sust[0].toUpperCase(); }) ? sust[0] : '';
+        if (folio && !String(folio.value || '').trim() && comun) folio.value = comun;
+        if (!todosPropios && (!folio || !/^[0-9a-f-]{36}$/i.test(String(folio.value || '').trim()))) {
+          ev.preventDefault();
+          alert('El motivo 01 necesita el UUID del CFDI nuevo de cada recibo.');
+          return;
+        }
+      }
+      var sim = formCancel.getAttribute('data-modo') === 'simulacion';
+      var per = formCancel.getAttribute('data-periodo') || '';
+      var dePeriodo = per ? (' del período ' + per) : '';
+      var propios = motivoSel && motivoSel.value === '01' && picked.every(function (cb) {
+        return /^[0-9a-f-]{36}$/i.test(String(cb.getAttribute('data-uuid-sustituto') || '').trim());
+      });
+      var aviso = sim
+        ? 'Este lote es simulación. Se marcarán ' + picked.length + ' CFDI' + dePeriodo + ' como cancelados, sin enviar nada al SAT.'
+        : (propios
+          ? 'Se enviará al SAT la cancelación de ' + picked.length + ' CFDI' + dePeriodo + ' con motivo 01. Cada uno usa su UUID nuevo. Esta página mostrará el resultado al terminar.'
+          : 'Se enviará al SAT la cancelación de ' + picked.length + ' CFDI' + dePeriodo + '. La nómina no pide aceptación del trabajador. Esta página mostrará el resultado al terminar.');
+      if (!window.confirm(aviso)) {
+        ev.preventDefault();
+        return;
+      }
+      var estado = document.getElementById('estado-cancelacion');
+      if (estado) {
+        estado.hidden = false;
+        estado.textContent = 'Cancelando ante el SAT. No cierres esta página. El resultado aparece aquí al terminar.';
+      }
+      if (btnMotivo01) {
+        btnMotivo01.disabled = true;
+        btnMotivo01.textContent = 'Cancelando ante el SAT…';
+      }
+      var btnEnviar = document.getElementById('btn-enviar-cancelacion');
+      if (btnEnviar) {
+        btnEnviar.disabled = true;
+        btnEnviar.textContent = 'Cancelando ante el SAT…';
+      }
+      copyIds(formCancel, picked, 'data-cancel-copy');
+    });
+  }
+
+  var formSustituir = document.getElementById('form-sustituir');
+  if (formSustituir) {
+    formSustituir.addEventListener('submit', function (ev) {
+      formSustituir.querySelectorAll('input[data-sust-copy]').forEach(function (el) { el.remove(); });
+      var picked = pickedCancel();
+      if (!picked.length) {
+        ev.preventDefault();
+        alert('En la columna Cancelar, marca los CFDI vigentes. El original sigue vigente hasta que lo canceles.');
+        return;
+      }
+      var sim = formSustituir.getAttribute('data-modo') === 'simulacion';
+      var per = formSustituir.getAttribute('data-periodo') || '';
+      var dePeriodo = per ? (' del período ' + per) : '';
+      var aviso = sim
+        ? 'Simulación: se emitirán ' + picked.length + ' CFDI nuevos' + dePeriodo + ' con relación 04, sin enviarlos al SAT. El original no se cancela.'
+        : 'Se emitirán ' + picked.length + ' CFDI nuevos' + dePeriodo + ' con relación 04 hacia el UUID original. El original no se cancela en este paso.';
+      if (!window.confirm(aviso)) {
+        ev.preventDefault();
+        return;
+      }
+      copyIds(formSustituir, picked, 'data-sust-copy');
+    });
+  }
+
   if (form) {
     form.addEventListener('submit', function (ev) {
-      var n = document.querySelectorAll('.row-check:checked').length;
+      var n = document.querySelectorAll('.row-check-dl:checked').length;
       var xml = document.getElementById('incluir-xml')?.checked;
       var pdf = document.getElementById('incluir-pdf')?.checked;
       if (!n) {
         ev.preventDefault();
-        alert('Selecciona al menos un recibo con archivos.');
+        alert('En la columna Descarga, marca al menos un recibo con archivos.');
         return;
       }
       if (!xml && !pdf) {
@@ -218,6 +538,21 @@
     });
   }
 
+  if (btnMotivo01 && formCancel) {
+    btnMotivo01.addEventListener('click', function () {
+      abrirMotivo01();
+      var n = document.querySelectorAll('.row-check-cancel:checked').length;
+      if (!n) {
+        alert('No hay CFDI vigentes con UUID nuevo para cancelar con motivo 01.');
+        return;
+      }
+      formCancel.requestSubmit();
+    });
+  }
+
+  if (new URLSearchParams(window.location.search).get('cancelar') === '01') {
+    abrirMotivo01();
+  }
   updateCount();
 })();
 </script>

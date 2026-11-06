@@ -233,6 +233,7 @@ function clasificarConcepto(c, meta = {}) {
 }
 
 function claveSatDe(c, meta = {}) {
+  if (meta.claveSatForzada && meta.claveSAT) return String(meta.claveSAT);
   return (
     c.claveSAT ||
     c.satClave ||
@@ -289,12 +290,14 @@ function buildReciboPdfContext({
     const importe = money(c.importe);
     if (!code) continue;
     const meta = metaOf(code);
-    const nombre = catalogoNombres[code] || meta.nombre || c.nombre || code;
+    const nombre = catalogoNombres[code] || meta.nombre || c.nombre || c.descripcion || code;
     const sat = claveSatDe(c, meta);
     const kind = clasificarConcepto(c, meta);
+    const descripcion = nombre;
     const row = {
       codigo: code,
       nombre,
+      descripcion,
       tipo: c.tipo || meta.tipo || '',
       sat,
       importe,

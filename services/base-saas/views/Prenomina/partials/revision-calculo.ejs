@@ -100,6 +100,21 @@
       const retardo = Math.max(d ? (Number(d.minutosRetardo) || 0) : 0, r ? (Number(r.minutosRetardo) || 0) : 0);
       const salidaAnt = Math.max(d ? (Number(d.minutosSalidaAnticipada) || 0) : 0, r ? (Number(r.minutosSalidaAnticipada) || 0) : 0);
       const pagar = d ? (Number(d.minutosHorasExtra) || 0) : 0;
+      const horasDobles = d
+        ? (d.horasExtraDobles != null
+          ? Number(d.horasExtraDobles) || 0
+          : Math.floor(((Number(d.minutosHEDoble) || 0) + (Number(d.minutosHEOrdinaria) || 0)) / 60))
+        : 0;
+      const horasTriples = d
+        ? (d.horasExtraTriples != null
+          ? Number(d.horasExtraTriples) || 0
+          : Math.floor((Number(d.minutosHETriple) || 0) / 60))
+        : 0;
+      const sobrantes = d
+        ? (d.minutosHESobrantesDobles != null || d.minutosHESobrantesTriples != null
+          ? (Number(d.minutosHESobrantesDobles) || 0) + (Number(d.minutosHESobrantesTriples) || 0)
+          : pagar - (horasDobles + horasTriples) * 60)
+        : 0;
       const nota = d ? (Number(d.minutosHorasExtraNota) || 0) : 0;
       const sinAut = d ? (Number(d.minutosHorasExtraSinAutorizar) || 0) : 0;
       const checadas = r ? (Number(r.minutosHE) || 0) : (pagar + nota + sinAut);
@@ -160,7 +175,10 @@
       <td><%= d || r ? (salidaAnt ? salidaAnt + ' min' : '0') : '—' %></td>
       <td>
         <% if (d) { %>
-        <strong><%= pagar %></strong> min a pagar
+        <strong><%= horasDobles + horasTriples %></strong> h a pagar
+        <% if (horasTriples) { %><div class="muted small"><%= horasDobles %> dobles · <%= horasTriples %> triples</div><% } %>
+        <% if (sobrantes > 0) { %><div class="muted small"><%= sobrantes %> min sin hora completa</div><% } %>
+        <% if (pagar) { %><div class="muted small"><%= pagar %> min en historial</div><% } %>
         <% if (nota) { %><div class="muted small"><%= nota %> min en nota</div><% } %>
         <% if (sinAut) { %><div class="muted small"><%= sinAut %> min sin autorizar</div><% } %>
         <% if (checadas && checadas !== pagar + nota + sinAut) { %>

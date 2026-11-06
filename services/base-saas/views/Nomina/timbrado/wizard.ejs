@@ -30,12 +30,13 @@
         <%= p.fechaInicio ? new Date(p.fechaInicio).toLocaleDateString('es-MX') : '' %>
         –
         <%= p.fechaFin ? new Date(p.fechaFin).toLocaleDateString('es-MX') : '' %>
+        · <%= p.estatus || '' %>
       </option>
       <% }); %>
     </select>
   </label>
   <% if (!(periodos || []).length) { %>
-  <p class="muted small" style="grid-column:1/-1">No hay períodos <strong>cerrados</strong> en la subsidiaria activa. Calcula/cierra un período o cambia de subsidiaria en el menú superior.</p>
+  <p class="muted small" style="grid-column:1/-1">No hay períodos calculados o cerrados pendientes de timbrar en la subsidiaria activa.</p>
   <% } %>
   <label>PAC
     <select name="pacConfigId" required>
@@ -64,26 +65,66 @@
 <p class="muted">Primero crea un PAC (botón “Crear demo SW” en Config PAC).</p>
 <% } %>
 
+<style>
+  tr.pendiente-cancelar td { background: #fee2e2; color: #991b1b; }
+  tr.pendiente-cancelar a { color: #991b1b; font-weight: 700; }
+</style>
 <h2>Últimos lotes</h2>
+<%
+  const pendientesCancelar = (lotes || []).filter(function (l) { return l.pendientesCancelar > 0; });
+  function etiquetaPeriodo(p) {
+    if (!p) return '';
+    return [p.tipoPeriodo || '', p.numeroPeriodo != null ? ('#' + p.numeroPeriodo) : '', p.anio || ''].filter(Boolean).join(' ');
+  }
+%>
+<% if (pendientesCancelar.length) { %>
+<div class="alert">
+  <p style="margin:0 0 0.5rem"><strong>Pendiente de cancelar con motivo 01.</strong> El CFDI nuevo ya está timbrado. Falta cancelar el lote original.</p>
+  <ul style="margin:0">
+    <% pendientesCancelar.forEach(function (l) { %>
+    <li>
+      <%= etiquetaPeriodo(l.periodo) || 'Período' %>
+      · lote <%= l.serie || 'sin serie' %>
+      del <%= l.createdAt ? new Date(l.createdAt).toLocaleString('es-MX') : '—' %>
+      · <%= l.pendientesCancelar %> CFDI
+      · <a href="/nomina/timbrado/lotes/<%= l._id %>?cancelar=01">Cancelar ahora</a>
+    </li>
+    <% }); %>
+  </ul>
+</div>
+<% } %>
 <% if (!(lotes || []).length) { %>
 <p class="muted">Sin lotes aún.</p>
 <% } else { %>
 <table class="data-table">
   <thead>
     <tr>
-      <th>Fecha</th><th>Estatus</th><th>Modo</th><th>Recibos</th><th>OK</th><th>Error</th><th></th>
+      <th>Fecha</th><th>Estatus</th><th>Modo</th><th>Recibos</th><th>OK</th><th>Cancelados</th><th>Error</th><th></th>
     </tr>
   </thead>
   <tbody>
     <% lotes.forEach(function(l) { %>
-    <tr>
+    <tr class="<%= l.pendientesCancelar ? 'pendiente-cancelar' : '' %>">
       <td><%= l.createdAt ? new Date(l.createdAt).toLocaleString('es-MX') : '—' %></td>
-      <td><%= l.estatus %></td>
+      <td>
+        <%= l.estatus %>
+        <% if (l.pendientesCancelar) { %>
+        <br><strong>Pendiente de cancelar</strong>
+        <% if (etiquetaPeriodo(l.periodo)) { %><br><span><%= etiquetaPeriodo(l.periodo) %></span><% } %>
+        <% } %>
+      </td>
       <td><%= l.modo %></td>
       <td><%= l.totales && l.totales.recibos %></td>
       <td><%= l.totales && l.totales.timbrados %></td>
+      <td><%= l.totales && l.totales.cancelados %></td>
       <td><%= l.totales && l.totales.errores %></td>
-      <td><a href="/nomina/timbrado/lotes/<%= l._id %>">Ver</a></td>
+      <td>
+        <% if (l.pendientesCancelar) { %>
+        <a href="/nomina/timbrado/lotes/<%= l._id %>?cancelar=01">Cancelar</a>
+        <% } else { %>
+        <a href="/nomina/timbrado/lotes/<%= l._id %>">Ver</a>
+        <% } %>
+      </td>
     </tr>
     <% }); %>
   </tbody>

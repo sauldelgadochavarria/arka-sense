@@ -14,7 +14,7 @@ const getNominaHistoricoReciboModel = require('../models/nominaHistoricoRecibo')
 const getEmpleadoModel = require('../models/empleado');
 const getReciboPdfPlantillaModel = require('../models/reciboPdfPlantilla');
 const getConceptCatalogModel = require('../models/conceptCatalog');
-const { authenticateSw, timbrarCfdiSw, uuidSimulado } = require('./pacClientService');
+const { authenticateSw, timbrarCfdiSw, cancelarCfdiPac, uuidSimulado } = require('./pacClientService');
 const { guardarCfdiArchivo } = require('./cfdiArchivoService');
 const { buildCfdiNominaPayload, toCfdiXml } = require('./cfdi/nomina12Builder');
 const { urlTimbradoParaFormato } = require('./cfdi/nomina12Helpers');
@@ -30,7 +30,7 @@ const {
 } = require('./reciboPdfService');
 const getFiniquitoCalculoModel = require('../models/finiquitoCalculo');
 const { CONCEPTOS_FINIQUITO } = require('../config/finiquitoCatalog');
-const { pacAmbienteEsPrueba } = require('../config/timbradoCatalog');
+const { pacAmbienteEsPrueba, MOTIVOS_CANCELACION_NOMINA, CODIGOS_CANCELACION_SAT } = require('../config/timbradoCatalog');
 
 function money(n) {
   return Math.round((Number(n) || 0) * 100) / 100;
@@ -98,6 +98,8 @@ function catalogMapsFromRows(catalogRows) {
     const prev = catalogoMeta[code] || {};
     catalogoMeta[code] = {
       nombre: c.nombre || prev.nombre,
+      descripcion: c.descripcion || c.sat?.descripcion || prev.descripcion || c.nombre || prev.nombre || '',
+      satDescripcion: (c.sat && c.sat.descripcion) || prev.satDescripcion || '',
       tipo: c.tipo || c.sat?.tipo || prev.tipo || '',
       satTipo: c.sat?.tipo || prev.satTipo || '',
       naturaleza: c.naturaleza || c.fiscal?.naturaleza || prev.naturaleza || '',
@@ -132,6 +134,67 @@ function catalogMapsFromRows(catalogRows) {
     }
   }
   return { catalogoNombres, catalogoMeta };
+}
+
+/**
+ * Nombre y clave SAT de la subsidiaria pisan al catálogo.
+ * Así el séptimo día (alias) no se timbra con la clave 019 de otro concepto.
+ */
+async function overlayAliasSubsidiaria(catalogoNombres, catalogoMeta, { tenantId, empresaId, subsidiariaId }) {
+  if (!tenantId || !empresaId || !subsidiariaId) return;
+  const getSubsidiaryConceptConfigModel = require('../models/subsidiaryConceptConfig');
+  const SubCfg = await getSubsidiaryConceptConfigModel();
+  const rows = await SubCfg.find({
+    tenantId,
+    empresaId,
+    subsidiariaId,
+    activo: true,
+    deshabilitado: { $ne: true }
+  })
+    .select('conceptoCodigo aliasNombre claveSat tipo')
+    .lean();
+  for (const row of rows) {
+    const code = String(row.conceptoCodigo || '').trim().toUpperCase();
+    if (!code) continue;
+    const prev = catalogoMeta[code] || { nombre: '', tipo: '', claveSAT: '' };
+    const nombre = String(row.aliasNombre || '').trim();
+    if (nombre) {
+      catalogoNombres[code] = nombre;
+      prev.nombre = nombre;
+      prev.descripcion = nombre;
+    }
+    const satDigits = String(row.claveSat || '').replace(/\D/g, '');
+    if (satDigits) {
+      prev.claveSAT = satDigits.padStart(3, '0').slice(-3);
+      prev.claveSatForzada = true;
+    }
+    if (row.tipo) prev.tipo = prev.tipo || row.tipo;
+    catalogoMeta[code] = prev;
+  }
+}
+
+async function resolverCatalogoTimbrado({ tenantId, empresaId, subsidiariaId }) {
+  const Catalog = await getConceptCatalogModel();
+  const catalogRows = await Catalog.find({})
+    .select('codigo nombre tipo naturaleza claveSAT sat fiscal metadata descripcion')
+    .lean();
+  let nominaConceptos = [];
+  try {
+    const getConceptoNominaModel = require('../models/conceptoNomina');
+    const ConceptoNomina = await getConceptoNominaModel();
+    nominaConceptos = await ConceptoNomina.find({ tenantId })
+      .select('codigo nombre tipo naturaleza claveSAT sat fiscal metadata descripcion')
+      .lean();
+  } catch (_) {
+    /* ignore */
+  }
+  const maps = catalogMapsFromRows([...catalogRows, ...nominaConceptos]);
+  await overlayAliasSubsidiaria(maps.catalogoNombres, maps.catalogoMeta, {
+    tenantId,
+    empresaId,
+    subsidiariaId
+  });
+  return maps;
 }
 
 /**
@@ -391,6 +454,66 @@ async function loadRecibosParaTimbrar(tenantId, periodo) {
  * - Timbrado simulado + lote real → reprocesar (pasar a PAC).
  * - Timbrado simulado + lote simulación → omitir (evitar duplicar UUID sim).
  */
+function cfdiSigueVigente(timbrado) {
+  return timbrado?.estatus === 'timbrado' && String(timbrado.uuid || '').trim();
+}
+
+/** Conserva el UUID cancelado cuando el recibo se vuelve a timbrar. */
+function archivarTimbrePrevio(prev, stamp) {
+  const historial = Array.isArray(prev?.historial) ? prev.historial.map((h) => ({ ...h })) : [];
+  if (prev?.uuid && prev.estatus && prev.estatus !== 'pendiente') {
+    const ya = historial.some((h) => String(h.uuid || '').toLowerCase() === String(prev.uuid).toLowerCase() && h.estatus === prev.estatus);
+    if (!ya) {
+      historial.push({
+        uuid: prev.uuid,
+        estatus: prev.estatus,
+        motivoCancelacion: prev.motivoCancelacion || '',
+        codigoCancelacion: prev.codigoCancelacion || '',
+        fechaCancelacion: prev.fechaCancelacion || null,
+        fechaTimbrado: prev.fechaTimbrado || null,
+        acuseCancelacion: prev.acuseCancelacion || '',
+        loteId: prev.loteId || null,
+        modo: prev.modo || ''
+      });
+    }
+  }
+  return { ...stamp, historial };
+}
+
+/**
+ * Períodos en los que cada recibo tiene un CFDI vigente.
+ * Si alguno se canceló, el período vuelve a poder timbrarse; el vigente no se reenvía.
+ */
+async function periodoIdsTimbradosPorCompleto(tenantId, empresaId) {
+  if (!tenantId || !empresaId) return [];
+  const Historico = await getNominaHistoricoReciboModel();
+  const Recibo = await getReciboNominaModel();
+  const [hists, recibos] = await Promise.all([
+    Historico.find({ tenantId, empresaId, periodoId: { $ne: null } })
+      .select('periodoId timbrado.estatus timbrado.uuid')
+      .lean(),
+    Recibo.find({ tenantId, empresaId, periodoId: { $ne: null } })
+      .select('periodoId timbrado.estatus timbrado.uuid')
+      .lean()
+  ]);
+  const conHistorico = new Set(hists.map((h) => String(h.periodoId)));
+  const buckets = new Map();
+  const add = (periodoId, timbrado) => {
+    const id = String(periodoId || '');
+    if (!id) return;
+    if (!buckets.has(id)) buckets.set(id, { total: 0, vigentes: 0, raw: periodoId });
+    const b = buckets.get(id);
+    b.total += 1;
+    if (cfdiSigueVigente(timbrado)) b.vigentes += 1;
+  };
+  for (const h of hists) add(h.periodoId, h.timbrado);
+  for (const r of recibos) {
+    if (conHistorico.has(String(r.periodoId))) continue;
+    add(r.periodoId, r.timbrado);
+  }
+  return [...buckets.values()].filter((b) => b.total > 0 && b.vigentes === b.total).map((b) => b.raw);
+}
+
 function resolverEstatusInicialItem(reciboTimbrado, loteModo) {
   const t = reciboTimbrado || {};
   if (t.estatus !== 'timbrado') {
@@ -430,7 +553,8 @@ async function crearYProcesarLote({
   forzarReal = false,
   userId = '',
   userLabel = '',
-  procesar = true
+  procesar = true,
+  sustituciones = null
 }) {
   const Periodo = await getPeriodoNominaModel();
   const Pac = await getPacConfigModel();
@@ -438,21 +562,49 @@ async function crearYProcesarLote({
 
   const periodo = await Periodo.findOne({ _id: periodoId, tenantId, empresaId }).lean();
   if (!periodo) throw new Error('Período no encontrado');
-  if (periodo.estatus !== 'cerrado') {
-    throw new Error('Solo se pueden timbrar períodos cerrados. Cierra el período e inténtalo de nuevo.');
+  const estatusPeriodo = String(periodo.estatus || '').toLowerCase();
+  if (estatusPeriodo !== 'calculado' && estatusPeriodo !== 'cerrado') {
+    throw new Error('Solo se timbran períodos calculados o cerrados.');
   }
 
   const pac = await Pac.findOne({ _id: pacConfigId, tenantId, empresaId, activo: true }).lean();
   if (!pac) throw new Error('Configuración PAC no encontrada o inactiva');
 
-  const recibos = await loadRecibosParaTimbrar(tenantId, periodo);
+  let recibos = await loadRecibosParaTimbrar(tenantId, periodo);
   if (!recibos.length) throw new Error('No hay recibos para timbrar en el período');
+
+  const listaSustitucion = Array.isArray(sustituciones) ? sustituciones : [];
+  if (listaSustitucion.length) {
+    const porEmpleado = new Map(
+      listaSustitucion.map((s) => [String(s.empleadoId), String(s.uuid || '').trim().toUpperCase()])
+    );
+    recibos = recibos
+      .filter((r) => porEmpleado.has(String(r.empleadoId)))
+      .map((r) => ({ ...r, uuidSustituido: porEmpleado.get(String(r.empleadoId)) }));
+    if (recibos.length !== porEmpleado.size) {
+      throw new Error(
+        'No está el recibo de algún empleado seleccionado. El CFDI nuevo sale del cálculo actual del período.'
+      );
+    }
+    const sinUuid = recibos.find((r) => !UUID_RE.test(r.uuidSustituido || ''));
+    if (sinUuid) throw new Error('La sustitución necesita el UUID vigente del CFDI original.');
+  }
 
   const subsidiariaId = await resolveSubsidiariaIdFromPeriodo(periodo, { tenantId, empresaId });
 
   const modo = forzarReal || pac.modoReal ? 'real' : 'simulacion';
+  const hayPendiente = recibos.some(
+    (r) => r.uuidSustituido || resolverEstatusInicialItem(r.timbrado, modo).estatus === 'pendiente'
+  );
+  if (!hayPendiente) {
+    throw new Error(
+      'No hay CFDI pendientes. Con motivo 02 cancela el vigente y vuelve a timbrar. Con motivo 01 emite primero el CFDI nuevo desde el lote (relación 04) y después cancela el original.'
+    );
+  }
   const items = recibos.map((r) => {
-    const ini = resolverEstatusInicialItem(r.timbrado, modo);
+    const ini = r.uuidSustituido
+      ? { estatus: 'pendiente', errorMensaje: '', uuid: '', serie: '', folio: '' }
+      : resolverEstatusInicialItem(r.timbrado, modo);
     return {
       reciboId: r.reciboId,
       historicoId: r.historicoId,
@@ -468,7 +620,8 @@ async function crearYProcesarLote({
       folio: ini.folio,
       errorMensaje: ini.errorMensaje,
       intentos: 0,
-      modo: ''
+      modo: '',
+      uuidSustituye: r.uuidSustituido || ''
     };
   });
 
@@ -524,7 +677,6 @@ async function procesarLote({ tenantId, empresaId, empresa, loteId, recibosByKey
   const Historico = await getNominaHistoricoReciboModel();
   const Recibo = await getReciboNominaModel();
   const Plantilla = await getReciboPdfPlantillaModel();
-  const Catalog = await getConceptCatalogModel();
 
   let lote = await Lote.findOne({ _id: loteId, tenantId });
   if (!lote) throw new Error('Lote no encontrado');
@@ -571,22 +723,11 @@ async function procesarLote({ tenantId, empresaId, empresa, loteId, recibosByKey
     }
   }
 
-  const catalogRows = await Catalog.find({}).select('codigo nombre tipo naturaleza claveSAT sat fiscal').lean();
-  // Complementar con conceptos de nómina (naturaleza informativo, flags) — fuente de verdad del motor
-  let nominaConceptos = [];
-  try {
-    const getConceptoNominaModel = require('../models/conceptoNomina');
-    const ConceptoNomina = await getConceptoNominaModel();
-    nominaConceptos = await ConceptoNomina.find({ tenantId })
-      .select('codigo nombre tipo naturaleza claveSAT sat fiscal metadata')
-      .lean();
-  } catch (_) {
-    /* ignore */
-  }
-  const { catalogoNombres, catalogoMeta } = catalogMapsFromRows([
-    ...catalogRows,
-    ...nominaConceptos
-  ]);
+  const { catalogoNombres, catalogoMeta } = await resolverCatalogoTimbrado({
+    tenantId,
+    empresaId,
+    subsidiariaId: periodo?.subsidiariaId
+  });
 
 
   let timbrados = 0;
@@ -627,7 +768,8 @@ async function procesarLote({ tenantId, empresaId, empresa, loteId, recibosByKey
         separacionIndemnizacion: sepData?.aplica ? sepData : null,
         serie,
         folio,
-        fechaEmision: new Date()
+        fechaEmision: new Date(),
+        uuidsRelacionados: item.uuidSustituye ? [item.uuidSustituye] : []
       });
 
       if (lote.modo === 'real') {
@@ -779,12 +921,21 @@ async function procesarLote({ tenantId, empresaId, empresa, loteId, recibosByKey
         archivoPdfId: item.archivoPdfId,
         errorMensaje: '',
         intentos: item.intentos,
-        modo: lote.modo
+        modo: lote.modo,
+        uuidSustituye: item.uuidSustituye || ''
       };
       if (item.historicoId) {
-        await Historico.updateOne({ _id: item.historicoId, tenantId }, { $set: { timbrado: stamp } });
+        const prev = await Historico.findOne({ _id: item.historicoId, tenantId }).select('timbrado').lean();
+        await Historico.updateOne(
+          { _id: item.historicoId, tenantId },
+          { $set: { timbrado: archivarTimbrePrevio(prev?.timbrado, stamp) } }
+        );
       } else if (item.reciboId) {
-        await Recibo.updateOne({ _id: item.reciboId, tenantId }, { $set: { timbrado: stamp } });
+        const prev = await Recibo.findOne({ _id: item.reciboId, tenantId }).select('timbrado').lean();
+        await Recibo.updateOne(
+          { _id: item.reciboId, tenantId },
+          { $set: { timbrado: archivarTimbrePrevio(prev?.timbrado, stamp) } }
+        );
       }
 
       timbrados += 1;
@@ -818,8 +969,331 @@ async function procesarLote({ tenantId, empresaId, empresa, loteId, recibosByKey
   return { lote: lote.toObject() };
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function motivoCancelacionNomina(motivo) {
+  const code = String(motivo || '02').trim();
+  const row = MOTIVOS_CANCELACION_NOMINA.find((m) => m.value === code);
+  if (!row) {
+    throw new Error('Motivo de cancelación no válido para nómina. Usa 01, 02 o 03.');
+  }
+  return row;
+}
+
+/**
+ * Cancela CFDI de nómina del lote. Nómina = cancelación directa (sin aceptación).
+ * Simulación solo marca el lote. Modo real llama al PAC (SW por UUID, u otro por JSON).
+ */
+async function cancelarRecibosLote({
+  tenantId,
+  empresaId,
+  loteId,
+  itemIds = [],
+  motivo = '02',
+  folioSustitucion = '',
+  userLabel = ''
+}) {
+  const motivoRow = motivoCancelacionNomina(motivo);
+  const folio = String(folioSustitucion || '').trim().toUpperCase();
+  if (motivoRow.requiereFolio && !UUID_RE.test(folio)) {
+    const lotePre = await (await getTimbradoLoteModel()).findOne({ _id: loteId, tenantId, empresaId }).select('items.uuidSustituto').lean();
+    const elegidos = new Set((itemIds || []).map(String));
+    const sinSustituto = (lotePre?.items || []).filter(
+      (it) => elegidos.has(String(it._id)) && !UUID_RE.test(String(it.uuidSustituto || '').trim())
+    );
+    if (!lotePre || sinSustituto.length) {
+      throw new Error('El motivo 01 exige el UUID del CFDI nuevo de cada recibo.');
+    }
+  }
+
+  const Lote = await getTimbradoLoteModel();
+  const Pac = await getPacConfigModel();
+  const Historico = await getNominaHistoricoReciboModel();
+  const Recibo = await getReciboNominaModel();
+  const getEmpresaModel = require('../models/empresa');
+  const Empresa = await getEmpresaModel();
+
+  const lote = await Lote.findOne({ _id: loteId, tenantId, empresaId });
+  if (!lote) throw new Error('Lote no encontrado');
+  const selected = new Set((itemIds || []).map(String).filter(Boolean));
+  if (!selected.size) throw new Error('Selecciona al menos un CFDI');
+
+  const targets = (lote.items || []).filter((it) => selected.has(String(it._id)));
+  if (!targets.length) throw new Error('Ningún recibo de la selección está en el lote');
+
+  const pac = await Pac.findOne({ _id: lote.pacConfigId, tenantId }).lean();
+  if (!pac) throw new Error('PAC del lote no encontrado');
+  const empresa = await Empresa.findOne({ _id: empresaId, tenantId }).lean();
+  const rfcEmisor = String(empresaParaCfdi(empresa, pac).rfc || '').trim().toUpperCase();
+  const modoReal = lote.modo === 'real';
+  let token = '';
+  async function tokenReal() {
+    if (token) return token;
+    if (!rfcEmisor) throw new Error('Falta el RFC emisor para cancelar');
+    const auth = await authenticateSw({
+      urlAuth: pac.urlAuth,
+      usuario: pac.usuario,
+      password: pac.password,
+      timeoutMs: (pac.timeout || 30) * 1000
+    });
+    token = auth.token;
+    return token;
+  }
+
+  let cancelados = 0;
+  let errores = 0;
+  const notas = [];
+
+  for (const item of targets) {
+    if (item.estatus === 'cancelado') {
+      notas.push(`${item.numEmpleado || item.nombre}: ya estaba cancelado`);
+      continue;
+    }
+    if (item.estatus !== 'timbrado' || !String(item.uuid || '').trim()) {
+      errores += 1;
+      item.errorMensaje = 'Solo se cancelan CFDI timbrados con UUID';
+      notas.push(`${item.numEmpleado || item.nombre}: sin UUID timbrado`);
+      continue;
+    }
+    if (String(item.modo || lote.modo) === 'simulacion' || !modoReal) {
+      item.estatus = 'cancelado';
+      item.motivoCancelacion = motivoRow.value;
+      item.codigoCancelacion = 'SIM';
+      item.fechaCancelacion = new Date();
+      item.canceladoPorLabel = userLabel;
+      item.errorMensaje = 'Cancelado en simulación. No se envió al SAT.';
+      cancelados += 1;
+      await reflejarCancelacionEnRecibo(Historico, Recibo, tenantId, item);
+      continue;
+    }
+
+    try {
+      const res = await cancelarCfdiPac({
+        pac,
+        token: await tokenReal(),
+        rfcEmisor,
+        uuid: item.uuid,
+        motivo: motivoRow.value,
+        folioSustitucion: motivoRow.requiereFolio
+          ? (UUID_RE.test(String(item.uuidSustituto || '').trim())
+            ? String(item.uuidSustituto).trim().toUpperCase()
+            : folio)
+          : '',
+        timeoutMs: (pac.timeout || 30) * 1000
+      });
+      const texto = res.mensaje || CODIGOS_CANCELACION_SAT[res.codigo] || `Código SAT ${res.codigo}`;
+      if (!res.cancelado) {
+        errores += 1;
+        item.errorMensaje = texto;
+        notas.push(`${item.numEmpleado || item.nombre}: ${texto}`);
+        continue;
+      }
+      item.estatus = 'cancelado';
+      item.motivoCancelacion = motivoRow.value;
+      item.codigoCancelacion = res.codigo;
+      item.acuseCancelacion = res.acuse || '';
+      item.fechaCancelacion = new Date();
+      item.canceladoPorLabel = userLabel;
+      item.errorMensaje = '';
+      cancelados += 1;
+      notas.push(`${item.numEmpleado || item.nombre}: ${texto}`);
+      await reflejarCancelacionEnRecibo(Historico, Recibo, tenantId, item);
+    } catch (err) {
+      errores += 1;
+      item.errorMensaje = err.message || String(err);
+      notas.push(`${item.numEmpleado || item.nombre}: ${item.errorMensaje}`);
+    }
+  }
+
+  const vivos = (lote.items || []).filter((it) => it.estatus === 'timbrado' && String(it.uuid || '').trim());
+  lote.totales.cancelados = (lote.items || []).filter((it) => it.estatus === 'cancelado').length;
+  if (!vivos.length && lote.totales.cancelados > 0) lote.estatus = 'cancelado';
+  lote.markModified('items');
+  lote.markModified('totales');
+  await lote.save();
+
+  return { cancelados, errores, notas, estatus: lote.estatus };
+}
+
+async function reflejarCancelacionEnRecibo(Historico, Recibo, tenantId, item) {
+  const stamp = {
+    'timbrado.estatus': 'cancelado',
+    'timbrado.motivoCancelacion': item.motivoCancelacion || '',
+    'timbrado.codigoCancelacion': item.codigoCancelacion || '',
+    'timbrado.acuseCancelacion': item.acuseCancelacion || '',
+    'timbrado.fechaCancelacion': item.fechaCancelacion || new Date(),
+    'timbrado.canceladoPorLabel': item.canceladoPorLabel || '',
+    'timbrado.errorMensaje': item.errorMensaje || ''
+  };
+  const uuidItem = String(item.uuid || '').trim().toUpperCase();
+  const aplicar = async (Model, id) => {
+    if (!id) return;
+    const doc = await Model.findOne({ _id: id, tenantId }).select('timbrado').lean();
+    const actual = String(doc?.timbrado?.uuid || '').trim().toUpperCase();
+    // El CFDI nuevo ya ocupó el timbrado vigente. La cancelación del original
+    // solo se anota en el historial, para no marcar cancelado al sustituto.
+    if (actual && uuidItem && actual !== uuidItem) {
+      const historial = Array.isArray(doc.timbrado.historial)
+        ? doc.timbrado.historial.map((h) => ({ ...h }))
+        : [];
+      let found = false;
+      for (const h of historial) {
+        if (String(h.uuid || '').trim().toUpperCase() !== uuidItem) continue;
+        h.estatus = 'cancelado';
+        h.motivoCancelacion = item.motivoCancelacion || '';
+        h.codigoCancelacion = item.codigoCancelacion || '';
+        h.fechaCancelacion = item.fechaCancelacion || new Date();
+        h.acuseCancelacion = item.acuseCancelacion || '';
+        found = true;
+      }
+      if (!found) {
+        historial.push({
+          uuid: item.uuid,
+          estatus: 'cancelado',
+          motivoCancelacion: item.motivoCancelacion || '',
+          codigoCancelacion: item.codigoCancelacion || '',
+          fechaCancelacion: item.fechaCancelacion || new Date(),
+          acuseCancelacion: item.acuseCancelacion || '',
+          modo: item.modo || ''
+        });
+      }
+      await Model.updateOne({ _id: id, tenantId }, { $set: { 'timbrado.historial': historial } });
+      return;
+    }
+    await Model.updateOne({ _id: id, tenantId }, { $set: stamp });
+  };
+  await aplicar(Historico, item.historicoId);
+  await aplicar(Recibo, item.reciboId);
+  if (!uuidItem) return;
+  const Lote = await getTimbradoLoteModel();
+  await Lote.updateMany(
+    { tenantId, 'items.uuidSustituto': uuidItem },
+    { $set: { 'items.$[it].uuidSustituto': '' } },
+    { arrayFilters: [{ 'it.uuidSustituto': uuidItem }] }
+  );
+}
+
+/**
+ * Paso 1 del motivo 01: emite el CFDI nuevo con CfdiRelacionados tipo 04
+ * apuntando al UUID que sigue vigente. No cancela el original.
+ */
+async function emitirSustitucionLote({
+  tenantId,
+  empresaId,
+  empresa,
+  loteId,
+  itemIds = [],
+  userId = '',
+  userLabel = ''
+}) {
+  const Lote = await getTimbradoLoteModel();
+  const lote = await Lote.findOne({ _id: loteId, tenantId, empresaId });
+  if (!lote) throw new Error('Lote no encontrado');
+  const selected = new Set((itemIds || []).map(String).filter(Boolean));
+  const elegibles = (lote.items || []).filter(
+    (it) => selected.has(String(it._id)) && it.estatus === 'timbrado' && String(it.uuid || '').trim()
+  );
+  if (!elegibles.length) {
+    throw new Error('Selecciona CFDI timbrados y vigentes. El nuevo se emite antes de cancelar el original.');
+  }
+  const yaSustituido = elegibles.find((it) => String(it.uuidSustituto || '').trim());
+  if (yaSustituido) {
+    throw new Error(
+      `${yaSustituido.numEmpleado || yaSustituido.nombre} ya tiene CFDI nuevo ${yaSustituido.uuidSustituto}. Cancela este original con motivo 01 y ese UUID.`
+    );
+  }
+  const result = await crearYProcesarLote({
+    tenantId,
+    empresaId,
+    empresa,
+    periodoId: lote.periodoId,
+    pacConfigId: lote.pacConfigId,
+    plantillaPdfId: lote.plantillaPdfId,
+    forzarReal: lote.modo === 'real',
+    userId,
+    userLabel,
+    procesar: true,
+    sustituciones: elegibles.map((it) => ({
+      empleadoId: String(it.empleadoId),
+      uuid: String(it.uuid).trim().toUpperCase()
+    }))
+  });
+  const nuevo = result.lote;
+  for (const it of nuevo.items || []) {
+    if (it.estatus !== 'timbrado' || !it.uuid || !it.uuidSustituye) continue;
+    const origen = elegibles.find(
+      (e) => String(e.uuid || '').trim().toUpperCase() === String(it.uuidSustituye).trim().toUpperCase()
+    );
+    if (!origen) continue;
+    origen.uuidSustituto = String(it.uuid).trim().toUpperCase();
+  }
+  lote.markModified('items');
+  await lote.save();
+  return result;
+}
+
+function uuidNorma(value) {
+  return String(value || '').trim().toUpperCase();
+}
+
+/**
+ * El lote nuevo apunta al original que todavía hay que cancelar con motivo 01.
+ * El lote original lista los CFDI que ya tienen sustituto.
+ */
+async function contextoCancelacionMotivo01(tenantId, lote) {
+  const items = lote?.items || [];
+  const pendientesAqui = items
+    .filter((it) => it.estatus === 'timbrado' && uuidNorma(it.uuid) && uuidNorma(it.uuidSustituto))
+    .map((it) => ({
+      numEmpleado: it.numEmpleado || '',
+      nombre: it.nombre || '',
+      uuidOriginal: it.uuid,
+      uuidNuevo: uuidNorma(it.uuidSustituto)
+    }));
+
+  const nuevos = items.filter((it) => it.estatus === 'timbrado' && uuidNorma(it.uuidSustituye));
+  const origenes = [];
+  if (nuevos.length && lote.periodoId) {
+    const Lote = await getTimbradoLoteModel();
+    const otros = await Lote.find({
+      tenantId,
+      periodoId: lote.periodoId,
+      _id: { $ne: lote._id }
+    })
+      .select('serie createdAt items.uuid items.estatus items.numEmpleado items.nombre')
+      .lean();
+    const porOriginal = new Map(nuevos.map((it) => [uuidNorma(it.uuidSustituye), it]));
+    for (const otro of otros) {
+      const filas = [];
+      for (const it of otro.items || []) {
+        const nuevo = porOriginal.get(uuidNorma(it.uuid));
+        if (!nuevo || it.estatus !== 'timbrado') continue;
+        filas.push({
+          numEmpleado: it.numEmpleado || nuevo.numEmpleado || '',
+          nombre: it.nombre || nuevo.nombre || '',
+          uuidOriginal: it.uuid,
+          uuidNuevo: nuevo.uuid
+        });
+      }
+      if (!filas.length) continue;
+      origenes.push({
+        _id: otro._id,
+        serie: otro.serie || '',
+        createdAt: otro.createdAt || null,
+        filas
+      });
+    }
+  }
+  return { origenes, pendientesAqui };
+}
+
 module.exports = {
   loadRecibosParaTimbrar,
   crearYProcesarLote,
-  procesarLote
+  procesarLote,
+  resolverCatalogoTimbrado,
+  cancelarRecibosLote,
+  emitirSustitucionLote,
+  contextoCancelacionMotivo01,
+  periodoIdsTimbradosPorCompleto
 };

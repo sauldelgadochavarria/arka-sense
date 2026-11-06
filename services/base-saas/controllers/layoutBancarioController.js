@@ -328,7 +328,7 @@ async function wizardDispersion(req, res) {
     : [];
   const periodos = await Periodo.find({
     tenantId,
-    estatus: { $in: ['calculado', 'cerrado'] }
+    estatus: 'cerrado'
   })
     .sort({ fechaInicio: -1 })
     .limit(80)
@@ -368,9 +368,7 @@ async function generarDispersion(req, res) {
     }).lean();
     if (!periodoDisp) throw new Error('Período no encontrado');
     if (periodoDisp.estatus !== 'cerrado') {
-      const { bloqueoPrenominaCerrada } = require('../services/nomina/nominaPreflightService');
-      const bloqueoDisp = await bloqueoPrenominaCerrada(req.session.tenantId, periodoDisp);
-      if (bloqueoDisp) throw new Error(bloqueoDisp.mensaje);
+      throw new Error('Cierra el período antes de generar el archivo bancario.');
     }
 
     const result = await generarDispersionBancaria({

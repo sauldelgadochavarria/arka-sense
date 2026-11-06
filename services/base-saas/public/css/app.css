@@ -1838,6 +1838,21 @@ button.btn-danger {
   background: #16a34a;
 }
 
+.flow-step.is-partial .flow-card {
+  border-color: #ea580c;
+  box-shadow: 0 0 0 2px rgba(234, 88, 12, 0.22), var(--shadow-md);
+  background: #fff7ed;
+}
+
+.flow-step.is-partial .flow-num {
+  background: #ea580c;
+}
+
+.flow-badge.is-parcial {
+  color: #9a3412;
+  background: rgba(234, 88, 12, 0.16);
+}
+
 .flow-badge {
   align-self: flex-start;
   margin-top: 0.25rem;

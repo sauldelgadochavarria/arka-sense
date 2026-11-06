@@ -16,7 +16,10 @@
   <li>Séptimo día: <%= detalle.diasDescansoPagados || 0 %> <span class="muted small">de <%= detalle.diasDescanso || 0 %> descansos del turno</span></li>
   <li>Faltas (informativo): <%= detalle.diasFalta %> <span class="muted small">— no se descuentan si el sueldo ya es solo por días trabajados</span></li>
   <li>Retardo (min): <%= detalle.minutosRetardo %></li>
-  <li>Horas extra (min): <%= detalle.minutosHorasExtra %></li>
+  <li>Horas extra en historial: <%= detalle.minutosHorasExtra || 0 %> min</li>
+  <li>Horas dobles a pagar: <%= detalle.horasExtraDobles || 0 %></li>
+  <li>Horas triples a pagar: <%= detalle.horasExtraTriples || 0 %></li>
+  <li>Minutos sin hora completa: <%= (detalle.minutosHESobrantesDobles || 0) + (detalle.minutosHESobrantesTriples || 0) %></li>
   <li>Salida anticipada (min): <%= detalle.minutosSalidaAnticipada %></li>
   <li>Salario diario: $<%= detalle.salarioDiario.toLocaleString('es-MX', { minimumFractionDigits: 2 }) %></li>
 </ul>

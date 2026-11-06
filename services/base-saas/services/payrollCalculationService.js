@@ -116,6 +116,10 @@ function calcularEmpleadoPeriodo(empleado, turno, dailies, incidencias, weekStar
   minutosHEDoble = clasif.minutosDobles;
   minutosHETriple = clasif.minutosTriples;
   minutosHorasExtra = minutosHEDoble + minutosHETriple;
+  const horasExtraDobles = clasif.horasCompletasDobles || 0;
+  const horasExtraTriples = clasif.horasCompletasTriples || 0;
+  const minutosHESobrantesDobles = clasif.minutosSobrantesDobles || 0;
+  const minutosHESobrantesTriples = clasif.minutosSobrantesTriples || 0;
 
   for (const inc of incidencias) {
     if (inc.codigo === 'VAC' || inc.codigo === 'PCG') {
@@ -152,9 +156,9 @@ function calcularEmpleadoPeriodo(empleado, turno, dailies, incidencias, weekStar
   const diasFalta = diasFaltaSet.size;
 
   const percepcionSalario = roundMoney(salarioDiario * diasTrabajados);
-  // Dobles (LFT) al ×2; triples (excedente día/semana) al ×3
+  // Solo horas completas de la semana. El resto de minutos queda en el historial.
   const percepcionHE = roundMoney(
-    (minutosHEDoble / 60) * salarioHora * 2 + (minutosHETriple / 60) * salarioHora * 3
+    horasExtraDobles * salarioHora * 2 + horasExtraTriples * salarioHora * 3
   );
   const deduccionRetardos = roundMoney((minutosRetardo / minutosJornada) * salarioDiario);
   // P001 ya es solo días trabajados: no volver a descontar faltas (sería doble castigo)
@@ -192,6 +196,10 @@ function calcularEmpleadoPeriodo(empleado, turno, dailies, incidencias, weekStar
     minutosHEOrdinaria,
     minutosHEDoble,
     minutosHETriple,
+    horasExtraDobles,
+    horasExtraTriples,
+    minutosHESobrantesDobles,
+    minutosHESobrantesTriples,
     minutosSalidaAnticipada,
     salarioDiario,
     horasJornada,

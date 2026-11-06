@@ -45,6 +45,12 @@ const payrollDetailSchema = new mongoose.Schema(
     minutosHEOrdinaria: { type: Number, default: 0 },
     minutosHEDoble: { type: Number, default: 0 },
     minutosHETriple: { type: Number, default: 0 },
+    /** Horas completas de la semana que sí se pagan y se envían a nómina. */
+    horasExtraDobles: { type: Number },
+    horasExtraTriples: { type: Number },
+    /** Minutos que no alcanzan otra hora completa. Quedan en el historial. */
+    minutosHESobrantesDobles: { type: Number, default: 0 },
+    minutosHESobrantesTriples: { type: Number, default: 0 },
     minutosSalidaAnticipada: { type: Number, default: 0 },
     salarioDiario: { type: Number, default: 0 },
     /** Snapshot jornada / valor hora al calcular (Sprint 1 reforma 2027). */

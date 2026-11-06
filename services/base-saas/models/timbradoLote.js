@@ -53,6 +53,7 @@ const timbradoLoteSchema = new mongoose.Schema(
       timbrados: { type: Number, default: 0 },
       errores: { type: Number, default: 0 },
       omitidos: { type: Number, default: 0 },
+      cancelados: { type: Number, default: 0 },
       neto: { type: Number, default: 0 }
     },
     items: { type: [itemSchema], default: [] },

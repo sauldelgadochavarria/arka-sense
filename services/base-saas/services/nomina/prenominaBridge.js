@@ -25,14 +25,23 @@ function horasExtraDesdeDetail(detail) {
     const minDobles =
       (Number(detail.minutosHEDoble) || 0) + (Number(detail.minutosHEOrdinaria) || 0);
     const minTriples = Number(detail.minutosHETriple) || 0;
+    const yaEnteras = detail.horasExtraDobles != null || detail.horasExtraTriples != null;
     return {
-      horasExtraDobles: minDobles / 60,
-      horasExtraTriples: minTriples / 60
+      horasExtraDobles: yaEnteras
+        ? Number(detail.horasExtraDobles) || 0
+        : Math.floor(minDobles / 60),
+      horasExtraTriples: yaEnteras
+        ? Number(detail.horasExtraTriples) || 0
+        : Math.floor(minTriples / 60)
     };
   }
 
   const minutosHE = Number(detail?.minutosHorasExtra) || 0;
-  return repartirHorasExtraTotal(minutosHE / 60);
+  const rep = repartirHorasExtraTotal(minutosHE / 60);
+  return {
+    horasExtraDobles: Math.floor(rep.horasExtraDobles),
+    horasExtraTriples: Math.floor(rep.horasExtraTriples)
+  };
 }
 
 /**

@@ -356,14 +356,15 @@
   <% if (periodo.omitirDispersionBancaria) { %>
   <p class="muted small" style="margin:0 0 .5rem">Dispersión bancaria opcional (finiquito/cheque a la firma). Puedes generar layout si aplica.</p>
   <% } %>
-  <% if (_bloqueaAcciones) { %>
-  <button type="button" class="is-disabled" disabled title="<%= _motivoAcciones %>">Generar archivo bancario</button>
-  <button type="button" class="is-disabled" disabled title="<%= _motivoAcciones %>">Timbrar</button>
+  <% if (periodo.estatus !== 'cerrado') { %>
+  <button type="button" class="is-disabled" disabled title="Cierra el período para generar el archivo bancario.">Generar archivo bancario</button>
   <% } else { %>
   <a class="btn btn-primary" href="/nomina/dispersion-bancaria?periodoId=<%= periodo._id %>">Generar archivo bancario</a>
+  <% } %>
   <% if (periodo.estatus === 'cerrado') { %>
   <a class="btn" href="/nomina/timbrado">Timbrar</a>
-  <% } %>
+  <% } else if (_bloqueaAcciones) { %>
+  <button type="button" class="is-disabled" disabled title="<%= _motivoAcciones %>">Timbrar</button>
   <% } %>
   <% } %>
   <% if (_canEdit && periodo.estatus === 'cerrado') { %>

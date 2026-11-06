@@ -245,6 +245,8 @@ function clasificarConcepto(c, meta = {}) {
 
 function claveSatDe(c, meta = {}) {
   const code = String(c.conceptoCodigo || c.codigo || '').toUpperCase();
+  // La subsidiaria manda: el séptimo día no debe heredarse como horas extra (019).
+  if (meta.claveSatForzada && meta.claveSAT) return satCode(meta.claveSAT, meta.claveSAT);
   // Preferir mapa explícito para códigos internos (evita claves SAT erróneas del catálogo).
   if (SAT_CLAVE_FALLBACK[code]) return SAT_CLAVE_FALLBACK[code];
   const raw = String(c.claveSAT || meta.claveSAT || c.sat?.clave || '').trim();

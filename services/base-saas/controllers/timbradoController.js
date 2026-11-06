@@ -19,17 +19,24 @@ const getNominaHistoricoReciboModel = require('../models/nominaHistoricoRecibo')
 const getReciboNominaModel = require('../models/reciboNomina');
 const getEmpleadoModel = require('../models/empleado');
 const getConceptoAplicadoModel = require('../models/conceptoAplicado');
-const getConceptCatalogModel = require('../models/conceptCatalog');
 const {
   PAC_PROVEEDORES,
   PAC_SW_DEFAULTS,
   PAC_SW_TEST_URLS,
   RECIBO_PDF_VARIABLES,
   syncSwPacUrls,
-  validateSwPacAmbiente
+  validateSwPacAmbiente,
+  MOTIVOS_CANCELACION_NOMINA
 } = require('../config/timbradoCatalog');
 const { PLANTILLA_PDF_CFDI } = require('../config/reciboPdfPlantillaCfdi');
-const { crearYProcesarLote } = require('../services/timbradoService');
+const {
+  crearYProcesarLote,
+  resolverCatalogoTimbrado,
+  cancelarRecibosLote,
+  emitirSustitucionLote,
+  contextoCancelacionMotivo01,
+  periodoIdsTimbradosPorCompleto
+} = require('../services/timbradoService');
 const { authenticateSw } = require('../services/pacClientService');
 const { obtenerCfdiArchivoParaDescarga } = require('../services/cfdiArchivoService');
 const { buildZipStore } = require('../libs/zipStore');
@@ -605,15 +612,22 @@ async function wizardTimbrado(req, res) {
   const Plantilla = await getReciboPdfPlantillaModel();
   const subId = sessionSubsidiariaId(req);
 
-  const [periodos, pacs, plantillas, lotes] = empresa
+  const periodosYaTimbrados = empresa
+    ? await periodoIdsTimbradosPorCompleto(req.session.tenantId, empresa._id)
+    : [];
+
+  const [periodos, pacs, plantillas, lotesRaw] = empresa
     ? await Promise.all([
         listPeriodosNominaScoped({
           tenantId: req.session.tenantId,
           empresaId: empresa._id,
           subsidiariaId: subId,
-          filter: { estatus: 'cerrado' },
+          filter: {
+            estatus: { $in: ['calculado', 'cerrado'] },
+            ...(periodosYaTimbrados.length ? { _id: { $nin: periodosYaTimbrados } } : {})
+          },
           sort: { anio: -1, numeroPeriodo: -1, fechaInicio: -1 },
-          limit: 40
+          limit: 80
         }),
         Pac.find({ tenantId: req.session.tenantId, empresaId: empresa._id, activo: true }).sort({ codigo: 1 }).lean(),
         Plantilla.find({ tenantId: req.session.tenantId, empresaId: empresa._id, activo: true })
@@ -627,6 +641,25 @@ async function wizardTimbrado(req, res) {
         })
       ])
     : [[], [], [], []];
+
+  const lotes = (lotesRaw || []).map((l) => ({
+    ...l,
+    pendientesCancelar: (l.items || []).filter(
+      (it) => it.estatus === 'timbrado' && String(it.uuidSustituto || '').trim()
+    ).length
+  }));
+  const idsPeriodo = [...new Set(lotes.filter((l) => l.pendientesCancelar).map((l) => String(l.periodoId)))];
+  let periodoPorId = new Map();
+  if (idsPeriodo.length) {
+    const Periodo = await getPeriodoNominaModel();
+    const docs = await Periodo.find({ _id: { $in: idsPeriodo } })
+      .select('numeroPeriodo anio tipoPeriodo tipoNomina fechaInicio fechaFin')
+      .lean();
+    periodoPorId = new Map(docs.map((p) => [String(p._id), p]));
+  }
+  for (const l of lotes) {
+    l.periodo = l.pendientesCancelar ? periodoPorId.get(String(l.periodoId)) || null : null;
+  }
 
   res.render('Nomina/timbrado/wizard', {
     session: req.session,
@@ -658,6 +691,15 @@ async function generarTimbrado(req, res) {
     });
     if (!okSub) {
       throw new Error('El período no pertenece a la subsidiaria activa');
+    }
+    const estatusPeriodo = String(periodo.estatus || '').toLowerCase();
+    if (estatusPeriodo !== 'calculado' && estatusPeriodo !== 'cerrado') {
+      throw new Error('Solo se timbran períodos calculados o cerrados.');
+    }
+    const cubiertos = await periodoIdsTimbradosPorCompleto(req.session.tenantId, empresa._id);
+    const cubierto = cubiertos.some((id) => String(id) === String(periodo._id));
+    if (cubierto) {
+      throw new Error('Todos los CFDI de este período siguen vigentes. Cancela el que vas a corregir.');
     }
     const { bloqueoPrenominaCerrada } = require('../services/nomina/nominaPreflightService');
     const bloqueoTimb = await bloqueoPrenominaCerrada(req.session.tenantId, periodo);
@@ -817,14 +859,116 @@ async function showLote(req, res) {
 
   const items = await enrichLoteItems(req.session.tenantId, lote.items || []);
   const filtros = uniqueFilterOptions(items);
+  const Periodo = await getPeriodoNominaModel();
+  const periodo = lote.periodoId
+    ? await Periodo.findOne({ _id: lote.periodoId, tenantId: req.session.tenantId })
+        .select('numeroPeriodo anio tipoPeriodo tipoNomina fechaInicio fechaFin fechaPago estatus subsidiariaId')
+        .lean()
+    : null;
+  let subsidiariaNombre = '';
+  if (periodo?.subsidiariaId) {
+    const Subs = await getSubsidiariaModel();
+    const sub = await Subs.findById(periodo.subsidiariaId).select('nombre').lean();
+    subsidiariaNombre = sub?.nombre || '';
+  }
+
+  const sustitucion = await contextoCancelacionMotivo01(req.session.tenantId, { ...lote, items });
 
   res.render('Nomina/timbrado/lote-show', {
     session: req.session,
     empresa,
     error,
     lote: { ...lote, items },
-    filtros
+    filtros,
+    periodo,
+    subsidiariaNombre,
+    motivosCancelacion: MOTIVOS_CANCELACION_NOMINA,
+    sustitucion,
+    abrirCancelacion: String(req.query.cancelar || '') === '01'
   });
+}
+
+async function sustituirLote(req, res) {
+  const { empresa, error } = await requireEmpresaForTenant(req);
+  const back = `/nomina/timbrado/lotes/${req.params.id}`;
+  if (error || !empresa) return flashRedirect(req, res, '/nomina/timbrado', 'error', error || 'Sin empresa');
+  const Lote = await getTimbradoLoteModel();
+  const lote = await Lote.findOne({
+    _id: req.params.id,
+    tenantId: req.session.tenantId,
+    empresaId: empresa._id
+  }).lean();
+  if (!lote) return res.status(404).send('Lote no encontrado');
+  const okSub = await assertLoteEnSubsidiariaActiva(req, empresa, lote);
+  if (!okSub) return flashRedirect(req, res, '/nomina/timbrado', 'error', 'El lote no pertenece a la subsidiaria activa');
+
+  const rawIds = req.body.itemIds;
+  const itemIds = Array.isArray(rawIds) ? rawIds : rawIds ? [rawIds] : [];
+  const user = req.session.user || req.session.usuario || {};
+  const userLabel = user.email || user.nombre || user.name || req.session.userEmail || '';
+  try {
+    const result = await emitirSustitucionLote({
+      tenantId: req.session.tenantId,
+      empresaId: empresa._id,
+      empresa,
+      loteId: lote._id,
+      itemIds,
+      userId: user.id || user._id || '',
+      userLabel
+    });
+    const nuevoId = result?.lote?._id;
+    const uuids = (result?.lote?.items || [])
+      .filter((it) => it.estatus === 'timbrado' && it.uuid)
+      .map((it) => `${it.numEmpleado || it.nombre}: ${it.uuid}`)
+      .slice(0, 4)
+      .join(' · ');
+    return flashRedirect(
+      req,
+      res,
+      nuevoId ? `/nomina/timbrado/lotes/${nuevoId}` : back,
+      'success',
+      `CFDI nuevo emitido con relación 04 (sustituye al original, que sigue vigente). Ahora cancela el original en el lote anterior con motivo 01 y este UUID. ${uuids}`
+    );
+  } catch (err) {
+    return flashRedirect(req, res, back, 'error', err.message || 'No se pudo emitir la sustitución');
+  }
+}
+
+async function cancelarLote(req, res) {
+  const { empresa, error } = await requireEmpresaForTenant(req);
+  const back = `/nomina/timbrado/lotes/${req.params.id}`;
+  if (error || !empresa) return flashRedirect(req, res, '/nomina/timbrado', 'error', error || 'Sin empresa');
+  const Lote = await getTimbradoLoteModel();
+  const lote = await Lote.findOne({
+    _id: req.params.id,
+    tenantId: req.session.tenantId,
+    empresaId: empresa._id
+  }).lean();
+  if (!lote) return res.status(404).send('Lote no encontrado');
+  const okSub = await assertLoteEnSubsidiariaActiva(req, empresa, lote);
+  if (!okSub) return flashRedirect(req, res, '/nomina/timbrado', 'error', 'El lote no pertenece a la subsidiaria activa');
+
+  const rawIds = req.body.itemIds;
+  const itemIds = Array.isArray(rawIds) ? rawIds : rawIds ? [rawIds] : [];
+  const user = req.session.user || req.session.usuario || {};
+  const userLabel = user.email || user.nombre || user.name || req.session.userEmail || '';
+  try {
+    const result = await cancelarRecibosLote({
+      tenantId: req.session.tenantId,
+      empresaId: empresa._id,
+      loteId: lote._id,
+      itemIds,
+      motivo: req.body.motivo,
+      folioSustitucion: req.body.folioSustitucion,
+      userLabel
+    });
+    const resumen = result.notas.slice(0, 6).join(' · ');
+    const tipo = result.errores && !result.cancelados ? 'error' : 'success';
+    const msg = `Cancelados ${result.cancelados}. Errores ${result.errores}.${resumen ? ` ${resumen}` : ''}`;
+    return flashRedirect(req, res, back, tipo, msg);
+  } catch (err) {
+    return flashRedirect(req, res, back, 'error', err.message || 'No se pudo cancelar');
+  }
 }
 
 async function descargarCfdiArchivo(req, res) {
@@ -934,7 +1078,6 @@ async function reciboPdfHtml(req, res) {
   const historicoId = parseOptionalObjectId(req.query.historicoId);
   const reciboId = parseOptionalObjectId(req.query.reciboId);
   const Plantilla = await getReciboPdfPlantillaModel();
-  const Catalog = await getConceptCatalogModel();
   const Empleado = await getEmpleadoModel();
   const Periodo = await getPeriodoNominaModel();
 
@@ -970,25 +1113,11 @@ async function reciboPdfHtml(req, res) {
   });
   if (!plantilla) return res.status(400).send('No hay plantilla PDF activa. Crea una en Recibos PDF.');
 
-  const catalogRows = await Catalog.find({}).select('codigo nombre tipo naturaleza claveSAT sat').lean();
-  const catalogoNombres = Object.fromEntries(
-    catalogRows.map((c) => [String(c.codigo).toUpperCase(), c.nombre])
-  );
-  const catalogoMeta = Object.fromEntries(
-    catalogRows.map((c) => {
-      const code = String(c.codigo).toUpperCase();
-      return [
-        code,
-        {
-          nombre: c.nombre,
-          tipo: c.tipo || c.sat?.tipo || '',
-          satTipo: c.sat?.tipo || '',
-          naturaleza: c.naturaleza || c.fiscal?.naturaleza || '',
-          claveSAT: (c.sat && c.sat.clave) || c.claveSAT || ''
-        }
-      ];
-    })
-  );
+  const { catalogoNombres, catalogoMeta } = await resolverCatalogoTimbrado({
+    tenantId: req.session.tenantId,
+    empresaId: empresa._id,
+    subsidiariaId: periodo?.subsidiariaId
+  });
 
   const snap = src.empleado || src.empleadoSnap || {};
   const live = src.empleadoId ? await Empleado.findOne({ _id: src.empleadoId }).lean() : null;
@@ -1031,5 +1160,7 @@ module.exports = {
   showLote,
   descargarCfdiArchivo,
   descargarMasivoLote,
+  sustituirLote,
+  cancelarLote,
   reciboPdfHtml
 };

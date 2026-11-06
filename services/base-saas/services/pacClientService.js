@@ -1,5 +1,7 @@
 'use strict';
 
+const { CODIGOS_CANCELACION_SAT } = require('../config/timbradoCatalog');
+
 /**
  * Cliente HTTP para PAC (SW Sapien y compatibles).
  * - JSON: Content-Type application/jsontoxml (emisión + timbrado)
@@ -292,30 +294,151 @@ async function timbrarCfdiSw({
   }
 }
 
+/** 201 = solicitud aceptada. En nómina el SAT cancela directo, sin aceptación. 202 = ya estaba cancelado. */
+const CODIGOS_NOMINA_CANCELADA = new Set(['201', '202']);
+
+function esProveedorSw(pac = {}) {
+  const nombre = String(pac.proveedor || '').toLowerCase();
+  const url = `${pac.urlCancelacion || ''} ${pac.urlTimbrado || ''} ${pac.urlAuth || ''}`;
+  return nombre.includes('sw') || /sw\.com\.mx/i.test(url);
+}
+
 /**
- * Cancela CFDI ante SW.
- * @returns {{ acuse: string, raw: object }}
+ * SW cancela por UUID con el CSD ya cargado en la cuenta.
+ * POST {base}/cfdi33/cancel[ /v2]/{rfc}/{uuid}/{motivo}[/{folioSustitucion}]
+ * Sin body. /csd, /pfx y /xml piden el certificado en la petición; aquí no se usan.
+ * folioSustitucion solo va en el path cuando motivo = 01.
+ */
+function urlCancelacionSwPorUuid(urlCancelacion, { rfc, uuid, motivo, folioSustitucion }) {
+  let base = String(urlCancelacion || '')
+    .trim()
+    .replace(/\/+$/, '')
+    .replace(/\/(csd|pfx|xml)$/i, '');
+  if (!base) throw new Error('Cancel PAC: falta URL de cancelación');
+  const parts = [
+    base,
+    encodeURIComponent(String(rfc || '').trim().toUpperCase()),
+    encodeURIComponent(String(uuid || '').trim().toUpperCase()),
+    encodeURIComponent(String(motivo || '02'))
+  ];
+  if (String(motivo) === '01' && folioSustitucion) {
+    parts.push(encodeURIComponent(String(folioSustitucion).trim().toUpperCase()));
+  }
+  return parts.join('/');
+}
+
+function folioDeRespuestaCancel(data, uuid) {
+  const map = data && typeof data === 'object' ? data.uuid || data.folios || null : null;
+  if (!map || typeof map !== 'object') {
+    const code = data?.code || data?.codigo || '';
+    return { codigo: String(code || ''), mensaje: data?.message || data?.description || '' };
+  }
+  const wanted = String(uuid || '').toLowerCase();
+  const key = Object.keys(map).find((k) => k.toLowerCase() === wanted) || Object.keys(map)[0];
+  const raw = key ? map[key] : '';
+  if (raw && typeof raw === 'object') {
+    return {
+      codigo: String(raw.code || raw.codigo || ''),
+      mensaje: String(raw.message || raw.description || raw.mensaje || '')
+    };
+  }
+  return { codigo: String(raw || ''), mensaje: '' };
+}
+
+function resultadoCancelacion(body, uuid) {
+  const data = body?.data || {};
+  const folio = folioDeRespuestaCancel(data, uuid);
+  const codigo = folio.codigo;
+  const conocido = CODIGOS_CANCELACION_SAT[codigo] || '';
+  const mensaje = folio.mensaje || conocido;
+  return {
+    acuse: typeof data.acuse === 'string' ? data.acuse : '',
+    codigo,
+    mensaje,
+    cancelado: CODIGOS_NOMINA_CANCELADA.has(codigo),
+    raw: body
+  };
+}
+
+/**
+ * Cancela un CFDI de nómina en SW (método UUID, sin aceptación del receptor).
+ * @returns {{ acuse: string, codigo: string, mensaje: string, cancelado: boolean, raw: object }}
  */
 async function cancelarSw({
   urlCancelacion,
   token,
+  rfcEmisor,
   uuid,
-  rfcReceptor,
   motivo = '02',
-  uuidSustitucion = '',
+  folioSustitucion = '',
+  timeoutMs = 30000
+}) {
+  if (!token) throw new Error('Cancel PAC: falta token');
+  if (!rfcEmisor) throw new Error('Cancel PAC: falta RFC emisor');
+  if (!uuid) throw new Error('Cancel PAC: falta UUID');
+  const url = urlCancelacionSwPorUuid(urlCancelacion, {
+    rfc: rfcEmisor,
+    uuid,
+    motivo,
+    folioSustitucion
+  });
+
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    console.log(`[pac] cancel UUID url=${url} motivo=${motivo}`);
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      signal: ctrl.signal
+    });
+    const rawText = await res.text();
+    const body = parseJsonSafe(rawText);
+    logPacResponse('cancel', res.status, rawText, body);
+
+    if (!httpOk(res.status) || body.status === 'error') {
+      throw new Error(`Cancel PAC: ${extractPacError(body, rawText || `HTTP ${res.status}`)}`);
+    }
+    if (body.status !== 'success') {
+      throw new Error(`Cancel PAC: ${extractPacError(body, 'cancelación rechazada')}`);
+    }
+    const out = resultadoCancelacion(body, uuid);
+    if (!out.codigo) {
+      throw new Error('Cancel PAC: el SAT no devolvió el código del folio');
+    }
+    return out;
+  } catch (err) {
+    if (err.name === 'AbortError') throw new Error('Cancel PAC: tiempo de espera agotado');
+    throw err;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+/**
+ * Otro PAC: POST JSON a su urlCancelacion.
+ * Contrato: { rfc, uuid, motivo, folioSustitucion? } y respuesta
+ * { status: "success", data: { acuse, uuid: { "<uuid>": "201" | { code, message } } } }.
+ */
+async function cancelarPacGenerico({
+  urlCancelacion,
+  token,
+  rfcEmisor,
+  uuid,
+  motivo = '02',
+  folioSustitucion = '',
   timeoutMs = 30000
 }) {
   if (!urlCancelacion) throw new Error('Cancel PAC: falta URL');
   if (!token) throw new Error('Cancel PAC: falta token');
   if (!uuid) throw new Error('Cancel PAC: falta UUID');
-
-  const cancelData = {
-    rfc: String(rfcReceptor || '').trim(),
-    uuid: String(uuid).trim(),
+  const payload = {
+    rfc: String(rfcEmisor || '').trim().toUpperCase(),
+    uuid: String(uuid).trim().toUpperCase(),
     motivo: String(motivo || '02')
   };
-  if (uuidSustitucion && motivo === '01') {
-    cancelData.folioSustitucion = uuidSustitucion;
+  if (String(motivo) === '01' && folioSustitucion) {
+    payload.folioSustitucion = String(folioSustitucion).trim().toUpperCase();
   }
 
   const ctrl = new AbortController();
@@ -327,26 +450,51 @@ async function cancelarSw({
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`
       },
-      body: JSON.stringify(cancelData),
+      body: JSON.stringify(payload),
       signal: ctrl.signal
     });
     const rawText = await res.text();
     const body = parseJsonSafe(rawText);
-    logPacResponse('cancel', res.status, rawText, body);
-
-    if (!httpOk(res.status)) {
-      throw new Error(`Cancel PAC: ${extractPacError(body, `HTTP ${res.status}`)}`);
+    logPacResponse('cancel-generico', res.status, rawText, body);
+    if (!httpOk(res.status) || body.status === 'error') {
+      throw new Error(`Cancel PAC: ${extractPacError(body, rawText || `HTTP ${res.status}`)}`);
     }
     if (body.status !== 'success') {
       throw new Error(`Cancel PAC: ${extractPacError(body, 'cancelación rechazada')}`);
     }
-    return { acuse: body.data?.acuse || '', raw: body };
+    const out = resultadoCancelacion(body, uuid);
+    if (!out.codigo) {
+      throw new Error('Cancel PAC: la respuesta no trae el código SAT del folio');
+    }
+    return out;
   } catch (err) {
     if (err.name === 'AbortError') throw new Error('Cancel PAC: tiempo de espera agotado');
     throw err;
   } finally {
     clearTimeout(t);
   }
+}
+
+async function cancelarCfdiPac({
+  pac,
+  token,
+  rfcEmisor,
+  uuid,
+  motivo = '02',
+  folioSustitucion = '',
+  timeoutMs = 30000
+}) {
+  const args = {
+    urlCancelacion: pac?.urlCancelacion,
+    token,
+    rfcEmisor,
+    uuid,
+    motivo,
+    folioSustitucion,
+    timeoutMs
+  };
+  if (esProveedorSw(pac)) return cancelarSw(args);
+  return cancelarPacGenerico(args);
 }
 
 function uuidSimulado() {
@@ -360,6 +508,8 @@ module.exports = {
   timbrarXmlSw,
   timbrarCfdiSw,
   cancelarSw,
+  cancelarCfdiPac,
+  esProveedorSw,
   uuidSimulado,
   parseStampResponse,
   extractCfdiXml

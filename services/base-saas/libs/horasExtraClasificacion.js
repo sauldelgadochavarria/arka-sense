@@ -87,9 +87,29 @@ function clasificarMinutosDia(minutosExtra, esquemaOrTurno = null) {
  * @param {object|null} esquemaOrTurno
  * @param {{ weekStartsOn?: number }} [opts]
  */
+/** Horas enteras por semana. El resto de minutos no forma otra hora. */
+function horasCompletasPorSemana(minutosPorSemana) {
+  let horas = 0;
+  let sobrantes = 0;
+  for (const raw of minutosPorSemana.values()) {
+    const m = Math.max(0, Math.floor(Number(raw) || 0));
+    horas += Math.floor(m / 60);
+    sobrantes += m % 60;
+  }
+  return { horas, sobrantes };
+}
+
+function sumarSemana(mapa, semana, minutos) {
+  const n = Math.floor(Number(minutos) || 0);
+  if (n <= 0) return;
+  mapa.set(semana, (mapa.get(semana) || 0) + n);
+}
+
 function clasificarHorasExtraPeriodo(dias = [], esquemaOrTurno = null, opts = {}) {
   const { maxDoblesSemanaMin, maxTotalesDiaMin } = limitsFromEsquema(esquemaOrTurno);
   const weekDoblesUsados = new Map();
+  const weekDoblesMin = new Map();
+  const weekTriplesMin = new Map();
   let minutosDobles = 0;
   let minutosTriples = 0;
   let diasExcedeLimiteDiario = 0;
@@ -101,14 +121,18 @@ function clasificarHorasExtraPeriodo(dias = [], esquemaOrTurno = null, opts = {}
       day.minutosExtra,
       esquemaOrTurno
     );
-    minutosTriples += tDia;
-
     const wk = weekKey(day.fecha, weekOpts);
+    minutosTriples += tDia;
+    sumarSemana(weekTriplesMin, wk, tDia);
+
     const usados = weekDoblesUsados.get(wk) || 0;
     const cupo = Math.max(0, maxDoblesSemanaMin - usados);
     const doblesOk = Math.min(dDia, cupo);
+    const doblesATriple = dDia - doblesOk;
     minutosDobles += doblesOk;
-    minutosTriples += dDia - doblesOk;
+    minutosTriples += doblesATriple;
+    sumarSemana(weekDoblesMin, wk, doblesOk);
+    sumarSemana(weekTriplesMin, wk, doblesATriple);
     weekDoblesUsados.set(wk, usados + doblesOk);
 
     const ordinariosMin = toFiniteMin(day.minutosOrdinarios);
@@ -118,11 +142,18 @@ function clasificarHorasExtraPeriodo(dias = [], esquemaOrTurno = null, opts = {}
     }
   }
 
+  const doblesCompletas = horasCompletasPorSemana(weekDoblesMin);
+  const triplesCompletas = horasCompletasPorSemana(weekTriplesMin);
+
   return {
     minutosDobles,
     minutosTriples,
     horasExtraDobles: minutosDobles / 60,
     horasExtraTriples: minutosTriples / 60,
+    horasCompletasDobles: doblesCompletas.horas,
+    horasCompletasTriples: triplesCompletas.horas,
+    minutosSobrantesDobles: doblesCompletas.sobrantes,
+    minutosSobrantesTriples: triplesCompletas.sobrantes,
     diasExcedeLimiteDiario,
     excedeLimiteDiario: diasExcedeLimiteDiario > 0
   };

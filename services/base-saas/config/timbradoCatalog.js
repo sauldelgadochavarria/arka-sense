@@ -14,7 +14,7 @@ const PAC_SW_DEFAULTS = {
   urlAuth: 'https://services.sw.com.mx/v2/security/authenticate',
   urlTimbrado: 'https://services.sw.com.mx/v4/cfdi33/issue/json/v4',
   urlTimbradoXml: 'https://services.sw.com.mx/v4/cfdi33/issue/v4',
-  urlCancelacion: 'https://services.sw.com.mx/cfdi33/cancel/csd',
+  urlCancelacion: 'https://services.sw.com.mx/cfdi33/cancel',
   urlConsulta: 'https://services.sw.com.mx/cfdi33/status',
   timeout: 30,
   reintentos: 3,
@@ -76,7 +76,7 @@ const PAC_SW_TEST_URLS = {
   urlAuth: 'https://services.test.sw.com.mx/v2/security/authenticate',
   urlTimbrado: 'https://services.test.sw.com.mx/v4/cfdi33/issue/json/v4',
   urlTimbradoXml: 'https://services.test.sw.com.mx/v4/cfdi33/issue/v4',
-  urlCancelacion: 'https://services.test.sw.com.mx/cfdi33/cancel/csd',
+  urlCancelacion: 'https://services.test.sw.com.mx/cfdi33/cancel',
   urlConsulta: 'https://services.test.sw.com.mx/cfdi33/status'
 };
 
@@ -126,6 +126,30 @@ const RECIBO_PDF_VARIABLES = [
 
 /** Layout CFDI 4.0 / Nómina 1.2 (representación impresa). */
 const PLANTILLA_PDF_EJEMPLO = PLANTILLA_PDF_CFDI;
+
+/**
+ * Motivos SAT para cancelar CFDI de nómina.
+ * La nómina es cancelación directa: el trabajador no acepta ni rechaza.
+ * 04 es factura global, no aplica a nómina.
+ * folioSustitucion solo se envía con motivo 01.
+ */
+const MOTIVOS_CANCELACION_NOMINA = [
+  { value: '02', label: '02 — Errores sin relación', requiereFolio: false },
+  { value: '03', label: '03 — No se llevó a cabo la operación', requiereFolio: false },
+  { value: '01', label: '01 — Sustitución (el CFDI nuevo ya trae relación 04)', requiereFolio: true }
+];
+
+/** Códigos de folio que SW/SAT devuelven en data.uuid. Nómina: 201 ya quedó cancelado. */
+const CODIGOS_CANCELACION_SAT = {
+  '201': 'Cancelación directa aceptada. La nómina no requiere aceptación del trabajador.',
+  '202': 'El folio ya estaba cancelado ante el SAT.',
+  '203': 'El folio no corresponde al RFC emisor.',
+  '204': 'El folio no se puede cancelar.',
+  '205': 'El SAT aún no publica el folio. Hay que esperar al menos 48 horas después del timbrado.',
+  '206': 'El UUID no corresponde a un CFDI del sector primario.',
+  '207': 'Falta el motivo o el motivo no es válido.',
+  '208': 'El folio de sustitución no es válido.'
+};
 
 function pacAmbienteEsPrueba(ambiente) {
   return String(ambiente) === '0';
@@ -179,6 +203,8 @@ module.exports = {
   PAC_PROVEEDORES,
   PAC_SW_DEFAULTS,
   PAC_SW_TEST_URLS,
+  MOTIVOS_CANCELACION_NOMINA,
+  CODIGOS_CANCELACION_SAT,
   RECEPTOR_PRUEBA_DEFAULTS,
   RECEPTORES_PRUEBA_SAT,
   RECIBO_PDF_VARIABLES,

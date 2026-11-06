@@ -76,13 +76,13 @@ const FORMULAS_CANONICAS = {
   },
   HORAS_EXTRA_DOBLES: {
     formula:
-      'si(INCIDENCIAS.horasExtraDobles > 0, (EMPLEADO.salarioDiario / EMPLEADO.horasJornada) * INCIDENCIAS.horasExtraDobles * 2, 0)',
+      'si(INCIDENCIAS.horasExtraDobles > 0, si(EMPLEADO.valorHora > 0, EMPLEADO.valorHora, EMPLEADO.salarioDiario / EMPLEADO.horasJornada) * INCIDENCIAS.horasExtraDobles * 2, 0)',
     condicion: '',
     fase: 1
   },
   HORAS_EXTRA_TRIPLES: {
     formula:
-      'si(INCIDENCIAS.horasExtraTriples > 0, (EMPLEADO.salarioDiario / EMPLEADO.horasJornada) * INCIDENCIAS.horasExtraTriples * 3, 0)',
+      'si(INCIDENCIAS.horasExtraTriples > 0, si(EMPLEADO.valorHora > 0, EMPLEADO.valorHora, EMPLEADO.salarioDiario / EMPLEADO.horasJornada) * INCIDENCIAS.horasExtraTriples * 3, 0)',
     condicion: '',
     fase: 1
   },

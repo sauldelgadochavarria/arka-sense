@@ -428,6 +428,8 @@ router.get('/nomina/timbrado', timbradoController.wizardTimbrado);
 router.post('/nomina/timbrado/generar', timbradoController.generarTimbrado);
 router.get('/nomina/timbrado/lotes/:id', timbradoController.showLote);
 router.post('/nomina/timbrado/lotes/:id/descargar-masivo', timbradoController.descargarMasivoLote);
+router.post('/nomina/timbrado/lotes/:id/sustituir', timbradoController.sustituirLote);
+router.post('/nomina/timbrado/lotes/:id/cancelar', timbradoController.cancelarLote);
 router.get('/nomina/timbrado/archivos/:id/descargar', timbradoController.descargarCfdiArchivo);
 
 router.get('/nomina/envio-correo', envioCorreoController.wizard);
