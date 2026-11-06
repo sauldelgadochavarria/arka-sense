@@ -3,6 +3,9 @@
   <h1>Exportación SUA (IMSS / INFONAVIT)</h1>
   <p class="page-subtitle">
     Tres archivos oficiales de importación (ancho fijo, ANSI, CRLF) — Guía Rápida SUA.
+    <% if (session.subsidiariaActiva && session.subsidiariaActiva.nombre) { %>
+    Solo la subsidiaria <strong><%= session.subsidiariaActiva.nombre %></strong>.
+    <% } %>
   </p>
 </div>
 

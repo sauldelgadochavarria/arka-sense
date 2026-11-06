@@ -9,6 +9,8 @@ const subsidiariaSchema = new mongoose.Schema(
     direccion: { type: String, default: '' },
     ciudad: { type: String, default: '' },
     estado: { type: String, default: '' },
+    /** Clave de entidad (AS, NL, DF…). El texto libre `estado` no determina el ISN. */
+    entidadFederativa: { type: String, trim: true, uppercase: true, default: '' },
     codigoPostal: { type: String, default: '' },
     lat: { type: Number },
     lng: { type: Number },

@@ -7,7 +7,8 @@ const {
   parseDate,
   parsePositiveNumber
 } = require('../libs/formHelpers');
-const { requireEmpresaForTenant } = require('../libs/tenantScope');
+const { requireEmpresaForTenant, sessionSubsidiariaId } = require('../libs/tenantScope');
+const { listPeriodosNominaScoped, assertPeriodoEnSubsidiaria } = require('../libs/periodosNominaScope');
 const { tenantHasFeature } = require('../libs/tenantFeatureFlags');
 const {
   STORAGE_PROVEEDORES,
@@ -66,6 +67,25 @@ function userMeta(req) {
   };
 }
 
+async function catalogoDeSubsidiaria(tenantId, empresa, req, { anio = null, limit = 80, soloActivos = true } = {}) {
+  const subId = sessionSubsidiariaId(req);
+  const Empleado = await getEmpleadoModel();
+  const empQ = { tenantId, empresaId: empresa._id };
+  if (soloActivos) empQ.activo = true;
+  if (subId) empQ.subsidiariaId = subId;
+  const [empleados, periodos] = await Promise.all([
+    Empleado.find(empQ).select('numEmpleado firstName lastName subsidiariaId').sort({ numEmpleado: 1 }).limit(500).lean(),
+    listPeriodosNominaScoped({
+      tenantId,
+      empresaId: empresa._id,
+      subsidiariaId: subId,
+      filter: anio ? { anio } : {},
+      limit
+    })
+  ]);
+  return { empleados, periodos, subsidiariaId: subId };
+}
+
 async function tablero(req, res) {
   if (requireGestionDocumental(req, res) === false) return;
   const { empresa, error } = await requireEmpresaForTenant(req);
@@ -73,7 +93,8 @@ async function tablero(req, res) {
   if (empresa) {
     tableroData = await tableroCumplimiento({
       tenantId: req.session.tenantId,
-      empresaId: empresa._id
+      empresaId: empresa._id,
+      subsidiariaId: sessionSubsidiariaId(req)
     });
   }
   res.render('Nomina/gestion-documental/tablero', {
@@ -103,6 +124,10 @@ async function explorador(req, res) {
 
   if (empresa) {
     config = maskConfig(await getOrCreateConfig(req.session.tenantId, empresa._id, empresa));
+    const subId = sessionSubsidiariaId(req);
+    const catalogo = await catalogoDeSubsidiaria(req.session.tenantId, empresa, req, { anio, limit: 80 });
+    periodos = catalogo.periodos;
+    empleados = catalogo.empleados;
     rows = await listarDocumentos(req.session.tenantId, empresa._id, {
       anio,
       mes: mes || undefined,
@@ -110,20 +135,10 @@ async function explorador(req, res) {
       tipoCodigo: tipoCodigo || undefined,
       grupo: grupo || undefined,
       empleadoId: empleadoId || undefined,
-      periodoId: periodoId || undefined
+      periodoId: periodoId || undefined,
+      subsidiariaId: subId
     });
-    tree = await arbolResumen(req.session.tenantId, empresa._id, anio);
-    const Periodo = await getPeriodoNominaModel();
-    const Empleado = await getEmpleadoModel();
-    periodos = await Periodo.find({ tenantId: req.session.tenantId, empresaId: empresa._id, anio })
-      .sort({ numeroPeriodo: -1 })
-      .limit(80)
-      .lean();
-    empleados = await Empleado.find({ tenantId: req.session.tenantId, empresaId: empresa._id, activo: true })
-      .select('numEmpleado firstName lastName')
-      .sort({ numEmpleado: 1 })
-      .limit(500)
-      .lean();
+    tree = await arbolResumen(req.session.tenantId, empresa._id, anio, subId);
   }
 
   res.render('Nomina/gestion-documental/explorador', {
@@ -205,25 +220,29 @@ async function saveConfigAction(req, res) {
   }
 }
 
+function cargaDesdeQuery(req) {
+  const permitidos = new Set(['SUA', 'ISR', 'INFONAVIT', 'NOMINA', 'ISN', 'TRABAJADOR', 'IVA']);
+  const proceso = String(req.query.proceso || '').toUpperCase();
+  const tipo = String(req.query.tipo || '').toUpperCase();
+  const anioN = Number(req.query.anio);
+  const mesN = Number(req.query.mes);
+  return {
+    proceso: permitidos.has(proceso) ? proceso : '',
+    tipo: TIPOS_DOCUMENTO.some((t) => t.codigo === tipo) ? tipo : '',
+    anio: anioN >= 2000 && anioN <= 2100 ? anioN : null,
+    mes: mesN >= 1 && mesN <= 12 ? mesN : null
+  };
+}
+
 async function uploadForm(req, res) {
   if (requireGestionDocumental(req, res) === false) return;
   const { empresa, error } = await requireEmpresaForTenant(req);
-  const Periodo = await getPeriodoNominaModel();
-  const Empleado = await getEmpleadoModel();
   const anio = new Date().getFullYear();
-  const periodos = empresa
-    ? await Periodo.find({ tenantId: req.session.tenantId, empresaId: empresa._id })
-        .sort({ anio: -1, numeroPeriodo: -1 })
-        .limit(60)
-        .lean()
-    : [];
-  const empleados = empresa
-    ? await Empleado.find({ tenantId: req.session.tenantId, empresaId: empresa._id, activo: true })
-        .select('numEmpleado firstName lastName')
-        .sort({ numEmpleado: 1 })
-        .limit(500)
-        .lean()
-    : [];
+  const catalogo = empresa
+    ? await catalogoDeSubsidiaria(req.session.tenantId, empresa, req, { limit: 60 })
+    : { periodos: [], empleados: [] };
+  const periodos = catalogo.periodos;
+  const empleados = catalogo.empleados;
   res.render('Nomina/gestion-documental/upload', {
     session: req.session,
     empresa,
@@ -232,7 +251,8 @@ async function uploadForm(req, res) {
     meses: MESES,
     periodos,
     empleados,
-    anio
+    anio,
+    carga: cargaDesdeQuery(req)
   });
 }
 
@@ -247,18 +267,34 @@ async function uploadAction(req, res) {
     const tipoCodigo = trimString(req.body.tipoCodigo).toUpperCase();
     const tipo = TIPOS_DOCUMENTO.find((t) => t.codigo === tipoCodigo);
     if (!tipo) throw new Error('Tipo inválido');
+    if (tipo.codigo === 'SUA_ARCHIVO') {
+      const ext = String(req.file.originalname || '').split('.').pop().toLowerCase();
+      if (ext !== 'sua') throw new Error('El archivo de pago del SUA debe tener extensión .sua');
+    }
 
     const periodoId = parseOptionalObjectId(req.body.periodoId);
     const empleadoId = parseOptionalObjectId(req.body.empleadoId);
     let periodo = null;
     let empleado = null;
+    const subId = sessionSubsidiariaId(req);
     if (periodoId) {
       const Periodo = await getPeriodoNominaModel();
-      periodo = await Periodo.findOne({ _id: periodoId, tenantId: req.session.tenantId }).lean();
+      periodo = await Periodo.findOne({ _id: periodoId, tenantId: req.session.tenantId, empresaId: empresa._id }).lean();
+      if (periodo && subId) {
+        const ok = await assertPeriodoEnSubsidiaria(periodo, {
+          tenantId: req.session.tenantId,
+          empresaId: empresa._id,
+          subsidiariaId: subId
+        });
+        if (!ok) throw new Error('El período no pertenece a la subsidiaria activa');
+      }
     }
     if (empleadoId) {
       const Empleado = await getEmpleadoModel();
-      empleado = await Empleado.findOne({ _id: empleadoId, tenantId: req.session.tenantId }).lean();
+      const empQ = { _id: empleadoId, tenantId: req.session.tenantId, empresaId: empresa._id };
+      if (subId) empQ.subsidiariaId = subId;
+      empleado = await Empleado.findOne(empQ).lean();
+      if (!empleado) throw new Error('El trabajador no pertenece a la subsidiaria activa');
     }
 
     const anio =
@@ -285,6 +321,7 @@ async function uploadAction(req, res) {
       vigenteHasta: parseDate(req.body.vigenteHasta),
       notas: trimString(req.body.notas),
       origen: 'upload',
+      subsidiariaId: sessionSubsidiariaId(req),
       ...userMeta(req)
     });
     return flashRedirect(
@@ -313,7 +350,8 @@ async function descargar(req, res) {
       req.session.tenantId,
       empresa._id,
       req.params.id,
-      empresa
+      empresa,
+      sessionSubsidiariaId(req)
     );
     res.setHeader('Content-Type', doc.contentType || 'application/octet-stream');
     res.setHeader(
@@ -334,7 +372,8 @@ async function eliminar(req, res) {
     const hard = !!parseCheckbox(req.body, 'hard');
     await eliminarDocumento(req.session.tenantId, empresa._id, req.params.id, {
       hard,
-      empresa
+      empresa,
+      subsidiariaId: sessionSubsidiariaId(req)
     });
     return flashRedirect(req, res, '/nomina/gestion-documental', 'success', hard ? 'Eliminado' : 'Archivado');
   } catch (err) {
@@ -349,20 +388,17 @@ async function reporte(req, res) {
   const mes = req.query.mes ? Number(req.query.mes) : new Date().getMonth() + 1;
   let reporteData = null;
   if (empresa) {
-    const Empleado = await getEmpleadoModel();
-    const empleados = await Empleado.find({
-      tenantId: req.session.tenantId,
-      empresaId: empresa._id,
-      activo: true
-    })
-      .select('numEmpleado firstName lastName')
-      .lean();
+    const catalogo = await catalogoDeSubsidiaria(req.session.tenantId, empresa, req, {
+      soloActivos: true,
+      limit: 1
+    });
     reporteData = await reporteCobertura({
       tenantId: req.session.tenantId,
       empresaId: empresa._id,
       anio,
       mes,
-      empleados
+      empleados: catalogo.empleados,
+      subsidiariaId: catalogo.subsidiariaId
     });
   }
 

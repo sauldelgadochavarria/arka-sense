@@ -29,6 +29,10 @@ const empleadoSchema = new mongoose.Schema(
     ciudadNacimiento: { type: String, trim: true, default: '' },
     /** IMSS */
     registroPatronal: { type: String, trim: true, uppercase: true, default: '' },
+    registroPatronalId: { type: mongoose.Schema.Types.ObjectId, ref: 'RegistroPatronalImss', default: null },
+    /** Entidad donde presta el servicio. No es el domicilio del trabajador ni el domicilio fiscal. */
+    estadoTrabajo: { type: String, trim: true, uppercase: true, default: '' },
+    modalidadTrabajo: { type: String, enum: ['', 'presencial', 'remoto', 'mixto'], default: '' },
     umf: { type: String, trim: true, default: '' },
     email: { type: String, trim: true, lowercase: true, default: '' },
     emailPersonal: { type: String, trim: true, lowercase: true, default: '' },

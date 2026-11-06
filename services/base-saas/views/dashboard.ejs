@@ -38,7 +38,7 @@
 %>
 <section class="dashboard-kpis dash-section">
   <div class="section-header">
-    <h2>Cumplimiento</h2>
+    <h2>Cumplimiento de procesos</h2>
     <a href="/nomina/gestion-documental">Ver tablero completo →</a>
   </div>
   <table class="data-table cump-table">
@@ -48,7 +48,7 @@
     <tbody>
       <% cumplimiento.filas.forEach(function(f) { %>
       <tr>
-        <td><%= f.proceso %></td>
+        <td><%= f.proceso %><% if (f.detalle) { %> <span class="muted small"><%= f.detalle %></span><% } %></td>
         <td><%= f.periodo %></td>
         <td><%= f.fechaLimite %></td>
         <td><span class="cump-pill <%= cumpClass(f.estado) %>"><%= cumpDot(f.estado) %> <%= f.estadoLabel %></span></td>
@@ -57,6 +57,7 @@
     </tbody>
   </table>
   <p class="muted" style="margin-top:0.75rem">
+    Nómina en curso y pago del ISN. Las evidencias (SUA, ISR, INFONAVIT) están en el tablero.
     Expedientes completos: <strong><%= Ex.completos || 0 %>/<%= Ex.total || 0 %></strong>
     <% if (Ex.incompletos) { %> · <%= Ex.incompletos %> incompletos<% } %>
     <% if (Ex.vencidos) { %> · <%= Ex.vencidos %> con vigencia vencida<% } %>

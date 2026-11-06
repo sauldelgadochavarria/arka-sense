@@ -568,6 +568,13 @@ async function reorganizeMenuPackages(Menu, adminRoleId) {
       parentId: cumplId,
       orden: 42
     });
+    await upsertByRuta(Menu, {
+      ...nCommon,
+      menuPrincipal: 'ISN estatal',
+      rutaApp: '/nomina/isn',
+      parentId: cumplId,
+      orden: 43
+    });
 
     // Gestión documental al nivel de Nómina: el menú solo pinta dos niveles.
     const gestDocs = await Menu.find({

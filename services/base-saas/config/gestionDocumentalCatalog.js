@@ -57,7 +57,7 @@ const TIPOS_DOCUMENTO = [
   { codigo: 'POLIZA_CONTABLE', nombre: 'Póliza contable', ambito: 'periodo', carpeta: 'Poliza_contable', grupo: 'nomina', obligatorio: false },
 
   // —— SUA (mensual) ——
-  { codigo: 'SUA_ARCHIVO', nombre: 'Archivo SUA', ambito: 'mes', carpeta: 'SUA/Archivo_SUA', grupo: 'sua', obligatorio: true },
+  { codigo: 'SUA_ARCHIVO', nombre: 'Archivo de pago SUA', ambito: 'mes', carpeta: 'SUA/Archivo_SUA', grupo: 'sua', obligatorio: true },
   { codigo: 'SUA_LINEA_CAPTURA', nombre: 'Línea de captura', ambito: 'mes', carpeta: 'SUA/Linea_captura', grupo: 'sua', obligatorio: false },
   { codigo: 'SUA_COMPROBANTE_PAGO', nombre: 'Comprobante de pago SUA', ambito: 'mes', carpeta: 'SUA/Comprobante_pago', grupo: 'sua', obligatorio: false },
   { codigo: 'SUA_ACUSE_CONFRONTA', nombre: 'Acuse + resultado confronta', ambito: 'mes', carpeta: 'SUA/Acuse_confronta', grupo: 'sua', obligatorio: false },
@@ -66,6 +66,7 @@ const TIPOS_DOCUMENTO = [
   { codigo: 'IMP_ISR', nombre: 'ISR', ambito: 'mes', carpeta: 'Impuestos/ISR', grupo: 'impuestos', obligatorio: false },
   { codigo: 'IMP_IVA', nombre: 'IVA (si aplica)', ambito: 'mes', carpeta: 'Impuestos/IVA', grupo: 'impuestos', obligatorio: false },
   { codigo: 'IMP_ISN', nombre: 'ISN', ambito: 'mes', carpeta: 'Impuestos/ISN', grupo: 'impuestos', obligatorio: false },
+  { codigo: 'ISN_COMPROBANTE', nombre: 'Comprobante de pago ISN', ambito: 'mes', carpeta: 'Impuestos/ISN/Comprobante', grupo: 'impuestos', obligatorio: false },
 
   // —— INFONAVIT (mensual) ——
   { codigo: 'INF_EMA', nombre: 'EMA', ambito: 'mes', carpeta: 'INFONAVIT/EMA', grupo: 'infonavit', obligatorio: false },
@@ -133,8 +134,8 @@ const PROCESOS_CUMPLIMIENTO = [
     codigo: 'SUA',
     nombre: 'SUA',
     origen: 'mes',
-    tiposOk: ['SUA_COMPROBANTE_PAGO', 'SUA_ACUSE_CONFRONTA'],
-    tiposParcial: ['SUA_ARCHIVO', 'SUA_LINEA_CAPTURA'],
+    tiposOk: ['SUA_ARCHIVO'],
+    tiposParcial: ['SUA_LINEA_CAPTURA', 'SUA_COMPROBANTE_PAGO', 'SUA_ACUSE_CONFRONTA'],
     diaLimiteMesSiguiente: 17,
     href: '/nomina/sua'
   },
@@ -151,10 +152,10 @@ const PROCESOS_CUMPLIMIENTO = [
     codigo: 'ISN',
     nombre: 'ISN',
     origen: 'mes',
-    tiposOk: ['IMP_ISN'],
+    tiposOk: ['IMP_ISN', 'ISN_COMPROBANTE'],
     tiposParcial: [],
     diaLimiteMesSiguiente: 17,
-    href: '/nomina/gestion-documental/subir'
+    href: '/nomina/isn'
   },
   {
     codigo: 'INFONAVIT',

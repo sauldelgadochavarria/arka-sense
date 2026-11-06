@@ -8,7 +8,15 @@
   <input name="nombre" value="<%= subsidiaria.nombre %>" placeholder="Nombre" required />
   <input name="direccion" value="<%= subsidiaria.direccion || '' %>" placeholder="Dirección" />
   <input name="ciudad" value="<%= subsidiaria.ciudad || '' %>" placeholder="Ciudad" />
-  <input name="estado" value="<%= subsidiaria.estado || '' %>" placeholder="Estado" />
+  <input name="estado" value="<%= subsidiaria.estado || '' %>" placeholder="Estado (texto libre, no determina el ISN)" />
+  <label>Entidad del ISN
+    <select name="entidadFederativa">
+      <option value="">— Lugar del establecimiento —</option>
+      <% (entidadesFederativas || []).forEach(function (e) { %>
+      <option value="<%= e.value %>" <%= subsidiaria.entidadFederativa === e.value ? 'selected' : '' %>><%= e.label %></option>
+      <% }); %>
+    </select>
+  </label>
   <input name="codigoPostal" value="<%= subsidiaria.codigoPostal || '' %>" placeholder="Código postal" />
   <input name="lat" type="number" step="any" value="<%= subsidiaria.lat != null ? subsidiaria.lat : '' %>" placeholder="Latitud" />
   <input name="lng" type="number" step="any" value="<%= subsidiaria.lng != null ? subsidiaria.lng : '' %>" placeholder="Longitud" />

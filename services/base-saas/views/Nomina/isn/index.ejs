@@ -1,0 +1,551 @@
+<%- include('../../Partials/layout-top', { title: 'ISN estatal', session }) %>
+<%
+  const F = filtros || {};
+  const D = determinacion || null;
+  const tab = F.tab || 'determinacion';
+  function money(n) {
+    return Number(n || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  function ym(n) { return String(n).padStart(2, '0'); }
+%>
+<div class="page-header">
+  <h1>Impuesto sobre nóminas</h1>
+  <p class="page-subtitle">
+    El RFC <%= empresa ? empresa.rfc : '' %> no define el registro patronal ni el estado del ISN.
+    Cada remuneración se atribuye al lugar donde se presta el servicio, con la tasa vigente de esa entidad.
+  </p>
+</div>
+<% if (error) { %><p class="alert"><%= error %></p><% } %>
+<% if (flashError) { %><p class="alert"><%= flashError %></p><% } %>
+<% if (success) { %><p class="alert alert-success"><%= success %></p><% } %>
+<% if (!empresa) { %>
+<p>Sin empresa.</p>
+<% } else { %>
+<div class="toolbar">
+  <a class="btn <%= tab === 'determinacion' ? 'btn-primary' : '' %>" href="/nomina/isn?tab=determinacion&amp;anio=<%= F.anio %>&amp;mes=<%= F.mes %>">Determinación</a>
+  <a class="btn <%= tab === 'patronales' ? 'btn-primary' : '' %>" href="/nomina/isn?tab=patronales">Registros patronales</a>
+  <a class="btn <%= tab === 'cuentas' ? 'btn-primary' : '' %>" href="/nomina/isn?tab=cuentas">Cuentas estatales</a>
+  <a class="btn <%= tab === 'tasas' ? 'btn-primary' : '' %>" href="/nomina/isn?tab=tasas">Tasas por estado</a>
+  <a class="btn <%= tab === 'repositorio' ? 'btn-primary' : '' %>" href="/nomina/isn?tab=repositorio">Repositorio RP–ISN</a>
+</div>
+
+<% if (tab === 'patronales') { %>
+<section class="panel">
+  <h2 class="panel-title">Registro patronal IMSS</h2>
+  <p class="muted">Un RFC puede tener varios registros. El RPU es una forma de administrarlos, no los funde con el ISN.</p>
+  <form method="post" action="/nomina/isn/patronales" class="filter-form form-grid">
+    <label>Número
+      <input name="numero" maxlength="11" required placeholder="E9734337103" />
+    </label>
+    <label>Establecimiento
+      <select name="subsidiariaId">
+        <option value="">Sin establecimiento fijo</option>
+        <% (subsidiarias || []).forEach(function (s) { %>
+        <option value="<%= s._id %>"><%= s.nombre %></option>
+        <% }); %>
+      </select>
+    </label>
+    <label>Clase de riesgo
+      <select name="claseRiesgo">
+        <option value="">—</option>
+        <option value="I">I</option>
+        <option value="II">II</option>
+        <option value="III">III</option>
+        <option value="IV">IV</option>
+        <option value="V">V</option>
+      </select>
+    </label>
+    <label>Fracción <input name="fraccion" /></label>
+    <label>Prima de riesgo <input name="primaRiesgo" type="number" step="0.00001" /></label>
+    <label>Inicio <input name="fechaInicio" type="date" /></label>
+    <label>Fin <input name="fechaFin" type="date" /></label>
+    <label class="checkbox" style="align-self:end"><input type="checkbox" name="esRpu" value="1" /> Es RPU</label>
+    <button type="submit" class="btn btn-primary">Guardar registro</button>
+  </form>
+  <table class="data-table">
+    <thead><tr><th>Número</th><th>Establecimiento</th><th>Clase</th><th>Prima</th><th>RPU</th><th>Vigencia</th></tr></thead>
+    <tbody>
+      <% (patronales || []).forEach(function (p) {
+        const sub = (subsidiarias || []).find(function (s) { return String(s._id) === String(p.subsidiariaId); });
+      %>
+      <tr>
+        <td><code><%= p.numero %></code></td>
+        <td><%= sub ? sub.nombre : '—' %></td>
+        <td><%= p.claseRiesgo || '—' %></td>
+        <td><%= p.primaRiesgo == null ? '—' : p.primaRiesgo %></td>
+        <td><%= p.esRpu ? 'Sí' : 'No' %></td>
+        <td><%= p.fechaInicio ? new Date(p.fechaInicio).toLocaleDateString('es-MX') : '—' %></td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table>
+</section>
+<% } %>
+
+<% if (tab === 'cuentas') { %>
+<section class="panel">
+  <h2 class="panel-title">Cuenta estatal de ISN</h2>
+  <p class="muted">Una sucursal no implica una declaración. La cuenta se configura por entidad, no por establecimiento.</p>
+  <form method="post" action="/nomina/isn/cuentas" class="filter-form form-grid">
+    <label>Entidad
+      <select name="entidad" required>
+        <option value="">—</option>
+        <% entidades.forEach(function (e) { %><option value="<%= e.value %>"><%= e.label %></option><% }); %>
+      </select>
+    </label>
+    <label>Cuenta o identificador <input name="cuentaEstatal" /></label>
+    <label>Alta <input name="fechaAlta" type="date" /></label>
+    <label>Baja <input name="fechaBaja" type="date" /></label>
+    <button type="submit" class="btn btn-primary">Guardar cuenta</button>
+  </form>
+  <table class="data-table">
+    <thead><tr><th>Entidad</th><th>Cuenta</th><th>Alta</th></tr></thead>
+    <tbody>
+      <% (cuentas || []).forEach(function (c) { %>
+      <tr>
+        <td><%= labelEntidad(c.entidad) %></td>
+        <td><%= c.cuentaEstatal || '—' %></td>
+        <td><%= c.fechaAlta ? new Date(c.fechaAlta).toLocaleDateString('es-MX') : '—' %></td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table>
+</section>
+<% } %>
+
+<% if (tab === 'tasas') { %>
+<%
+  const _conceptos = conceptos || [];
+  const _nombreConcepto = nombresConcepto || {};
+  _conceptos.forEach(function (c) {
+    if (!_nombreConcepto[c.codigo]) _nombreConcepto[c.codigo] = c.nombre;
+  });
+  function pctRegla(r) {
+    if (r && r.porcentajeGravado != null && r.porcentajeGravado !== '') return r.porcentajeGravado;
+    if (r && r.tratamiento === 'exento') return 0;
+    return 100;
+  }
+%>
+<section class="panel">
+  <h2 class="panel-title">Tasa y conceptos por entidad</h2>
+  <p class="muted">No hay una tasa nacional. Cada vigencia se conserva: cambiar la tasa no reescribe un mes ya calculado. El porcentaje es la parte del concepto que entra a la base; 0 queda exento y 100 grava completo.</p>
+  <form method="post" action="/nomina/isn/tasas" class="filter-form form-grid" style="max-width:920px">
+    <label>Entidad
+      <select name="entidad" required>
+        <option value="">—</option>
+        <% entidades.forEach(function (e) { %><option value="<%= e.value %>"><%= e.label %></option><% }); %>
+      </select>
+    </label>
+    <label>Tasa % <input name="tasa" type="number" min="0" step="0.0001" required /></label>
+    <label>Inicio de vigencia <input name="fechaInicio" type="date" required /></label>
+    <label>Fin de vigencia <input name="fechaFin" type="date" /></label>
+    <label>Día límite del mes siguiente <input name="diaLimite" type="number" min="1" max="31" value="17" /></label>
+    <label>Atribución
+      <select name="reglaAtribucion">
+        <option value="lugar_servicio">Lugar donde presta el servicio</option>
+        <option value="domicilio_trabajador_si_fuera">Domicilio del trabajador si el servicio es fuera (validar fiscalmente)</option>
+      </select>
+    </label>
+    <label style="grid-column:1/-1">Fundamento legal
+      <input name="fundamentoLegal" placeholder="Artículo y ley de la entidad" />
+    </label>
+    <div style="grid-column:1/-1">
+      <p class="muted small" style="margin:0 0 0.5rem">
+        <% if (session.subsidiariaActiva && session.subsidiariaActiva.nombre) { %>
+        El selector muestra los conceptos de la subsidiaria <strong><%= session.subsidiariaActiva.nombre %></strong> y los que ya salen en sus recibos.
+        <% } else { %>
+        No hay subsidiaria activa: el selector muestra los conceptos visibles de la empresa.
+        <% } %>
+        La regla queda en el estado y vale para cualquier establecimiento de esa entidad. Si un concepto no se lista aquí, el cálculo usa su marca Gravado ISN. Las deducciones no entran a la base.
+      </p>
+      <div id="isn-conceptos">
+        <div class="isn-concepto-row" style="display:grid;grid-template-columns:1fr 9rem auto;gap:0.75rem;align-items:end;margin-bottom:0.75rem">
+          <label>Concepto
+            <select name="conceptoCodigo">
+              <option value="">— Selecciona —</option>
+              <% _conceptos.forEach(function (c) { %>
+              <option value="<%= c.codigo %>"><%= c.codigo %> — <%= c.nombre %></option>
+              <% }); %>
+            </select>
+          </label>
+          <label>% que grava
+            <input name="conceptoPorcentaje" type="number" min="0" max="100" step="0.01" value="100" />
+          </label>
+          <button type="button" class="btn isn-quitar-concepto">Quitar</button>
+        </div>
+      </div>
+      <button type="button" class="btn" id="isn-agregar-concepto">Agregar concepto</button>
+    </div>
+    <button type="submit" class="btn btn-primary">Guardar vigencia</button>
+  </form>
+
+  <% if (!(tasas || []).length) { %>
+  <p class="muted">Aún no hay tasas por estado.</p>
+  <% } %>
+  <% (tasas || []).forEach(function (t) { %>
+  <h3><%= labelEntidad(t.entidad) %> · <%= t.tasa %>%</h3>
+  <p class="muted small">
+    <%= t.reglaAtribucion === 'domicilio_trabajador_si_fuera' ? 'Domicilio si el servicio es fuera' : 'Lugar del servicio' %>
+    · <%= new Date(t.fechaInicio).toLocaleDateString('es-MX') %><%= t.fechaFin ? ' – ' + new Date(t.fechaFin).toLocaleDateString('es-MX') : ' en adelante' %>
+    <% if (t.fundamentoLegal) { %> · <%= t.fundamentoLegal %><% } %>
+  </p>
+  <% if (!(t.reglasConcepto || []).length) { %>
+  <p class="muted">Sin lista de conceptos. Cada percepción usa su marca Gravado ISN.</p>
+  <% } else { %>
+  <table class="data-table">
+    <thead><tr><th>Código</th><th>Descripción</th><th>% que grava</th></tr></thead>
+    <tbody>
+      <% t.reglasConcepto.forEach(function (r) { %>
+      <tr>
+        <td><code><%= r.codigo %></code></td>
+        <td><%= _nombreConcepto[r.codigo] || 'Sin descripción en el catálogo' %></td>
+        <td><%= pctRegla(r) %>%</td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table>
+  <% } %>
+  <% }); %>
+</section>
+<script>
+(function () {
+  var lista = document.getElementById('isn-conceptos');
+  var btn = document.getElementById('isn-agregar-concepto');
+  if (!lista || !btn) return;
+  btn.addEventListener('click', function () {
+    var fila = lista.querySelector('.isn-concepto-row');
+    if (!fila) return;
+    var copia = fila.cloneNode(true);
+    var sel = copia.querySelector('select');
+    if (sel) sel.selectedIndex = 0;
+    var num = copia.querySelector('input');
+    if (num) num.value = '100';
+    lista.appendChild(copia);
+  });
+  lista.addEventListener('click', function (ev) {
+    var quitar = ev.target.closest('.isn-quitar-concepto');
+    if (!quitar) return;
+    var filas = lista.querySelectorAll('.isn-concepto-row');
+    if (filas.length < 2) {
+      var sel = filas[0].querySelector('select');
+      if (sel) sel.selectedIndex = 0;
+      var num = filas[0].querySelector('input');
+      if (num) num.value = '100';
+      return;
+    }
+    quitar.closest('.isn-concepto-row').remove();
+  });
+})();
+</script>
+<% } %>
+
+<% if (tab === 'repositorio') {
+  const mesesNombre = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+%>
+<section class="panel">
+  <h2 class="panel-title">Repositorio registro patronal – ISN</h2>
+  <p class="muted">El comprobante se archiva en el registro patronal con el que se declaró el pago y en la entidad. El ISN del renglón es el de los trabajadores de ese registro en ese estado. El pago de la declaración sigue siendo de la entidad.</p>
+  <% if (!(repositorio || []).length) { %>
+  <p class="muted">Todavía no hay determinación ni pagos para archivar.</p>
+  <% } %>
+  <% (repositorio || []).forEach(function (g) { %>
+  <h3><code><%= g.registroPatronal || 'Sin registro patronal' %></code> · <%= g.entidad ? labelEntidad(g.entidad) : 'Sin entidad' %></h3>
+  <table class="data-table">
+    <thead><tr><th>Periodo</th><th>Trabajadores</th><th>ISN del grupo</th><th>Pagos</th><th>Comprobante</th></tr></thead>
+    <tbody>
+      <% g.filas.forEach(function (f) { %>
+      <tr>
+        <td><a href="/nomina/isn?anio=<%= f.anio %>&amp;mes=<%= f.mes %>&amp;fuente=historico&amp;entidad=<%= g.entidad %>"><%= mesesNombre[f.mes] || f.mes %> <%= f.anio %></a></td>
+        <td><%= f.trabajadores %></td>
+        <td>$<%= money(f.impuesto) %></td>
+        <td>
+          <% if (!(f.pagos || []).length) { %>Sin pago<% } %>
+          <% (f.pagos || []).forEach(function (x) { %>
+          <div><%= x.tipo || 'normal' %> · <%= x.folio || 'sin folio' %> · $<%= money(x.importe) %><% if (x.referenciaPago) { %> · <%= x.referenciaPago %><% } %></div>
+          <% }); %>
+        </td>
+        <td>
+          <% (f.pagos || []).forEach(function (x) { %>
+            <% if (x.documentoId) { %>
+            <div><a href="/nomina/isn/comprobantes/<%= x.documentoId %>"><%= x.nombreArchivo || 'Descargar comprobante' %></a></div>
+            <% } else { %>
+            <form method="post" action="/nomina/isn/<%= f.detId %>/declaracion/<%= x._id %>/comprobante" enctype="multipart/form-data" class="form-grid" style="margin-bottom:0.75rem">
+              <input type="hidden" name="volver" value="repositorio" />
+              <label>Archivar en
+                <select name="registroPatronal">
+                  <option value="">Sin registro patronal</option>
+                  <% if (g.registroPatronal && !(patronales || []).some(function (p) { return p.numero === g.registroPatronal; })) { %>
+                  <option value="<%= g.registroPatronal %>" selected><%= g.registroPatronal %></option>
+                  <% } %>
+                  <% (patronales || []).forEach(function (p) { %>
+                  <option value="<%= p.numero %>" <%= g.registroPatronal === p.numero ? 'selected' : '' %>><%= p.numero %></option>
+                  <% }); %>
+                </select>
+              </label>
+              <label>Comprobante <input type="file" name="comprobante" required accept=".pdf,.jpg,.jpeg,.png,.webp,.xml" /></label>
+              <button type="submit" class="btn">Archivar</button>
+            </form>
+            <% } %>
+          <% }); %>
+          <% if (!(f.pagos || []).length) { %><span class="muted">Se adjunta al registrar el pago de la entidad.</span><% } %>
+        </td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table>
+  <% }); %>
+</section>
+<% } %>
+
+<% if (tab === 'determinacion') { %>
+<section class="panel">
+  <h2 class="panel-title">Determinación mensual</h2>
+  <form method="post" action="/nomina/isn/calcular" class="filter-form form-grid">
+    <label>Año <input name="anio" type="number" value="<%= F.anio %>" /></label>
+    <label>Mes <input name="mes" type="number" min="1" max="12" value="<%= F.mes %>" /></label>
+    <label>Fuente
+      <select name="fuente">
+        <option value="historico" <%= F.fuente === 'historico' ? 'selected' : '' %>>Recibos cerrados</option>
+        <option value="timbrado" <%= F.fuente === 'timbrado' ? 'selected' : '' %>>Solo CFDI timbrado</option>
+      </select>
+    </label>
+    <label class="checkbox" style="align-self:end">
+      <input type="checkbox" name="autorizar" value="1" /> Autorizar recálculo si el mes está cerrado
+    </label>
+    <button type="submit" class="btn btn-primary">Calcular</button>
+  </form>
+  <% if (!D) { %>
+  <p class="muted">Aún no hay determinación de <%= ym(F.mes) %>/<%= F.anio %>.</p>
+  <% } else { %>
+  <p>
+    Versión <%= D.version %> · <%= D.estatus %>
+    · Base gravable <strong>$<%= money(D.totalBaseGravable) %></strong>
+    · ISN <strong>$<%= money(D.totalImpuesto) %></strong>
+    <% if (D.calculadoPor) { %> · Calculó <%= D.calculadoPor %><% } %>
+    <% if (D.cerradoPor) { %> · Cerró <%= D.cerradoPor %><% } %>
+  </p>
+  <div class="toolbar">
+    <a class="btn" href="/nomina/isn/export?anio=<%= D.anio %>&amp;mes=<%= D.mes %>&amp;tipo=resumen">Excel resumen</a>
+    <a class="btn" href="/nomina/isn/export?anio=<%= D.anio %>&amp;mes=<%= D.mes %>&amp;tipo=detalle">Excel detalle</a>
+    <button type="button" class="btn" onclick="window.print()">Imprimir / PDF</button>
+    <% if (D.estatus !== 'cerrado') { %>
+    <form method="post" action="/nomina/isn/<%= D._id %>/cerrar" style="display:inline">
+      <button type="submit" class="btn btn-primary">Cerrar mes</button>
+    </form>
+    <% } %>
+  </div>
+  <% if ((D.advertencias || []).length) { %>
+  <div class="alert">
+    <% D.advertencias.slice(0, 12).forEach(function (a) { %><div><%= a %></div><% }); %>
+    <% if (D.advertencias.length > 12) { %><div>Y <%= D.advertencias.length - 12 %> avisos más. El detalle está en el Excel.</div><% } %>
+  </div>
+  <% } %>
+  <h3>Por entidad</h3>
+  <p class="muted">Elige un estado. Abajo quedan sus trabajadores y la declaración de ese estado, con el importe ya lleno.</p>
+  <div class="toolbar">
+    <button type="button" class="btn" id="isn-ver-todos">Todos los estados</button>
+    <a class="btn" href="/nomina/isn/export?anio=<%= D.anio %>&amp;mes=<%= D.mes %>&amp;tipo=resumen">Excel resumen por estado</a>
+    <a class="btn" id="isn-excel-trab" href="/nomina/isn/export?anio=<%= D.anio %>&amp;mes=<%= D.mes %>&amp;tipo=detalle">Excel trabajadores</a>
+  </div>
+  <table class="data-table" id="isn-estados">
+    <thead><tr><th>Entidad</th><th>Trabajadores</th><th>Base gravable</th><th>Exenta</th><th>Tasa</th><th>ISN</th><th>Cuenta</th><th>Pago</th></tr></thead>
+    <tbody>
+      <% (D.porEntidad || []).forEach(function (e) {
+        const pagos = (D.declaraciones || []).filter(function (x) { return x.entidad === e.entidad; });
+        const pagado = pagos.reduce(function (s, x) { return s + Number(x.importe || 0); }, 0);
+      %>
+      <tr class="isn-estado" data-entidad="<%= e.entidad || '__sin__' %>" data-label="<%= e.entidad ? labelEntidad(e.entidad) : 'Sin entidad' %>" data-impuesto="<%= e.impuesto || 0 %>" data-pagado="<%= pagado %>" data-cuenta="<%= e.cuentaEstatal || '' %>" style="cursor:pointer">
+        <td><%= e.entidad ? labelEntidad(e.entidad) : 'Sin entidad' %></td>
+        <td><%= e.trabajadores %></td>
+        <td>$<%= money(e.baseGravable) %></td>
+        <td>$<%= money(e.baseExenta) %></td>
+        <td><%= e.tasa == null ? 'Sin tasa' : e.tasa + '%' %></td>
+        <td>$<%= money(e.impuesto) %></td>
+        <td><%= e.cuentaEstatal || '—' %></td>
+        <td>
+          <% if (!e.entidad) { %>—<% } else if (!pagos.length) { %>Pendiente<% } else { %>
+          Pagado $<%= money(pagado) %>
+          <% pagos.forEach(function (x) { %><br><span class="muted small"><%= x.folio || 'sin folio' %><% if (x.referenciaPago) { %> · <%= x.referenciaPago %><% } %><% if (x.documentoId) { %> · <a href="/nomina/isn/comprobantes/<%= x.documentoId %>">comprobante</a><% } %></span><% }); %>
+          <% } %>
+        </td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table>
+  <h3 id="isn-trab-titulo">Trabajadores</h3>
+  <% if ((D.detalle || []).length > 200) { %>
+  <p class="muted">Se muestran 200 de <%= D.detalle.length %>. El Excel trae el estado elegido, o todos si no hay filtro.</p>
+  <% } %>
+  <table class="data-table" id="isn-trabajadores">
+    <thead><tr><th>No.</th><th>Nombre</th><th>Establecimiento</th><th>RP</th><th>Entidad</th><th>Gravable</th><th>Exento</th><th>ISN</th></tr></thead>
+    <tbody>
+      <% (D.detalle || []).slice(0, 200).forEach(function (d) { %>
+      <tr data-entidad="<%= d.entidad || '__sin__' %>">
+        <td><%= d.numEmpleado %></td>
+        <td><%= d.nombre %><% if (d.nota) { %><br><span class="muted small"><%= d.nota %></span><% } %></td>
+        <td><%= d.establecimiento || '—' %></td>
+        <td><code><%= d.registroPatronal || '—' %></code></td>
+        <td><%= d.entidad ? labelEntidad(d.entidad) : 'Sin entidad' %></td>
+        <td>$<%= money(d.baseGravable) %></td>
+        <td>$<%= money(d.baseExenta) %></td>
+        <td>$<%= money(d.impuesto) %></td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table>
+  <h3>Declaración y pago</h3>
+  <p class="muted" id="isn-decl-ayuda">Elige un estado en el resumen. El formulario toma esa entidad y su ISN.</p>
+  <div id="isn-decl-historiales">
+    <% (D.porEntidad || []).forEach(function (e) {
+      if (!e.entidad) return;
+      const propias = (D.declaraciones || []).filter(function (x) { return x.entidad === e.entidad; });
+    %>
+    <div data-entidad="<%= e.entidad %>" hidden>
+      <% if (!propias.length) { %>
+      <p class="muted small">Sin declaración de <%= labelEntidad(e.entidad) %>.</p>
+      <% } else { %>
+      <ul>
+        <% propias.forEach(function (x) { %>
+        <li>
+          <%= x.tipo %> · <%= x.folio || 'sin folio' %> · $<%= money(x.importe) %> · <%= x.referenciaPago || 'sin referencia' %>
+          <% if (x.registroPatronal) { %> · RP <%= x.registroPatronal %><% } %>
+          <% if (x.fecha) { %> · <%= new Date(x.fecha).toLocaleDateString('es-MX') %><% } %>
+          <% if (x.documentoId) { %> · <a href="/nomina/isn/comprobantes/<%= x.documentoId %>"><%= x.nombreArchivo || 'comprobante' %></a><% } else { %> · <span class="muted">sin comprobante</span><% } %>
+        </li>
+        <% }); %>
+      </ul>
+      <% } %>
+    </div>
+    <% }); %>
+  </div>
+  <form method="post" action="/nomina/isn/<%= D._id %>/declaracion" enctype="multipart/form-data" class="filter-form form-grid" id="isn-decl-form" hidden>
+    <input type="hidden" name="entidad" id="isn-decl-entidad" value="" />
+    <label>Tipo
+      <select name="tipo">
+        <option value="normal">Normal</option>
+        <option value="complementaria">Complementaria</option>
+      </select>
+    </label>
+    <label>Registro patronal
+      <select name="registroPatronal" id="isn-decl-rp"></select>
+    </label>
+    <label>Folio <input name="folio" /></label>
+    <label>Fecha <input name="fecha" id="isn-decl-fecha" type="date" /></label>
+    <label>Referencia bancaria <input name="referenciaPago" /></label>
+    <label>Importe <input name="importe" id="isn-decl-importe" type="number" step="0.01" /></label>
+    <label>Comprobante de pago
+      <input name="comprobante" type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.xml" />
+    </label>
+    <label>Notas <input name="notas" /></label>
+    <button type="submit" class="btn" id="isn-decl-btn">Registrar</button>
+  </form>
+  <%
+    const rpsPorEntidad = {};
+    (D.detalle || []).forEach(function (d) {
+      if (!d.entidad) return;
+      if (!rpsPorEntidad[d.entidad]) rpsPorEntidad[d.entidad] = {};
+      const rp = d.registroPatronal || '';
+      rpsPorEntidad[d.entidad][rp] = (rpsPorEntidad[d.entidad][rp] || 0) + 1;
+    });
+    const catalogoRp = (patronales || []).map(function (p) { return p.numero; });
+  %>
+  <script>
+  (function () {
+    var rpsPorEntidad = <%- JSON.stringify(rpsPorEntidad).replace(/</g, '\\u003c') %>;
+    var catalogoRp = <%- JSON.stringify(catalogoRp).replace(/</g, '\\u003c') %>;
+    var excelBase = '/nomina/isn/export?anio=<%= D.anio %>&mes=<%= D.mes %>&tipo=detalle';
+    var excel = document.getElementById('isn-excel-trab');
+    var titulo = document.getElementById('isn-trab-titulo');
+    var ayuda = document.getElementById('isn-decl-ayuda');
+    var form = document.getElementById('isn-decl-form');
+    var campoEntidad = document.getElementById('isn-decl-entidad');
+    var campoImporte = document.getElementById('isn-decl-importe');
+    var campoRp = document.getElementById('isn-decl-rp');
+    var campoFecha = document.getElementById('isn-decl-fecha');
+    var boton = document.getElementById('isn-decl-btn');
+    function llenarRp(entidad) {
+      var mapa = rpsPorEntidad[entidad] || {};
+      var set = {};
+      Object.keys(mapa).forEach(function (k) { if (k) set[k] = true; });
+      catalogoRp.forEach(function (n) { if (n) set[n] = true; });
+      var lista = Object.keys(set).sort();
+      campoRp.innerHTML = '';
+      var vacio = document.createElement('option');
+      vacio.value = '';
+      vacio.textContent = 'Sin registro patronal';
+      campoRp.appendChild(vacio);
+      lista.forEach(function (n) {
+        var o = document.createElement('option');
+        o.value = n;
+        o.textContent = mapa[n] ? n + ' (' + mapa[n] + ' trab.)' : n;
+        campoRp.appendChild(o);
+      });
+      var propios = Object.keys(mapa).filter(function (k) { return k; });
+      campoRp.value = propios.length === 1 ? propios[0] : '';
+    }
+    function saldoDe(fila) {
+      var impuesto = Number(fila.getAttribute('data-impuesto') || 0);
+      var pagado = Number(fila.getAttribute('data-pagado') || 0);
+      var saldo = Math.round((impuesto - pagado) * 100) / 100;
+      return saldo > 0 ? saldo : 0;
+    }
+    function aplicar(entidad) {
+      document.querySelectorAll('#isn-estados .isn-estado').forEach(function (tr) {
+        var on = entidad !== null && tr.getAttribute('data-entidad') === entidad;
+        tr.style.background = on ? '#e8f0fe' : '';
+      });
+      var visibles = 0;
+      document.querySelectorAll('#isn-trabajadores tbody tr').forEach(function (tr) {
+        var show = !entidad || tr.getAttribute('data-entidad') === entidad;
+        tr.hidden = !show;
+        if (show) visibles += 1;
+      });
+      document.querySelectorAll('#isn-decl-historiales [data-entidad]').forEach(function (n) {
+        n.hidden = !entidad || n.getAttribute('data-entidad') !== entidad;
+      });
+      if (!entidad) {
+        titulo.textContent = 'Trabajadores';
+        excel.href = excelBase;
+        excel.textContent = 'Excel trabajadores';
+        ayuda.textContent = 'Elige un estado en el resumen. El formulario toma esa entidad y su ISN.';
+        form.hidden = true;
+        return;
+      }
+      var fila = document.querySelector('#isn-estados .isn-estado[data-entidad="' + entidad + '"]');
+      var label = fila ? fila.getAttribute('data-label') : entidad;
+      titulo.textContent = 'Trabajadores · ' + label + ' (' + visibles + ')';
+      excel.href = excelBase + '&entidad=' + encodeURIComponent(entidad);
+      excel.textContent = 'Excel ' + label;
+      if (entidad === '__sin__') {
+        form.hidden = true;
+        ayuda.textContent = 'Sin entidad no se declara. Asigna el estado en el empleado o en la sucursal.';
+        return;
+      }
+      var saldo = saldoDe(fila);
+      var cuenta = fila.getAttribute('data-cuenta');
+      ayuda.textContent = label + (cuenta ? ' · cuenta ' + cuenta : '') + ' · saldo $' + saldo.toFixed(2) + '. El importe propuesto es lo que falta por pagar.';
+      campoEntidad.value = entidad;
+      campoImporte.value = saldo.toFixed(2);
+      llenarRp(entidad);
+      if (campoFecha && !campoFecha.value) {
+        var hoy = new Date();
+        campoFecha.value = hoy.getFullYear() + '-' + String(hoy.getMonth() + 1).padStart(2, '0') + '-' + String(hoy.getDate()).padStart(2, '0');
+      }
+      boton.textContent = 'Registrar ' + label;
+      form.hidden = false;
+    }
+    document.querySelectorAll('#isn-estados .isn-estado').forEach(function (tr) {
+      tr.addEventListener('click', function () { aplicar(tr.getAttribute('data-entidad') || ''); });
+    });
+    var todos = document.getElementById('isn-ver-todos');
+    if (todos) todos.addEventListener('click', function () { aplicar(''); });
+    var inicial = '';
+    try { inicial = new URLSearchParams(location.search).get('entidad') || ''; } catch (e) { inicial = ''; }
+    if (inicial) aplicar(inicial);
+  })();
+  </script>
+  <% } %>
+</section>
+<% } %>
+<% } %>
+<%- include('../../Partials/layout-bottom') %>

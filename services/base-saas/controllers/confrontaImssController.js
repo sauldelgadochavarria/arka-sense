@@ -1,8 +1,8 @@
 'use strict';
 
-const { requireEmpresaForTenant } = require('../libs/tenantScope');
+const { requireEmpresaForTenant, sessionSubsidiariaId } = require('../libs/tenantScope');
+const { listPeriodosNominaScoped } = require('../libs/periodosNominaScope');
 const { parseOptionalObjectId, trimString } = require('../libs/formHelpers');
-const getPeriodoNominaModel = require('../models/periodoNomina');
 const {
   CHECKLIST_CONFRONTA,
   CALENDARIO_OBLIGACIONES,
@@ -13,11 +13,14 @@ const {
   toConfrontaCsv
 } = require('../services/confrontaImssService');
 
-async function loadPeriodos(tenantId, empresaId) {
-  const Periodo = await getPeriodoNominaModel();
-  const q = { tenantId };
-  if (empresaId) q.empresaId = empresaId;
-  return Periodo.find(q).sort({ anio: -1, numeroPeriodo: -1, fechaInicio: -1 }).limit(80).lean();
+async function loadPeriodos(tenantId, empresaId, subsidiariaId) {
+  if (!empresaId) return [];
+  return listPeriodosNominaScoped({
+    tenantId,
+    empresaId,
+    subsidiariaId: subsidiariaId || null,
+    limit: 80
+  });
 }
 
 function money(n) {
@@ -30,7 +33,10 @@ async function index(req, res) {
   const tab = ['confronta', 'checklist', 'calendario'].includes(String(req.query.tab))
     ? String(req.query.tab)
     : 'confronta';
-  const periodos = empresa ? await loadPeriodos(req.session.tenantId, empresa._id) : [];
+  const subsidiariaId = sessionSubsidiariaId(req);
+  const periodos = empresa
+    ? await loadPeriodos(req.session.tenantId, empresa._id, subsidiariaId)
+    : [];
 
   const filters = {
     periodoId: parseOptionalObjectId(req.body.periodoId || req.query.periodoId),
@@ -54,6 +60,7 @@ async function index(req, res) {
         result = await ejecutarConfronta({
           tenantId: req.session.tenantId,
           empresaId: empresa._id,
+          subsidiariaId,
           periodoId: filters.periodoId,
           tolerancia: filters.tolerancia,
           fuenteNomina: filters.fuenteNomina,

@@ -40,6 +40,7 @@ const rotacionesController = require('../controllers/rotacionesController');
 const reportesController = require('../controllers/reportesController');
 const nominaReportesController = require('../controllers/nominaReportesController');
 const suaExportController = require('../controllers/suaExportController');
+const isnController = require('../controllers/isnController');
 const confrontaImssController = require('../controllers/confrontaImssController');
 const ayudaController = require('../controllers/ayudaController');
 const { getDashboardKpis } = require('../services/dashboardKpiService');
@@ -119,13 +120,11 @@ router.get(['/', '/dashboard', '/inicio', '/nomina/flujo'], async (req, res) => 
   let flujoNomina = null;
   if (empresa && tenantHasFeature(featureFlags, 'gestion_documental')) {
     try {
-      const full = await tableroCumplimiento({
+      cumplimiento = await tableroCumplimiento({
         tenantId: req.session.tenantId,
-        empresaId: empresa._id
+        empresaId: empresa._id,
+        subsidiariaId: sessionSubsidiariaId(req)
       });
-      const nomina = (full.filas || []).filter((f) => f.procesoCodigo === 'NOMINA').slice(0, 1);
-      const resto = (full.filas || []).filter((f) => f.procesoCodigo !== 'NOMINA');
-      cumplimiento = { ...full, filas: [...nomina, ...resto] };
     } catch (err) {
       console.warn('[dashboard cumplimiento]', err.message);
     }
@@ -397,6 +396,20 @@ router.post(
   descuentoProgramadoController.ajusteSaldo
 );
 
+router.get('/nomina/isn', isnController.index);
+router.post('/nomina/isn/patronales', isnController.guardarPatronal);
+router.post('/nomina/isn/cuentas', isnController.guardarCuenta);
+router.post('/nomina/isn/tasas', isnController.guardarTasa);
+router.post('/nomina/isn/calcular', isnController.calcular);
+router.post('/nomina/isn/:id/cerrar', isnController.cerrar);
+router.post('/nomina/isn/:id/declaracion', uploadDocumentoMem.single('comprobante'), isnController.declarar);
+router.post(
+  '/nomina/isn/:id/declaracion/:declId/comprobante',
+  uploadDocumentoMem.single('comprobante'),
+  isnController.adjuntarComprobante
+);
+router.get('/nomina/isn/comprobantes/:documentoId', isnController.descargarComprobante);
+router.get('/nomina/isn/export', isnController.exportCsv);
 router.get('/nomina/sua', suaExportController.index);
 router.get('/nomina/sua/descargar', suaExportController.download);
 

@@ -16,8 +16,13 @@
 <div class="page-header">
   <h1>Cumplimiento</h1>
   <p class="page-subtitle">
-    Semáforo de obligaciones (nómina, SUA, ISR, ISN, INFONAVIT) y expedientes de trabajadores.
-    Fechas límite típicas MX: día 17 del mes siguiente (IMSS / SAT / INFONAVIT bimestral).
+    Los procesos (nómina en curso y pago del ISN) van aparte de las evidencias (archivos de SUA, ISR, ISN e INFONAVIT).
+    <% if (T.mesFiscal) { %>
+    Las evidencias corresponden a <strong><%= T.mesFiscal.nombre %> <%= T.mesFiscal.anio %></strong>, con límite el día 17 de este mes.
+    <% } %>
+    <% if (session.subsidiariaActiva && session.subsidiariaActiva.nombre) { %>
+    Nómina y expedientes de <strong><%= session.subsidiariaActiva.nombre %></strong>.
+    <% } %>
   </p>
 </div>
 <div class="toolbar">
@@ -32,14 +37,15 @@
 <% } else { %>
 
 <div class="cump-stats">
-  <div class="stat-card ok"><strong><%= T.resumen && T.resumen.ok || 0 %></strong><span>En verde</span></div>
-  <div class="stat-card warn"><strong><%= T.resumen && T.resumen.pendiente || 0 %></strong><span>Pendientes</span></div>
-  <div class="stat-card bad"><strong><%= T.resumen && T.resumen.atrasado || 0 %></strong><span>Atrasados</span></div>
+  <div class="stat-card ok"><strong><%= T.resumen && T.resumen.ok || 0 %></strong><span>Procesos en verde</span></div>
+  <div class="stat-card warn"><strong><%= T.resumen && T.resumen.pendiente || 0 %></strong><span>Procesos pendientes</span></div>
+  <div class="stat-card bad"><strong><%= T.resumen && T.resumen.atrasado || 0 %></strong><span>Procesos atrasados</span></div>
   <div class="stat-card"><strong><%= E.completos || 0 %>/<%= E.total || 0 %></strong><span>Expedientes completos</span></div>
 </div>
 
 <section class="panel">
   <h2 class="panel-title">Procesos</h2>
+  <p class="muted">Nómina que ya empezó y pago del ISN del mes que se declara. Las semanas que todavía no inician no se listan.</p>
   <table class="data-table cump-table">
     <thead>
       <tr>
@@ -50,7 +56,7 @@
       </tr>
     </thead>
     <tbody>
-      <% (T.filas || []).forEach(function(f) { %>
+      <% (T.filasProcesos || T.filas || []).forEach(function(f) { %>
       <tr>
         <td><a href="<%= f.href %>"><%= f.proceso %></a><% if (f.detalle) { %> <span class="muted small"><%= f.detalle %></span><% } %></td>
         <td><%= f.periodo %></td>
@@ -58,8 +64,43 @@
         <td><span class="cump-pill <%= badgeClass(f.estado) %>"><%= dot(f.estado) %> <%= f.estadoLabel %></span></td>
       </tr>
       <% }); %>
-      <% if (!(T.filas || []).length) { %>
-      <tr><td colspan="4" class="muted">Sin períodos de nómina ni evidencias aún.</td></tr>
+      <% if (!(T.filasProcesos || T.filas || []).length) { %>
+      <tr><td colspan="4" class="muted">No hay nómina en curso ni ISN por declarar en esta ventana.</td></tr>
+      <% } %>
+    </tbody>
+  </table>
+</section>
+
+<section class="panel">
+  <h2 class="panel-title">Evidencias</h2>
+  <p class="muted">
+    Archivos cargados<% if (T.mesFiscal) { %> de <%= T.mesFiscal.nombre %> <%= T.mesFiscal.anio %><% } %>.
+    <% if (T.resumenDocumentos) { %>
+    <%= T.resumenDocumentos.ok || 0 %> cargados,
+    <%= T.resumenDocumentos.pendiente || 0 %> sin archivo,
+    <%= T.resumenDocumentos.atrasado || 0 %> atrasados.
+    <% } %>
+  </p>
+  <table class="data-table cump-table">
+    <thead>
+      <tr>
+        <th>Documento</th>
+        <th>Periodo</th>
+        <th>Fecha límite</th>
+        <th>Estado</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% (T.filasDocumentos || []).forEach(function(f) { %>
+      <tr>
+        <td><a href="<%= f.href %>"><%= f.proceso %></a><% if (f.detalle) { %> <span class="muted small"><%= f.detalle %></span><% } %></td>
+        <td><%= f.periodo %></td>
+        <td><%= f.fechaLimite %></td>
+        <td><span class="cump-pill <%= badgeClass(f.estado) %>"><%= dot(f.estado) %> <%= f.estadoLabel %></span></td>
+      </tr>
+      <% }); %>
+      <% if (!(T.filasDocumentos || []).length) { %>
+      <tr><td colspan="4" class="muted">Sin evidencias configuradas.</td></tr>
       <% } %>
     </tbody>
   </table>

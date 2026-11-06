@@ -13,6 +13,9 @@
   <p class="page-subtitle">
     Cruce interno de SBC: lo pagado en nómina vs padrón IDSE vs base local SUA.
     Sin plazo legal — control para evitar capital constitutivo y observaciones en Dictamen.
+    <% if (session.subsidiariaActiva && session.subsidiariaActiva.nombre) { %>
+    Períodos y trabajadores de <strong><%= session.subsidiariaActiva.nombre %></strong>.
+    <% } %>
   </p>
 </div>
 

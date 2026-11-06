@@ -71,7 +71,7 @@
          const ambitoLabel = ambito === 'ambos' ? 'Ambos' : (ambito === 'prenomina' ? 'Pre-nómina' : 'Nómina');
          const satClave = (c.sat && c.sat.clave) || c.claveSAT || '—';
          const fiscal = c.fiscal || {};
-         const fiscalTxt = (fiscal.integraISR === false ? 'ISR×' : 'ISR✓') + ' ' + (fiscal.integraIMSS === false ? 'IMSS×' : 'IMSS✓');
+         const fiscalTxt = (fiscal.integraISR === false ? 'ISR×' : 'ISR✓') + ' ' + (fiscal.integraIMSS === false ? 'IMSS×' : 'IMSS✓') + ' ' + (fiscal.integraISN === false ? 'ISN×' : 'ISN✓');
          const origen = (c.subsidiaryConfig && c.subsidiaryConfig.origen) || c.visiblePor || 'catalogo';
          const activoUi = typeof c.activoUi === 'boolean'
            ? c.activoUi

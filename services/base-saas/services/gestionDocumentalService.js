@@ -49,10 +49,12 @@ function buildStorageKey({
   periodoLabel,
   numEmpleado,
   empleadoNombre,
-  fileName
+  fileName,
+  subcarpetas = null
 }) {
   const safeFile = slugPath(fileName || 'archivo');
   const carpeta = tipo.carpeta || tipo.codigo;
+  const extra = (subcarpetas || []).map((p) => slugPath(p)).filter(Boolean);
 
   if (tipo.ambito === 'empleado') {
     const empFolder = slugPath(`${numEmpleado || '000'} ${empleadoNombre || 'Empleado'}`);
@@ -64,11 +66,11 @@ function buildStorageKey({
   const yearFolder = String(anio || new Date().getFullYear());
 
   if (tipo.ambito === 'periodo') {
-    return joinKey(empresaSlug, yearFolder, mesFolder, periodoLabel || 'Periodo', carpeta, safeFile);
+    return joinKey(empresaSlug, yearFolder, mesFolder, periodoLabel || 'Periodo', carpeta, ...extra, safeFile);
   }
 
   // mes
-  return joinKey(empresaSlug, yearFolder, mesFolder, carpeta, safeFile);
+  return joinKey(empresaSlug, yearFolder, mesFolder, carpeta, ...extra, safeFile);
 }
 
 async function getOrCreateConfig(tenantId, empresaId, empresa) {
@@ -128,8 +130,13 @@ async function subirDocumento({
   vigenteHasta = null,
   notas = '',
   origen = 'upload',
+  subsidiariaId = null,
   userId = '',
-  userLabel = ''
+  userLabel = '',
+  entidad = '',
+  registroPatronal = '',
+  subcarpetas = null,
+  conservarAnteriores = false
 }) {
   const tipo = tipoByCodigo(tipoCodigo);
   if (!tipo) throw new Error(`Tipo documental desconocido: ${tipoCodigo}`);
@@ -174,7 +181,8 @@ async function subirDocumento({
     periodoLabel: pLabel,
     numEmpleado: numEmp,
     empleadoNombre: nombreEmp,
-    fileName: baseName
+    fileName: baseName,
+    subcarpetas
   });
 
   await storage.put({ key: storageKey, buffer: contenido, contentType });
@@ -201,8 +209,9 @@ async function subirDocumento({
   } else {
     prevFilter.empleadoId = empleadoId || empleado?._id;
   }
+  if (subsidiariaId) prevFilter.subsidiariaId = subsidiariaId;
 
-  const prev = await Documento.findOne(prevFilter).sort({ version: -1 });
+  const prev = conservarAnteriores ? null : await Documento.findOne(prevFilter).sort({ version: -1 });
   let version = 1;
   let reemplazaId = null;
   if (prev) {
@@ -224,12 +233,15 @@ async function subirDocumento({
   const doc = await Documento.create({
     tenantId,
     empresaId,
+    subsidiariaId: subsidiariaId || empleado?.subsidiariaId || periodo?.subsidiariaId || null,
     tipoCodigo: tipo.codigo,
     ambito: tipo.ambito,
     anio: tipo.ambito === 'empleado' ? null : a,
     mes: tipo.ambito === 'empleado' ? null : m,
     periodoId: tipo.ambito === 'periodo' ? periodoId || periodo?._id || null : null,
     periodoLabel: tipo.ambito === 'periodo' ? pLabel : '',
+    entidad: String(entidad || '').toUpperCase(),
+    registroPatronal: String(registroPatronal || '').toUpperCase(),
     empleadoId: tipo.ambito === 'empleado' ? empleadoId || empleado?._id || null : null,
     numEmpleado: tipo.ambito === 'empleado' ? numEmp : '',
     empleadoNombre: tipo.ambito === 'empleado' ? nombreEmp : '',
@@ -254,6 +266,43 @@ async function subirDocumento({
   return doc.toObject();
 }
 
+async function subirComprobanteIsn({
+  tenantId,
+  empresa,
+  anio,
+  mes,
+  entidad,
+  registroPatronal = '',
+  buffer,
+  nombreOriginal,
+  contentType,
+  notas = '',
+  userId = '',
+  userLabel = ''
+}) {
+  const ent = String(entidad || '').trim().toUpperCase();
+  const rp = String(registroPatronal || '').trim().toUpperCase();
+  return subirDocumento({
+    tenantId,
+    empresa,
+    tipoCodigo: 'ISN_COMPROBANTE',
+    anio,
+    mes,
+    buffer,
+    nombreOriginal,
+    contentType,
+    notas,
+    origen: 'upload',
+    subsidiariaId: null,
+    userId,
+    userLabel,
+    entidad: ent,
+    registroPatronal: rp,
+    subcarpetas: [rp || 'SIN_REGISTRO', ent || 'SIN_ENTIDAD'],
+    conservarAnteriores: true
+  });
+}
+
 async function listarDocumentos(tenantId, empresaId, filtros = {}) {
   const Documento = await getDocumentoArchivoModel();
   const q = { tenantId, empresaId, activo: filtros.incluirInactivos ? undefined : true };
@@ -268,23 +317,65 @@ async function listarDocumentos(tenantId, empresaId, filtros = {}) {
     const codes = TIPOS_DOCUMENTO.filter((t) => t.grupo === filtros.grupo).map((t) => t.codigo);
     q.tipoCodigo = { $in: codes };
   }
-  return Documento.find(q).sort({ anio: -1, mes: -1, tipoCodigo: 1, createdAt: -1 }).lean();
+  const docs = await Documento.find(q).sort({ anio: -1, mes: -1, tipoCodigo: 1, createdAt: -1 }).lean();
+  if (!filtros.subsidiariaId) return docs;
+  const alcance = await alcanceSubsidiaria(tenantId, empresaId, filtros.subsidiariaId);
+  return docs.filter((d) => visibleEnSubsidiaria(d, alcance));
 }
 
-async function obtenerContenido(tenantId, empresaId, documentoId, empresa) {
+async function alcanceSubsidiaria(tenantId, empresaId, subsidiariaId) {
+  if (!subsidiariaId) return null;
+  const getEmpleadoModel = require('../models/empleado');
+  const { listPeriodosNominaScoped } = require('../libs/periodosNominaScope');
+  const Empleado = await getEmpleadoModel();
+  const [empIds, periodos] = await Promise.all([
+    Empleado.find({ tenantId, empresaId, subsidiariaId }).distinct('_id'),
+    listPeriodosNominaScoped({
+      tenantId,
+      empresaId,
+      subsidiariaId,
+      limit: 800,
+      annotateDisplay: false,
+      collapseDuplicates: false
+    })
+  ]);
+  return {
+    id: String(subsidiariaId),
+    empleados: new Set(empIds.map(String)),
+    periodos: new Set(periodos.map((p) => String(p._id)))
+  };
+}
+
+function visibleEnSubsidiaria(doc, alcance) {
+  if (!alcance) return true;
+  if (doc.subsidiariaId) return String(doc.subsidiariaId) === alcance.id;
+  if (doc.empleadoId) return alcance.empleados.has(String(doc.empleadoId));
+  if (doc.periodoId) return alcance.periodos.has(String(doc.periodoId));
+  return true;
+}
+
+async function obtenerContenido(tenantId, empresaId, documentoId, empresa, subsidiariaId = null) {
   const Documento = await getDocumentoArchivoModel();
   const doc = await Documento.findOne({ _id: documentoId, tenantId, empresaId }).lean();
   if (!doc) throw new Error('Documento no encontrado');
+  if (subsidiariaId) {
+    const alcance = await alcanceSubsidiaria(tenantId, empresaId, subsidiariaId);
+    if (!visibleEnSubsidiaria(doc, alcance)) throw new Error('Documento no encontrado');
+  }
   const config = await getOrCreateConfig(tenantId, empresaId, empresa);
   const storage = createStorageAdapter(config);
   const buffer = await storage.get({ key: doc.storageKey });
   return { doc, buffer };
 }
 
-async function eliminarDocumento(tenantId, empresaId, documentoId, { hard = false, empresa } = {}) {
+async function eliminarDocumento(tenantId, empresaId, documentoId, { hard = false, empresa, subsidiariaId = null } = {}) {
   const Documento = await getDocumentoArchivoModel();
   const doc = await Documento.findOne({ _id: documentoId, tenantId, empresaId });
   if (!doc) throw new Error('Documento no encontrado');
+  if (subsidiariaId) {
+    const alcance = await alcanceSubsidiaria(tenantId, empresaId, subsidiariaId);
+    if (!visibleEnSubsidiaria(doc.toObject(), alcance)) throw new Error('Documento no encontrado');
+  }
   if (hard) {
     const config = await getOrCreateConfig(tenantId, empresaId, empresa);
     const storage = createStorageAdapter(config);
@@ -309,9 +400,14 @@ async function reporteCobertura({
   empresaId,
   anio,
   mes = null,
-  empleados = []
+  empleados = [],
+  subsidiariaId = null
 }) {
-  const docs = await listarDocumentos(tenantId, empresaId, { anio, mes: mes || undefined });
+  const docs = await listarDocumentos(tenantId, empresaId, {
+    anio,
+    mes: mes || undefined,
+    subsidiariaId
+  });
 
   const faltantesMes = [];
   const tiposMes = TIPOS_DOCUMENTO.filter((t) => t.ambito === 'mes' && t.obligatorio);
@@ -490,8 +586,8 @@ function parseStorageKey(key, empresaSlug) {
   return null;
 }
 
-async function arbolResumen(tenantId, empresaId, anio) {
-  const docs = await listarDocumentos(tenantId, empresaId, { anio });
+async function arbolResumen(tenantId, empresaId, anio, subsidiariaId = null) {
+  const docs = await listarDocumentos(tenantId, empresaId, { anio, subsidiariaId });
   const tree = {};
   for (const d of docs) {
     if (d.ambito === 'empleado') {
@@ -545,30 +641,209 @@ function startOfDayLocal(d) {
 }
 
 /**
+ * Nómina que ya empezó y sigue vigente: la que contiene hoy, o una ya terminada
+ * y sin cerrar del mes actual o del anterior. Las que aún no inician no entran.
+ */
+function periodoEnVentanaProceso(periodo, now) {
+  const hoy = startOfDayLocal(now);
+  const ini = startOfDayLocal(periodo.fechaInicio);
+  const fin = startOfDayLocal(periodo.fechaFin);
+  if (Number.isNaN(ini.getTime()) || Number.isNaN(fin.getTime())) return false;
+  if (ini > hoy) return false;
+  if (fin >= hoy) return true;
+  if (String(periodo.estatus || '') === 'cerrado') return false;
+  const prev = mesAnteriorDe(now);
+  const finAnio = fin.getFullYear();
+  const finMes = fin.getMonth() + 1;
+  const curAnio = hoy.getFullYear();
+  const curMes = hoy.getMonth() + 1;
+  return (finAnio === curAnio && finMes === curMes) || (finAnio === prev.anio && finMes === prev.mes);
+}
+
+function contarEstados(filas) {
+  return {
+    ok: filas.filter((f) => f.estado === 'ok').length,
+    pendiente: filas.filter((f) => f.estado === 'pendiente').length,
+    atrasado: filas.filter((f) => f.estado === 'atrasado').length
+  };
+}
+
+async function filaAcuseIsn({ tenantId, empresaId, anio, mes, periodo, limite, now, docs }) {
+  const proc = PROCESOS_CUMPLIMIENTO.find((p) => p.codigo === 'ISN');
+  const comps = (docs || []).filter((d) => d.tipoCodigo === 'ISN_COMPROBANTE' || d.tipoCodigo === 'IMP_ISN');
+  const legacy = comps.some((d) => d.tipoCodigo === 'IMP_ISN' && !d.entidad);
+  const { models } = require('../models/isn');
+  const { DeterminacionIsn } = await models();
+  const det = await DeterminacionIsn.findOne({
+    tenantId,
+    empresaId,
+    anio,
+    mes,
+    estatus: { $in: ['borrador', 'cerrado'] }
+  }).sort({ version: -1 }).select('porEntidad declaraciones').lean();
+  const requeridas = ((det && det.porEntidad) || []).map((e) => e.entidad).filter(Boolean);
+  const conArchivo = new Set(
+    comps.map((d) => String(d.entidad || '').toUpperCase()).filter(Boolean)
+  );
+  for (const dec of (det && det.declaraciones) || []) {
+    if (dec.documentoId && dec.entidad) conArchivo.add(String(dec.entidad).toUpperCase());
+  }
+  const cubiertas = requeridas.filter((ent) => conArchivo.has(ent));
+  const cumplido = requeridas.length ? legacy || cubiertas.length === requeridas.length : comps.length > 0;
+  const parcial = !cumplido && (cubiertas.length > 0 || comps.length > 0);
+  const st = semaforo({
+    cumplido,
+    parcial,
+    fechaLimite: limite,
+    now,
+    labelOk: 'Cargado',
+    labelParcial: 'Incompleto',
+    labelPendiente: 'Sin archivo',
+    labelAtrasado: 'Sin archivo'
+  });
+  return {
+    proceso: 'Comprobante ISN',
+    procesoCodigo: proc.codigo,
+    periodo,
+    fechaLimite: formatFechaCorta(limite),
+    fechaLimiteRaw: limite,
+    estado: st.codigo,
+    estadoLabel: st.label,
+    href: `/nomina/isn?anio=${anio}&mes=${mes}&fuente=historico&tab=repositorio`,
+    detalle: requeridas.length ? `${cubiertas.length} de ${requeridas.length} estados` : ''
+  };
+}
+
+function enlaceCarga(proc, anio, mes) {
+  const q = new URLSearchParams();
+  q.set('proceso', proc.codigo);
+  const tipo = (proc.tiposOk && proc.tiposOk[0]) || '';
+  if (tipo) q.set('tipo', tipo);
+  if (anio) q.set('anio', String(anio));
+  if (mes) q.set('mes', String(mes));
+  return `/nomina/gestion-documental/subir?${q.toString()}`;
+}
+
+function filaDocumento(proc, { anio, mes, periodo, limite, now, docs, anioCarga, mesCarga }) {
+  const ok = hasAnyTipo(docs, proc.tiposOk, { anio, mes });
+  const parcial = hasAnyTipo(docs, proc.tiposParcial, { anio, mes });
+  const st = semaforo({
+    cumplido: ok,
+    parcial,
+    fechaLimite: limite,
+    now,
+    labelOk: 'Cargado',
+    labelParcial: 'Incompleto',
+    labelPendiente: 'Sin archivo',
+    labelAtrasado: 'Sin archivo'
+  });
+  const anioLink = anioCarga != null ? anioCarga : anio;
+  const mesLink = mesCarga != null ? mesCarga : mes;
+  return {
+    proceso: proc.codigo === 'ISN' ? 'Acuse ISN' : proc.nombre,
+    procesoCodigo: proc.codigo,
+    periodo,
+    fechaLimite: formatFechaCorta(limite),
+    fechaLimiteRaw: limite,
+    estado: st.codigo,
+    estadoLabel: st.label,
+    href: enlaceCarga(proc, anioLink, mesLink),
+    detalle: ''
+  };
+}
+
+async function filasCumplimientoIsn({ tenantId, empresaId, anio, mes, periodo, now, docsMes }) {
+  const proc = PROCESOS_CUMPLIMIENTO.find((p) => p.codigo === 'ISN');
+  const limite = fechaDiaMesSiguiente(anio, mes, proc.diaLimiteMesSiguiente || 17);
+  const { models } = require('../models/isn');
+  const { labelEntidad } = require('./isnCalculoService');
+  const { ENTIDADES_FEDERATIVAS } = require('../config/empleadoCatalogos');
+  const { DeterminacionIsn } = await models();
+  const det = await DeterminacionIsn.findOne({
+    tenantId,
+    empresaId,
+    anio,
+    mes,
+    estatus: { $in: ['borrador', 'cerrado'] }
+  }).sort({ version: -1 }).lean();
+  const entidades = ((det && det.porEntidad) || []).filter((e) => e.entidad);
+  const base = {
+    procesoCodigo: 'ISN',
+    periodo,
+    fechaLimite: formatFechaCorta(limite),
+    fechaLimiteRaw: limite
+  };
+  if (!entidades.length) {
+    const ok = hasAnyTipo(docsMes, proc.tiposOk, { anio, mes });
+    const st = semaforo({
+      cumplido: ok,
+      parcial: false,
+      fechaLimite: limite,
+      now,
+      labelOk: 'Pagado',
+      labelParcial: 'Pendiente',
+      labelPendiente: 'Pendiente',
+      labelAtrasado: 'Sin presentar'
+    });
+    return [{
+      ...base,
+      proceso: proc.nombre,
+      estado: st.codigo,
+      estadoLabel: st.label,
+      href: proc.href,
+      detalle: ''
+    }];
+  }
+  return entidades.map((e) => {
+    const pagos = (det.declaraciones || []).filter((d) => d.entidad === e.entidad);
+    const st = semaforo({
+      cumplido: pagos.length > 0,
+      parcial: false,
+      fechaLimite: limite,
+      now,
+      labelOk: 'Pagado',
+      labelParcial: 'Pendiente',
+      labelPendiente: 'Pendiente',
+      labelAtrasado: 'Sin presentar'
+    });
+    const nombre = labelEntidad(e.entidad, ENTIDADES_FEDERATIVAS);
+    return {
+      ...base,
+      proceso: `ISN ${nombre}`,
+      estado: st.codigo,
+      estadoLabel: st.label,
+      href: `/nomina/isn?anio=${anio}&mes=${mes}&fuente=historico&entidad=${e.entidad}`,
+      detalle: pagos.length ? (pagos[pagos.length - 1].folio || 'Pago registrado') : 'Sin pago'
+    };
+  });
+}
+
+/**
  * Tablero empresarial: cumplimiento de procesos + expedientes de trabajadores.
  */
-async function tableroCumplimiento({ tenantId, empresaId, now = new Date() }) {
-  const getPeriodoNominaModel = require('../models/periodoNomina');
+async function tableroCumplimiento({ tenantId, empresaId, subsidiariaId = null, now = new Date() }) {
+  const { listPeriodosNominaScoped } = require('../libs/periodosNominaScope');
   const getEmpleadoModel = require('../models/empleado');
-  const Periodo = await getPeriodoNominaModel();
   const Empleado = await getEmpleadoModel();
 
   const prev = mesAnteriorDe(now);
   const bim = bimestreInfonavitCerrado(now);
+  const empQ = { tenantId, empresaId, activo: true, estatus: { $ne: 'baja' } };
+  if (subsidiariaId) empQ.subsidiariaId = subsidiariaId;
+  const docScope = { subsidiariaId: subsidiariaId || undefined };
   const [periodos, empleados, docsMes, docsBim, docsEmp] = await Promise.all([
-    Periodo.find({ tenantId, empresaId })
-      .sort({ fechaFin: -1 })
-      .limit(4)
-      .lean(),
-    Empleado.find({ tenantId, empresaId, activo: true, estatus: { $ne: 'baja' } })
-      .select('_id numEmpleado firstName lastName')
-      .lean(),
-    listarDocumentos(tenantId, empresaId, { anio: prev.anio, mes: prev.mes }),
-    listarDocumentos(tenantId, empresaId, {
-      anio: bim.anio,
-      mes: undefined
+    listPeriodosNominaScoped({
+      tenantId,
+      empresaId,
+      subsidiariaId,
+      limit: 80,
+      collapseDuplicates: false,
+      annotateDisplay: false
     }),
-    listarDocumentos(tenantId, empresaId, { ambito: 'empleado' })
+    Empleado.find(empQ).select('_id numEmpleado firstName lastName').lean(),
+    listarDocumentos(tenantId, empresaId, { anio: prev.anio, mes: prev.mes, ...docScope }),
+    listarDocumentos(tenantId, empresaId, { anio: bim.anio, ...docScope }),
+    listarDocumentos(tenantId, empresaId, { ambito: 'empleado', ...docScope })
   ]);
 
   const docsBimFiltrados = (docsBim || []).filter(
@@ -578,13 +853,17 @@ async function tableroCumplimiento({ tenantId, empresaId, now = new Date() }) {
   );
 
   const filas = [];
+  const filasDocumentos = [];
+  const procNomina = PROCESOS_CUMPLIMIENTO.find((x) => x.codigo === 'NOMINA');
+  const periodosProceso = (periodos || [])
+    .filter((p) => periodoEnVentanaProceso(p, now))
+    .sort((a, b) => new Date(a.fechaInicio) - new Date(b.fechaInicio));
 
-  for (const p of periodos) {
-    const proc = PROCESOS_CUMPLIMIENTO.find((x) => x.codigo === 'NOMINA');
+  for (const p of periodosProceso) {
     const st = estadoNominaPeriodo(p, now);
     filas.push({
-      proceso: proc.nombre,
-      procesoCodigo: proc.codigo,
+      proceso: procNomina.nombre,
+      procesoCodigo: procNomina.codigo,
       periodo: formatRangoPeriodo(p.fechaInicio, p.fechaFin),
       fechaLimite: formatFechaCorta(p.fechaFin),
       fechaLimiteRaw: p.fechaFin,
@@ -595,58 +874,54 @@ async function tableroCumplimiento({ tenantId, empresaId, now = new Date() }) {
     });
   }
 
+  const filasIsn = await filasCumplimientoIsn({
+    tenantId,
+    empresaId,
+    anio: prev.anio,
+    mes: prev.mes,
+    periodo: prev.nombre,
+    now,
+    docsMes
+  });
+  filas.push(...filasIsn);
+
   const mesRows = PROCESOS_CUMPLIMIENTO.filter((p) => p.origen === 'mes');
   for (const proc of mesRows) {
     const limite = fechaDiaMesSiguiente(prev.anio, prev.mes, proc.diaLimiteMesSiguiente || 17);
-    const ok = hasAnyTipo(docsMes, proc.tiposOk, { anio: prev.anio, mes: prev.mes });
-    const parcial = hasAnyTipo(docsMes, proc.tiposParcial, { anio: prev.anio, mes: prev.mes });
-    const st = semaforo({
-      cumplido: ok,
-      parcial,
-      fechaLimite: limite,
-      now,
-      labelOk: proc.codigo === 'SUA' || proc.codigo === 'ISR' || proc.codigo === 'ISN' ? 'Pagado' : 'Cumplido',
-      labelParcial: 'Pendiente',
-      labelPendiente: 'Pendiente',
-      labelAtrasado: 'Sin presentar'
-    });
-    filas.push({
-      proceso: proc.nombre,
-      procesoCodigo: proc.codigo,
+    if (proc.codigo === 'ISN') {
+      filasDocumentos.push(await filaAcuseIsn({
+        tenantId,
+        empresaId,
+        anio: prev.anio,
+        mes: prev.mes,
+        periodo: prev.nombre,
+        limite,
+        now,
+        docs: docsMes
+      }));
+      continue;
+    }
+    filasDocumentos.push(filaDocumento(proc, {
+      anio: prev.anio,
+      mes: prev.mes,
       periodo: prev.nombre,
-      fechaLimite: formatFechaCorta(limite),
-      fechaLimiteRaw: limite,
-      estado: st.codigo,
-      estadoLabel: st.label,
-      href: proc.href,
-      detalle: ''
-    });
+      limite,
+      now,
+      docs: docsMes
+    }));
   }
 
   const inf = PROCESOS_CUMPLIMIENTO.find((p) => p.codigo === 'INFONAVIT');
-  const infOk = hasAnyTipo(docsBimFiltrados, inf.tiposOk);
-  const infParcial = hasAnyTipo(docsBimFiltrados, inf.tiposParcial);
-  const infSt = semaforo({
-    cumplido: infOk,
-    parcial: infParcial,
-    fechaLimite: bim.fechaLimite,
-    now,
-    labelOk: 'Pagado',
-    labelParcial: 'Pendiente',
-    labelPendiente: 'Pendiente',
-    labelAtrasado: 'Sin presentar'
-  });
-  filas.push({
-    proceso: inf.nombre,
-    procesoCodigo: inf.codigo,
+  filasDocumentos.push(filaDocumento(inf, {
+    anio: null,
+    mes: null,
+    anioCarga: bim.anio,
+    mesCarga: bim.mesFin,
     periodo: bim.label,
-    fechaLimite: formatFechaCorta(bim.fechaLimite),
-    fechaLimiteRaw: bim.fechaLimite,
-    estado: infSt.codigo,
-    estadoLabel: infSt.label,
-    href: inf.href,
-    detalle: ''
-  });
+    limite: bim.fechaLimite,
+    now,
+    docs: docsBimFiltrados
+  }));
 
   const tiposReq = TIPOS_EXPEDIENTE_OBLIGATORIOS;
   let completos = 0;
@@ -679,15 +954,14 @@ async function tableroCumplimiento({ tenantId, empresaId, now = new Date() }) {
     }
   }
 
-  const atrasados = filas.filter((f) => f.estado === 'atrasado').length;
-  const pendientes = filas.filter((f) => f.estado === 'pendiente').length;
-  const oks = filas.filter((f) => f.estado === 'ok').length;
-
   return {
     generadoAt: now,
     mesFiscal: prev,
     filas,
-    resumen: { ok: oks, pendiente: pendientes, atrasado: atrasados },
+    filasProcesos: filas,
+    filasDocumentos,
+    resumen: contarEstados(filas),
+    resumenDocumentos: contarEstados(filasDocumentos),
     expedientes: {
       total: empleados.length,
       completos,
@@ -705,6 +979,7 @@ module.exports = {
   saveConfig,
   maskConfig,
   subirDocumento,
+  subirComprobanteIsn,
   listarDocumentos,
   obtenerContenido,
   eliminarDocumento,

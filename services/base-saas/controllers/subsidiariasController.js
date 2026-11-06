@@ -6,6 +6,7 @@ const {
 } = require('../libs/tenantScope');
 const { trimString, parsePositiveNumber, parseOptionalLegadoCode } = require('../libs/formHelpers');
 const { SUBSIDIARY_MODULE_KEYS } = require('../config/subsidiaryModules');
+const { ENTIDADES_FEDERATIVAS } = require('../config/empleadoCatalogos');
 const { tenantLicensesModule } = require('../libs/tenantFeatureFlags');
 
 function minutosRango(value, fallback) {
@@ -89,6 +90,7 @@ function buildSubsidiariaPayload(body) {
     direccion: trimString(body.direccion),
     ciudad: trimString(body.ciudad),
     estado: trimString(body.estado),
+    entidadFederativa: trimString(body.entidadFederativa).toUpperCase(),
     codigoPostal: trimString(body.codigoPostal),
     lat: Number.isNaN(lat) ? undefined : lat,
     lng: Number.isNaN(lng) ? undefined : lng,
@@ -124,7 +126,13 @@ async function listSubsidiarias(req, res) {
     ? await Subsidiaria.find({ empresaId: empresa._id }).sort({ nombre: 1 }).lean()
     : [];
   for (const s of subsidiarias) s.modulosUi = modulosUi(s, tenantFlags);
-  res.render('Configurations/subsidiarias', { subsidiarias, empresa, error: error || null, session: req.session });
+  res.render('Configurations/subsidiarias', {
+    subsidiarias,
+    empresa,
+    entidadesFederativas: ENTIDADES_FEDERATIVAS.filter((e) => e.value !== 'NE'),
+    error: error || null,
+    session: req.session
+  });
 }
 
 async function createSubsidiaria(req, res) {
@@ -164,6 +172,7 @@ async function editSubsidiaria(req, res) {
   res.render('Configurations/subsidiaria-edit', {
     subsidiaria,
     empresa,
+    entidadesFederativas: ENTIDADES_FEDERATIVAS.filter((e) => e.value !== 'NE'),
     modulosUi: modulosUi(subsidiaria, tenantFlags),
     error: error || null,
     session: req.session

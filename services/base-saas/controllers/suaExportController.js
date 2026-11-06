@@ -46,30 +46,35 @@ async function runExport(tenantId, empresa, filters) {
   const fi = startOfDay(parseDateTimeLocal(`${filters.desde}T12:00`, zona) || new Date());
   const ff = endOfDay(parseDateTimeLocal(`${filters.hasta}T12:00`, zona) || new Date());
 
+  const scope = {
+    registroPatronal: rp,
+    empresaId: empresa?._id || null,
+    subsidiariaId: filters.subsidiariaId || null
+  };
   if (filters.modo === 'movimientos') {
     return generarMovimientosSua(tenantId, {
       fechaInicio: fi,
       fechaFin: ff,
-      registroPatronal: rp
+      ...scope
     });
   }
   if (filters.modo === 'altas') {
     return generarAltasPeriodoSua(tenantId, {
       fechaInicio: fi,
       fechaFin: ff,
-      registroPatronal: rp
+      ...scope
     });
   }
   if (filters.modo === 'creditos') {
     return generarCreditosSua(tenantId, {
-      registroPatronal: rp,
       tipoMovCred: filters.tipoMovCred,
-      estatus: filters.estatus
+      estatus: filters.estatus,
+      ...scope
     });
   }
   return generarDirectorioSua(tenantId, {
     estatus: filters.estatus,
-    registroPatronal: rp
+    ...scope
   });
 }
 
@@ -78,6 +83,7 @@ async function index(req, res) {
   const zona = await zonaDeSubsidiariaId(sessionSubsidiariaId(req));
   const filters = parseOpts(req.query, zona);
   filters.timeZone = zona;
+  filters.subsidiariaId = sessionSubsidiariaId(req);
   let result = null;
   let genError = null;
 
@@ -111,6 +117,7 @@ async function download(req, res) {
   const zona = await zonaDeSubsidiariaId(sessionSubsidiariaId(req));
   const filters = parseOpts(req.query, zona);
   filters.timeZone = zona;
+  filters.subsidiariaId = sessionSubsidiariaId(req);
   let result;
   try {
     result = await runExport(req.session.tenantId, empresa, filters);

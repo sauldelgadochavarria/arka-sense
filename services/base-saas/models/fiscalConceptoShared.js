@@ -69,6 +69,8 @@ const fiscalSubSchema = new mongoose.Schema(
     integraISR: { type: Boolean, default: true },
     integraIMSS: { type: Boolean, default: true },
     integraINFONAVIT: { type: Boolean, default: false },
+    /** Tratamiento ISN por defecto del concepto. Cada estado puede sobreescribirlo. */
+    integraISN: { type: Boolean, default: true },
     desglose: { type: fiscalDesgloseSubSchema, default: () => ({ modo: 'todo_gravado' }) },
     imss: { type: imssSubSchema, default: () => ({ naturalezaSdi: 'variable', desglose: { modo: 'todo_integra' } }) }
   },
@@ -122,6 +124,7 @@ function defaultFiscalFromNaturaleza(naturaleza = 'gravado') {
       integraISR: false,
       integraIMSS: false,
       integraINFONAVIT: false,
+      integraISN: false,
       desglose: {
         modo: 'todo_exento',
         topeExentoUMA: 0,
@@ -139,6 +142,7 @@ function defaultFiscalFromNaturaleza(naturaleza = 'gravado') {
       integraISR: true,
       integraIMSS: false,
       integraINFONAVIT: false,
+      integraISN: true,
       desglose: {
         modo: 'regla_ley',
         topeExentoUMA: 5,
@@ -156,6 +160,7 @@ function defaultFiscalFromNaturaleza(naturaleza = 'gravado') {
       integraISR: false,
       integraIMSS: false,
       integraINFONAVIT: false,
+      integraISN: false,
       desglose: {
         modo: 'todo_exento',
         topeExentoUMA: 0,
@@ -173,6 +178,7 @@ function defaultFiscalFromNaturaleza(naturaleza = 'gravado') {
       integraISR: false,
       integraIMSS: false,
       integraINFONAVIT: false,
+      integraISN: false,
       desglose: {
         modo: 'todo_gravado',
         topeExentoUMA: 0,
@@ -189,6 +195,7 @@ function defaultFiscalFromNaturaleza(naturaleza = 'gravado') {
     integraISR: true,
     integraIMSS: true,
     integraINFONAVIT: false,
+    integraISN: true,
     desglose: {
       modo: 'todo_gravado',
       topeExentoUMA: 0,

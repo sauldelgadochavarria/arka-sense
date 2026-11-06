@@ -185,10 +185,15 @@ function clasificarFila({
   };
 }
 
-async function loadNominaRows(tenantId, empresaId, periodoId) {
+async function loadNominaRows(tenantId, empresaId, periodoId, subsidiariaId = null) {
   const Periodo = await getPeriodoNominaModel();
-  const periodo = await Periodo.findOne({ _id: periodoId, tenantId }).lean();
+  const periodo = await Periodo.findOne({ _id: periodoId, tenantId, ...(empresaId ? { empresaId } : {}) }).lean();
   if (!periodo) throw new Error('Período no encontrado');
+  if (subsidiariaId) {
+    const { assertPeriodoEnSubsidiaria } = require('../libs/periodosNominaScope');
+    const ok = await assertPeriodoEnSubsidiaria(periodo, { tenantId, empresaId, subsidiariaId });
+    if (!ok) throw new Error('El período no pertenece a la subsidiaria activa');
+  }
 
   const Empleado = await getEmpleadoModel();
   const Empresa = await getEmpresaModel();
@@ -223,6 +228,7 @@ async function loadNominaRows(tenantId, empresaId, periodoId) {
   for (const r of recibos) {
     const emp = empMap.get(String(r.empleadoId));
     if (!emp) continue;
+    if (subsidiariaId && String(emp.subsidiariaId || '') !== String(subsidiariaId)) continue;
     const base = resolverBaseImss(emp, uma, topeUma);
     const baseImssPeriodo = money(r.basesFiscales?.BASE_IMSS || 0);
     const diasCot =
@@ -280,7 +286,7 @@ async function ejecutarConfronta(opts = {}) {
   const tolerancia = Number(opts.tolerancia);
   const tol = Number.isFinite(tolerancia) && tolerancia >= 0 ? tolerancia : TOLERANCIA_DEFAULT;
 
-  const pack = await loadNominaRows(opts.tenantId, opts.empresaId, opts.periodoId);
+  const pack = await loadNominaRows(opts.tenantId, opts.empresaId, opts.periodoId, opts.subsidiariaId || null);
   const idseParse = parseSbcCsv(opts.csvIdse || '');
   const suaParse = parseSbcCsv(opts.csvSua || '');
 

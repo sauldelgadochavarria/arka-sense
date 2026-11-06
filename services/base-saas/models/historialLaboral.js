@@ -13,7 +13,10 @@ const snapshotSchema = new mongoose.Schema(
     sueldoIntegrado: { type: Number, default: null },
     tipoContrato: { type: String, trim: true, default: '' },
     tipoSalario: { type: String, trim: true, default: '' },
-    estatus: { type: String, trim: true, default: '' }
+    estatus: { type: String, trim: true, default: '' },
+    estadoTrabajo: { type: String, trim: true, uppercase: true, default: '' },
+    modalidadTrabajo: { type: String, trim: true, default: '' },
+    registroPatronalId: { type: mongoose.Schema.Types.ObjectId, ref: 'RegistroPatronalImss', default: null }
   },
   { _id: false }
 );
@@ -36,6 +39,9 @@ const historialLaboralSchema = new mongoose.Schema(
     tipoContrato: { type: String, trim: true, default: '' },
     tipoSalario: { type: String, trim: true, default: '' },
     estatus: { type: String, trim: true, default: '' },
+    estadoTrabajo: { type: String, trim: true, uppercase: true, default: '' },
+    modalidadTrabajo: { type: String, trim: true, default: '' },
+    registroPatronalId: { type: mongoose.Schema.Types.ObjectId, ref: 'RegistroPatronalImss', default: null },
     diasContrato: { type: Number, default: null },
     terminoContrato: { type: Number, default: null },
     observaciones: { type: String, trim: true, default: '' },

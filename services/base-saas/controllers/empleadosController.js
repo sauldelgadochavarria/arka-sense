@@ -552,6 +552,13 @@ async function showEmpleado(req, res) {
     ENTIDADES_FEDERATIVAS.find((e) => e.value === empleado.entidadNacimiento)?.label ||
     empleado.entidadNacimiento ||
     '—';
+  const subEmpleado = (catalogs.subsidiarias || []).find(
+    (s) => String(s._id) === String(empleado.subsidiariaId || '')
+  );
+  const labelEstadoTrabajo =
+    ENTIDADES_FEDERATIVAS.find((e) => e.value === empleado.estadoTrabajo)?.label || '';
+  const labelEntidadSucursal =
+    ENTIDADES_FEDERATIVAS.find((e) => e.value === subEmpleado?.entidadFederativa)?.label || '';
   const labelEntidadDom = labelEntidadFederativa(empleado.domicilio?.entidad);
 
   let tablaPrestacionesResuelta = null;
@@ -584,6 +591,9 @@ async function showEmpleado(req, res) {
     labelEstadoCivil,
     labelEntidadNac,
     labelEntidadDom,
+    labelEstadoTrabajo,
+    labelEntidadSucursal,
+    subsidiariaEditId: subEmpleado ? String(subEmpleado._id) : '',
     baseImss,
     grupoNombre,
     tipoRegistroLabel,

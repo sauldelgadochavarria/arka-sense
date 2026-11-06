@@ -1,7 +1,32 @@
 <%- include('../../Partials/layout-top', { title: 'Subir documento', session }) %>
+<%
+  const C = carga || {};
+  function procesoDe(t) {
+    if (t.codigo === 'IMP_ISR') return 'ISR';
+    if (t.codigo === 'IMP_IVA') return 'IVA';
+    if (t.codigo === 'IMP_ISN' || t.codigo === 'ISN_COMPROBANTE') return 'ISN';
+    if (t.grupo === 'sua') return 'SUA';
+    if (t.grupo === 'infonavit') return 'INFONAVIT';
+    if (t.grupo === 'nomina') return 'NOMINA';
+    if (t.grupo === 'trabajador') return 'TRABAJADOR';
+    return 'OTRO';
+  }
+  function aceptaDe(t) {
+    if (t.codigo === 'SUA_ARCHIVO') return '.sua';
+    if (t.codigo === 'CFDI_XML' || t.codigo === 'EMP_RFC') return '.xml,.pdf';
+    if (t.codigo === 'CFDI_PDF') return '.pdf';
+    return '.pdf,.jpg,.jpeg,.png,.xml';
+  }
+  function etiquetaArchivo(t) {
+    if (t.codigo === 'SUA_ARCHIVO') return 'Archivo de pago .SUA';
+    if (t.codigo === 'CFDI_XML') return 'XML';
+    if (t.codigo === 'CFDI_PDF') return 'PDF';
+    return 'PDF, imagen o XML';
+  }
+%>
 <div class="page-header">
   <h1>Subir documento</h1>
-  <p class="page-subtitle">Clasifica el archivo según el expediente (período, mes o trabajador).</p>
+  <p class="page-subtitle">Elige el proceso. El tipo de archivo y el mes del expediente se llenan solos.</p>
 </div>
 <p><a href="/nomina/gestion-documental">← Cumplimiento</a></p>
 <% if (error) { %><p class="alert"><%= error %></p><% } %>
@@ -9,20 +34,35 @@
 <p>Sin empresa.</p>
 <% } else { %>
 <form method="post" action="/nomina/gestion-documental/subir" enctype="multipart/form-data" class="form-grid form-wide">
+  <label>Proceso
+    <select id="proceso">
+      <option value="">Todos</option>
+      <option value="SUA" <%= C.proceso === 'SUA' ? 'selected' : '' %>>SUA</option>
+      <option value="ISR" <%= C.proceso === 'ISR' ? 'selected' : '' %>>ISR</option>
+      <option value="INFONAVIT" <%= C.proceso === 'INFONAVIT' ? 'selected' : '' %>>INFONAVIT</option>
+      <option value="ISN" <%= C.proceso === 'ISN' ? 'selected' : '' %>>ISN</option>
+      <option value="NOMINA" <%= C.proceso === 'NOMINA' ? 'selected' : '' %>>Nómina</option>
+      <option value="TRABAJADOR" <%= C.proceso === 'TRABAJADOR' ? 'selected' : '' %>>Expediente del trabajador</option>
+    </select>
+  </label>
   <label>Tipo documental
     <select name="tipoCodigo" id="tipoCodigo" required>
       <% (tipos || []).forEach(function(t) { %>
-      <option value="<%= t.codigo %>" data-ambito="<%= t.ambito %>"><%= t.grupo %> · <%= t.nombre %></option>
+      <option value="<%= t.codigo %>" data-ambito="<%= t.ambito %>" data-proceso="<%= procesoDe(t) %>" data-accept="<%= aceptaDe(t) %>" data-archivo="<%= etiquetaArchivo(t) %>" <%= C.tipo === t.codigo ? 'selected' : '' %>><%= t.nombre %></option>
       <% }); %>
     </select>
   </label>
-  <label>Archivo <input type="file" name="archivo" required /></label>
-  <label>Año <input type="number" name="anio" value="<%= anio %>" /></label>
+  <p class="muted" id="tipo-ayuda" style="grid-column:1/-1;margin:0"></p>
+  <label>Archivo
+    <input type="file" name="archivo" id="archivo" required />
+    <span class="muted small" id="archivo-tipo"></span>
+  </label>
+  <label>Año <input type="number" name="anio" value="<%= C.anio || anio %>" /></label>
   <label>Mes
     <select name="mes">
       <option value="">—</option>
       <% (meses || []).forEach(function(m) { %>
-      <option value="<%= m.num %>"><%= m.nombre %></option>
+      <option value="<%= m.num %>" <%= Number(C.mes) === m.num ? 'selected' : '' %>><%= m.nombre %></option>
       <% }); %>
     </select>
   </label>
@@ -49,17 +89,59 @@
 </form>
 <script>
 (function () {
+  var defecto = {
+    SUA: 'SUA_ARCHIVO',
+    ISR: 'IMP_ISR',
+    INFONAVIT: 'INF_PAGO',
+    ISN: 'ISN_COMPROBANTE',
+    NOMINA: 'CFDI_PDF',
+    TRABAJADOR: 'EMP_CONTRATO',
+    IVA: 'IMP_IVA'
+  };
+  var proceso = document.getElementById('proceso');
   var tipo = document.getElementById('tipoCodigo');
+  var archivo = document.getElementById('archivo');
+  var ayuda = document.getElementById('tipo-ayuda');
+  var archivoTipo = document.getElementById('archivo-tipo');
   var bp = document.getElementById('blk-periodo');
   var be = document.getElementById('blk-empleado');
-  function sync() {
-    var opt = tipo.options[tipo.selectedIndex];
-    var a = opt.getAttribute('data-ambito');
-    bp.style.display = a === 'periodo' ? '' : 'none';
-    be.style.display = a === 'empleado' ? '' : 'none';
+  function visible(opt, proc) {
+    return !proc || opt.getAttribute('data-proceso') === proc;
   }
-  tipo.addEventListener('change', sync);
-  sync();
+  function sync(preferirDefecto) {
+    var proc = proceso.value;
+    var actual = tipo.value;
+    var primero = '';
+    Array.prototype.forEach.call(tipo.options, function (opt) {
+      var show = visible(opt, proc);
+      opt.hidden = !show;
+      opt.disabled = !show;
+      if (show && !primero) primero = opt.value;
+    });
+    var quiere = preferirDefecto ? defecto[proc] : actual;
+    var opcion = function (v) {
+      return v ? tipo.querySelector('option[value="' + v + '"]') : null;
+    };
+    var elegida = opcion(quiere);
+    if (!elegida || elegida.disabled) elegida = opcion(defecto[proc]);
+    if (!elegida || elegida.disabled) {
+      tipo.value = primero;
+    } else {
+      tipo.value = elegida.value;
+    }
+    var opt = tipo.options[tipo.selectedIndex];
+    var ambito = opt ? opt.getAttribute('data-ambito') : '';
+    bp.style.display = ambito === 'periodo' ? '' : 'none';
+    be.style.display = ambito === 'empleado' ? '' : 'none';
+    var accept = opt ? opt.getAttribute('data-accept') || '' : '';
+    var nombreArchivo = opt ? opt.getAttribute('data-archivo') || '' : '';
+    archivo.accept = accept;
+    archivoTipo.textContent = nombreArchivo ? 'Tipo de archivo: ' + nombreArchivo : '';
+    ayuda.textContent = opt ? 'Se archiva como ' + opt.textContent.trim() + '.' : '';
+  }
+  proceso.addEventListener('change', function () { sync(true); });
+  tipo.addEventListener('change', function () { sync(false); });
+  sync(false);
 })();
 </script>
 <% } %>

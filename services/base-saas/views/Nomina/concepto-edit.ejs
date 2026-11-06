@@ -430,6 +430,10 @@
           <input type="checkbox" name="integraIMSS" id="prop-integra-imss" <%= fiscalActual.integraIMSS !== false ? 'checked' : '' %> />
           Puede integrar IMSS / SBC
         </label>
+        <label class="inline-check">
+          <input type="checkbox" name="integraISN" <%= fiscalActual.integraISN !== false ? 'checked' : '' %> />
+          Gravado para ISN (la regla del estado puede cambiarlo)
+        </label>
       </div>
       <div class="form-row-3">
         <label>Naturaleza SDI

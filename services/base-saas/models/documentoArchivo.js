@@ -11,11 +11,15 @@ const documentoArchivoSchema = new mongoose.Schema(
   {
     tenantId: { type: String, required: true, trim: true, index: true },
     empresaId: { type: mongoose.Schema.Types.ObjectId, ref: 'Empresa', required: true, index: true },
+    subsidiariaId: { type: mongoose.Schema.Types.ObjectId, ref: 'Subsidiaria', default: null, index: true },
     /** Código del catálogo TIPOS_DOCUMENTO */
     tipoCodigo: { type: String, required: true, trim: true, uppercase: true, index: true },
     ambito: { type: String, enum: ['periodo', 'mes', 'empleado'], required: true, index: true },
     anio: { type: Number, default: null, index: true },
     mes: { type: Number, default: null, min: 1, max: 12, index: true },
+    /** Comprobante de ISN: entidad y registro patronal donde se archiva. */
+    entidad: { type: String, trim: true, uppercase: true, default: '' },
+    registroPatronal: { type: String, trim: true, uppercase: true, default: '' },
     periodoId: { type: mongoose.Schema.Types.ObjectId, ref: 'PeriodoNomina', default: null, index: true },
     periodoLabel: { type: String, trim: true, default: '' },
     empleadoId: { type: mongoose.Schema.Types.ObjectId, ref: 'Empleado', default: null, index: true },

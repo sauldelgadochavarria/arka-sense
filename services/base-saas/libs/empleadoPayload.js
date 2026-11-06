@@ -119,6 +119,11 @@ function buildEmpleadoPayload(body, tenantId, empresaId) {
     entidadNacimiento: trimUpper(body.entidadNacimiento),
     ciudadNacimiento: trimString(body.ciudadNacimiento),
     registroPatronal: trimUpper(body.registroPatronal),
+    registroPatronalId: parseOptionalObjectId(body.registroPatronalId),
+    estadoTrabajo: trimUpper(body.estadoTrabajo),
+    modalidadTrabajo: ['presencial', 'remoto', 'mixto'].includes(trimString(body.modalidadTrabajo))
+      ? trimString(body.modalidadTrabajo)
+      : '',
     umf: trimString(body.umf),
     email: trimLower(body.email),
     emailPersonal: trimLower(body.emailPersonal),

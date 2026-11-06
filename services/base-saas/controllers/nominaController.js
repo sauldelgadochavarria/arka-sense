@@ -2232,6 +2232,7 @@ async function createConcepto(req, res) {
       integraISR: req.body.integraISR,
       integraIMSS: req.body.integraIMSS,
       integraINFONAVIT: req.body.integraINFONAVIT,
+      integraISN: req.body.integraISN === 'on' || req.body.integraISN === '1' || req.body.integraISN === true,
       desgloseModo: req.body.desgloseModo,
       naturalezaSdi: req.body.naturalezaSdi,
       imssDesgloseModo: req.body.imssDesgloseModo,
@@ -2592,6 +2593,7 @@ async function saveConceptoPropsAction(req, res) {
           req.body.integraINFONAVIT === 'on' ||
           req.body.integraINFONAVIT === '1' ||
           req.body.integraINFONAVIT === true,
+        integraISN: req.body.integraISN === 'on' || req.body.integraISN === '1' || req.body.integraISN === true,
         desgloseModo: req.body.desgloseModo,
         topeExentoUMA: req.body.topeExentoUMA,
         topeExentoMonto: req.body.topeExentoMonto,

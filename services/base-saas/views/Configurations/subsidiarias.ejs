@@ -11,7 +11,7 @@
       <td><code><%= s.codigo %></code></td>
       <td><%= s.codigoLegado != null ? s.codigoLegado : '—' %></td>
       <td><%= s.nombre %></td>
-      <td><%= s.ciudad || '—' %></td>
+      <td><%= s.ciudad || '—' %><% if (s.entidadFederativa) { %><br><span class="muted"><%= s.entidadFederativa %></span><% } %></td>
       <td>
         <% (s.modulosUi || []).forEach(function(m) { %>
         <div class="<%= m.checked ? '' : 'muted' %>"><%= m.label %>: <%= m.checked ? 'Sí' : 'No' %></div>
@@ -42,7 +42,15 @@
   <input name="nombre" placeholder="Nombre" required />
   <input name="direccion" placeholder="Dirección" />
   <input name="ciudad" placeholder="Ciudad" />
-  <input name="estado" placeholder="Estado" />
+  <input name="estado" placeholder="Estado (texto libre, no determina el ISN)" />
+  <label>Entidad del ISN
+    <select name="entidadFederativa">
+      <option value="">— Lugar del establecimiento —</option>
+      <% (entidadesFederativas || []).forEach(function (e) { %>
+      <option value="<%= e.value %>"><%= e.label %></option>
+      <% }); %>
+    </select>
+  </label>
   <input name="codigoPostal" placeholder="Código postal" />
   <input name="lat" type="number" step="any" placeholder="Latitud (opcional)" />
   <input name="lng" type="number" step="any" placeholder="Longitud (opcional)" />

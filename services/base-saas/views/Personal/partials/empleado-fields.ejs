@@ -165,8 +165,7 @@
   <input name="nss" placeholder="NSS (Número de Seguridad Social)" value="<%= empleado ? empleado.nss : '' %>" />
   <input name="registroPatronal" placeholder="Registro patronal IMSS (si vacío usa el de la empresa)" maxlength="11" value="<%= empleado ? (empleado.registroPatronal || '') : '' %>" />
   <p class="muted small" style="grid-column:1/-1">
-    El registro patronal es obligatorio para SUA/IDSE. Puede definirse aquí o en
-    <a href="/config-empresa">Datos de empresa</a> (aplica a todos los empleados sin override).
+    El registro patronal es el del IMSS. La entidad del ISN se captura en la pestaña Organización.
   </p>
   <input name="umf" placeholder="UMF (Unidad de Medicina Familiar)" value="<%= empleado ? (empleado.umf || '') : '' %>" />
   <select name="estadoCivil">
@@ -221,12 +220,50 @@
 <div class="ficha-panel" role="tabpanel" id="ficha-panel-organizacion" data-ficha-panel="organizacion" aria-labelledby="ficha-tab-organizacion">
 <fieldset class="form-section">
   <legend>Asignación organizacional</legend>
-  <select name="subsidiariaId">
+  <select name="subsidiariaId" id="campoSucursal">
     <option value="">— Sucursal —</option>
-    <% subsidiarias.forEach(function(s) { %>
-    <option value="<%= s._id %>" <%= empleado && empleado.subsidiariaId && String(empleado.subsidiariaId) === String(s._id) ? 'selected' : '' %>><%= s.nombre %> (<%= s.codigo %>)</option>
+    <% subsidiarias.forEach(function(s) {
+      const entSuc = _entidades.find(function (e) { return e.value === s.entidadFederativa; });
+    %>
+    <option value="<%= s._id %>" data-entidad-label="<%= entSuc ? entSuc.label : '' %>" <%= empleado && empleado.subsidiariaId && String(empleado.subsidiariaId) === String(s._id) ? 'selected' : '' %>><%= s.nombre %> (<%= s.codigo %>)</option>
     <% }); %>
   </select>
+  <label>Entidad donde presta el servicio (ISN)
+    <select name="estadoTrabajo">
+      <option value="">— Usar la de la sucursal —</option>
+      <% _entidades.filter(function (e) { return e.value !== 'NE'; }).forEach(function (e) { %>
+      <option value="<%= e.value %>" <%= empleado && empleado.estadoTrabajo === e.value ? 'selected' : '' %>><%= e.label %></option>
+      <% }); %>
+    </select>
+  </label>
+  <label>Modalidad de trabajo
+    <select name="modalidadTrabajo">
+      <option value="">—</option>
+      <option value="presencial" <%= empleado && empleado.modalidadTrabajo === 'presencial' ? 'selected' : '' %>>Presencial</option>
+      <option value="remoto" <%= empleado && empleado.modalidadTrabajo === 'remoto' ? 'selected' : '' %>>Remoto</option>
+      <option value="mixto" <%= empleado && empleado.modalidadTrabajo === 'mixto' ? 'selected' : '' %>>Mixto</option>
+    </select>
+  </label>
+  <p class="hint" id="isn-sucursal-hint" style="grid-column:1/-1">Este dato no es el domicilio del trabajador ni el domicilio fiscal.</p>
+  <script>
+  (function () {
+    var suc = document.getElementById('campoSucursal');
+    var hint = document.getElementById('isn-sucursal-hint');
+    if (!suc || !hint) return;
+    function paint() {
+      var opt = suc.options[suc.selectedIndex];
+      var nombre = opt ? (opt.getAttribute('data-entidad-label') || '') : '';
+      var extra = !opt || !opt.value
+        ? ' Elige la sucursal.'
+        : (nombre
+          ? ' Si dejas la entidad vacía, el ISN usa ' + nombre + ', que es la de esta sucursal.'
+          : ' Esta sucursal no tiene entidad de ISN. Elígela aquí o en Configuración, Subsidiarias.');
+      hint.textContent = 'No es el domicilio del trabajador ni el domicilio fiscal.' + extra;
+    }
+    suc.addEventListener('change', paint);
+    paint();
+  })();
+  </script>
   <select name="departamentoId">
     <option value="">— Departamento —</option>
     <% departamentos.forEach(function(d) { %>

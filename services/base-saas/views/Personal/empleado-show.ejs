@@ -155,6 +155,27 @@
     <h2>Organización</h2>
     <dl>
       <dt>Sucursal</dt><dd><%= empleado.subsidiariaId ? (subMap.get(String(empleado.subsidiariaId)) || '—') : '—' %></dd>
+      <dt>Entidad del servicio (ISN)</dt>
+      <dd>
+        <%
+          const _entsShow = (typeof entidadesFederativas !== 'undefined' && entidadesFederativas) ? entidadesFederativas : [];
+          const _entTrab = _entsShow.find(function (e) { return e.value === empleado.estadoTrabajo; });
+          const _nombreTrabajo = (typeof labelEstadoTrabajo !== 'undefined' && labelEstadoTrabajo) || (_entTrab && _entTrab.label) || '';
+          const _nombreSuc = (typeof labelEntidadSucursal !== 'undefined' && labelEntidadSucursal) || '';
+        %>
+        <% if (_nombreTrabajo) { %>
+        <%= _nombreTrabajo %>
+        <% } else if (_nombreSuc) { %>
+        Sin dato en el empleado. La sucursal aporta <%= _nombreSuc %>.
+        <% } else { %>
+        Sin entidad. Elige la del empleado en Editar, pestaña Organización, o la de la sucursal.
+        <% } %>
+        <% if (typeof subsidiariaEditId !== 'undefined' && subsidiariaEditId && !_nombreSuc) { %>
+        <a href="/config-subsidiarias/<%= subsidiariaEditId %>/edit">Entidad de la sucursal</a>
+        <% } %>
+      </dd>
+      <dt>Modalidad</dt>
+      <dd><%= empleado.modalidadTrabajo === 'presencial' ? 'Presencial' : (empleado.modalidadTrabajo === 'remoto' ? 'Remoto' : (empleado.modalidadTrabajo === 'mixto' ? 'Mixto' : '—')) %></dd>
       <dt>Departamento</dt><dd><%= empleado.departamentoId ? (deptMap.get(String(empleado.departamentoId)) || '—') : '—' %></dd>
       <dt>Puesto</dt><dd><%= empleado.puestoId ? (puestoMap.get(String(empleado.puestoId)) || '—') : '—' %></dd>
       <dt>Tabla de prestaciones</dt>

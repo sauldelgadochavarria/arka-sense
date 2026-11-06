@@ -318,24 +318,39 @@ function validateEmpleadoParaSua(empleado, empresaRp, { exigirCurpRfc = true } =
   return issues;
 }
 
-async function loadEmpresaRp(tenantId, overrideRp = '') {
+async function loadEmpresaRp(tenantId, overrideRp = '', empresaId = null) {
   if (overrideRp) return String(overrideRp).toUpperCase().replace(/\s+/g, '');
   const Empresa = await getEmpresaModel();
-  const empresa = await Empresa.findOne({ tenantId }).lean();
+  const q = { tenantId };
+  if (empresaId) q._id = empresaId;
+  const empresa = await Empresa.findOne(q).lean();
   return String(empresa?.registroPatronal || '')
     .toUpperCase()
     .replace(/\s+/g, '');
 }
 
-/** ASEG.TXT — directorio / altas masivas. */
-async function generarDirectorioSua(tenantId, options = {}) {
-  const { estatus = 'activo', registroPatronal = '', soloConNss = true } = options;
-
-  const empresaRp = await loadEmpresaRp(tenantId, registroPatronal);
-  const Empleado = await getEmpleadoModel();
+function queryEmpleados(tenantId, { empresaId = null, subsidiariaId = null, estatus = null } = {}) {
   const q = { tenantId };
+  if (empresaId) q.empresaId = empresaId;
+  if (subsidiariaId) q.subsidiariaId = subsidiariaId;
   if (estatus === 'activo') q.estatus = 'activo';
   else if (estatus === 'baja') q.estatus = 'baja';
+  return q;
+}
+
+/** ASEG.TXT — directorio / altas masivas. */
+async function generarDirectorioSua(tenantId, options = {}) {
+  const {
+    estatus = 'activo',
+    registroPatronal = '',
+    soloConNss = true,
+    empresaId = null,
+    subsidiariaId = null
+  } = options;
+
+  const empresaRp = await loadEmpresaRp(tenantId, registroPatronal, empresaId);
+  const Empleado = await getEmpleadoModel();
+  const q = queryEmpleados(tenantId, { empresaId, subsidiariaId, estatus });
 
   let empleados = await Empleado.find(q).sort({ lastName: 1, firstName: 1 }).lean();
   if (soloConNss) {
@@ -383,24 +398,30 @@ async function generarDirectorioSua(tenantId, options = {}) {
  * (el alta oficial no va en MOVT).
  */
 async function generarAltasPeriodoSua(tenantId, options = {}) {
-  const { fechaInicio, fechaFin, registroPatronal = '' } = options;
-  const empresaRp = await loadEmpresaRp(tenantId, registroPatronal);
+  const { fechaInicio, fechaFin, registroPatronal = '', empresaId = null, subsidiariaId = null } = options;
+  const empresaRp = await loadEmpresaRp(tenantId, registroPatronal, empresaId);
   const Historial = await getHistorialLaboralModel();
   const Empleado = await getEmpleadoModel();
 
   const fi = startOfDay(fechaInicio || new Date());
   const ff = endOfDay(fechaFin || new Date());
 
-  const movs = await Historial.find({
+  const movQ = {
     tenantId,
     fechaMovimiento: { $gte: fi, $lte: ff },
     tipoMovimientoCodigo: 'ALTA'
-  })
-    .sort({ fechaMovimiento: 1 })
-    .lean();
+  };
+  if (empresaId) movQ.empresaId = empresaId;
+
+  const movs = await Historial.find(movQ).sort({ fechaMovimiento: 1 }).lean();
 
   const empIds = [...new Set(movs.map((m) => String(m.empleadoId)))];
-  const empleados = await Empleado.find({ tenantId, _id: { $in: empIds } }).lean();
+  const empleados = await Empleado.find(
+    queryEmpleados(tenantId, { empresaId, subsidiariaId })
+  )
+    .where('_id')
+    .in(empIds)
+    .lean();
   const empMap = new Map(empleados.map((e) => [String(e._id), e]));
 
   const preview = [];
@@ -414,7 +435,7 @@ async function generarAltasPeriodoSua(tenantId, options = {}) {
     seen.add(id);
     const emp = empMap.get(id);
     if (!emp) {
-      omitidos.push({ folio: mov.folio, issues: ['Empleado no encontrado'] });
+      if (!subsidiariaId) omitidos.push({ folio: mov.folio, issues: ['Empleado no encontrado'] });
       continue;
     }
     const issues = validateEmpleadoParaSua(emp, empresaRp);
@@ -454,26 +475,32 @@ async function generarMovimientosSua(tenantId, options = {}) {
     fechaInicio,
     fechaFin,
     registroPatronal = '',
-    tiposInternos = ['BAJA', 'REAJUSTE', 'REINGRESO']
+    tiposInternos = ['BAJA', 'REAJUSTE', 'REINGRESO'],
+    empresaId = null,
+    subsidiariaId = null
   } = options;
 
-  const empresaRp = await loadEmpresaRp(tenantId, registroPatronal);
+  const empresaRp = await loadEmpresaRp(tenantId, registroPatronal, empresaId);
   const Historial = await getHistorialLaboralModel();
   const Empleado = await getEmpleadoModel();
 
   const fi = startOfDay(fechaInicio || new Date());
   const ff = endOfDay(fechaFin || new Date());
 
-  const movs = await Historial.find({
+  const movQ = {
     tenantId,
     fechaMovimiento: { $gte: fi, $lte: ff },
     tipoMovimientoCodigo: { $in: tiposInternos }
-  })
-    .sort({ fechaMovimiento: 1 })
-    .lean();
+  };
+  if (empresaId) movQ.empresaId = empresaId;
+
+  const movs = await Historial.find(movQ).sort({ fechaMovimiento: 1 }).lean();
 
   const empIds = [...new Set(movs.map((m) => String(m.empleadoId)))];
-  const empleados = await Empleado.find({ tenantId, _id: { $in: empIds } }).lean();
+  const empleados = await Empleado.find(queryEmpleados(tenantId, { empresaId, subsidiariaId }))
+    .where('_id')
+    .in(empIds)
+    .lean();
   const empMap = new Map(empleados.map((e) => [String(e._id), e]));
 
   const preview = [];
@@ -485,7 +512,7 @@ async function generarMovimientosSua(tenantId, options = {}) {
     if (!tipoSua) continue;
     const emp = empMap.get(String(mov.empleadoId));
     if (!emp) {
-      omitidos.push({ folio: mov.folio, issues: ['Empleado no encontrado'] });
+      if (!subsidiariaId) omitidos.push({ folio: mov.folio, issues: ['Empleado no encontrado'] });
       continue;
     }
     const issues = validateEmpleadoParaSua(emp, empresaRp, { exigirCurpRfc: false });
@@ -534,12 +561,21 @@ async function generarMovimientosSua(tenantId, options = {}) {
 
 /** CRED.TXT — créditos INFONAVIT (inicio 15 por defecto). */
 async function generarCreditosSua(tenantId, options = {}) {
-  const { registroPatronal = '', tipoMovCred = '15', estatus = 'activo' } = options;
-  const empresaRp = await loadEmpresaRp(tenantId, registroPatronal);
+  const {
+    registroPatronal = '',
+    tipoMovCred = '15',
+    estatus = 'activo',
+    empresaId = null,
+    subsidiariaId = null
+  } = options;
+  const empresaRp = await loadEmpresaRp(tenantId, registroPatronal, empresaId);
   const Empleado = await getEmpleadoModel();
 
-  const q = { tenantId };
-  if (estatus === 'activo') q.estatus = 'activo';
+  const q = queryEmpleados(tenantId, {
+    empresaId,
+    subsidiariaId,
+    estatus: estatus === 'activo' ? 'activo' : null
+  });
 
   const empleados = await Empleado.find(q).sort({ lastName: 1 }).lean();
   const preview = [];

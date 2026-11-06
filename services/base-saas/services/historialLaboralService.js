@@ -41,7 +41,10 @@ function snapshotEmpleado(empleado, extras = {}) {
     sueldoIntegrado: sueldoIntegrado != null ? round2(sueldoIntegrado) : null,
     tipoContrato: empleado.tipoContrato || '',
     tipoSalario: extras.tipoSalario || empleado.tipoSalario || '',
-    estatus: empleado.estatus || 'activo'
+    estatus: empleado.estatus || 'activo',
+    estadoTrabajo: empleado.estadoTrabajo || '',
+    modalidadTrabajo: empleado.modalidadTrabajo || '',
+    registroPatronalId: empleado.registroPatronalId || null
   };
 }
 
@@ -73,6 +76,13 @@ function detectarTipoMovimiento(antes, despues) {
   if (orgCambio) return 'CAMBIO_PLAZA';
   if (salCambio) return 'REAJUSTE';
   if (antes.estatus !== despues.estatus) return 'ACTUALIZACION';
+  if (
+    String(antes.estadoTrabajo || '') !== String(despues.estadoTrabajo || '') ||
+    String(antes.modalidadTrabajo || '') !== String(despues.modalidadTrabajo || '') ||
+    idChanged(antes.registroPatronalId, despues.registroPatronalId)
+  ) {
+    return 'ACTUALIZACION';
+  }
   return null;
 }
 
@@ -131,6 +141,9 @@ async function registrarMovimiento(tenantId, empresaId, empleadoId, payload) {
     tipoContrato: payload.tipoContrato || '',
     tipoSalario: payload.tipoSalario || '',
     estatus: payload.estatus || '',
+    estadoTrabajo: payload.estadoTrabajo || '',
+    modalidadTrabajo: payload.modalidadTrabajo || '',
+    registroPatronalId: payload.registroPatronalId || null,
     diasContrato: payload.diasContrato ?? null,
     terminoContrato: payload.terminoContrato ?? null,
     observaciones: payload.observaciones || '',
