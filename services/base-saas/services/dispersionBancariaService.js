@@ -114,6 +114,9 @@ async function generarDispersionBancaria({
   if (periodo.estatus !== 'cerrado' && periodo.estatus !== 'calculado') {
     throw new Error('Solo se puede generar dispersión en períodos calculados o cerrados');
   }
+  if (periodo.layoutBancario && periodo.layoutBancario.estatus === 'generado') {
+    throw new Error('Este período ya tiene archivo bancario generado.');
+  }
 
   const layout = await Layout.findOne({
     tenantId,

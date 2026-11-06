@@ -5,7 +5,8 @@ const getDepartamentoModel = require('../models/departamento');
 const getDailyAttendanceModel = require('../models/dailyAttendance');
 const getIncidenciaModel = require('../models/incidencia');
 const getBiometricDeviceModel = require('../models/biometricDevice');
-const { startOfDay, endOfDay } = require('../libs/timeHelpers');
+const { startOfDay, endOfDay, ymdInTimeZone, addDaysYmd } = require('../libs/timeHelpers');
+const { zonaDeSubsidiariaId } = require('./zonaHorariaService');
 
 function pct(ok, total) {
   if (!total) return 0;
@@ -16,6 +17,24 @@ function nombreEmpleado(emp) {
   return `${emp.firstName || ''} ${emp.lastName || ''}`.trim() || emp.numEmpleado;
 }
 
+function enlacesDetalle(zona) {
+  const hoy = ymdInTimeZone(new Date(), zona);
+  const dia = new Date(`${hoy}T12:00:00.000Z`);
+  const lunes = addDaysYmd(hoy, -((dia.getUTCDay() + 6) % 7));
+  const mes = `${hoy.slice(0, 8)}01`;
+  const asistencia = (desde, hasta) =>
+    `/asistencia-diaria?fechaDesde=${desde}&fechaHasta=${hasta}`;
+  return {
+    hoy: asistencia(hoy, hoy),
+    semana: asistencia(lunes, hoy),
+    mes: asistencia(mes, hoy),
+    empleados: '/personal-empleados?estatus=activo',
+    he: `${asistencia(mes, hoy)}&he=1`,
+    pendientes: '/incidencias/pendientes',
+    retardos: `${asistencia(mes, hoy)}&estatus=retardo`
+  };
+}
+
 async function asistenciaEnRango(tenantId, empIds, inicio, fin) {
   if (!empIds.length) return { ok: 0, total: 0, pct: 0 };
   const DailyAttendance = await getDailyAttendanceModel();
@@ -23,11 +42,14 @@ async function asistenciaEnRango(tenantId, empIds, inicio, fin) {
     tenantId,
     empleadoId: { $in: empIds },
     fecha: { $gte: inicio, $lte: fin },
-    estatus: { $nin: ['descanso'] }
+    estatus: { $nin: ['descanso', 'vacaciones', 'anulada'] }
   }).lean();
 
   const total = registros.length;
-  const ok = registros.filter((r) => ['presente', 'retardo'].includes(r.estatus)).length;
+  // Incompleto y parcial cuentan: la persona ya marcó y el día todavía no cierra.
+  const ok = registros.filter((r) =>
+    ['presente', 'retardo', 'incompleto', 'registro_parcial'].includes(r.estatus)
+  ).length;
   return { ok, total, pct: pct(ok, total) };
 }
 
@@ -45,23 +67,32 @@ async function getDashboardKpis(tenantId, { empresaId = null, subsidiariaId = nu
 
   const empQ = { tenantId, estatus: 'activo' };
   const deptoQ = { tenantId, activo: true };
+  const devQ = { tenantId, activo: true };
   if (empresaId) {
     empQ.empresaId = empresaId;
     deptoQ.empresaId = empresaId;
+    devQ.empresaId = empresaId;
   }
   if (subsidiariaId) {
     empQ.subsidiariaId = subsidiariaId;
     deptoQ.subsidiariaId = subsidiariaId;
+    devQ.subsidiariaId = subsidiariaId;
   }
 
-  const [empleadosActivos, departamentos, pendientes, dispositivos] = await Promise.all([
+  const [empleadosActivos, departamentos, dispositivos] = await Promise.all([
     Empleado.find(empQ).lean(),
     Departamento.find(deptoQ).lean(),
-    Incidencia.countDocuments({ tenantId, estatus: 'pendiente' }),
-    BiometricDevice.find({ tenantId, activo: true }).lean()
+    BiometricDevice.find(devQ).lean()
   ]);
 
   const empIds = empleadosActivos.map((e) => e._id);
+  const pendientes = empIds.length
+    ? await Incidencia.countDocuments({
+        tenantId,
+        estatus: 'pendiente',
+        empleadoId: { $in: empIds }
+      })
+    : 0;
   const [hoyStats, semanaStats, mesStats] = await Promise.all([
     asistenciaEnRango(tenantId, empIds, startOfDay(hoy), endOfDay(hoy)),
     asistenciaEnRango(tenantId, empIds, inicioSemana, endOfDay(hoy)),
@@ -136,18 +167,26 @@ async function getDashboardKpis(tenantId, { empresaId = null, subsidiariaId = nu
     });
   }
 
-  const registroParcialHoy = await DailyAttendance.countDocuments({
-    tenantId,
-    fecha: { $gte: startOfDay(hoy), $lte: endOfDay(hoy) },
-    estatus: 'registro_parcial'
-  });
-  const fueraRangoHoy = await DailyAttendance.countDocuments({
-    tenantId,
-    fecha: { $gte: startOfDay(hoy), $lte: endOfDay(hoy) },
-    estatus: 'fuera_de_rango'
-  });
+  const registroParcialHoy = empIds.length
+    ? await DailyAttendance.countDocuments({
+        tenantId,
+        empleadoId: { $in: empIds },
+        fecha: { $gte: startOfDay(hoy), $lte: endOfDay(hoy) },
+        estatus: 'registro_parcial'
+      })
+    : 0;
+  const fueraRangoHoy = empIds.length
+    ? await DailyAttendance.countDocuments({
+        tenantId,
+        empleadoId: { $in: empIds },
+        fecha: { $gte: startOfDay(hoy), $lte: endOfDay(hoy) },
+        estatus: 'fuera_de_rango'
+      })
+    : 0;
 
+  const zona = await zonaDeSubsidiariaId(subsidiariaId);
   return {
+    enlaces: enlacesDetalle(zona),
     empleadosActivos: empleadosActivos.length,
     asistenciaHoy: hoyStats,
     asistenciaSemana: semanaStats,

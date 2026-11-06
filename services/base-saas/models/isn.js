@@ -12,6 +12,19 @@ const reglaConceptoSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const primaVigenciaSchema = new mongoose.Schema(
+  {
+    prima: { type: Number, required: true },
+    claseRiesgo: { type: String, trim: true, default: '' },
+    fraccion: { type: String, trim: true, default: '' },
+    fechaInicio: { type: Date, required: true },
+    fechaFin: { type: Date, default: null },
+    motivo: { type: String, trim: true, default: '' },
+    registradoPor: { type: String, trim: true, default: '' }
+  },
+  { _id: true }
+);
+
 const registroPatronalSchema = new mongoose.Schema(
   {
     tenantId: { type: String, required: true, trim: true, index: true },
@@ -21,6 +34,8 @@ const registroPatronalSchema = new mongoose.Schema(
     claseRiesgo: { type: String, trim: true, default: '' },
     fraccion: { type: String, trim: true, default: '' },
     primaRiesgo: { type: Number, default: null },
+    /** Vigencias de la prima real. La prima media de la clase no sustituye este historial. */
+    primas: { type: [primaVigenciaSchema], default: [] },
     fechaInicio: { type: Date, default: null },
     fechaFin: { type: Date, default: null },
     esRpu: { type: Boolean, default: false },

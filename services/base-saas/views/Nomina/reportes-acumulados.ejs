@@ -144,7 +144,7 @@
 </script>
 
 <% if (r && r.summary && !r.summary.mensaje) { %>
-<div class="report-summary summary-cards">
+<div class="report-summary">
   <p>
     <strong>Fuente:</strong>
     <%= r.fuente === 'historico+temporal' ? 'Histórico + períodos abiertos' : 'Acumulados anuales' %>
@@ -157,8 +157,8 @@
   </p>
   <p>
     <% if (r.summary.importeAnual != null) { %>Importe $<%= formatMoney(r.summary.importeAnual) %><% } %>
-    <% if (r.summary.gravadoAnual != null) { %> · Gravado $<%= formatMoney(r.summary.gravadoAnual) %><% } %>
-    <% if (r.summary.exentoAnual != null) { %> · Exento $<%= formatMoney(r.summary.exentoAnual) %><% } %>
+    <% if (r.summary.gravadoAnual != null) { %> · Gravado percepciones $<%= formatMoney(r.summary.gravadoAnual) %><% } %>
+    <% if (r.summary.exentoAnual != null) { %> · Exento percepciones $<%= formatMoney(r.summary.exentoAnual) %><% } %>
   </p>
   <p>
     <strong>Retenciones:</strong>
@@ -187,13 +187,14 @@
   .sabanota-scroll table { border-collapse:separate; border-spacing:0; min-width:100%; }
   .sabanota-scroll thead th { position:sticky; top:0; background:#f8fafc; z-index:2; white-space:nowrap; }
   .sabanota-scroll th.sticky-col, .sabanota-scroll td.sticky-col {
-    position:sticky; left:0; background:#fff; z-index:1; box-shadow:1px 0 0 #e5e7eb;
+    position:sticky; left:0; background:#fff; z-index:1; box-shadow:1px 0 0 #e5e7eb; white-space:nowrap;
   }
   .sabanota-scroll thead th.sticky-col { z-index:3; background:#f8fafc; }
   .sabanota-scroll th.sticky-col-2, .sabanota-scroll td.sticky-col-2 {
-    position:sticky; left:5.5rem; background:#fff; z-index:1; box-shadow:1px 0 0 #e5e7eb;
+    position:sticky; left:5.5rem; background:#fff; z-index:1; box-shadow:1px 0 0 #e5e7eb; white-space:nowrap;
   }
   .sabanota-scroll thead th.sticky-col-2 { z-index:3; background:#f8fafc; }
+  .sabanota-scroll td.concepto-cell, .sabanota-scroll th.concepto-cell { white-space:nowrap; }
   .sabanota-scroll a.money-link { font-variant-numeric:tabular-nums; text-decoration:underline; }
 </style>
 <div class="<%= r.vista === 'sabanota' ? 'sabanota-scroll' : 'table-scroll' %>">
@@ -201,7 +202,7 @@
   <thead>
     <tr>
       <% (r.columns || []).forEach(function(c, idx) { %>
-      <th class="<%= c.type === 'money' || c.type === 'number' || c.type === 'money_link' ? 'num' : '' %> <%= idx===0 ? 'sticky-col' : (idx===1 ? 'sticky-col-2' : '') %>"
+      <th class="<%= c.type === 'money' || c.type === 'number' || c.type === 'money_link' ? 'num' : '' %> <%= c.key === 'conceptoEtiqueta' ? 'concepto-cell' : '' %> <%= c.sticky === 1 ? 'sticky-col' : (c.sticky === 2 ? 'sticky-col-2' : '') %>"
           title="<%= c.periodoLabel || c.label %>">
         <%= c.label %>
       </th>
@@ -212,15 +213,18 @@
     <% r.rows.forEach(function(row) { %>
     <tr>
       <% (r.columns || []).forEach(function(c, idx) { %>
-      <td class="<%= c.type === 'money' || c.type === 'number' || c.type === 'money_link' ? 'num' : '' %> <%= idx===0 ? 'sticky-col' : (idx===1 ? 'sticky-col-2' : '') %>">
+      <td class="<%= c.type === 'money' || c.type === 'number' || c.type === 'money_link' ? 'num' : '' %> <%= c.key === 'conceptoEtiqueta' ? 'concepto-cell' : '' %> <%= c.sticky === 1 ? 'sticky-col' : (c.sticky === 2 ? 'sticky-col-2' : '') %>">
         <% if (c.type === 'money_link') {
              var amt = Number(row[c.key] || 0);
              var url = c.urlKey ? row[c.urlKey] : '';
              if (amt && url) { %>
         <a class="money-link" href="<%= url %>" target="_blank" rel="noopener" title="Ver cálculo período-empleado">$<%= formatMoney(amt) %></a>
-        <%   } else if (amt) { %>$<%= formatMoney(amt) %><% }
-             else { %><span class="muted">—</span><% }
-           } else if (c.type === 'money') { %>$<%= formatMoney(row[c.key]) %><%
+        <%   } else if (amt) { %>$<%= formatMoney(amt) %><%
+             } else { %><span class="muted">—</span><% }
+           } else if (c.type === 'money') {
+             if (row[c.key] == null || row[c.key] === '') { %><span class="muted">—</span><%
+             } else { %>$<%= formatMoney(row[c.key]) %><% }
+           } else if (c.titleKey && row[c.titleKey]) { %><span title="<%= row[c.titleKey] %>"><%= row[c.key] != null ? row[c.key] : '' %></span><%
            } else { %><%= row[c.key] != null ? row[c.key] : '' %><% } %>
       </td>
       <% }); %>
@@ -231,7 +235,7 @@
   <tfoot>
     <tr>
       <% (r.columns || []).forEach(function(c, idx) { %>
-      <td class="<%= c.type === 'money' || c.type === 'number' || c.type === 'money_link' ? 'num' : '' %> <%= idx===0 ? 'sticky-col' : (idx===1 ? 'sticky-col-2' : '') %>">
+      <td class="<%= c.type === 'money' || c.type === 'number' || c.type === 'money_link' ? 'num' : '' %> <%= c.key === 'conceptoEtiqueta' ? 'concepto-cell' : '' %> <%= c.sticky === 1 ? 'sticky-col' : (c.sticky === 2 ? 'sticky-col-2' : '') %>">
         <% if (idx === 0) { %><strong>Totales</strong><%
            } else if ((c.type === 'money' || c.type === 'money_link') && r.summary[c.key] != null) { %><strong>$<%= formatMoney(r.summary[c.key]) %></strong><%
            } else if (c.key === 'empleados' && r.summary.empleados != null) { %><strong><%= r.summary.empleados %></strong><% } %>

@@ -30,6 +30,19 @@ function userCanEditNomina(session) {
   return roles.some((r) => r.puedeGestionarNomina || r.esAdmin || r.esAdminSistema);
 }
 
+function userCanEditCumplimiento(session) {
+  const roles = sessionRoles(session);
+  if (!roles.length) return true;
+  return roles.some(
+    (r) => r.puedeGestionarCumplimiento || r.puedeGestionarNomina || r.esAdmin || r.esAdminSistema
+  );
+}
+
+function userCanViewCumplimiento(session) {
+  if (userCanEditCumplimiento(session)) return true;
+  return userCanViewNomina(session);
+}
+
 function userCanViewNomina(session) {
   const roles = sessionRoles(session);
   if (!roles.length) return true;
@@ -68,6 +81,8 @@ module.exports = {
   isSoloPortalUser,
   sessionRoles,
   userCanEditNomina,
+  userCanEditCumplimiento,
+  userCanViewCumplimiento,
   userCanViewNomina,
   resolveNominaConceptoModo
 };

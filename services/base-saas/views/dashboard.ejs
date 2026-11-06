@@ -72,10 +72,11 @@
     <% if (hasReportes) { %><a href="/reportes/kpis">Ver dashboard completo →</a><% } %>
   </div>
   <div class="stats-grid">
-    <div class="stat-card ok"><strong><%= kpis.asistenciaHoy.pct %>%</strong><span>Asistencia hoy</span></div>
-    <div class="stat-card"><strong><%= kpis.empleadosActivos %></strong><span>Empleados activos</span></div>
-    <div class="stat-card warn"><strong><%= kpis.incidenciasPendientes %></strong><span>Pendientes</span></div>
-    <div class="stat-card"><strong><%= kpis.heMesMinutos %></strong><span>Min HE (mes)</span></div>
+    <% const Lk = kpis.enlaces || {}; %>
+    <a class="stat-card ok is-filter" href="<%= Lk.hoy %>"><strong><%= kpis.asistenciaHoy.pct %>%</strong><span>Asistencia hoy</span></a>
+    <a class="stat-card is-filter" href="<%= Lk.empleados %>"><strong><%= kpis.empleadosActivos %></strong><span>Empleados activos</span></a>
+    <a class="stat-card warn is-filter" href="<%= Lk.pendientes %>"><strong><%= kpis.incidenciasPendientes %></strong><span>Pendientes</span></a>
+    <a class="stat-card is-filter" href="<%= Lk.he %>"><strong><%= kpis.heMesMinutos %></strong><span>Min HE (mes)</span></a>
   </div>
   <% if (kpis.alertas.length) { %>
   <ul class="alert-list-compact">

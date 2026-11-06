@@ -1,8 +1,8 @@
 <%- include('../../Partials/layout-top', { title: 'Generar archivo bancario', session }) %>
 <h1>Generar archivo bancario</h1>
 <p class="muted">
-  Elige un período calculado/cerrado, un layout y la <strong>fecha de pago</strong> (queda en <code>lote.fechaPago</code>).
-  Al generar se descarga el archivo y se marca el período y los recibos como <strong>layout generado</strong>.
+  Períodos cerrados de la subsidiaria activa. Elige un layout y la <strong>fecha de pago</strong>.
+  Al generar se descarga el archivo y el período queda marcado. Si ya se generó, no se vuelve a emitir.
 </p>
 
 <% if (!empresa) { %>
@@ -15,18 +15,22 @@
 <% } else { %>
 <form method="post" action="/nomina/dispersion-bancaria/generar" class="form-grid">
   <label>Período
-    <select name="periodoId" required>
-      <option value="">— Selecciona —</option>
+    <select name="periodoId" id="periodo-dispersion" required>
+      <option value="" data-generado="0">— Selecciona —</option>
       <% (periodos || []).forEach(function(p) {
            const lb = p.layoutBancario || {};
+           const ya = lb.estatus === 'generado';
            const sel = periodoPre && String(periodoPre._id) === String(p._id);
+           const cuando = lb.fechaGeneracion ? new Date(lb.fechaGeneracion).toLocaleDateString('es-MX') : '';
       %>
-      <option value="<%= p._id %>" <%= sel ? 'selected' : '' %>>
+      <option value="<%= p._id %>" <%= sel ? 'selected' : '' %>
+        data-generado="<%= ya ? '1' : '0' %>"
+        data-archivo="<%= ya ? (lb.archivoNombre || '') : '' %>"
+        data-fecha="<%= cuando %>">
         #<%= p.numeroPeriodo != null ? p.numeroPeriodo : '—' %>
         <%= p.tipoPeriodo %> · <%= p.tipoNomina %>
         · <%= new Date(p.fechaInicio).toLocaleDateString('es-MX') %>–<%= new Date(p.fechaFin).toLocaleDateString('es-MX') %>
-        (<%= p.estatus %>)
-        <% if (lb.estatus === 'generado') { %> · ya generado<% } %>
+        <% if (ya) { %> · archivo generado<% } %>
       </option>
       <% }); %>
     </select>
@@ -42,11 +46,38 @@
   <label>Fecha de pago
     <input type="date" name="fechaPago" required value="<%= fechaPagoDefault || '' %>" />
   </label>
+  <p id="aviso-dispersion" class="muted" style="grid-column:1/-1"></p>
   <div class="toolbar" style="grid-column:1/-1">
-    <button type="submit" class="btn btn-primary">Generar y descargar</button>
+    <button type="submit" class="btn btn-primary" id="btn-generar-dispersion">Generar y descargar</button>
     <a class="btn" href="/nomina/layouts-bancarios">Layouts</a>
     <a class="btn" href="/nomina/periodos">Períodos</a>
   </div>
 </form>
+<script>
+(function () {
+  var sel = document.getElementById('periodo-dispersion');
+  var btn = document.getElementById('btn-generar-dispersion');
+  var aviso = document.getElementById('aviso-dispersion');
+  if (!sel || !btn) return;
+  function sync() {
+    var opt = sel.options[sel.selectedIndex];
+    var ya = !!(opt && opt.getAttribute('data-generado') === '1');
+    btn.disabled = ya;
+    if (!aviso) return;
+    if (!ya) {
+      aviso.textContent = '';
+      return;
+    }
+    var arch = opt.getAttribute('data-archivo') || '';
+    var fecha = opt.getAttribute('data-fecha') || '';
+    aviso.textContent = 'Este período ya tiene archivo bancario'
+      + (arch ? ' (' + arch + ')' : '')
+      + (fecha ? ', generado el ' + fecha : '')
+      + '.';
+  }
+  sel.addEventListener('change', sync);
+  sync();
+})();
+</script>
 <% } %>
 <%- include('../../Partials/layout-bottom') %>

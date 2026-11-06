@@ -14,6 +14,8 @@ const roleSchema = new mongoose.Schema(
     puedeVerNomina: { type: Boolean, default: false },
     /** Abrir período, calcular, cerrar, editar conceptos y config fiscal. */
     puedeGestionarNomina: { type: Boolean, default: false },
+    /** Avisos IMSS, créditos, centros de trabajo y conciliación. No calcula la nómina. */
+    puedeGestionarCumplimiento: { type: Boolean, default: false },
     puedeGestionarPrenomina: { type: Boolean, default: false },
     puedeGestionarPersonal: { type: Boolean, default: false },
     puedeGestionarAsistencia: { type: Boolean, default: false },

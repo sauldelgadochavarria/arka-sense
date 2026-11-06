@@ -38,6 +38,7 @@ async function listDiaria(req, res) {
   let fechaHasta = rango.fechaHasta;
   const zonaPagina = rango.zona;
   const estatusFiltro = trimString(req.query.estatus);
+  const soloHe = trimString(req.query.he) === '1';
   const departamentoId = parseOptionalObjectId(req.query.departamentoId);
   let tipoPeriodoId = parseOptionalObjectId(req.query.tipoPeriodoId);
   const periodoId = parseOptionalObjectId(req.query.periodoId);
@@ -198,6 +199,9 @@ async function listDiaria(req, res) {
   } else if (estatusFiltro) {
     filas = todasFilas.filter((f) => f.resumen && f.resumen.estatus === estatusFiltro);
   }
+  if (soloHe) {
+    filas = filas.filter((f) => f.resumen && Number(f.resumen.minutosHorasExtra) > 0);
+  }
 
   res.render('Asistencia/diaria', {
     filas,
@@ -207,6 +211,7 @@ async function listDiaria(req, res) {
     unDia,
     stats,
     estatusFiltro,
+    soloHe,
     departamentoId: departamentoId ? String(departamentoId) : '',
     tipoPeriodoId: tipoPeriodoId ? String(tipoPeriodoId) : '',
     periodoId: periodoId ? String(periodoId) : '',

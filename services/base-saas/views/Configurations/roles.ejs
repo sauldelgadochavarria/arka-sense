@@ -15,6 +15,7 @@
       <th>Prenómina</th>
       <th>Ver nómina</th>
       <th>Gestionar nómina</th>
+      <th>Cumplimiento</th>
       <th>Reportes</th>
     </tr>
   </thead>
@@ -32,6 +33,7 @@
       <td><%= r.puedeGestionarPrenomina ? 'Sí' : 'No' %></td>
       <td><%= verNom ? 'Sí' : 'No' %></td>
       <td><%= gestNom ? 'Sí (calcular/cerrar)' : 'No (solo consulta)' %></td>
+      <td><%= r.puedeGestionarCumplimiento || gestNom ? 'Sí' : 'No' %></td>
       <td><%= r.puedeVerReportes ? 'Sí' : 'No' %></td>
     </tr>
     <% }); %>
@@ -50,6 +52,7 @@
   <label><input type="checkbox" name="puedeGestionarPrenomina" /> Gestionar pre-nómina (asistencia → export)</label>
   <label><input type="checkbox" name="puedeVerNomina" /> Ver nómina (consulta: períodos, recibos, conceptos)</label>
   <label><input type="checkbox" name="puedeGestionarNomina" /> Gestionar nómina (abrir/calcular/cerrar + editar conceptos)</label>
+  <label><input type="checkbox" name="puedeGestionarCumplimiento" /> Cumplimiento patronal (IMSS, ISN, INFONAVIT, FONACOT y conciliación)</label>
   <button type="submit">Crear rol</button>
 </form>
 <%- include('../Partials/layout-bottom') %>

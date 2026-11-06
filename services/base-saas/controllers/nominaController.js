@@ -2232,6 +2232,7 @@ async function createConcepto(req, res) {
       integraISR: req.body.integraISR,
       integraIMSS: req.body.integraIMSS,
       integraINFONAVIT: req.body.integraINFONAVIT,
+      integraFONACOT: req.body.integraFONACOT === 'on' || req.body.integraFONACOT === '1' || req.body.integraFONACOT === true,
       integraISN: req.body.integraISN === 'on' || req.body.integraISN === '1' || req.body.integraISN === true,
       desgloseModo: req.body.desgloseModo,
       naturalezaSdi: req.body.naturalezaSdi,
@@ -2593,6 +2594,10 @@ async function saveConceptoPropsAction(req, res) {
           req.body.integraINFONAVIT === 'on' ||
           req.body.integraINFONAVIT === '1' ||
           req.body.integraINFONAVIT === true,
+        integraFONACOT:
+          req.body.integraFONACOT === 'on' ||
+          req.body.integraFONACOT === '1' ||
+          req.body.integraFONACOT === true,
         integraISN: req.body.integraISN === 'on' || req.body.integraISN === '1' || req.body.integraISN === true,
         desgloseModo: req.body.desgloseModo,
         topeExentoUMA: req.body.topeExentoUMA,

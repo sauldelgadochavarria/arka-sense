@@ -50,6 +50,8 @@ const empleadoSchema = new mongoose.Schema(
     },
     departamentoId: { type: mongoose.Schema.Types.ObjectId, ref: 'Departamento' },
     centroCostoId: { type: mongoose.Schema.Types.ObjectId, ref: 'CentroCosto', default: null },
+    /** Centro donde presta el servicio. La sucursal no lo sustituye. */
+    centroTrabajoId: { type: mongoose.Schema.Types.ObjectId, ref: 'CentroTrabajo', default: null },
     puestoId: { type: mongoose.Schema.Types.ObjectId, ref: 'Puesto' },
     /**
      * Override explícito de tabla de prestaciones.

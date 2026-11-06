@@ -12,32 +12,33 @@
   <a class="btn" href="/incidencias/pendientes">Incidencias pendientes (<%= kpis.incidenciasPendientes %>)</a>
 </div>
 
+<% const L = kpis.enlaces || {}; %>
 <div class="stats-grid">
-  <div class="stat-card ok">
+  <a class="stat-card ok is-filter" href="<%= L.hoy %>">
     <strong><%= kpis.asistenciaHoy.pct %>%</strong>
     <span>Asistencia hoy</span>
     <small><%= kpis.asistenciaHoy.ok %> / <%= kpis.asistenciaHoy.total %> registros</small>
-  </div>
-  <div class="stat-card">
+  </a>
+  <a class="stat-card is-filter" href="<%= L.semana %>">
     <strong><%= kpis.asistenciaSemana.pct %>%</strong>
     <span>Semana actual</span>
-  </div>
-  <div class="stat-card">
+  </a>
+  <a class="stat-card is-filter" href="<%= L.mes %>">
     <strong><%= kpis.asistenciaMes.pct %>%</strong>
     <span>Mes actual</span>
-  </div>
-  <div class="stat-card">
+  </a>
+  <a class="stat-card is-filter" href="<%= L.empleados %>">
     <strong><%= kpis.empleadosActivos %></strong>
     <span>Empleados activos</span>
-  </div>
-  <div class="stat-card warn">
+  </a>
+  <a class="stat-card warn is-filter" href="<%= L.he %>">
     <strong><%= kpis.heMesMinutos %></strong>
     <span>Minutos HE (mes)</span>
-  </div>
-  <div class="stat-card">
+  </a>
+  <a class="stat-card is-filter" href="<%= L.pendientes %>">
     <strong><%= kpis.incidenciasPendientes %></strong>
     <span>Solicitudes pendientes</span>
-  </div>
+  </a>
 </div>
 
 <% if (kpis.alertas.length) { %>
@@ -53,7 +54,7 @@
 
 <div class="kpi-panels">
   <section class="kpi-panel">
-    <h2>Top 10 retardos del mes</h2>
+    <h2><a href="<%= L.retardos %>">Top 10 retardos del mes</a></h2>
     <% if (!kpis.topRetardos.length) { %>
     <p>Sin retardos registrados en el mes.</p>
     <% } else { %>

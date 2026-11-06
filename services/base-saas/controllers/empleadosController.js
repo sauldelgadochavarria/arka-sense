@@ -330,7 +330,11 @@ async function loadEmpleadoCatalogs(tenantId, empresa, subsidiariaId = null) {
       activo: true,
       ...(subsidiariaId ? { subsidiariaId } : {})
     }).sort({ nombre: 1 }).lean(),
-    Puesto.find({ ...empresaScope, activo: true }).sort({ nombre: 1 }).lean(),
+    Puesto.find({
+      ...empresaScope,
+      activo: true,
+      ...(subsidiariaId ? { subsidiariaId } : {})
+    }).sort({ nombre: 1 }).lean(),
     Subsidiaria.find({ empresaId: empresa._id, activo: true }).sort({ nombre: 1 }).lean(),
     Turno.find({
       tenantId,

@@ -2,16 +2,23 @@ const getPuestoModel = require('../models/puesto');
 const {
   requireEmpresaForTenant,
   findOneByTenant,
-  findOneDocByTenant
+  findOneDocByTenant,
+  sessionSubsidiariaId,
+  scopeEmpresaFilter
 } = require('../libs/tenantScope');
 const { trimString, parseOptionalLegadoCode } = require('../libs/formHelpers');
+
+function puestoDeLaSubsidiaria(puesto, req) {
+  const subId = sessionSubsidiariaId(req);
+  if (!subId) return true;
+  return puesto && String(puesto.subsidiariaId || '') === String(subId);
+}
 
 async function listPuestos(req, res) {
   const { empresa, error } = await requireEmpresaForTenant(req);
   const Puesto = await getPuestoModel();
-  const puestos = empresa
-    ? await Puesto.find({ tenantId: req.session.tenantId, empresaId: empresa._id }).sort({ nombre: 1 }).lean()
-    : [];
+  const filtro = scopeEmpresaFilter(req, empresa);
+  const puestos = filtro ? await Puesto.find(filtro).sort({ nombre: 1 }).lean() : [];
 
   res.render('Personal/puestos', { puestos, empresa, error: error || null, session: req.session });
 }
@@ -24,10 +31,17 @@ async function createPuesto(req, res) {
       return res.redirect('/personal-puestos');
     }
 
+    const subId = sessionSubsidiariaId(req);
+    if (!subId) {
+      req.flash('error', 'Elige una subsidiaria antes de crear el puesto');
+      return res.redirect('/personal-puestos');
+    }
+
     const Puesto = await getPuestoModel();
     await Puesto.create({
       tenantId: req.session.tenantId,
       empresaId: empresa._id,
+      subsidiariaId: subId,
       nombre: trimString(req.body.nombre),
       nivel: trimString(req.body.nivel),
       descripcion: trimString(req.body.descripcion),
@@ -47,7 +61,7 @@ async function editPuesto(req, res) {
   const { empresa, error } = await requireEmpresaForTenant(req);
   const Puesto = await getPuestoModel();
   const puesto = await findOneByTenant(Puesto, req.session.tenantId, req.params.id);
-  if (!puesto) return res.status(404).send('Puesto no encontrado');
+  if (!puesto || !puestoDeLaSubsidiaria(puesto, req)) return res.status(404).send('Puesto no encontrado');
 
   res.render('Personal/puesto-edit', { puesto, empresa, error: error || null, session: req.session });
 }
@@ -56,7 +70,7 @@ async function updatePuesto(req, res) {
   try {
     const Puesto = await getPuestoModel();
     const puesto = await findOneDocByTenant(Puesto, req.session.tenantId, req.params.id);
-    if (!puesto) return res.status(404).send('Puesto no encontrado');
+    if (!puesto || !puestoDeLaSubsidiaria(puesto, req)) return res.status(404).send('Puesto no encontrado');
 
     puesto.nombre = trimString(req.body.nombre);
     puesto.nivel = trimString(req.body.nivel);
@@ -76,7 +90,7 @@ async function updatePuesto(req, res) {
 async function togglePuesto(req, res) {
   const Puesto = await getPuestoModel();
   const puesto = await findOneDocByTenant(Puesto, req.session.tenantId, req.params.id);
-  if (!puesto) return res.status(404).send('Puesto no encontrado');
+  if (!puesto || !puestoDeLaSubsidiaria(puesto, req)) return res.status(404).send('Puesto no encontrado');
 
   puesto.activo = !puesto.activo;
   await puesto.save();

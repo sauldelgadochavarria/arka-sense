@@ -16,6 +16,7 @@ const getCentroCostoModel = require('../models/centroCosto');
 const getConceptCatalogModel = require('../models/conceptCatalog');
 const getConceptoNominaModel = require('../models/conceptoNomina');
 const { META_CONCEPTOS } = require('./nominaReportesService');
+const { SAT_CATALOG_SEED } = require('../config/satCatalogSeed');
 
 const VISTAS = ['sabanota', 'detalle', 'matriz', 'resumen'];
 const TIPOS_CONCEPTO = ['', 'ambas', 'percepcion', 'deduccion', 'otro_pago'];
@@ -25,6 +26,21 @@ const AGRUPAR = ['departamento', 'concepto', 'departamento_concepto'];
 const SABANOTA_MAX_EMPLEADOS_SIN_FILTRO = 80;
 const SABANOTA_MAX_FILAS = 2500;
 const SABANOTA_MAX_PERIODOS = 60;
+
+/** c_TipoPercepcion / c_TipoDeduccion / c_TipoOtroPago: tipo|clave → descripción SAT. */
+const SAT_NOMBRE = new Map();
+for (const row of SAT_CATALOG_SEED) {
+  const tipo =
+    row.catalogo === 'c_TipoPercepcion'
+      ? 'percepcion'
+      : row.catalogo === 'c_TipoDeduccion'
+        ? 'deduccion'
+        : row.catalogo === 'c_TipoOtroPago'
+          ? 'otro_pago'
+          : '';
+  if (!tipo) continue;
+  SAT_NOMBRE.set(`${tipo}|${String(row.clave).padStart(3, '0')}`, row.descripcion);
+}
 
 /** Retenciones típicas de nómina (obrero). */
 const CODIGOS_IMPUESTOS_RETENIDOS = [
@@ -53,6 +69,77 @@ function isVisibleConcepto(codigo) {
   if (c === 'IMSS_PATRONAL') return false;
   if (c.startsWith('ISR_')) return false;
   return true;
+}
+
+function nombreVisible(meta, code) {
+  const nombre = String(meta?.nombre || '').trim();
+  if (nombre && nombre.toUpperCase() !== String(code || '').toUpperCase()) return nombre;
+  const desc = String(meta?.descripcion || '').trim();
+  if (desc && desc.toUpperCase() !== String(code || '').toUpperCase()) return desc;
+  return nombre || code;
+}
+
+function etiquetaConcepto(code, meta) {
+  const nombre = nombreVisible(meta, code);
+  if (!nombre || nombre.toUpperCase() === String(code || '').toUpperCase()) return code;
+  return `${code} — ${nombre}`;
+}
+
+function claveSat3(clave) {
+  const raw = String(clave || '').trim();
+  if (!raw) return '';
+  return raw.padStart(3, '0');
+}
+
+function tipoSatDe(tipo) {
+  const t = String(tipo || '').toLowerCase();
+  if (t.includes('deduc')) return 'deduccion';
+  if (t.includes('otro')) return 'otro_pago';
+  if (t.includes('perc')) return 'percepcion';
+  return '';
+}
+
+function nombreEmpresaPorSat(metaByCodigo, tipoSat, sat, codeActual) {
+  let found = '';
+  for (const [codigo, meta] of metaByCodigo) {
+    if (String(codigo).toUpperCase() === String(codeActual).toUpperCase()) continue;
+    if (claveSat3(meta.claveSAT) !== sat) continue;
+    const tipoMeta = tipoSatDe(meta.tipo);
+    if (tipoSat && tipoMeta && tipoMeta !== tipoSat) continue;
+    const nombre = nombreVisible(meta, codigo);
+    if (nombre && nombre.toUpperCase() !== String(codigo).toUpperCase()) found = nombre;
+  }
+  return found;
+}
+
+/**
+ * El recibo manda cuando su clave SAT no es la del catálogo.
+ * Ej. 015 está dado de alta como RETROACTIVO (SAT 001) y en el histórico
+ * viene como percepción 010 (premio de puntualidad).
+ */
+function aplicarIdentidadRecibo(row, code, meta, linea, metaByCodigo) {
+  const satLinea = claveSat3(linea.claveSAT);
+  const tipoLinea = String(linea.tipo || '').toLowerCase();
+  const tipoSat = tipoSatDe(tipoLinea);
+  if (satLinea && !row.claveSAT) row.claveSAT = satLinea;
+  if (tipoLinea && !row.tipo) row.tipo = tipoLinea;
+  if (!satLinea || !tipoSat) return;
+
+  const satCatalogo = claveSat3(meta.claveSAT);
+  const tipoCatalogo = tipoSatDe(meta.tipo);
+  const satDistinto = !!(satCatalogo && satLinea !== satCatalogo);
+  const tipoDistinto = !!(tipoCatalogo && tipoCatalogo !== tipoSat);
+  if (!satDistinto && !tipoDistinto) return;
+
+  const nombre =
+    nombreEmpresaPorSat(metaByCodigo, tipoSat, satLinea, code) ||
+    SAT_NOMBRE.get(`${tipoSat}|${satLinea}`) ||
+    '';
+  if (!nombre) return;
+  row.claveSAT = satLinea;
+  row.tipo = tipoLinea || row.tipo;
+  row.conceptoNombre = nombre;
+  row.conceptoEtiqueta = `${code} — ${nombre}`;
 }
 
 function isImpuestoRetenidoCodigo(codigo) {
@@ -177,16 +264,17 @@ async function generarReporteAcumulados({ tenantId, empresa, subsidiariaId = nul
   const ConceptoNomina = await getConceptoNominaModel();
   const Catalog = await getConceptCatalogModel();
   const [conceptosEmpresa, catalogos] = await Promise.all([
-    ConceptoNomina.find({ tenantId, empresaId: empresa._id, activo: { $ne: false } })
+    ConceptoNomina.find({ tenantId, empresaId: empresa._id })
       .select('codigo nombre tipo claveSAT')
       .lean(),
-    Catalog.find({}).select('codigo nombre tipo ordenDefault claveSAT sat').lean()
+    Catalog.find({}).select('codigo nombre tipo ordenDefault claveSAT sat descripcion').lean()
   ]);
 
   const metaByCodigo = new Map();
   for (const c of catalogos) {
     metaByCodigo.set(String(c.codigo).toUpperCase(), {
       nombre: c.nombre || c.codigo,
+      descripcion: String(c.descripcion || '').trim(),
       tipo: String(c.tipo || '').toLowerCase(),
       orden: Number(c.ordenDefault) || 9999,
       claveSAT: c.claveSAT || c.sat?.clave || ''
@@ -197,6 +285,7 @@ async function generarReporteAcumulados({ tenantId, empresa, subsidiariaId = nul
     const prev = metaByCodigo.get(code) || {};
     metaByCodigo.set(code, {
       nombre: c.nombre || prev.nombre || code,
+      descripcion: prev.descripcion || '',
       tipo: String(c.tipo || prev.tipo || '').toLowerCase(),
       orden: prev.orden != null ? prev.orden : 9999,
       claveSAT: c.claveSAT || prev.claveSAT || ''
@@ -213,39 +302,9 @@ async function generarReporteAcumulados({ tenantId, empresa, subsidiariaId = nul
       ? new Set([...codigosFiltro].filter((c) => set.has(c)))
       : set;
   }
-  if (tipoConcepto && tipoConcepto !== 'ambas') {
-    const delTipo = [...metaByCodigo.entries()]
-      .filter(([, m]) => tipoConceptoCoincide(m.tipo, tipoConcepto))
-      .map(([code]) => code);
-    const set = new Set(delTipo);
-    if (soloImpuestos) {
-      codigosFiltro = new Set(
-        [...CODIGOS_IMPUESTOS_RETENIDOS].filter(
-          (c) => set.has(c) || tipoConceptoCoincide(metaByCodigo.get(c)?.tipo, tipoConcepto)
-        )
-      );
-    } else if (conceptosSel.length) {
-      codigosFiltro = new Set([...codigosFiltro].filter((c) => set.has(c)));
-    } else {
-      codigosFiltro = set;
-    }
-  } else if (tipoConcepto === 'ambas') {
-    const delTipo = [...metaByCodigo.entries()]
-      .filter(([, m]) => tipoConceptoCoincide(m.tipo, 'ambas'))
-      .map(([code]) => code);
-    const set = new Set(delTipo);
-    if (soloImpuestos) {
-      // impuestos retenidos ya son deducciones
-    } else if (conceptosSel.length) {
-      codigosFiltro = new Set([...codigosFiltro].filter((c) => set.has(c)));
-    } else if (!codigosFiltro) {
-      codigosFiltro = set.size ? set : null;
-      // si el catálogo no trae tipos, no restringir por código; filtrar en conceptoPasaFiltro
-      if (codigosFiltro && codigosFiltro.size < 3) codigosFiltro = null;
-    } else {
-      codigosFiltro = new Set([...codigosFiltro].filter((c) => set.has(c) || set.size === 0));
-    }
-  }
+  // El tipo se resuelve en conceptoPasaFiltro con el tipo del recibo.
+  // No se arma una lista blanca con el catálogo: un código dado de alta como
+  // otro pago puede venir en el recibo como deducción (p. ej. 045 = ISR).
 
   const filtroCtx = { codigosFiltro, tipoConcepto, soloImpuestos, metaByCodigo };
 
@@ -320,7 +379,9 @@ async function generarReporteAcumulados({ tenantId, empresa, subsidiariaId = nul
       centroCostoId: emp.centroCostoId || null,
       centroCosto: cc ? `${cc.codigo} ${cc.nombre}`.trim() : '',
       conceptoCodigo: code,
-      conceptoNombre: meta.nombre,
+      conceptoNombre: nombreVisible(meta, code),
+      conceptoEtiqueta: etiquetaConcepto(code, meta),
+      conceptoAyuda: String(meta.descripcion || '').trim(),
       tipo: meta.tipo || '',
       claveSAT: meta.claveSAT || '',
       importeAnual: money(d.importeAnual),
@@ -439,7 +500,9 @@ async function buildSabanota({
       centroCostoId: emp.centroCostoId || empSnap.centroCostoId || null,
       centroCosto: ccNombre,
       conceptoCodigo: code,
-      conceptoNombre: meta.nombre,
+      conceptoNombre: nombreVisible(meta, code),
+      conceptoEtiqueta: etiquetaConcepto(code, meta),
+      conceptoAyuda: String(meta.descripcion || '').trim(),
       tipo: meta.tipo || '',
       claveSAT: meta.claveSAT || '',
       importeAnual: 0,
@@ -562,6 +625,7 @@ async function buildSabanota({
       if (importe === 0 && money(c.gravado) === 0 && money(c.exento) === 0) continue;
 
       const row = ensureRow(empId, code, pkg.empleado || {}, emp);
+      aplicarIdentidadRecibo(row, code, metaByCodigo.get(code) || {}, c, metaByCodigo);
       if (!row.departamento || row.departamento === 'Sin departamento') {
         row.departamento = emp?.departamentoNombre || pkg.empleado?.departamentoNombre || row.departamento;
       }
@@ -577,8 +641,14 @@ async function buildSabanota({
 
       row[colKey] = money((row[colKey] || 0) + importe);
       row.importeAnual = money(row.importeAnual + importe);
-      row.gravadoAnual = money(row.gravadoAnual + money(c.gravado));
-      row.exentoAnual = money(row.exentoAnual + money(c.exento));
+      const esDeduccion = String(c.tipo || row.tipo || '').toLowerCase().includes('deduc');
+      if (esDeduccion) {
+        row.gravadoAnual = null;
+        row.exentoAnual = null;
+      } else {
+        row.gravadoAnual = money((row.gravadoAnual || 0) + money(c.gravado));
+        row.exentoAnual = money((row.exentoAnual || 0) + money(c.exento));
+      }
       row._periodKeys.add(pKey);
       // URL por celda (mismo recibo del período)
       const link = linkByEmpPeriodo.get(`${empId}|${pKey}`);
@@ -588,6 +658,14 @@ async function buildSabanota({
 
   for (const h of historicos) ingestPaquete(h);
   for (const t of temporales) ingestPaquete(t);
+
+  const ccPorEmp = new Map();
+  for (const row of rowsMap.values()) {
+    if (row.centroCosto) ccPorEmp.set(String(row.empleadoId), row.centroCosto);
+  }
+  for (const row of rowsMap.values()) {
+    if (!row.centroCosto) row.centroCosto = ccPorEmp.get(String(row.empleadoId)) || '';
+  }
 
   if (!rowsMap.size) {
     return emptyResult(anio, 'sabanota', 'Sin recibos/histórico para el año / filtros');
@@ -609,13 +687,17 @@ async function buildSabanota({
   }
 
   const columns = [
-    { key: 'numEmpleado', label: 'Empleado', type: 'text', sticky: true },
-    { key: 'nombre', label: 'Nombre', type: 'text', sticky: true },
+    { key: 'numEmpleado', label: 'Empleado', type: 'text', sticky: 1 },
+    { key: 'nombre', label: 'Nombre', type: 'text', sticky: 2 },
+    {
+      key: 'conceptoEtiqueta',
+      label: 'Concepto',
+      type: 'text',
+      titleKey: 'conceptoAyuda'
+    },
     { key: 'departamento', label: 'Departamento', type: 'text' },
     { key: 'centroCosto', label: 'Centro de costo', type: 'text' },
     { key: 'tipo', label: 'Tipo', type: 'text' },
-    { key: 'conceptoCodigo', label: 'Código', type: 'text' },
-    { key: 'conceptoNombre', label: 'Concepto', type: 'text' },
     { key: 'claveSAT', label: 'SAT', type: 'text' },
     { key: 'importeAnual', label: 'Importe anual', type: 'money' },
     { key: 'gravadoAnual', label: 'Gravado', type: 'money' },
@@ -844,7 +926,7 @@ function buildMatriz(anio, rows, metaByCodigo) {
     { key: 'centroCosto', label: 'Centro de costo', type: 'text' },
     ...codigos.map((code) => ({
       key: `c_${code}`,
-      label: metaByCodigo.get(code)?.nombre || code,
+      label: nombreVisible(metaByCodigo.get(code), code),
       type: 'money',
       conceptoCodigo: code
     }))
@@ -881,7 +963,7 @@ function buildResumen(anio, rows, agrupar) {
       label = `${r.conceptoCodigo} — ${r.conceptoNombre}`;
     } else if (agrupar === 'departamento_concepto') {
       key = `${r.departamentoId || 'sin'}|${r.conceptoCodigo}`;
-      label = `${r.departamento} · ${r.conceptoCodigo}`;
+      label = `${r.departamento} · ${r.conceptoEtiqueta || r.conceptoCodigo}`;
     } else {
       key = String(r.departamentoId || 'sin');
       label = r.departamento || 'Sin departamento';
@@ -961,6 +1043,32 @@ function sumKeys(rows, keys) {
   return out;
 }
 
+function bucketRetencion(row) {
+  const c = String(row.conceptoCodigo || '').toUpperCase();
+  const sat = String(row.claveSAT || '').trim();
+  const tipo = String(row.tipo || '').toLowerCase();
+  const nombre = `${row.conceptoNombre || ''} ${row.conceptoEtiqueta || ''}`.toUpperCase();
+  const ded = !tipo || tipo.includes('deduc');
+  if (c.startsWith('ISR') || (ded && sat === '002') || nombre.includes('ISR')) return 'isr';
+  if (
+    c.includes('INFONAVIT') ||
+    nombre.includes('INFONAVIT') ||
+    (ded && (sat === '005' || sat === '009' || sat === '010'))
+  ) {
+    return 'infonavit';
+  }
+  if (c.includes('FONACOT') || nombre.includes('FONACOT') || (ded && sat === '011')) return 'fonacot';
+  if (
+    (c.includes('IMSS') && !c.includes('PATRONAL')) ||
+    nombre.includes('IMSS') ||
+    nombre.includes('I.M.S.S') ||
+    (ded && (sat === '001' || sat === '003'))
+  ) {
+    return 'imss';
+  }
+  return '';
+}
+
 function sumImpuestos(rows) {
   const out = {
     isr: 0,
@@ -970,14 +1078,10 @@ function sumImpuestos(rows) {
     impuestosRetenidos: 0
   };
   for (const r of rows) {
-    const c = String(r.conceptoCodigo || '').toUpperCase();
     const imp = money(r.importeAnual);
-    if (c === 'ISR') out.isr = money(out.isr + imp);
-    if (c === 'IMSS_OBRERO' || c === 'IMSS_RCV' || (c.includes('IMSS') && !c.includes('PATRONAL'))) {
-      out.imss = money(out.imss + imp);
-    }
-    if (c.includes('INFONAVIT')) out.infonavit = money(out.infonavit + imp);
-    if (c.includes('FONACOT')) out.fonacot = money(out.fonacot + imp);
+    const bucket = bucketRetencion(r);
+    if (!bucket) continue;
+    out[bucket] = money(out[bucket] + imp);
   }
   out.impuestosRetenidos = money(out.isr + out.imss + out.infonavit + out.fonacot);
   return out;

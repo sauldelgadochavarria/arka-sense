@@ -424,21 +424,27 @@ async function findOrCreateDepto(Departamento, tenantId, empresaId, nombre, subs
   return doc;
 }
 
-async function findOrCreatePuesto(Puesto, tenantId, empresaId, nombre) {
+async function findOrCreatePuesto(Puesto, tenantId, empresaId, nombre, subsidiariaId = null) {
   const n = normName(nombre);
   if (!n) return null;
-  let doc = await Puesto.findOne({ tenantId, nombre: new RegExp(`^${escapeRe(n)}$`, 'i') });
+  const q = {
+    tenantId,
+    nombre: new RegExp(`^${escapeRe(n)}$`, 'i'),
+    ...(subsidiariaId ? { subsidiariaId } : {})
+  };
+  let doc = await Puesto.findOne(q);
   if (doc) return doc;
   try {
     doc = await Puesto.create({
       tenantId,
       empresaId,
+      subsidiariaId: subsidiariaId || null,
       nombre: n,
       descripcion: 'Importado desde CFDI',
       activo: true
     });
   } catch (_) {
-    doc = await Puesto.findOne({ tenantId, nombre: n });
+    doc = await Puesto.findOne(q);
   }
   return doc;
 }
@@ -965,7 +971,13 @@ async function aplicarJobCfdi(
         if (puestoName && !puestoCache.has(puestoName)) {
           puestoCache.set(
             puestoName,
-            await findOrCreatePuesto(Puesto, tenantId, job.empresaId, puestoName)
+            await findOrCreatePuesto(
+              Puesto,
+              tenantId,
+              job.empresaId,
+              puestoName,
+              job.resumen?.subsidiariaId || job.subsidiariaId || null
+            )
           );
         }
         depto = deptoName ? deptoCache.get(deptoName) : null;

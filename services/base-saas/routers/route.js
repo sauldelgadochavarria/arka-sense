@@ -41,6 +41,7 @@ const reportesController = require('../controllers/reportesController');
 const nominaReportesController = require('../controllers/nominaReportesController');
 const suaExportController = require('../controllers/suaExportController');
 const isnController = require('../controllers/isnController');
+const cumplimientoPatronalController = require('../controllers/cumplimientoPatronalController');
 const confrontaImssController = require('../controllers/confrontaImssController');
 const ayudaController = require('../controllers/ayudaController');
 const { getDashboardKpis } = require('../services/dashboardKpiService');
@@ -398,6 +399,7 @@ router.post(
 
 router.get('/nomina/isn', isnController.index);
 router.post('/nomina/isn/patronales', isnController.guardarPatronal);
+router.post('/nomina/isn/patronales/prima', isnController.nuevaPrima);
 router.post('/nomina/isn/cuentas', isnController.guardarCuenta);
 router.post('/nomina/isn/tasas', isnController.guardarTasa);
 router.post('/nomina/isn/calcular', isnController.calcular);
@@ -410,6 +412,17 @@ router.post(
 );
 router.get('/nomina/isn/comprobantes/:documentoId', isnController.descargarComprobante);
 router.get('/nomina/isn/export', isnController.exportCsv);
+router.get('/nomina/cumplimiento-patronal', cumplimientoPatronalController.index);
+router.post('/nomina/cumplimiento-patronal/movimientos', cumplimientoPatronalController.guardarMovimiento);
+router.post('/nomina/cumplimiento-patronal/movimientos/:id/estatus', cumplimientoPatronalController.estatusMovimiento);
+router.post('/nomina/cumplimiento-patronal/creditos', cumplimientoPatronalController.guardarCredito);
+router.post('/nomina/cumplimiento-patronal/eba', cumplimientoPatronalController.guardarEba);
+router.post('/nomina/cumplimiento-patronal/creditos/aviso', cumplimientoPatronalController.avisoCredito);
+router.post('/nomina/cumplimiento-patronal/conciliaciones', cumplimientoPatronalController.guardarConciliacion);
+router.post('/nomina/cumplimiento-patronal/conciliaciones/armar', cumplimientoPatronalController.armarConciliacion);
+router.post('/nomina/cumplimiento-patronal/conciliaciones/csv', cumplimientoPatronalController.importarConciliacion);
+router.post('/nomina/cumplimiento-patronal/centros', cumplimientoPatronalController.guardarCentro);
+router.post('/nomina/cumplimiento-patronal/asignaciones', cumplimientoPatronalController.guardarAsignacion);
 router.get('/nomina/sua', suaExportController.index);
 router.get('/nomina/sua/descargar', suaExportController.download);
 

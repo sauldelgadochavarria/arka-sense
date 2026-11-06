@@ -11,6 +11,8 @@ const getNominaHistoricoReciboModel = require('../models/nominaHistoricoRecibo')
 const { listConceptosVisiblesParaSubsidiaria } = require('../services/nomina/conceptResolutionService');
 const getMenuModel = require('../models/menu');
 const { calcularIsnMes, labelEntidad } = require('../services/isnCalculoService');
+const { agregarPrima } = require('../services/cumplimientoPatronalService');
+const { userCanEditCumplimiento } = require('../libs/roleAccess');
 const { subirComprobanteIsn, obtenerContenido } = require('../services/gestionDocumentalService');
 
 const EXT_COMPROBANTE = new Set(['pdf', 'jpg', 'jpeg', 'png', 'webp', 'xml']);
@@ -257,6 +259,8 @@ function uTipoPercepcion(usados, codigo) {
 async function index(req, res) {
   try {
     await ensureMenuIsn();
+    const { ensureMenu } = require('./cumplimientoPatronalController');
+    await ensureMenu();
   } catch (err) {
     console.warn('[isn menu]', err.message);
   }
@@ -276,18 +280,39 @@ async function guardarPatronal(req, res) {
   const numero = trimUpper(req.body.numero).replace(/\s+/g, '');
   if (numero.length < 10) return flash(req, res, '/nomina/isn?tab=patronales', 'error', 'El registro patronal está incompleto.');
   const { RegistroPatronal } = await models();
+  const prima = req.body.primaRiesgo === '' ? null : Number(req.body.primaRiesgo);
+  if (req.body.primaRiesgo !== '' && !Number.isFinite(prima)) {
+    return flash(req, res, '/nomina/isn?tab=patronales', 'error', 'La prima no es un número válido.');
+  }
+  const clase = ['I', 'II', 'III', 'IV', 'V'].includes(trimUpper(req.body.claseRiesgo))
+    ? trimUpper(req.body.claseRiesgo)
+    : '';
+  const fraccion = trimString(req.body.fraccion);
+  const fechaInicio = parseDate(req.body.fechaInicio);
   try {
     await RegistroPatronal.create({
       tenantId: req.session.tenantId,
       empresaId: empresa._id,
       subsidiariaId: parseOptionalObjectId(req.body.subsidiariaId),
       numero,
-      claseRiesgo: ['I', 'II', 'III', 'IV', 'V'].includes(trimUpper(req.body.claseRiesgo))
-        ? trimUpper(req.body.claseRiesgo)
-        : '',
-      fraccion: trimString(req.body.fraccion),
-      primaRiesgo: req.body.primaRiesgo === '' ? null : Number(req.body.primaRiesgo),
-      fechaInicio: parseDate(req.body.fechaInicio),
+      claseRiesgo: clase,
+      fraccion,
+      primaRiesgo: prima,
+      primas:
+        prima == null
+          ? []
+          : [
+              {
+                prima,
+                claseRiesgo: clase,
+                fraccion,
+                fechaInicio: fechaInicio || new Date(),
+                fechaFin: parseDate(req.body.fechaFin),
+                motivo: 'Alta del registro',
+                registradoPor: userLabel(req)
+              }
+            ],
+      fechaInicio,
       fechaFin: parseDate(req.body.fechaFin),
       esRpu: req.body.esRpu === '1',
       activo: true
@@ -297,6 +322,43 @@ async function guardarPatronal(req, res) {
     return flash(req, res, '/nomina/isn?tab=patronales', 'error', msg);
   }
   return flash(req, res, '/nomina/isn?tab=patronales', 'success', 'Registro patronal guardado.');
+}
+
+async function nuevaPrima(req, res) {
+  if (!userCanEditCumplimiento(req.session)) {
+    return flash(req, res, '/nomina/isn?tab=patronales', 'error', 'Tu rol solo puede consultar el cumplimiento.');
+  }
+  const { empresa, error } = await requireEmpresaForTenant(req);
+  if (error || !empresa) return flash(req, res, '/nomina/isn?tab=patronales', 'error', error || 'Sin empresa');
+  const prima = Number(req.body.primaRiesgo);
+  const fechaInicio = parseDate(req.body.fechaInicio);
+  if (!Number.isFinite(prima) || !fechaInicio) {
+    return flash(req, res, '/nomina/isn?tab=patronales', 'error', 'Indica la prima y la fecha de inicio de la vigencia.');
+  }
+  const { RegistroPatronal } = await models();
+  const doc = await RegistroPatronal.findOne({
+    _id: req.body.registroPatronalId,
+    tenantId: req.session.tenantId,
+    empresaId: empresa._id
+  });
+  if (!doc) return flash(req, res, '/nomina/isn?tab=patronales', 'error', 'Registro patronal no encontrado.');
+  try {
+    await agregarPrima(doc, {
+      prima,
+      fechaInicio,
+      claseRiesgo: ['I', 'II', 'III', 'IV', 'V'].includes(trimUpper(req.body.claseRiesgo))
+        ? trimUpper(req.body.claseRiesgo)
+        : '',
+      fraccion: trimString(req.body.fraccion),
+      motivo: trimString(req.body.motivo),
+      usuario: userLabel(req),
+      tenantId: req.session.tenantId,
+      empresaId: empresa._id
+    });
+  } catch (err) {
+    return flash(req, res, '/nomina/isn?tab=patronales', 'error', err.message);
+  }
+  return flash(req, res, '/nomina/isn?tab=patronales', 'success', 'La vigencia anterior quedó cerrada y la prima nueva es la vigente.');
 }
 
 async function guardarCuenta(req, res) {
@@ -620,6 +682,7 @@ async function exportCsv(req, res) {
 module.exports = {
   index,
   guardarPatronal,
+  nuevaPrima,
   guardarCuenta,
   guardarTasa,
   calcular,

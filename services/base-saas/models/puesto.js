@@ -6,6 +6,12 @@ const puestoSchema = new mongoose.Schema(
   {
     tenantId: { type: String, required: true, trim: true, index: true },
     empresaId: { type: mongoose.Schema.Types.ObjectId, ref: 'Empresa', required: true },
+    subsidiariaId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Subsidiaria',
+      default: null,
+      index: true
+    },
     nombre: { type: String, required: true, trim: true },
     nivel: { type: String, default: '' },
     descripcion: { type: String, default: '' },
@@ -15,9 +21,9 @@ const puestoSchema = new mongoose.Schema(
   { timestamps: true, collection: COLLECTION_PUESTOS }
 );
 
-puestoSchema.index({ tenantId: 1, nombre: 1 }, { unique: true });
+puestoSchema.index({ tenantId: 1, subsidiariaId: 1, nombre: 1 }, { unique: true });
 puestoSchema.index(
-  { tenantId: 1, codigoLegado: 1 },
+  { tenantId: 1, subsidiariaId: 1, codigoLegado: 1 },
   { unique: true, partialFilterExpression: { codigoLegado: { $type: 'number' } } }
 );
 

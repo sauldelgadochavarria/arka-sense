@@ -575,6 +575,27 @@ async function reorganizeMenuPackages(Menu, adminRoleId) {
       parentId: cumplId,
       orden: 43
     });
+    await upsertByRuta(Menu, {
+      ...nCommon,
+      menuPrincipal: 'Avisos IMSS',
+      rutaApp: '/nomina/cumplimiento-patronal?tab=imss',
+      parentId: cumplId,
+      orden: 44
+    });
+    await upsertByRuta(Menu, {
+      ...nCommon,
+      menuPrincipal: 'INFONAVIT',
+      rutaApp: '/nomina/cumplimiento-patronal?tab=infonavit',
+      parentId: cumplId,
+      orden: 45
+    });
+    await upsertByRuta(Menu, {
+      ...nCommon,
+      menuPrincipal: 'FONACOT',
+      rutaApp: '/nomina/cumplimiento-patronal?tab=fonacot',
+      parentId: cumplId,
+      orden: 46
+    });
 
     // Gestión documental al nivel de Nómina: el menú solo pinta dos niveles.
     const gestDocs = await Menu.find({

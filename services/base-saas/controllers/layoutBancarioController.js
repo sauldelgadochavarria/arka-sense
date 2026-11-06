@@ -1,6 +1,6 @@
 'use strict';
 
-const { requireEmpresaForTenant } = require('../libs/tenantScope');
+const { requireEmpresaForTenant, sessionSubsidiariaId, scopeEmpresaFilter } = require('../libs/tenantScope');
 const {
   trimString,
   trimUpper,
@@ -323,16 +323,23 @@ async function wizardDispersion(req, res) {
   const Periodo = await getPeriodoNominaModel();
   const tenantId = req.session.tenantId;
 
-  const layouts = empresa
-    ? await Layout.find({ tenantId, empresaId: empresa._id, activo: true }).sort({ codigo: 1 }).lean()
+  const subId = sessionSubsidiariaId(req);
+  const layoutQ = empresa
+    ? { tenantId, empresaId: empresa._id, activo: true }
+    : null;
+  if (layoutQ && subId) {
+    layoutQ.$or = [{ subsidiariaId: subId }, { subsidiariaId: null }];
+  }
+  const layouts = layoutQ
+    ? await Layout.find(layoutQ).sort({ codigo: 1 }).lean()
     : [];
-  const periodos = await Periodo.find({
-    tenantId,
-    estatus: 'cerrado'
-  })
-    .sort({ fechaInicio: -1 })
-    .limit(80)
-    .lean();
+  const periodoQ = scopeEmpresaFilter(req, empresa);
+  const periodos = periodoQ
+    ? await Periodo.find({ ...periodoQ, estatus: 'cerrado' })
+        .sort({ fechaInicio: -1 })
+        .limit(80)
+        .lean()
+    : [];
 
   let periodoPre = null;
   if (req.query.periodoId) {
@@ -362,13 +369,17 @@ async function generarDispersion(req, res) {
       req.session.userLabel || (userId ? await resolveUserLabel(userId) : '') || '';
 
     const Periodo = await getPeriodoNominaModel();
-    const periodoDisp = await Periodo.findOne({
-      tenantId: req.session.tenantId,
+    const periodoQ = {
+      ...(scopeEmpresaFilter(req, empresa) || {}),
       _id: req.body.periodoId
-    }).lean();
-    if (!periodoDisp) throw new Error('Período no encontrado');
+    };
+    const periodoDisp = await Periodo.findOne(periodoQ).lean();
+    if (!periodoDisp) throw new Error('Período no encontrado en la subsidiaria activa');
     if (periodoDisp.estatus !== 'cerrado') {
       throw new Error('Cierra el período antes de generar el archivo bancario.');
+    }
+    if (periodoDisp.layoutBancario && periodoDisp.layoutBancario.estatus === 'generado') {
+      throw new Error('Este período ya tiene archivo bancario generado.');
     }
 
     const result = await generarDispersionBancaria({

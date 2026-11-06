@@ -69,6 +69,8 @@ const fiscalSubSchema = new mongoose.Schema(
     integraISR: { type: Boolean, default: true },
     integraIMSS: { type: Boolean, default: true },
     integraINFONAVIT: { type: Boolean, default: false },
+    /** Descuento FONACOT. Independiente de la aportación y del crédito INFONAVIT. */
+    integraFONACOT: { type: Boolean, default: false },
     /** Tratamiento ISN por defecto del concepto. Cada estado puede sobreescribirlo. */
     integraISN: { type: Boolean, default: true },
     desglose: { type: fiscalDesgloseSubSchema, default: () => ({ modo: 'todo_gravado' }) },
@@ -124,6 +126,7 @@ function defaultFiscalFromNaturaleza(naturaleza = 'gravado') {
       integraISR: false,
       integraIMSS: false,
       integraINFONAVIT: false,
+      integraFONACOT: false,
       integraISN: false,
       desglose: {
         modo: 'todo_exento',
@@ -142,6 +145,7 @@ function defaultFiscalFromNaturaleza(naturaleza = 'gravado') {
       integraISR: true,
       integraIMSS: false,
       integraINFONAVIT: false,
+      integraFONACOT: false,
       integraISN: true,
       desglose: {
         modo: 'regla_ley',
@@ -160,6 +164,7 @@ function defaultFiscalFromNaturaleza(naturaleza = 'gravado') {
       integraISR: false,
       integraIMSS: false,
       integraINFONAVIT: false,
+      integraFONACOT: false,
       integraISN: false,
       desglose: {
         modo: 'todo_exento',
@@ -178,6 +183,7 @@ function defaultFiscalFromNaturaleza(naturaleza = 'gravado') {
       integraISR: false,
       integraIMSS: false,
       integraINFONAVIT: false,
+      integraFONACOT: false,
       integraISN: false,
       desglose: {
         modo: 'todo_gravado',
@@ -195,6 +201,7 @@ function defaultFiscalFromNaturaleza(naturaleza = 'gravado') {
     integraISR: true,
     integraIMSS: true,
     integraINFONAVIT: false,
+      integraFONACOT: false,
     integraISN: true,
     desglose: {
       modo: 'todo_gravado',

@@ -72,13 +72,60 @@
         <td><code><%= p.numero %></code></td>
         <td><%= sub ? sub.nombre : '—' %></td>
         <td><%= p.claseRiesgo || '—' %></td>
-        <td><%= p.primaRiesgo == null ? '—' : p.primaRiesgo %></td>
+        <td>
+          <%= p.primaRiesgo == null ? '—' : p.primaRiesgo %>
+          <% if ((p.primas || []).length) { %><br><span class="muted"><%= p.primas.length %> vigencia(s)</span><% } %>
+        </td>
         <td><%= p.esRpu ? 'Sí' : 'No' %></td>
         <td><%= p.fechaInicio ? new Date(p.fechaInicio).toLocaleDateString('es-MX') : '—' %></td>
       </tr>
       <% }); %>
     </tbody>
   </table>
+  <h3>Nueva vigencia de prima</h3>
+  <p class="muted">Al guardar se cierra la vigencia anterior. La prima media de la clase no sustituye la prima del patrón.</p>
+  <form method="post" action="/nomina/isn/patronales/prima" class="filter-form form-grid">
+    <label>Registro patronal
+      <select name="registroPatronalId" required>
+        <option value="">—</option>
+        <% (patronales || []).forEach(function (p) { %>
+        <option value="<%= p._id %>"><%= p.numero %></option>
+        <% }); %>
+      </select>
+    </label>
+    <label>Prima <input name="primaRiesgo" type="number" step="0.00001" required /></label>
+    <label>Inicio de vigencia <input name="fechaInicio" type="date" required /></label>
+    <label>Clase
+      <select name="claseRiesgo">
+        <option value="">Sin cambio</option>
+        <option value="I">I</option>
+        <option value="II">II</option>
+        <option value="III">III</option>
+        <option value="IV">IV</option>
+        <option value="V">V</option>
+      </select>
+    </label>
+    <label>Fracción <input name="fraccion" /></label>
+    <label>Motivo <input name="motivo" placeholder="Determinación de prima" /></label>
+    <button type="submit" class="btn btn-primary">Guardar vigencia</button>
+  </form>
+  <% (patronales || []).forEach(function (p) { if (!(p.primas || []).length) return; %>
+  <h3><code><%= p.numero %></code></h3>
+  <table class="data-table">
+    <thead><tr><th>Prima</th><th>Clase</th><th>Inicio</th><th>Fin</th><th>Motivo</th></tr></thead>
+    <tbody>
+      <% p.primas.forEach(function (v) { %>
+      <tr>
+        <td><%= v.prima %></td>
+        <td><%= v.claseRiesgo || '—' %></td>
+        <td><%= v.fechaInicio ? new Date(v.fechaInicio).toLocaleDateString('es-MX') : '—' %></td>
+        <td><%= v.fechaFin ? new Date(v.fechaFin).toLocaleDateString('es-MX') : 'Vigente' %></td>
+        <td><%= v.motivo || '' %></td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table>
+  <% }); %>
 </section>
 <% } %>
 

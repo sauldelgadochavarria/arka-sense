@@ -6,6 +6,7 @@ const getSubsidiariaModel = require('../models/subsidiaria');
 const getConceptoNominaModel = require('../models/conceptoNomina');
 const getNominaHistoricoReciboModel = require('../models/nominaHistoricoRecibo');
 const getHistorialLaboralModel = require('../models/historialLaboral');
+const { models: cumplimientoModels } = require('../models/cumplimientoPatronal');
 
 function money(n) {
   const x = Number(n) || 0;
@@ -94,6 +95,47 @@ function porcentajeConcepto(codigo, tipo, fiscal, config) {
   if (trat === 'excluido') return null;
   if (trat === 'exento') return 0;
   return 100;
+}
+
+function asignacionesDelDia(lista, fecha) {
+  const t = dayStart(fecha).getTime();
+  return (lista || []).filter((a) => {
+    const ini = a.fechaInicio ? dayStart(a.fechaInicio).getTime() : 0;
+    const fin = a.fechaFin ? dayStart(a.fechaFin).getTime() : Infinity;
+    return ini <= t && t <= fin && Number(a.porcentajeAsignacion) > 0 && String(a.entidad || '').trim();
+  });
+}
+
+/** Si las asignaciones del día 15 suman 100%, el ISN usa esa entidad. Si no hay, sigue el empleado. */
+function aplicarAsignaciones(partes, asignaciones, fechaRef, advertencias, etiqueta) {
+  const vivas = asignacionesDelDia(asignaciones, fechaRef);
+  if (!vivas.length) return partes;
+  const suma = vivas.reduce((s, a) => s + Number(a.porcentajeAsignacion), 0);
+  if (Math.abs(suma - 100) > 0.2) {
+    advertencias.push(
+      `${etiqueta}: la asignación por entidad suma ${suma}%. El ISN sigue la entidad del empleado.`
+    );
+    return partes;
+  }
+  if (vivas.length === 1) {
+    const ent = String(vivas[0].entidad).toUpperCase();
+    return partes.map((p) => ({ ...p, empleado: { ...p.empleado, estadoTrabajo: ent } }));
+  }
+  const out = [];
+  for (const p of partes) {
+    for (const a of vivas) {
+      out.push({
+        ...p,
+        peso: p.peso * (Number(a.porcentajeAsignacion) / 100),
+        empleado: {
+          ...p.empleado,
+          estadoTrabajo: String(a.entidad).toUpperCase(),
+          registroPatronalId: a.registroPatronalId || p.empleado.registroPatronalId
+        }
+      });
+    }
+  }
+  return out;
 }
 
 function segmentosRecibo(recibo, historial, empleado, subsById, configs) {
@@ -212,6 +254,16 @@ async function calcularIsnMes({
     if (!histPorEmp.has(k)) histPorEmp.set(k, []);
     histPorEmp.get(k).push(h);
   }
+  const { TrabajadorAsignacion } = await cumplimientoModels();
+  const asignaciones = empIds.length
+    ? await TrabajadorAsignacion.find({ tenantId, empresaId, empleadoId: { $in: empIds } }).lean()
+    : [];
+  const asigPorEmp = new Map();
+  for (const a of asignaciones) {
+    const k = String(a.empleadoId);
+    if (!asigPorEmp.has(k)) asigPorEmp.set(k, []);
+    asigPorEmp.get(k).push(a);
+  }
 
   const acumulado = new Map();
   const advertencias = [];
@@ -226,7 +278,14 @@ async function calcularIsnMes({
   for (const rec of recibos) {
     const emp = empMap.get(String(rec.empleadoId));
     if (!emp) continue;
-    const partes = segmentosRecibo(rec, histPorEmp.get(String(emp._id)) || [], emp, subsById, configs);
+    let partes = segmentosRecibo(rec, histPorEmp.get(String(emp._id)) || [], emp, subsById, configs);
+    partes = aplicarAsignaciones(
+      partes,
+      asigPorEmp.get(String(emp._id)) || [],
+      fechaRef,
+      advertencias,
+      emp.numEmpleado || ''
+    );
     const conceptosRec = (rec.conceptos || []).filter((c) => Number(c.importe) !== 0);
     partes.forEach((parte, idx) => {
       const sub = subsById.get(String(parte.subsidiariaId || '')) || null;

@@ -1,6 +1,9 @@
 <%- include('../Partials/layout-top', { title: 'Asistencia diaria', session }) %>
 <%- include('partials/flujo-asistencia', { pasoActual: 2, fechaDesde: fechaDesde, fechaHasta: fechaHasta }) %>
 <h1>Asistencia del día</h1>
+<% if (typeof soloHe !== 'undefined' && soloHe) { %>
+<p class="muted">Solo días con horas extra. <a href="/asistencia-diaria?fechaDesde=<%= typeof fechaDesde !== 'undefined' ? fechaDesde : '' %>&amp;fechaHasta=<%= typeof fechaHasta !== 'undefined' ? fechaHasta : '' %>">Ver todos los registros del rango</a></p>
+<% } %>
 <% if (!empresa) { %>
 <p>No hay empresa vinculada a este tenant.</p>
 <% } else { %>
@@ -17,6 +20,7 @@
     if (depId) s += '&departamentoId=' + encodeURIComponent(depId);
     if (tipId) s += '&tipoPeriodoId=' + encodeURIComponent(tipId);
     if (perId) s += '&periodoId=' + encodeURIComponent(perId);
+    if (typeof soloHe !== 'undefined' && soloHe) s += '&he=1';
     return s;
   }
   function filtroHref(key) {

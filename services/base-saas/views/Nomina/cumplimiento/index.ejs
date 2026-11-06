@@ -1,0 +1,459 @@
+<%- include('../../Partials/layout-top', { title: 'Cumplimiento patronal', session }) %>
+<%
+  const cats = catalogos || {};
+  const empLabel = {};
+  (empleados || []).forEach(function (e) {
+    const nom = (e.nombreSat || ((e.firstName || '') + ' ' + (e.lastName || ''))).trim();
+    empLabel[String(e._id)] = (e.numEmpleado ? e.numEmpleado + ' ' : '') + nom;
+  });
+  function money(n) {
+    return Number(n || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  function ymd(d) {
+    if (!d) return '';
+    const dt = new Date(d);
+    if (Number.isNaN(dt.getTime())) return '';
+    return dt.toISOString().slice(0, 10);
+  }
+%>
+<div class="page-header">
+  <h1>Cumplimiento patronal</h1>
+  <p class="page-subtitle">
+    Los movimientos laborales internos no generan un aviso al IMSS por sí solos.
+    INFONAVIT y FONACOT se administran por separado: lo retenido, lo determinado y lo enterado no se mezclan.
+  </p>
+</div>
+
+<% if (!empresa) { %>
+<p>No hay empresa vinculada a este tenant.</p>
+<% } else { %>
+
+<div class="toolbar">
+  <a class="btn <%= tab === 'imss' ? 'btn-primary' : '' %>" href="/nomina/cumplimiento-patronal?tab=imss">Avisos IMSS</a>
+  <a class="btn <%= tab === 'infonavit' ? 'btn-primary' : '' %>" href="/nomina/cumplimiento-patronal?tab=infonavit">INFONAVIT</a>
+  <a class="btn <%= tab === 'fonacot' ? 'btn-primary' : '' %>" href="/nomina/cumplimiento-patronal?tab=fonacot">FONACOT</a>
+  <a class="btn <%= tab === 'conciliacion' ? 'btn-primary' : '' %>" href="/nomina/cumplimiento-patronal?tab=conciliacion">Conciliación</a>
+  <a class="btn <%= tab === 'centros' ? 'btn-primary' : '' %>" href="/nomina/cumplimiento-patronal?tab=centros">Centros de trabajo</a>
+  <a class="btn <%= tab === 'auditoria' ? 'btn-primary' : '' %>" href="/nomina/cumplimiento-patronal?tab=auditoria">Auditoría</a>
+  <a class="btn" href="/nomina/isn">ISN</a>
+  <a class="btn" href="/nomina/confronta">Confronta SUA</a>
+  <a class="btn" href="/nomina/gestion-documental">Documentos</a>
+</div>
+
+<% if (tab === 'imss') { %>
+<h2>Aviso afiliatorio</h2>
+<p class="muted">Alta, baja, reingreso o modificación de salario. Queda pendiente hasta registrar el envío y la respuesta del IMSS.</p>
+<form method="post" action="/nomina/cumplimiento-patronal/movimientos" class="form-grid">
+  <label>Trabajador
+    <select name="empleadoId" required>
+      <option value="">—</option>
+      <% (empleados || []).forEach(function (e) { %>
+      <option value="<%= e._id %>"><%= empLabel[String(e._id)] %></option>
+      <% }); %>
+    </select>
+  </label>
+  <label>Tipo
+    <select name="tipo" required>
+      <% (cats.tiposAfiliatorios || []).forEach(function (t) { %>
+      <option value="<%= t %>"><%= t %></option>
+      <% }); %>
+    </select>
+  </label>
+  <label>Naturaleza del salario
+    <select name="naturalezaSalario">
+      <option value="">—</option>
+      <% (cats.naturalezas || []).forEach(function (t) { %>
+      <option value="<%= t %>"><%= t %></option>
+      <% }); %>
+    </select>
+  </label>
+  <label>Registro patronal
+    <select name="registroPatronalId">
+      <option value="">—</option>
+      <% (patronales || []).forEach(function (p) { %>
+      <option value="<%= p._id %>"><%= p.numero %></option>
+      <% }); %>
+    </select>
+  </label>
+  <label>Fecha efectiva
+    <input type="date" name="fechaEfectiva" required />
+  </label>
+  <label>SBC anterior
+    <input type="number" name="sbcAnterior" step="0.01" min="0" />
+  </label>
+  <label>SBC nuevo
+    <input type="number" name="sbcNuevo" step="0.01" min="0" />
+  </label>
+  <label>Notas
+    <input type="text" name="notas" />
+  </label>
+  <label style="grid-column:1/-1">
+    <input type="checkbox" name="vincularHistorial" value="1" />
+    Vincular al último movimiento laboral interno del trabajador, si existe
+  </label>
+  <div><button class="btn btn-primary" type="submit">Registrar aviso</button></div>
+</form>
+
+<h2>Historial</h2>
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>Fecha</th><th>Trabajador</th><th>Tipo</th><th>Salario</th><th>SBC</th><th>Estado</th><th>Actualizar</th>
+    </tr>
+  </thead>
+  <tbody>
+    <% (movimientos || []).forEach(function (m) { %>
+    <tr>
+      <td><%= ymd(m.fechaEfectiva) %></td>
+      <td><%= empLabel[String(m.empleadoId)] || '' %></td>
+      <td><%= m.tipo %><% if (m.historialLaboralId) { %> <span class="muted">· con historial</span><% } %></td>
+      <td><%= m.naturalezaSalario || '—' %></td>
+      <td><%= m.sbcAnterior != null ? money(m.sbcAnterior) : '—' %> → <%= m.sbcNuevo != null ? money(m.sbcNuevo) : '—' %></td>
+      <td><%= m.estatus %><% if (m.acuseReferencia) { %><br><span class="muted"><%= m.acuseReferencia %></span><% } %></td>
+      <td>
+        <form method="post" action="/nomina/cumplimiento-patronal/movimientos/<%= m._id %>/estatus" class="inline-form">
+          <select name="estatus">
+            <% (cats.estatusAfiliatorio || []).forEach(function (s) { %>
+            <option value="<%= s %>" <%= m.estatus === s ? 'selected' : '' %>><%= s %></option>
+            <% }); %>
+          </select>
+          <input name="acuseReferencia" placeholder="Acuse" value="<%= m.acuseReferencia || '' %>" />
+          <input name="resultado" placeholder="Resultado" value="<%= m.resultado || '' %>" />
+          <button type="submit">Guardar</button>
+        </form>
+      </td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<% } %>
+
+<% if (tab === 'infonavit' || tab === 'fonacot') {
+     const esFonacot = tab === 'fonacot';
+     const avisosTipo = esFonacot ? (cats.avisosFonacot || []) : (cats.avisosInfonavit || []);
+%>
+<% if (!esFonacot) { %>
+<h2>Aportación patronal</h2>
+<p class="muted">Es el 5% del salario base de cotización. La paga el patrón. No es una deducción del trabajador y no se registra en este formulario.</p>
+<h2>Amortización del crédito</h2>
+<p class="muted">Es el descuento al trabajador. El aviso (retención, modificación, suspensión, liquidación o reinicio) guarda valor anterior, valor nuevo, fechas y documento. Lo retenido, lo determinado y lo enterado quedan en campos distintos.</p>
+<% } else { %>
+<h2>FONACOT</h2>
+<p class="muted">Módulo aparte de INFONAVIT. FONACOT es retención al trabajador. Los códigos FONACOT_ALTA_CREDITO, FONACOT_MODIFICACION, FONACOT_SUSPENSION, FONACOT_BAJA y FONACOT_LIQUIDACION son identificadores internos, no claves oficiales. La cédula, lo descontado y lo enterado se registran por separado.</p>
+<% } %>
+<form method="post" action="/nomina/cumplimiento-patronal/creditos" class="form-grid">
+  <input type="hidden" name="institucion" value="<%= esFonacot ? 'FONACOT' : 'INFONAVIT' %>" />
+  <label>Trabajador
+    <select name="empleadoId" required>
+      <option value="">—</option>
+      <% (empleados || []).forEach(function (e) { %>
+      <option value="<%= e._id %>"><%= empLabel[String(e._id)] %></option>
+      <% }); %>
+    </select>
+  </label>
+  <label>Número de crédito
+    <input name="numeroCredito" required />
+  </label>
+  <label>Tipo de descuento
+    <select name="tipoDescuento" required>
+      <% (cats.tiposDescuento || []).forEach(function (t) { %>
+      <option value="<%= t %>"><%= t %></option>
+      <% }); %>
+    </select>
+  </label>
+  <label>Valor
+    <input type="number" name="valorDescuento" step="0.01" min="0" required />
+  </label>
+  <label>Inicio
+    <input type="date" name="fechaInicio" required />
+  </label>
+  <label>Fin
+    <input type="date" name="fechaFin" />
+  </label>
+  <label>Periodicidad
+    <select name="periodicidad">
+      <% (cats.periodicidades || []).forEach(function (p) { %>
+      <option value="<%= p %>"><%= p %></option>
+      <% }); %>
+    </select>
+  </label>
+  <label>Documento de origen
+    <input name="documentoOrigen" />
+  </label>
+  <label>Vigencia del aviso
+    <input type="date" name="fechaVigencia" />
+  </label>
+  <label>Retenido en nómina
+    <input type="number" name="importeRetenido" step="0.01" min="0" value="0" />
+  </label>
+  <label>Determinado
+    <input type="number" name="importeDeterminado" step="0.01" min="0" value="0" />
+  </label>
+  <label>Enterado
+    <input type="number" name="importeEnterado" step="0.01" min="0" value="0" />
+  </label>
+  <div><button class="btn btn-primary" type="submit">Registrar crédito</button></div>
+</form>
+
+<% (creditos || []).forEach(function (c) {
+     const del = (avisos || []).filter(function (a) { return String(a.creditoId) === String(c._id); });
+     const dif = money((c.importeRetenido || 0) - (c.importeEnterado || 0));
+%>
+<h3><%= c.numeroCredito %> · <%= empLabel[String(c.empleadoId)] || '' %> · <%= c.estatus %></h3>
+<p>
+  <%= c.tipoDescuento %> <%= money(c.valorDescuento) %> · <%= c.periodicidad || 'cada_periodo' %>
+  <% if (c.documentoOrigen) { %> · <%= c.documentoOrigen %><% } %>
+  · Retenido $<%= money(c.importeRetenido) %>
+  · Determinado $<%= money(c.importeDeterminado) %>
+  · Enterado $<%= money(c.importeEnterado) %>
+  · Diferencia retenido−enterado $<%= dif %>
+</p>
+<table class="data-table">
+  <thead><tr><th>Aviso</th><th>Aplicación</th><th>Valor</th><th>Cédula / documento</th></tr></thead>
+  <tbody>
+    <% del.forEach(function (a) { %>
+    <tr>
+      <td><%= a.tipoAviso %></td>
+      <td><%= ymd(a.fechaAplicacion || a.fechaRecepcion) %></td>
+      <td><%= a.valorAnterior != null ? money(a.valorAnterior) : '—' %> → <%= a.valorNuevo != null ? money(a.valorNuevo) : '—' %></td>
+      <td>
+        <%= a.numeroCedula || a.documentoReferencia || '—' %>
+        <% if (a.periodoCedula) { %> · <%= a.periodoCedula %><% } %>
+        <% if (a.importeCedula != null) { %> · $<%= money(a.importeCedula) %><% } %>
+      </td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<form method="post" action="/nomina/cumplimiento-patronal/creditos/aviso" class="form-grid">
+  <input type="hidden" name="creditoId" value="<%= c._id %>" />
+  <label>Aviso
+    <select name="tipoAviso" required>
+      <% avisosTipo.forEach(function (t) { %>
+      <option value="<%= t %>"><%= t %></option>
+      <% }); %>
+    </select>
+  </label>
+  <label>Recepción <input type="date" name="fechaRecepcion" /></label>
+  <label>Aplicación <input type="date" name="fechaAplicacion" /></label>
+  <label>Valor nuevo <input type="number" name="valorNuevo" step="0.01" min="0" /></label>
+  <label>Documento <input name="documentoReferencia" /></label>
+  <% if (esFonacot) { %>
+  <label>Cédula <input name="numeroCedula" /></label>
+  <label>Periodo cédula <input name="periodoCedula" placeholder="2026-10" /></label>
+  <label>Importe cédula <input type="number" name="importeCedula" step="0.01" min="0" /></label>
+  <% } %>
+  <label>Retenido acumulado <input type="number" name="importeRetenido" step="0.01" min="0" value="<%= c.importeRetenido || 0 %>" /></label>
+  <label>Determinado <input type="number" name="importeDeterminado" step="0.01" min="0" value="<%= c.importeDeterminado || 0 %>" /></label>
+  <label>Enterado <input type="number" name="importeEnterado" step="0.01" min="0" value="<%= c.importeEnterado || 0 %>" /></label>
+  <div><button type="submit">Registrar aviso</button></div>
+</form>
+<% }); %>
+<% if (!esFonacot) {
+     const etiquetaRubro = {
+       trabajadores: 'Trabajadores',
+       salarios: 'Salarios',
+       dias_cotizados: 'Días cotizados',
+       aportaciones: 'Aportaciones patronales',
+       amortizaciones: 'Amortizaciones',
+       creditos_activos: 'Créditos activos',
+       descuentos_aplicados: 'Descuentos aplicados'
+     };
+%>
+<h2>EBA y SUA</h2>
+<p class="muted">Compara el cálculo de PayPilot contra la Emisión Bimestral Anticipada. La amortización retenida en nómina no se toma como importe enterado.</p>
+<form method="post" action="/nomina/cumplimiento-patronal/eba" class="form-grid">
+  <label>Año <input type="number" name="anio" required value="<%= new Date().getFullYear() %>" /></label>
+  <label>Bimestre <input type="number" name="bimestre" min="1" max="6" required value="<%= Math.ceil((new Date().getMonth() + 1) / 2) %>" /></label>
+  <label>Registro patronal <input name="registroPatronal" /></label>
+  <% (cats.rubrosEba || []).forEach(function (rubro) { %>
+  <input type="hidden" name="rubro" value="<%= rubro %>" />
+  <label><%= etiquetaRubro[rubro] || rubro %> calculado
+    <input type="number" name="calculado" step="0.01" value="0" />
+  </label>
+  <label><%= etiquetaRubro[rubro] || rubro %> en la EBA
+    <input type="number" name="eba" step="0.01" value="0" />
+  </label>
+  <% }); %>
+  <div><button class="btn btn-primary" type="submit">Guardar comparación</button></div>
+</form>
+<table class="data-table">
+  <thead><tr><th>Bimestre</th><th>Registro</th><th>Rubro</th><th class="num">Calculado</th><th class="num">EBA</th><th class="num">Diferencia</th></tr></thead>
+  <tbody>
+    <% (comparacionesEba || []).forEach(function (row) { %>
+    <tr>
+      <td><%= row.anio %>-B<%= row.bimestre %></td>
+      <td><%= row.registroPatronal || '—' %></td>
+      <td><%= etiquetaRubro[row.rubro] || row.rubro %></td>
+      <td class="num"><%= money(row.calculado) %></td>
+      <td class="num"><%= money(row.eba) %></td>
+      <td class="num"><%= money(row.diferencia) %></td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<% } %>
+<% } %>
+
+<% if (tab === 'centros') { %>
+<h2>Centro de trabajo</h2>
+<p class="muted">La sucursal es la ubicación de la empresa. El centro es donde el trabajador presta el servicio y puede cubrir otra entidad.</p>
+<form method="post" action="/nomina/cumplimiento-patronal/centros" class="form-grid">
+  <label>Clave <input name="clave" required /></label>
+  <label>Nombre <input name="nombre" required /></label>
+  <label>Sucursal
+    <select name="subsidiariaId">
+      <option value="">—</option>
+      <% (subsidiarias || []).forEach(function (s) { %>
+      <option value="<%= s._id %>"><%= s.nombre %></option>
+      <% }); %>
+    </select>
+  </label>
+  <label>Registro patronal
+    <select name="registroPatronalId">
+      <option value="">—</option>
+      <% (patronales || []).forEach(function (p) { %>
+      <option value="<%= p._id %>"><%= p.numero %></option>
+      <% }); %>
+    </select>
+  </label>
+  <label>Entidad del servicio <input name="entidadFederativa" maxlength="2" placeholder="NL" /></label>
+  <div><button class="btn btn-primary" type="submit">Guardar centro</button></div>
+</form>
+<table class="data-table">
+  <thead><tr><th>Clave</th><th>Nombre</th><th>Entidad</th></tr></thead>
+  <tbody>
+    <% (centros || []).forEach(function (c) { %>
+    <tr>
+      <td><code><%= c.clave %></code></td>
+      <td><%= c.nombre %></td>
+      <td><%= c.entidadFederativa || '—' %></td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<h2>Asignación del trabajador</h2>
+<p class="muted">Una asignación al 100% cierra la anterior. Una parcial convive con otras; el ISN reparte el mes cuando el día 15 suman 100%.</p>
+<form method="post" action="/nomina/cumplimiento-patronal/asignaciones" class="form-grid">
+  <label>Trabajador
+    <select name="empleadoId" required>
+      <option value="">—</option>
+      <% (empleados || []).forEach(function (e) { %>
+      <option value="<%= e._id %>"><%= empLabel[String(e._id)] %></option>
+      <% }); %>
+    </select>
+  </label>
+  <label>Centro
+    <select name="centroTrabajoId" required>
+      <option value="">—</option>
+      <% (centros || []).forEach(function (c) { %>
+      <option value="<%= c._id %>"><%= c.clave %> — <%= c.nombre %></option>
+      <% }); %>
+    </select>
+  </label>
+  <label>Entidad <input name="entidad" maxlength="2" placeholder="Si difiere del centro" /></label>
+  <label>Porcentaje <input type="number" name="porcentajeAsignacion" min="0.01" max="100" step="0.01" value="100" required /></label>
+  <label>Inicio <input type="date" name="fechaInicio" required /></label>
+  <label>Observaciones <input name="observaciones" /></label>
+  <div><button class="btn btn-primary" type="submit">Registrar vigencia</button></div>
+</form>
+<table class="data-table">
+  <thead><tr><th>Inicio</th><th>Fin</th><th>Trabajador</th><th>Entidad</th><th class="num">%</th></tr></thead>
+  <tbody>
+    <% (asignaciones || []).forEach(function (a) { %>
+    <tr>
+      <td><%= ymd(a.fechaInicio) %></td>
+      <td><%= a.fechaFin ? ymd(a.fechaFin) : 'Vigente' %></td>
+      <td><%= empLabel[String(a.empleadoId)] || '' %></td>
+      <td><%= a.entidad || '—' %></td>
+      <td class="num"><%= a.porcentajeAsignacion %></td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<% } %>
+
+<% if (tab === 'auditoria') { %>
+<h2>Cambios sensibles</h2>
+<p class="muted">Prima, avisos, créditos y asignaciones. Queda el valor anterior, el nuevo, quién y el motivo.</p>
+<table class="data-table">
+  <thead><tr><th>Fecha</th><th>Campo</th><th>Anterior</th><th>Nuevo</th><th>Motivo</th><th>Usuario</th></tr></thead>
+  <tbody>
+    <% (auditoria || []).forEach(function (a) { %>
+    <tr>
+      <td><%= ymd(a.createdAt) %></td>
+      <td><%= a.entidad %> · <%= a.campo %></td>
+      <td><%= a.valorAnterior == null ? '—' : a.valorAnterior %></td>
+      <td><%= a.valorNuevo == null ? '—' : a.valorNuevo %></td>
+      <td><%= a.motivo || '' %></td>
+      <td><%= a.usuario || '' %></td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<% } %>
+
+<% if (tab === 'conciliacion') { %>
+<h2>Conciliación</h2>
+<p class="muted">Compara el importe calculado en PayPilot contra el documento oficial. La diferencia es calculado menos oficial. Armar el mes no sustituye la EMA ni el SUA.</p>
+<form method="post" action="/nomina/cumplimiento-patronal/conciliaciones/armar" class="form-grid">
+  <label>Año <input type="number" name="anio" required value="<%= new Date().getFullYear() %>" /></label>
+  <label>Mes <input type="number" name="mes" min="1" max="12" required value="<%= new Date().getMonth() + 1 %>" /></label>
+  <div><button class="btn" type="submit">Armar conciliación del mes</button></div>
+</form>
+<form method="post" action="/nomina/cumplimiento-patronal/conciliaciones/csv">
+  <label>Importar EMA, EBA o cédula
+    <textarea name="csv" rows="4" placeholder="obligacion,anio,mes,referencia,calculado,oficial"></textarea>
+  </label>
+  <p class="muted">Ejemplo: IMSS,2026,10,Y5471234567,1500.00,1500.00 — para ISN la referencia es la clave de la entidad.</p>
+  <button type="submit">Importar filas</button>
+</form>
+<form method="post" action="/nomina/cumplimiento-patronal/conciliaciones" class="form-grid">
+  <label>Obligación
+    <select name="obligacion" required>
+      <% (cats.obligaciones || []).forEach(function (o) { %>
+      <option value="<%= o %>"><%= o %></option>
+      <% }); %>
+    </select>
+  </label>
+  <label>Año <input type="number" name="anio" required value="<%= new Date().getFullYear() %>" /></label>
+  <label>Mes <input type="number" name="mes" min="1" max="12" required value="<%= new Date().getMonth() + 1 %>" /></label>
+  <label>Registro patronal <input name="registroPatronal" /></label>
+  <label>Entidad (ISN) <input name="entidad" maxlength="2" placeholder="NL" /></label>
+  <label>Calculado <input type="number" name="importeCalculado" step="0.01" required /></label>
+  <label>Oficial <input type="number" name="importeOficial" step="0.01" required /></label>
+  <label>Estado
+    <select name="estatus">
+      <% (cats.estatusConciliacion || []).forEach(function (s) { %>
+      <option value="<%= s %>"><%= s %></option>
+      <% }); %>
+    </select>
+  </label>
+  <label>Motivo <input name="motivo" /></label>
+  <div><button class="btn btn-primary" type="submit">Registrar</button></div>
+</form>
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>Periodo</th><th>Obligación</th><th>Referencia</th><th class="num">Calculado</th><th class="num">Oficial</th><th class="num">Diferencia</th><th>Estado</th><th>Motivo</th>
+    </tr>
+  </thead>
+  <tbody>
+    <% (conciliaciones || []).forEach(function (c) { %>
+    <tr>
+      <td><%= c.anio %>-<%= String(c.mes).padStart(2, '0') %></td>
+      <td><%= c.obligacion %></td>
+      <td><%= c.registroPatronal || c.entidad || '—' %></td>
+      <td class="num">$<%= money(c.importeCalculado) %></td>
+      <td class="num">$<%= money(c.importeOficial) %></td>
+      <td class="num">$<%= money(c.diferencia) %></td>
+      <td><%= c.estatus %></td>
+      <td><%= c.motivo || '' %></td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<% } %>
+
+<% } %>
+<%- include('../../Partials/layout-bottom') %>

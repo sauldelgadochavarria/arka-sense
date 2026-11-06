@@ -1096,6 +1096,12 @@ function buildSatFiscalPatch(data, tipoFallback = 'percepcion', naturalezaFallba
       fiscalBase.integraINFONAVIT
     );
   }
+  if (data.integraFONACOT !== undefined || data['fiscal.integraFONACOT'] !== undefined) {
+    fiscalBase.integraFONACOT = parseBoolFlag(
+      data.integraFONACOT ?? data['fiscal.integraFONACOT'],
+      fiscalBase.integraFONACOT
+    );
+  }
   if (data.integraISN !== undefined || data['fiscal.integraISN'] !== undefined) {
     fiscalBase.integraISN = parseBoolFlag(data.integraISN ?? data['fiscal.integraISN'], fiscalBase.integraISN);
   }
