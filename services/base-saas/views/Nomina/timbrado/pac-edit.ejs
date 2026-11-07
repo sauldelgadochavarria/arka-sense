@@ -52,7 +52,20 @@
       <input name="usuario" value="<%= P.usuario || '' %>" autocomplete="off" />
     </label>
     <label>Password
-      <input type="password" name="password" value="<%= P.password || '' %>" autocomplete="new-password" placeholder="<%= isNew ? '' : '******** para no cambiar' %>" />
+      <span class="password-field">
+        <input type="password" id="pac-password" name="password" value="<%= P.password || '' %>" autocomplete="new-password" placeholder="<%= isNew ? '' : '******** para no cambiar' %>" />
+        <button type="button" class="password-toggle" id="pac-password-toggle" aria-label="Mostrar contraseña" title="Mostrar contraseña">
+          <svg class="icon-eye" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+          <svg class="icon-eye-off" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
+            <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
+            <path d="M1 1l22 22"/>
+          </svg>
+        </button>
+      </span>
     </label>
     <label>URL Auth
       <input name="urlAuth" id="pac-url-auth" value="<%= P.urlAuth || '' %>" style="min-width:28rem" />
@@ -205,8 +218,45 @@
 </form>
 <% } %>
 
+<style>
+  .password-field { position: relative; display: block; }
+  .password-field input { padding-right: 2.5rem; }
+  .password-toggle {
+    position: absolute;
+    right: 0.35rem;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 1.6rem;
+    height: 1.6rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    cursor: pointer;
+    color: #64748b;
+    line-height: 0;
+  }
+  .password-toggle:hover { color: #0f172a; }
+  .password-toggle .icon-eye-off { display: none; }
+  .password-toggle.is-visible .icon-eye { display: none; }
+  .password-toggle.is-visible .icon-eye-off { display: block; }
+</style>
 <script>
 (function () {
+  var pwd = document.getElementById('pac-password');
+  var pwdBtn = document.getElementById('pac-password-toggle');
+  if (pwd && pwdBtn) {
+    pwdBtn.addEventListener('click', function () {
+      var visible = pwd.type === 'text';
+      pwd.type = visible ? 'password' : 'text';
+      pwdBtn.classList.toggle('is-visible', !visible);
+      pwdBtn.setAttribute('aria-label', visible ? 'Mostrar contraseña' : 'Ocultar contraseña');
+      pwdBtn.title = pwdBtn.getAttribute('aria-label');
+    });
+  }
+
   var amb = document.querySelector('select[name="ambiente"]');
   var auth = document.getElementById('pac-url-auth');
   var timbradoJson = document.getElementById('pac-url-timbrado-json');

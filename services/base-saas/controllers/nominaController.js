@@ -2078,6 +2078,12 @@ async function conceptos(req, res) {
   if (empresa) {
     await ensureNominaConceptsForTenant(tenantId, empresa._id);
     try {
+      const { asegurarReglasSuaConceptos } = require('../services/nomina/nominaConceptoService');
+      await asegurarReglasSuaConceptos(tenantId, empresa._id);
+    } catch (err) {
+      console.error('[conceptos] reglas SUA:', err.message);
+    }
+    try {
       const { ensureCompanyConceptConfigs } = require('../services/nomina/conceptResolutionService');
       await ensureCompanyConceptConfigs(tenantId, empresa._id);
     } catch (_) {
@@ -2599,6 +2605,9 @@ async function saveConceptoPropsAction(req, res) {
           req.body.integraFONACOT === '1' ||
           req.body.integraFONACOT === true,
         integraISN: req.body.integraISN === 'on' || req.body.integraISN === '1' || req.body.integraISN === true,
+        suaArchivo: req.body.suaArchivo,
+        suaClave: req.body.suaClave,
+        suaCondicion: req.body.suaCondicion,
         desgloseModo: req.body.desgloseModo,
         topeExentoUMA: req.body.topeExentoUMA,
         topeExentoMonto: req.body.topeExentoMonto,

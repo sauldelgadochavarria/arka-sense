@@ -195,7 +195,7 @@ async function editPac(req, res) {
     session: req.session,
     empresa,
     isNew: false,
-    pac: maskPac(pac),
+    pac,
     subsidiarias,
     proveedores: PAC_PROVEEDORES,
     testUrls: PAC_SW_TEST_URLS

@@ -16,14 +16,46 @@
 const getEmpleadoModel = require('../models/empleado');
 const getEmpresaModel = require('../models/empresa');
 const getHistorialLaboralModel = require('../models/historialLaboral');
+const getIncidenciaModel = require('../models/incidencia');
+const { models: cumplimientoModels } = require('../models/cumplimientoPatronal');
+const { ensureTiposMovimientoForTenant, listTiposMovimiento } = require('./historialLaboralService');
+const { asegurarReglasSuaConceptos } = require('./nomina/nominaConceptoService');
+const getConceptoNominaModel = require('../models/conceptoNomina');
 const { startOfDay, endOfDay } = require('../libs/timeHelpers');
 
-/** Historial → MOVT (sin ALTA: esa va a ASEG). */
+/** Respaldo si el catálogo aún no tiene regla SUA. El alta va en ASEG, no en MOVT. */
 const MAPA_MOV_SUA = {
   BAJA: '02',
   REAJUSTE: '07',
   REINGRESO: '08'
 };
+
+function sbcDeMovimiento(mov) {
+  if (!mov) return null;
+  const integrado = Number(mov.sueldoIntegrado);
+  if (integrado > 0) return integrado;
+  const diario = Number(mov.salarioDiario);
+  if (diario > 0) return diario;
+  return null;
+}
+
+function sbcCambio(mov) {
+  const nuevo = sbcDeMovimiento(mov);
+  const anterior = sbcDeMovimiento(mov.anterior);
+  if (nuevo == null || anterior == null) return true;
+  return Math.abs(nuevo - anterior) > 0.001;
+}
+
+async function reglasSua(tenantId) {
+  await ensureTiposMovimientoForTenant(tenantId);
+  const tipos = await listTiposMovimiento(tenantId);
+  const porCodigo = new Map();
+  for (const t of tipos) {
+    if (t.activo === false || !t.entraSua || !t.archivoSua) continue;
+    porCodigo.set(t.codigo, t);
+  }
+  return porCodigo;
+}
 
 const TIPOS_MOV_SUA_LABEL = {
   '02': 'Baja',
@@ -406,10 +438,12 @@ async function generarAltasPeriodoSua(tenantId, options = {}) {
   const fi = startOfDay(fechaInicio || new Date());
   const ff = endOfDay(fechaFin || new Date());
 
+  const reglas = await reglasSua(tenantId);
+  const codigosAseg = [...reglas.values()].filter((t) => t.archivoSua === 'ASEG').map((t) => t.codigo);
   const movQ = {
     tenantId,
     fechaMovimiento: { $gte: fi, $lte: ff },
-    tipoMovimientoCodigo: 'ALTA'
+    tipoMovimientoCodigo: { $in: codigosAseg.length ? codigosAseg : ['ALTA'] }
   };
   if (empresaId) movQ.empresaId = empresaId;
 
@@ -430,6 +464,8 @@ async function generarAltasPeriodoSua(tenantId, options = {}) {
   const seen = new Set();
 
   for (const mov of movs) {
+    const regla = reglas.get(mov.tipoMovimientoCodigo);
+    if (regla && regla.condicionSua === 'si_cambia_sbc' && !sbcCambio(mov)) continue;
     const id = String(mov.empleadoId);
     if (seen.has(id)) continue;
     seen.add(id);
@@ -475,7 +511,6 @@ async function generarMovimientosSua(tenantId, options = {}) {
     fechaInicio,
     fechaFin,
     registroPatronal = '',
-    tiposInternos = ['BAJA', 'REAJUSTE', 'REINGRESO'],
     empresaId = null,
     subsidiariaId = null
   } = options;
@@ -483,6 +518,8 @@ async function generarMovimientosSua(tenantId, options = {}) {
   const empresaRp = await loadEmpresaRp(tenantId, registroPatronal, empresaId);
   const Historial = await getHistorialLaboralModel();
   const Empleado = await getEmpleadoModel();
+  const reglas = await reglasSua(tenantId);
+  const codigosMovt = [...reglas.values()].filter((t) => t.archivoSua === 'MOVT' && t.claveSua).map((t) => t.codigo);
 
   const fi = startOfDay(fechaInicio || new Date());
   const ff = endOfDay(fechaFin || new Date());
@@ -490,7 +527,7 @@ async function generarMovimientosSua(tenantId, options = {}) {
   const movQ = {
     tenantId,
     fechaMovimiento: { $gte: fi, $lte: ff },
-    tipoMovimientoCodigo: { $in: tiposInternos }
+    tipoMovimientoCodigo: { $in: codigosMovt.length ? codigosMovt : Object.keys(MAPA_MOV_SUA) }
   };
   if (empresaId) movQ.empresaId = empresaId;
 
@@ -508,8 +545,17 @@ async function generarMovimientosSua(tenantId, options = {}) {
   const omitidos = [];
 
   for (const mov of movs) {
-    const tipoSua = MAPA_MOV_SUA[mov.tipoMovimientoCodigo];
+    const regla = reglas.get(mov.tipoMovimientoCodigo);
+    const tipoSua = regla?.claveSua || MAPA_MOV_SUA[mov.tipoMovimientoCodigo];
     if (!tipoSua) continue;
+    if (regla && regla.condicionSua === 'si_cambia_sbc' && !sbcCambio(mov)) {
+      omitidos.push({
+        numEmpleado: empMap.get(String(mov.empleadoId))?.numEmpleado || '',
+        tipo: mov.tipoMovimientoCodigo,
+        issues: ['El SBC no cambió. Este tipo solo entra a SUA cuando el SBC es distinto.']
+      });
+      continue;
+    }
     const emp = empMap.get(String(mov.empleadoId));
     if (!emp) {
       if (!subsidiariaId) omitidos.push({ folio: mov.folio, issues: ['Empleado no encontrado'] });
@@ -549,6 +595,17 @@ async function generarMovimientosSua(tenantId, options = {}) {
     });
   }
 
+  await agregarIncidenciasMovt(tenantId, {
+    fechaInicio: fi,
+    fechaFin: ff,
+    empresaId,
+    subsidiariaId,
+    empresaRp,
+    lines,
+    preview,
+    omitidos
+  });
+
   return {
     tipo: 'movimientos',
     empresaRp,
@@ -557,6 +614,152 @@ async function generarMovimientosSua(tenantId, options = {}) {
     preview,
     archivos: { 'MOVT.TXT': joinLines(lines) }
   };
+}
+
+function diaUtc(value) {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+}
+
+function diasEnRango(incidencia, fechaInicio, fechaFin) {
+  const a = diaUtc(incidencia.fechaInicio);
+  const b = diaUtc(incidencia.fechaFin);
+  const desde = diaUtc(fechaInicio);
+  const hasta = diaUtc(fechaFin);
+  if (a == null || b == null || desde == null || hasta == null) return 0;
+  const ini = Math.max(a, desde);
+  const fin = Math.min(b, hasta);
+  if (fin < ini) return 0;
+  const calendario = Math.round((fin - ini) / 86400000) + 1;
+  const cap = Number(incidencia.diasAfectados);
+  if (cap > 0 && cap < calendario) return Math.round(cap);
+  return calendario;
+}
+
+function conceptoDeIncidencia(conceptos) {
+  const porCodigo = new Map();
+  for (const concepto of conceptos) {
+    const claves = [concepto.codigo, concepto.clavePrenomina, ...(concepto.tiposIncidencia || [])]
+      .map((c) => String(c || '').trim().toUpperCase())
+      .filter(Boolean);
+    for (const clave of claves) {
+      if (!porCodigo.has(clave)) porCodigo.set(clave, concepto);
+    }
+  }
+  return porCodigo;
+}
+
+function empPuedeSua(emp, empresaRp, omitidos, tipo) {
+  const issues = validateEmpleadoParaSua(emp, empresaRp, { exigirCurpRfc: false });
+  if (issues.some((i) => i.startsWith('NSS') || i.startsWith('Sin registro'))) {
+    omitidos.push({ numEmpleado: emp.numEmpleado, tipo, issues });
+    return false;
+  }
+  return true;
+}
+
+async function agregarIncidenciasMovt(tenantId, ctx) {
+  const { fechaInicio, fechaFin, empresaId, subsidiariaId, empresaRp, lines, preview, omitidos } = ctx;
+  await asegurarReglasSuaConceptos(tenantId, empresaId);
+  const Concepto = await getConceptoNominaModel();
+  const q = {
+    tenantId,
+    activo: { $ne: false },
+    'sua.archivo': 'MOVT',
+    'sua.clave': { $in: ['11', '12'] },
+    'sua.condicion': { $ne: 'nunca' }
+  };
+  if (empresaId) q.empresaId = empresaId;
+  const conceptos = await Concepto.find(q).lean();
+  if (!conceptos.length) return;
+
+  const porCodigo = conceptoDeIncidencia(conceptos);
+  const Incidencia = await getIncidenciaModel();
+  const incidencias = await Incidencia.find({
+    tenantId,
+    estatus: 'aprobada',
+    codigo: { $in: [...porCodigo.keys()] },
+    fechaInicio: { $lte: fechaFin },
+    fechaFin: { $gte: fechaInicio }
+  }).lean();
+  if (!incidencias.length) return;
+
+  const Empleado = await getEmpleadoModel();
+  const empleados = await Empleado.find(queryEmpleados(tenantId, { empresaId, subsidiariaId }))
+    .where('_id')
+    .in([...new Set(incidencias.map((i) => String(i.empleadoId)))])
+    .lean();
+  const empMap = new Map(empleados.map((e) => [String(e._id), e]));
+  const ausencias = new Map();
+
+  for (const incidencia of incidencias) {
+    const concepto = porCodigo.get(String(incidencia.codigo || '').toUpperCase());
+    if (!concepto) continue;
+    const dias = diasEnRango(incidencia, fechaInicio, fechaFin);
+    if ((concepto.sua?.condicion === 'si_hay_dias' || concepto.sua?.condicion === 'siempre') && dias <= 0) continue;
+    const emp = empMap.get(String(incidencia.empleadoId));
+    if (!emp) continue;
+    if (concepto.sua.clave === '12') {
+      if (!empPuedeSua(emp, empresaRp, omitidos, concepto.codigo)) continue;
+      const folio = String(incidencia.documentoReferencia || '').trim();
+      const issues = folio ? [] : ['Sin folio de incapacidad'];
+      lines.push(buildMovtLine({
+        empleado: emp,
+        empresaRp,
+        tipoSua: '12',
+        fecha: incidencia.fechaInicio,
+        dias: Math.min(dias, 99),
+        folioIncap: folio.slice(0, 8)
+      }));
+      preview.push({
+        numEmpleado: emp.numEmpleado,
+        nss: emp.nss,
+        tipoInterno: concepto.codigo,
+        tipoSua: '12',
+        tipoLabel: TIPOS_MOV_SUA_LABEL['12'],
+        fecha: incidencia.fechaInicio,
+        dias,
+        sdi: 0,
+        issues
+      });
+      continue;
+    }
+    const key = String(emp._id);
+    const actual = ausencias.get(key) || { emp, dias: 0, fecha: incidencia.fechaInicio, codigo: concepto.codigo };
+    actual.dias += dias;
+    if (new Date(incidencia.fechaInicio) < new Date(actual.fecha)) actual.fecha = incidencia.fechaInicio;
+    ausencias.set(key, actual);
+  }
+
+  for (const ausencia of ausencias.values()) {
+    if (ausencia.dias <= 0) continue;
+    if (!empPuedeSua(ausencia.emp, empresaRp, omitidos, ausencia.codigo)) continue;
+    lines.push(buildMovtLine({
+      empleado: ausencia.emp,
+      empresaRp,
+      tipoSua: '11',
+      fecha: ausencia.fecha,
+      dias: Math.min(ausencia.dias, 99)
+    }));
+    preview.push({
+      numEmpleado: ausencia.emp.numEmpleado,
+      nss: ausencia.emp.nss,
+      tipoInterno: ausencia.codigo,
+      tipoSua: '11',
+      tipoLabel: TIPOS_MOV_SUA_LABEL['11'],
+      fecha: ausencia.fecha,
+      dias: ausencia.dias,
+      sdi: 0,
+      issues: []
+    });
+  }
+}
+
+function tipoDescDeCredito(tipo) {
+  if (tipo === 'cuota_fija' || tipo === 'cuota_periodica') return '2';
+  if (tipo === 'factor') return '3';
+  return '1';
 }
 
 /** CRED.TXT — créditos INFONAVIT (inicio 15 por defecto). */
@@ -570,6 +773,7 @@ async function generarCreditosSua(tenantId, options = {}) {
   } = options;
   const empresaRp = await loadEmpresaRp(tenantId, registroPatronal, empresaId);
   const Empleado = await getEmpleadoModel();
+  await asegurarReglasSuaConceptos(tenantId, empresaId);
 
   const q = queryEmpleados(tenantId, {
     empresaId,
@@ -578,11 +782,65 @@ async function generarCreditosSua(tenantId, options = {}) {
   });
 
   const empleados = await Empleado.find(q).sort({ lastName: 1 }).lean();
+  const empMap = new Map(empleados.map((e) => [String(e._id), e]));
   const preview = [];
   const lines = [];
   const omitidos = [];
+  const cubiertos = new Set();
+
+  const { CreditoTrabajador } = await cumplimientoModels();
+  const cq = {
+    tenantId,
+    institucion: 'INFONAVIT',
+    estatus: estatus === 'baja' ? { $in: ['liquidado', 'cancelado'] } : 'activo'
+  };
+  if (empresaId) cq.empresaId = empresaId;
+  if (subsidiariaId) cq.$or = [{ subsidiariaId }, { subsidiariaId: null }];
+  const creditos = await CreditoTrabajador.find(cq).lean();
+
+  for (const credito of creditos) {
+    const emp = empMap.get(String(credito.empleadoId));
+    if (!emp) continue;
+    const numCredito = String(credito.numeroCredito || '').replace(/\s+/g, '');
+    const valor = Number(credito.valorDescuento) || 0;
+    if (!numCredito || valor <= 0) {
+      omitidos.push({
+        numEmpleado: emp.numEmpleado,
+        issues: ['El crédito INFONAVIT no tiene número o valor']
+      });
+      cubiertos.add(String(emp._id));
+      continue;
+    }
+    if (!empPuedeSua(emp, empresaRp, omitidos, 'INFONAVIT')) {
+      cubiertos.add(String(emp._id));
+      continue;
+    }
+    const tipoDesc = tipoDescDeCredito(credito.tipoDescuento);
+    lines.push(buildCredLine({
+      empleado: emp,
+      empresaRp,
+      tipoMov: tipoMovCred,
+      fecha: credito.fechaInicio || emp.fechaIngreso || new Date(),
+      numeroCredito: numCredito,
+      tipoDesc,
+      valor,
+      aplicaReduccion: '0'
+    }));
+    preview.push({
+      numEmpleado: emp.numEmpleado,
+      nss: emp.nss,
+      credito: numCredito,
+      tipoSua: tipoMovCred,
+      tipoLabel: TIPOS_CRED_SUA_LABEL[tipoMovCred] || tipoMovCred,
+      tipoDesc,
+      valor,
+      issues: ['Expediente del crédito']
+    });
+    cubiertos.add(String(emp._id));
+  }
 
   for (const emp of empleados) {
+    if (cubiertos.has(String(emp._id))) continue;
     const cfg = emp.nominaConfig || {};
     const numCredito = String(cfg.infonavitNumeroCredito || '').replace(/\s+/g, '');
     if (!numCredito) continue;
@@ -600,22 +858,18 @@ async function generarCreditosSua(tenantId, options = {}) {
       valor = Number(cfg.tasaInfonavit) || Number(cfg.infonavitDescuento) || 0;
     } else if (cfg.tipoCreditoInfonavit === 'vsm') {
       tipoDesc = '3';
-    } else if (cfg.tipoCreditoInfonavit === 'porcentaje') {
-      tipoDesc = '1';
     }
 
-    lines.push(
-      buildCredLine({
-        empleado: emp,
-        empresaRp,
-        tipoMov: tipoMovCred,
-        fecha: cfg.infonavitFechaInicio || emp.fechaIngreso || new Date(),
-        numeroCredito: numCredito,
-        tipoDesc,
-        valor,
-        aplicaReduccion: '0'
-      })
-    );
+    lines.push(buildCredLine({
+      empleado: emp,
+      empresaRp,
+      tipoMov: tipoMovCred,
+      fecha: cfg.infonavitFechaInicio || emp.fechaIngreso || new Date(),
+      numeroCredito: numCredito,
+      tipoDesc,
+      valor,
+      aplicaReduccion: '0'
+    }));
     preview.push({
       numEmpleado: emp.numEmpleado,
       nss: emp.nss,
@@ -624,7 +878,7 @@ async function generarCreditosSua(tenantId, options = {}) {
       tipoLabel: TIPOS_CRED_SUA_LABEL[tipoMovCred] || tipoMovCred,
       tipoDesc,
       valor,
-      issues
+      issues: issues.concat(['Ficha del empleado; aún no está en el expediente de crédito'])
     });
   }
 

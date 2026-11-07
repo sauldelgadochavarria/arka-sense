@@ -12,6 +12,12 @@ const tipoMovimientoLaboralSchema = new mongoose.Schema(
     afectaSalario: { type: Boolean, default: false },
     afectaOrganizacion: { type: Boolean, default: false },
     afectaEstatus: { type: Boolean, default: false },
+    /** Si el movimiento alimenta un archivo de importación SUA / DISPMAG. */
+    entraSua: { type: Boolean, default: false },
+    archivoSua: { type: String, enum: ['', 'ASEG', 'MOVT'], default: '' },
+    /** Clave MOVT: 02 baja, 07 modificación salarial, 08 reingreso. El alta va en ASEG y no lleva clave. */
+    claveSua: { type: String, trim: true, default: '' },
+    condicionSua: { type: String, enum: ['siempre', 'si_cambia_sbc'], default: 'siempre' },
     orden: { type: Number, default: 100 },
     activo: { type: Boolean, default: true }
   },

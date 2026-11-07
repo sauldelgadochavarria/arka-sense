@@ -279,6 +279,12 @@ router.post('/config-zonas/:id', zonasController.updateZona);
 router.post('/config-zonas/:id/toggle', zonasController.toggleZona);
 
 
+router.get('/config-sistema/tipos-movimiento-laboral/nuevo', historialLaboralController.nuevoTipo);
+router.post('/config-sistema/tipos-movimiento-laboral', historialLaboralController.createTipo);
+router.post('/config-sistema/tipos-movimiento-laboral/:id/sua', historialLaboralController.updateReglaSua);
+router.post('/config-sistema/tipos-movimiento-laboral/:id/toggle', historialLaboralController.toggleTipo);
+router.get('/config-sistema/tipos-movimiento-laboral', historialLaboralController.listTipos);
+
 router.get('/config-sistema/enums', systemConfigController.listEnums);
 router.get('/config-sistema/enums/:grupo', systemConfigController.editEnum);
 router.post('/config-sistema/enums/:grupo', systemConfigController.saveEnum);
@@ -489,9 +495,7 @@ router.post('/nomina/gestion-documental/:id/eliminar', gestionDocumentalControll
 router.get('/personal-empleados/:id/historial-laboral', historialLaboralController.showHistorialEmpleado);
 router.post('/personal-empleados/:id/historial-laboral', historialLaboralController.createMovimientoManual);
 
-router.get('/personal/tipos-movimiento-laboral', historialLaboralController.listTipos);
-router.post('/personal/tipos-movimiento-laboral', historialLaboralController.createTipo);
-router.post('/personal/tipos-movimiento-laboral/:id/toggle', historialLaboralController.toggleTipo);
+router.get('/personal/tipos-movimiento-laboral', (req, res) => res.redirect('/config-sistema/tipos-movimiento-laboral'));
 
 router.get('/personal/ajuste-anual', ajusteAnualController.wizard);
 router.post('/personal/ajuste-anual', ajusteAnualController.wizard);

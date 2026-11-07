@@ -10,6 +10,10 @@ const TIPOS_MOVIMIENTO_DEFAULT = [
     afectaSalario: true,
     afectaOrganizacion: true,
     afectaEstatus: true,
+    entraSua: true,
+    archivoSua: 'ASEG',
+    claveSua: '',
+    condicionSua: 'siempre',
     orden: 10
   },
   {
@@ -20,6 +24,10 @@ const TIPOS_MOVIMIENTO_DEFAULT = [
     afectaSalario: false,
     afectaOrganizacion: true,
     afectaEstatus: false,
+    entraSua: false,
+    archivoSua: '',
+    claveSua: '',
+    condicionSua: 'siempre',
     orden: 20
   },
   {
@@ -30,6 +38,10 @@ const TIPOS_MOVIMIENTO_DEFAULT = [
     afectaSalario: false,
     afectaOrganizacion: false,
     afectaEstatus: true,
+    entraSua: true,
+    archivoSua: 'MOVT',
+    claveSua: '02',
+    condicionSua: 'siempre',
     orden: 30
   },
   {
@@ -40,6 +52,10 @@ const TIPOS_MOVIMIENTO_DEFAULT = [
     afectaSalario: true,
     afectaOrganizacion: false,
     afectaEstatus: false,
+    entraSua: true,
+    archivoSua: 'MOVT',
+    claveSua: '07',
+    condicionSua: 'si_cambia_sbc',
     orden: 40
   },
   {
@@ -50,6 +66,10 @@ const TIPOS_MOVIMIENTO_DEFAULT = [
     afectaSalario: false,
     afectaOrganizacion: false,
     afectaEstatus: true,
+    entraSua: true,
+    archivoSua: 'MOVT',
+    claveSua: '08',
+    condicionSua: 'siempre',
     orden: 50
   },
   {
@@ -60,6 +80,10 @@ const TIPOS_MOVIMIENTO_DEFAULT = [
     afectaSalario: false,
     afectaOrganizacion: false,
     afectaEstatus: false,
+    entraSua: false,
+    archivoSua: '',
+    claveSua: '',
+    condicionSua: 'siempre',
     orden: 90
   }
 ];

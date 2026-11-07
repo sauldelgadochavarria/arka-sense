@@ -1,0 +1,62 @@
+<%- include('../Partials/layout-top', { title: 'Tipos de movimiento laboral', session }) %>
+<div class="page-header">
+  <h1>Tipos de movimiento laboral</h1>
+  <p class="page-subtitle">Un solo catálogo del expediente. Aquí se indica si el movimiento entra al archivo SUA, en cuál archivo y con qué clave. El alta va en ASEG; baja, reajuste y reingreso van en MOVT.</p>
+</div>
+<% if (!empresa) { %>
+<p>No hay empresa vinculada.</p>
+<% } else { %>
+<div class="toolbar">
+  <a class="btn" href="/config-sistema/tipos-movimiento-laboral/nuevo">Nuevo tipo</a>
+  <a class="btn btn-secondary" href="/config-subsidiarias">Subsidiarias</a>
+  <a class="btn btn-secondary" href="/config-sistema/enums">Enums</a>
+</div>
+<table>
+  <thead>
+    <tr>
+      <th>Código</th><th>Nombre</th><th>Legado</th><th>Salario</th><th>Org.</th><th>Estatus</th><th>Orden</th><th>SUA</th><th>Activo</th><th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <% tipos.forEach(function(t) { %>
+    <tr class="<%= !t.activo ? 'row-muted' : '' %>">
+      <td><code><%= t.codigo %></code></td>
+      <td><%= t.nombre %><% if (t.descripcion) { %><br /><span class="muted"><%= t.descripcion %></span><% } %></td>
+      <td><%= t.claveLegado != null ? t.claveLegado : '—' %></td>
+      <td><%= t.afectaSalario ? 'Sí' : 'No' %></td>
+      <td><%= t.afectaOrganizacion ? 'Sí' : 'No' %></td>
+      <td><%= t.afectaEstatus ? 'Sí' : 'No' %></td>
+      <td><%= t.orden %></td>
+      <td>
+        <form method="post" action="/config-sistema/tipos-movimiento-laboral/<%= t._id %>/sua" class="inline-form" style="display:flex;flex-wrap:wrap;gap:.35rem;align-items:center">
+          <label><input type="checkbox" name="entraSua" value="1" <%= t.entraSua ? 'checked' : '' %> /> Entra</label>
+          <select name="archivoSua">
+            <option value="">—</option>
+            <option value="ASEG" <%= t.archivoSua === 'ASEG' ? 'selected' : '' %>>ASEG</option>
+            <option value="MOVT" <%= t.archivoSua === 'MOVT' ? 'selected' : '' %>>MOVT</option>
+          </select>
+          <select name="claveSua">
+            <option value="">—</option>
+            <option value="02" <%= t.claveSua === '02' ? 'selected' : '' %>>02 Baja</option>
+            <option value="07" <%= t.claveSua === '07' ? 'selected' : '' %>>07 Salario</option>
+            <option value="08" <%= t.claveSua === '08' ? 'selected' : '' %>>08 Reingreso</option>
+          </select>
+          <select name="condicionSua">
+            <option value="siempre" <%= t.condicionSua !== 'si_cambia_sbc' ? 'selected' : '' %>>Siempre</option>
+            <option value="si_cambia_sbc" <%= t.condicionSua === 'si_cambia_sbc' ? 'selected' : '' %>>Si cambia el SBC</option>
+          </select>
+          <button type="submit">Guardar</button>
+        </form>
+      </td>
+      <td><%= t.activo ? 'Sí' : 'No' %></td>
+      <td class="actions">
+        <form method="post" action="/config-sistema/tipos-movimiento-laboral/<%= t._id %>/toggle" class="inline-form">
+          <button type="submit"><%= t.activo ? 'Desactivar' : 'Activar' %></button>
+        </form>
+      </td>
+    </tr>
+    <% }); %>
+  </tbody>
+</table>
+<% } %>
+<%- include('../Partials/layout-bottom') %>

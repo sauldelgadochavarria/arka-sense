@@ -378,11 +378,11 @@
         </label>
         <label class="inline-check">
           <input type="checkbox" name="integraINFONAVIT" <%= fiscalActual.integraINFONAVIT === true ? 'checked' : '' %> />
-          Integra INFONAVIT
+          Esta deducción es el crédito INFONAVIT
         </label>
         <label class="inline-check">
           <input type="checkbox" name="integraFONACOT" <%= fiscalActual.integraFONACOT === true ? 'checked' : '' %> />
-          Aplica a FONACOT
+          Esta deducción es el crédito FONACOT
         </label>
       </div>
       <div class="form-row-3">
@@ -417,6 +417,41 @@
         si es semanal sin pago mensual, <strong>7 × UMA diaria</strong>. El excedente grava ISR.
         <code>prima_dominical</code>: exento hasta <strong>N × UMA × domingos trabajados</strong>
         (tope UMA arriba, default 1). Fórmula típica: <code>sueldoDiario * 0.25 * domingosTrabajados</code>.
+      </p>
+    </fieldset>
+
+    <fieldset class="props-fieldset">
+      <legend>SUA</legend>
+      <% const suaActual = concepto.sua || {}; %>
+      <div class="form-row-3">
+        <label>Archivo
+          <select name="suaArchivo">
+            <option value="" <%= !suaActual.archivo ? 'selected' : '' %>>No entra a SUA</option>
+            <option value="MOVT" <%= suaActual.archivo === 'MOVT' ? 'selected' : '' %>>MOVT — ausentismo o incapacidad</option>
+            <option value="CRED" <%= suaActual.archivo === 'CRED' ? 'selected' : '' %>>CRED — crédito INFONAVIT</option>
+          </select>
+        </label>
+        <label>Clave MOVT
+          <select name="suaClave">
+            <option value="" <%= !suaActual.clave ? 'selected' : '' %>>—</option>
+            <option value="11" <%= suaActual.clave === '11' ? 'selected' : '' %>>11 — Ausentismo</option>
+            <option value="12" <%= suaActual.clave === '12' ? 'selected' : '' %>>12 — Incapacidad</option>
+          </select>
+        </label>
+        <label>Cuándo entra
+          <select name="suaCondicion">
+            <option value="nunca" <%= (suaActual.condicion || 'nunca') === 'nunca' ? 'selected' : '' %>>No entra</option>
+            <option value="si_hay_dias" <%= suaActual.condicion === 'si_hay_dias' ? 'selected' : '' %>>Si hay días en el período</option>
+            <option value="si_hay_importe" <%= suaActual.condicion === 'si_hay_importe' ? 'selected' : '' %>>Si hay importe</option>
+            <option value="siempre" <%= suaActual.condicion === 'siempre' ? 'selected' : '' %>>Siempre</option>
+          </select>
+        </label>
+      </div>
+      <p class="muted small">
+        El alta, la baja, el reajuste y el reingreso se definen en
+        <a href="/config-sistema/tipos-movimiento-laboral">tipos de movimiento laboral</a>.
+        El número de crédito, el tipo de descuento y la fecha viven en el crédito del trabajador.
+        FONACOT no genera archivo SUA: el checkbox de arriba identifica la deducción de la cédula.
       </p>
     </fieldset>
 

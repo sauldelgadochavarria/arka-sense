@@ -975,7 +975,6 @@ async function seedPersonalMenus(Menu, adminRoleId) {
   });
 
   const personalItems = [
-    { menuPrincipal: 'Tipos mov. laboral', rutaApp: '/personal/tipos-movimiento-laboral', orden: 15 },
     { menuPrincipal: 'Puestos', rutaApp: '/personal-puestos', orden: 12 },
     { menuPrincipal: 'Empresa', rutaApp: '/config-empresa', orden: 13 },
     { menuPrincipal: 'Cargas iniciales', rutaApp: '/config-empresa/cargas', orden: 14 },

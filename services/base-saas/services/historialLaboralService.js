@@ -90,6 +90,7 @@ async function ensureTiposMovimientoForTenant(tenantId) {
   const TipoMovimientoLaboral = await getTipoMovimientoLaboralModel();
 
   for (const t of TIPOS_MOVIMIENTO_DEFAULT) {
+    const sua = reglaSuaDe(t);
     await TipoMovimientoLaboral.updateOne(
       { tenantId, codigo: t.codigo },
       {
@@ -103,12 +104,31 @@ async function ensureTiposMovimientoForTenant(tenantId) {
           afectaOrganizacion: t.afectaOrganizacion,
           afectaEstatus: t.afectaEstatus,
           orden: t.orden,
-          activo: true
+          activo: true,
+          ...sua
         }
       },
       { upsert: true }
     );
+    await TipoMovimientoLaboral.updateOne(
+      { tenantId, codigo: t.codigo, archivoSua: { $exists: false } },
+      { $set: sua }
+    );
   }
+}
+
+function reglaSuaDe(data) {
+  const entraSua = Boolean(data.entraSua);
+  const archivoSua = entraSua && ['ASEG', 'MOVT'].includes(data.archivoSua) ? data.archivoSua : '';
+  const claveSua = archivoSua === 'MOVT' && ['02', '07', '08'].includes(String(data.claveSua || ''))
+    ? String(data.claveSua)
+    : '';
+  return {
+    entraSua: Boolean(archivoSua),
+    archivoSua,
+    claveSua,
+    condicionSua: data.condicionSua === 'si_cambia_sbc' ? 'si_cambia_sbc' : 'siempre'
+  };
 }
 
 async function nextFolio(tenantId) {
@@ -210,6 +230,7 @@ async function crearTipoMovimiento(tenantId, data) {
 
   const exists = await TipoMovimientoLaboral.findOne({ tenantId, codigo }).lean();
   if (exists) throw new Error('Ya existe un tipo con ese código');
+  const regla = validarReglaSua(data);
 
   return TipoMovimientoLaboral.create({
     tenantId,
@@ -221,8 +242,39 @@ async function crearTipoMovimiento(tenantId, data) {
     afectaOrganizacion: Boolean(data.afectaOrganizacion),
     afectaEstatus: Boolean(data.afectaEstatus),
     orden: Number(data.orden) || 100,
-    activo: true
+    activo: true,
+    ...regla
   });
+}
+
+function validarReglaSua(data) {
+  const regla = reglaSuaDe(data);
+  if (data.entraSua && !regla.archivoSua) {
+    throw new Error('Indica si el aviso va en ASEG o en MOVT');
+  }
+  if (regla.archivoSua === 'MOVT' && !regla.claveSua) {
+    throw new Error('El archivo MOVT necesita la clave 02, 07 u 08');
+  }
+  return regla;
+}
+
+async function actualizarReglaSua(tenantId, id, data) {
+  const TipoMovimientoLaboral = await getTipoMovimientoLaboralModel();
+  const doc = await TipoMovimientoLaboral.findOne({ _id: id, tenantId });
+  if (!doc) throw new Error('Tipo de movimiento no encontrado');
+  const regla = reglaSuaDe(data);
+  if (data.entraSua && !regla.archivoSua) {
+    throw new Error('Indica si el aviso va en ASEG o en MOVT');
+  }
+  if (regla.archivoSua === 'MOVT' && !regla.claveSua) {
+    throw new Error('El archivo MOVT necesita la clave 02, 07 u 08');
+  }
+  doc.entraSua = regla.entraSua;
+  doc.archivoSua = regla.archivoSua;
+  doc.claveSua = regla.claveSua;
+  doc.condicionSua = regla.condicionSua;
+  await doc.save();
+  return doc;
 }
 
 async function toggleTipoMovimiento(tenantId, id) {
@@ -245,5 +297,6 @@ module.exports = {
   listHistorialEmpleado,
   listTiposMovimiento,
   crearTipoMovimiento,
+  actualizarReglaSua,
   toggleTipoMovimiento
 };

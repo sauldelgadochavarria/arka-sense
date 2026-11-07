@@ -9,6 +9,7 @@ const { parseDate, trimString } = require('../libs/formHelpers');
 const {
   listTiposMovimiento,
   crearTipoMovimiento,
+  actualizarReglaSua,
   toggleTipoMovimiento,
   listHistorialEmpleado,
   registrarMovimiento,
@@ -17,6 +18,49 @@ const {
   ensureTiposMovimientoForTenant
 } = require('../services/historialLaboralService');
 const { TIPOS_SALARIO } = require('../config/historialLaboralDefaults');
+const getMenuModel = require('../models/menu');
+
+const RUTA_TIPOS = '/config-sistema/tipos-movimiento-laboral';
+
+async function ensureMenuTipos() {
+  const Menu = await getMenuModel();
+  const config = await Menu.findOne({
+    menuPrincipal: 'Configuración',
+    esCategoria: true,
+    parentId: null,
+    activo: { $ne: false }
+  }).lean();
+  if (!config) return;
+  const hermana = await Menu.findOne({
+    parentId: config._id,
+    rutaApp: '/config-subsidiarias'
+  }).lean();
+  const data = {
+    menuPrincipal: 'Tipos mov. laboral',
+    rutaApp: RUTA_TIPOS,
+    parentId: config._id,
+    orden: 13,
+    activo: true,
+    esCategoria: false,
+    requiredFeatureKeys: hermana?.requiredFeatureKeys?.length
+      ? hermana.requiredFeatureKeys
+      : ['config_admin'],
+    roles: hermana?.roles || [],
+    modulePackage: hermana?.modulePackage || 'nucleo'
+  };
+  const existing = await Menu.findOne({
+    rutaApp: { $in: [RUTA_TIPOS, '/personal/tipos-movimiento-laboral'] }
+  }).sort({ activo: -1 }).lean();
+  if (existing) await Menu.updateOne({ _id: existing._id }, { $set: data });
+  else await Menu.create(data);
+  await Menu.updateMany(
+    {
+      rutaApp: '/personal/tipos-movimiento-laboral',
+      ...(existing ? { _id: { $ne: existing._id } } : {})
+    },
+    { $set: { activo: false } }
+  );
+}
 
 async function loadCatalogMaps(tenantId, empresaId) {
   const getDepartamentoModel = require('../models/departamento');
@@ -45,15 +89,20 @@ function tipoSalarioLabel(value) {
 }
 
 async function listTipos(req, res) {
+  await ensureMenuTipos().catch(() => {});
   const { empresa, error } = await requireEmpresaForTenant(req);
   const tipos = await listTiposMovimiento(req.session.tenantId);
 
-  res.render('Personal/tipos-movimiento-laboral', {
+  res.render('ConfigSistema/tipos-movimiento-laboral', {
     tipos,
     empresa,
     error: error || null,
     session: req.session
   });
+}
+
+function nuevoTipo(req, res) {
+  res.render('ConfigSistema/tipo-movimiento-nuevo', { session: req.session });
 }
 
 async function createTipo(req, res) {
@@ -66,13 +115,33 @@ async function createTipo(req, res) {
       afectaSalario: Boolean(req.body.afectaSalario),
       afectaOrganizacion: Boolean(req.body.afectaOrganizacion),
       afectaEstatus: Boolean(req.body.afectaEstatus),
-      orden: Number(req.body.orden) || 100
+      orden: Number(req.body.orden) || 100,
+      entraSua: req.body.entraSua === '1',
+      archivoSua: trimString(req.body.archivoSua),
+      claveSua: trimString(req.body.claveSua),
+      condicionSua: trimString(req.body.condicionSua)
     });
     req.flash('success', 'Tipo de movimiento creado');
+    res.redirect(RUTA_TIPOS);
   } catch (err) {
     req.flash('error', err.message || 'Error al crear tipo');
+    res.redirect(`${RUTA_TIPOS}/nuevo`);
   }
-  res.redirect('/personal/tipos-movimiento-laboral');
+}
+
+async function updateReglaSua(req, res) {
+  try {
+    await actualizarReglaSua(req.session.tenantId, req.params.id, {
+      entraSua: req.body.entraSua === '1',
+      archivoSua: trimString(req.body.archivoSua),
+      claveSua: trimString(req.body.claveSua),
+      condicionSua: trimString(req.body.condicionSua)
+    });
+    req.flash('success', 'La regla SUA del tipo quedó actualizada');
+  } catch (err) {
+    req.flash('error', err.message || 'No se pudo actualizar la regla SUA');
+  }
+  res.redirect(RUTA_TIPOS);
 }
 
 async function toggleTipo(req, res) {
@@ -82,7 +151,7 @@ async function toggleTipo(req, res) {
   } catch (err) {
     req.flash('error', err.message || 'Error al actualizar');
   }
-  res.redirect('/personal/tipos-movimiento-laboral');
+  res.redirect(RUTA_TIPOS);
 }
 
 async function showHistorialEmpleado(req, res) {
@@ -162,7 +231,9 @@ async function createMovimientoManual(req, res) {
 
 module.exports = {
   listTipos,
+  nuevoTipo,
   createTipo,
+  updateReglaSua,
   toggleTipo,
   showHistorialEmpleado,
   createMovimientoManual,

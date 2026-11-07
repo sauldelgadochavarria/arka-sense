@@ -195,6 +195,7 @@ function esDeduccionInfonavit(linea, cat) {
   const sat = String(linea.claveSAT || '').padStart(3, '0');
   if (codigo.includes('FONACOT') || nombre.includes('FONACOT')) return false;
   return (
+    cat?.sua?.archivo === 'CRED' ||
     cat?.fiscal?.integraINFONAVIT === true ||
     codigo.includes('INFONAVIT') ||
     nombre.includes('INFONAVIT') ||

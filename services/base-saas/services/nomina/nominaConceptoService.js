@@ -1314,6 +1314,11 @@ async function actualizarConcepto(tenantId, codigo, data, { empresaId = null, sy
   if (data.aplicaTipoNomina !== undefined) {
     patch.aplicaTipoNomina = parseStringList(data.aplicaTipoNomina);
   }
+  if (data.suaArchivo !== undefined || data.suaClave !== undefined || data.suaCondicion !== undefined) {
+    patch.sua = normalizarReglaSuaConcepto(data);
+  }
+
+  if (patch.sua?.archivo === 'CRED') data.integraINFONAVIT = true;
 
   const tipoEff = patch.tipo || concepto.tipo;
   const natEff = patch.naturaleza || concepto.naturaleza;
@@ -1375,6 +1380,58 @@ async function actualizarConcepto(tenantId, codigo, data, { empresaId = null, sy
   return ConceptoNomina.findOne({ tenantId, codigo: codigoUp }).lean();
 }
 
+function normalizarReglaSuaConcepto(data) {
+  const archivo = ['MOVT', 'CRED'].includes(data.suaArchivo) ? data.suaArchivo : '';
+  const clave = archivo === 'MOVT' && ['11', '12'].includes(String(data.suaClave || ''))
+    ? String(data.suaClave)
+    : '';
+  let condicion = ['siempre', 'si_hay_dias', 'si_hay_importe', 'nunca'].includes(data.suaCondicion)
+    ? data.suaCondicion
+    : 'nunca';
+  if (!archivo) condicion = 'nunca';
+  else if (archivo === 'MOVT' && condicion === 'nunca') condicion = 'si_hay_dias';
+  else if (archivo === 'CRED' && (condicion === 'nunca' || condicion === 'si_hay_dias')) condicion = 'si_hay_importe';
+  return { archivo, clave, condicion };
+}
+
+function reglaSuaPorDefecto(concepto) {
+  const codigo = String(concepto.codigo || '').toUpperCase();
+  const clave = String(concepto.clavePrenomina || '').toUpperCase();
+  const tipos = (concepto.tiposIncidencia || []).map((t) => String(t).toUpperCase());
+  const tokens = [codigo, clave, ...tipos];
+  const sat = String(concepto.sat?.clave || concepto.claveSAT || '').padStart(3, '0');
+  if (tokens.some((t) => /INCAP/.test(t))) {
+    return { archivo: 'MOVT', clave: '12', condicion: 'si_hay_dias' };
+  }
+  if (concepto.formulaPrenomina === 'faltas' || tokens.some((t) => /AUSEN|FALTA/.test(t))) {
+    return { archivo: 'MOVT', clave: '11', condicion: 'si_hay_dias' };
+  }
+  if (concepto.fiscal?.integraINFONAVIT === true || sat === '010' || codigo === 'INFONAVIT' || codigo.startsWith('INFONAVIT_')) {
+    return { archivo: 'CRED', clave: '', condicion: 'si_hay_importe' };
+  }
+  if (concepto.fiscal?.integraFONACOT === true || sat === '011' || codigo === 'FONACOT' || codigo.startsWith('FONACOT_')) {
+    return { archivo: '', clave: '', condicion: 'nunca', integraFONACOT: true };
+  }
+  return null;
+}
+
+/** Escribe la regla SUA solo cuando el concepto todavía no la tiene. */
+async function asegurarReglasSuaConceptos(tenantId, empresaId = null) {
+  const ConceptoNomina = await getConceptoNominaModel();
+  const q = { tenantId, 'sua.archivo': { $exists: false } };
+  if (empresaId) q.empresaId = empresaId;
+  const docs = await ConceptoNomina.find(q).select('codigo clavePrenomina tiposIncidencia formulaPrenomina sat claveSAT fiscal').lean();
+  for (const concepto of docs) {
+    const regla = reglaSuaPorDefecto(concepto);
+    if (!regla) continue;
+    const sua = { archivo: regla.archivo, clave: regla.clave, condicion: regla.condicion };
+    const $set = { sua };
+    if (sua.archivo === 'CRED') $set['fiscal.integraINFONAVIT'] = true;
+    if (regla.integraFONACOT) $set['fiscal.integraFONACOT'] = true;
+    await ConceptoNomina.updateOne({ _id: concepto._id, 'sua.archivo': { $exists: false } }, { $set });
+  }
+}
+
 async function toggleConcepto(tenantId, codigo) {
   const ConceptoNomina = await getConceptoNominaModel();
   const concepto = await ConceptoNomina.findOne({ tenantId, codigo }).lean();
@@ -1412,5 +1469,6 @@ module.exports = {
   guardarFormula,
   crearConcepto,
   actualizarConcepto,
+  asegurarReglasSuaConceptos,
   toggleConcepto
 };

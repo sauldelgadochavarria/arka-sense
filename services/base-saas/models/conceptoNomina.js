@@ -73,6 +73,21 @@ const conceptoNominaSchema = new mongoose.Schema(
       permiteParcial: { type: Boolean, default: false },
       tipoInterno: { type: String, trim: true, default: '' }
     },
+    /**
+     * Destino SUA de este concepto.
+     * MOVT 11 ausentismo y 12 incapacidad salen de incidencias del período.
+     * CRED identifica la deducción INFONAVIT; el archivo se arma con el crédito del trabajador.
+     * FONACOT no tiene archivo SUA: lo marca fiscal.integraFONACOT.
+     */
+    sua: {
+      archivo: { type: String, enum: ['', 'MOVT', 'CRED'], default: '' },
+      clave: { type: String, trim: true, default: '' },
+      condicion: {
+        type: String,
+        enum: ['nunca', 'siempre', 'si_hay_dias', 'si_hay_importe'],
+        default: 'nunca'
+      }
+    },
     metadata: { type: mongoose.Schema.Types.Mixed, default: {} }
   },
   { timestamps: true, collection: COLLECTION_NOMINA_CONCEPTOS }

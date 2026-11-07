@@ -164,13 +164,6 @@ async function reorganizeMenuPackages(Menu, adminRoleId) {
     });
     await upsertByRuta(Menu, {
       ...pCommon,
-      menuPrincipal: 'Tipos mov. laboral',
-      rutaApp: '/personal/tipos-movimiento-laboral',
-      parentId: personalCfg,
-      orden: 30
-    });
-    await upsertByRuta(Menu, {
-      ...pCommon,
       menuPrincipal: 'Empresa',
       rutaApp: '/config-empresa',
       parentId: personalCfg,
@@ -227,6 +220,17 @@ async function reorganizeMenuPackages(Menu, adminRoleId) {
       parentId: config._id,
       orden: 12
     });
+    await upsertByRuta(Menu, {
+      ...cCommon,
+      menuPrincipal: 'Tipos mov. laboral',
+      rutaApp: '/config-sistema/tipos-movimiento-laboral',
+      parentId: config._id,
+      orden: 13
+    });
+    await Menu.updateMany(
+      { rutaApp: '/personal/tipos-movimiento-laboral' },
+      { $set: { activo: false } }
+    );
     await upsertByRuta(Menu, {
       ...cCommon,
       menuPrincipal: 'Enums sistema',

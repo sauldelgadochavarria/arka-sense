@@ -1,0 +1,31 @@
+<%- include('../Partials/layout-top', { title: 'Nuevo tipo de movimiento', session }) %>
+<p><a href="/config-sistema/tipos-movimiento-laboral">← Tipos de movimiento</a></p>
+<h1>Nuevo tipo de movimiento</h1>
+<form method="post" action="/config-sistema/tipos-movimiento-laboral" class="form-grid form-wide">
+  <input name="codigo" placeholder="Código (ej. PROMOCION)" maxlength="30" required style="text-transform:uppercase" />
+  <input name="nombre" placeholder="Nombre" required />
+  <input name="descripcion" placeholder="Descripción" />
+  <input name="claveLegado" type="number" placeholder="Clave legado (opcional)" />
+  <input name="orden" type="number" placeholder="Orden" value="100" />
+  <label><input type="checkbox" name="afectaSalario" value="1" /> Afecta salario</label>
+  <label><input type="checkbox" name="afectaOrganizacion" value="1" /> Afecta organización</label>
+  <label><input type="checkbox" name="afectaEstatus" value="1" /> Afecta estatus</label>
+  <label><input type="checkbox" name="entraSua" value="1" /> Entra a SUA</label>
+  <select name="archivoSua">
+    <option value="">Archivo SUA</option>
+    <option value="ASEG">ASEG — alta</option>
+    <option value="MOVT">MOVT — movimiento</option>
+  </select>
+  <select name="claveSua">
+    <option value="">Clave MOVT</option>
+    <option value="02">02 — Baja</option>
+    <option value="07">07 — Modificación de salario</option>
+    <option value="08">08 — Reingreso</option>
+  </select>
+  <select name="condicionSua">
+    <option value="siempre">Siempre</option>
+    <option value="si_cambia_sbc">Solo si cambia el SBC</option>
+  </select>
+  <button type="submit">Crear tipo</button>
+</form>
+<%- include('../Partials/layout-bottom') %>

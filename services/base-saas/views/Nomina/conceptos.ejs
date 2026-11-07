@@ -56,6 +56,7 @@
       <th>Origen</th>
       <th>SAT</th>
       <th>Fiscal</th>
+      <th>SUA</th>
       <th>Incidencias</th>
       <th>Tipo</th>
       <th>Activo</th>
@@ -64,7 +65,7 @@
   </thead>
   <tbody>
     <% if (!conceptos.length) { %>
-    <tr><td colspan="10" class="muted">Sin conceptos.</td></tr>
+    <tr><td colspan="11" class="muted">Sin conceptos.</td></tr>
     <% } %>
     <% conceptos.forEach(function(c) {
          const ambito = c.aplicaEn || 'nomina';
@@ -72,6 +73,11 @@
          const satClave = (c.sat && c.sat.clave) || c.claveSAT || '—';
          const fiscal = c.fiscal || {};
          const fiscalTxt = (fiscal.integraISR === false ? 'ISR×' : 'ISR✓') + ' ' + (fiscal.integraIMSS === false ? 'IMSS×' : 'IMSS✓') + ' ' + (fiscal.integraISN === false ? 'ISN×' : 'ISN✓');
+         const sua = c.sua || {};
+         let suaTxt = '—';
+         if (sua.archivo === 'MOVT' && sua.clave) suaTxt = 'MOVT ' + sua.clave;
+         else if (sua.archivo === 'CRED' || fiscal.integraINFONAVIT) suaTxt = 'CRED';
+         else if (fiscal.integraFONACOT) suaTxt = 'FONACOT';
          const origen = (c.subsidiaryConfig && c.subsidiaryConfig.origen) || c.visiblePor || 'catalogo';
          const activoUi = typeof c.activoUi === 'boolean'
            ? c.activoUi
@@ -85,6 +91,7 @@
       <td class="muted small"><%= origen %></td>
       <td><code><%= satClave %></code></td>
       <td class="muted small"><%= fiscalTxt %><% if (fiscal.desglose && fiscal.desglose.modo) { %> · <%= fiscal.desglose.modo %><% } %></td>
+      <td class="muted small"><%= suaTxt %></td>
       <td class="muted small"><%= (c.tiposIncidencia || []).join(', ') || '—' %></td>
       <td><%= c.tipo %></td>
       <td><%= activoUi ? 'Sí' : 'No' %></td>

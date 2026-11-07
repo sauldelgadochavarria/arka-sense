@@ -24,8 +24,8 @@
   <label>Archivo
     <select name="modo" id="modo-select">
       <option value="directorio" <%= filters.modo === 'directorio' ? 'selected' : '' %>>ASEG.TXT — Directorio / altas masivas</option>
-      <option value="altas" <%= filters.modo === 'altas' ? 'selected' : '' %>>ASEG.TXT — Altas del período (historial ALTA)</option>
-      <option value="movimientos" <%= filters.modo === 'movimientos' ? 'selected' : '' %>>MOVT.TXT — Bajas / mod. salario / reingresos</option>
+      <option value="altas" <%= filters.modo === 'altas' ? 'selected' : '' %>>ASEG.TXT — Altas del período (catálogo laboral)</option>
+      <option value="movimientos" <%= filters.modo === 'movimientos' ? 'selected' : '' %>>MOVT.TXT — Movimientos del catálogo laboral</option>
       <option value="creditos" <%= filters.modo === 'creditos' ? 'selected' : '' %>>CRED.TXT — Créditos INFONAVIT</option>
     </select>
   </label>
@@ -84,8 +84,13 @@
     <strong>Reglas oficiales:</strong> MAYÚSCULAS · Ñ→/ · numéricos con ceros a la izquierda ·
     nombre <code>AP$AM$NOMBRES</code> · SDI sin punto (<code>150.45</code>→<code>0015045</code>).
     <br/>
-    <strong>ASEG</strong> = altas (164 chars). <strong>MOVT</strong> = 02 baja · 07 mod. salario · 08 reingreso · 11 ausentismo · 12 incapacidad (49 chars) —
-    el alta <em>no</em> va en MOVT. <strong>CRED</strong> = 15–20 créditos INFONAVIT (52 chars).
+    <strong>ASEG</strong> = altas (164 chars). <strong>MOVT</strong> = 02 baja · 07 mod. salario · 08 reingreso (49 chars).
+    Qué tipo laboral entra, en qué archivo y con qué clave se define en
+    <a href="/config-sistema/tipos-movimiento-laboral">el catálogo de tipos de movimiento</a>.
+    El reajuste solo se escribe si el SBC cambió.
+    Ausentismo (11) e incapacidad (12) salen de los conceptos marcados en el catálogo, cuando el período tiene días.
+    CRED sale del crédito INFONAVIT del trabajador. FONACOT no genera archivo SUA.
+    <strong>CRED</strong> = créditos INFONAVIT (52 chars).
   </p>
 </div>
 
@@ -128,7 +133,7 @@
   <table>
     <thead>
       <% if (result.tipo === 'movimientos') { %>
-      <tr><th>Empleado</th><th>NSS</th><th>Interno</th><th>SUA</th><th>Fecha</th><th>SDI</th><th>Avisos</th></tr>
+      <tr><th>Empleado</th><th>NSS</th><th>Interno</th><th>SUA</th><th>Fecha</th><th>SDI / días</th><th>Avisos</th></tr>
       <% } else if (result.tipo === 'creditos') { %>
       <tr><th>Empleado</th><th>NSS</th><th>Crédito</th><th>Mov</th><th>TD</th><th>Valor</th><th>Avisos</th></tr>
       <% } else { %>
@@ -144,7 +149,7 @@
         <td><%= r.tipoInterno %></td>
         <td><code><%= r.tipoSua %></code> <%= r.tipoLabel || '' %></td>
         <td><%= r.fecha ? new Date(r.fecha).toLocaleDateString('es-MX') : '—' %></td>
-        <td><%= Number(r.sdi || 0).toFixed(2) %></td>
+        <td><% if (r.tipoSua === '11' || r.tipoSua === '12') { %><%= r.dias || 0 %> días<% } else { %><%= Number(r.sdi || 0).toFixed(2) %><% } %></td>
         <% } else if (result.tipo === 'creditos') { %>
         <td><code><%= r.credito %></code></td>
         <td><code><%= r.tipoSua %></code> <%= r.tipoLabel || '' %></td>
