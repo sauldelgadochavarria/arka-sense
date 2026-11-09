@@ -1,6 +1,6 @@
 'use strict';
 
-const { parseTimeHHMM, applyTimeToDate } = require('./timeHelpers');
+const { parseTimeHHMM, applyTimeToDate, addDaysYmd, ymdAncla } = require('./timeHelpers');
 
 function addMinutesToTimeHHMM(timeStr, deltaMin) {
   const parsed = parseTimeHHMM(timeStr);
@@ -38,16 +38,32 @@ function labelModoTolerancia(modo, modos) {
   return found ? found.value : modo || 'normal';
 }
 
+/** Entrada y salida de una jornada. Si la salida de reloj es anterior a la entrada, cae al día siguiente. */
+function instantesProgramados(fecha, turno, timeZone) {
+  const entradaProgramada = applyTimeToDate(fecha, turno?.horaEntrada, timeZone);
+  let salidaProgramada = applyTimeToDate(fecha, turno?.horaSalida, timeZone);
+  if (
+    entradaProgramada &&
+    salidaProgramada &&
+    salidaProgramada.getTime() <= entradaProgramada.getTime()
+  ) {
+    const siguiente = addDaysYmd(ymdAncla(fecha, timeZone), 1);
+    salidaProgramada = applyTimeToDate(new Date(`${siguiente}T12:00:00.000Z`), turno.horaSalida, timeZone);
+  }
+  return { entradaProgramada, salidaProgramada };
+}
+
 function isTimestampInHolgura(
   timestamp,
   fecha,
   horaReferencia,
   holguraAntesMin,
   holguraDespuesMin,
-  timeZone
+  timeZone,
+  centroForzado = null
 ) {
-  if (!timestamp || !horaReferencia) return false;
-  const center = applyTimeToDate(fecha, horaReferencia, timeZone);
+  if (!timestamp || (!horaReferencia && !centroForzado)) return false;
+  const center = centroForzado || applyTimeToDate(fecha, horaReferencia, timeZone);
   if (!center) return false;
   const antes = holguraAntesMin ?? 180;
   const despues = holguraDespuesMin ?? 180;
@@ -63,5 +79,6 @@ module.exports = {
   describeVentanaTurno,
   labelTipoTurno,
   labelModoTolerancia,
-  isTimestampInHolgura
+  isTimestampInHolgura,
+  instantesProgramados
 };

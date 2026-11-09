@@ -130,125 +130,80 @@
 
 <% if (tab === 'infonavit' || tab === 'fonacot') {
      const esFonacot = tab === 'fonacot';
-     const avisosTipo = esFonacot ? (cats.avisosFonacot || []) : (cats.avisosInfonavit || []);
+%>
+<%
+  const meta = creditosMeta || { q: '', page: 1, pages: 1, total: 0, pageSize: 40 };
+  const tipoTxt = { cuota_fija: 'Cuota fija', porcentaje: 'Porcentaje', factor: 'Factor', cuota_periodica: 'Cuota periódica' };
+  const desde = meta.total ? ((meta.page - 1) * meta.pageSize) + 1 : 0;
+  const hasta = Math.min(meta.total, meta.page * meta.pageSize);
+  function paginaCredito(n) {
+    const params = new URLSearchParams();
+    params.set('tab', tab);
+    if (meta.q) params.set('q', meta.q);
+    if (n > 1) params.set('page', String(n));
+    return '/nomina/cumplimiento-patronal?' + params.toString();
+  }
 %>
 <% if (!esFonacot) { %>
 <h2>Aportación patronal</h2>
 <p class="muted">Es el 5% del salario base de cotización. La paga el patrón. No es una deducción del trabajador y no se registra en este formulario.</p>
-<h2>Amortización del crédito</h2>
-<p class="muted">Es el descuento al trabajador. El aviso (retención, modificación, suspensión, liquidación o reinicio) guarda valor anterior, valor nuevo, fechas y documento. Lo retenido, lo determinado y lo enterado quedan en campos distintos.</p>
+<h2>Créditos de los trabajadores</h2>
+<p class="muted">El descuento del crédito se captura en una sola pantalla y se consulta aquí y en el expediente del trabajador. Lo retenido, lo determinado y lo enterado se ven en el crédito, aparte del valor del descuento.</p>
 <% } else { %>
 <h2>FONACOT</h2>
-<p class="muted">Módulo aparte de INFONAVIT. FONACOT es retención al trabajador. Los códigos FONACOT_ALTA_CREDITO, FONACOT_MODIFICACION, FONACOT_SUSPENSION, FONACOT_BAJA y FONACOT_LIQUIDACION son identificadores internos, no claves oficiales. La cédula, lo descontado y lo enterado se registran por separado.</p>
+<p class="muted">Módulo aparte de INFONAVIT. La captura del crédito es una sola pantalla. La cédula, lo descontado y lo enterado quedan en el detalle del crédito.</p>
 <% } %>
-<form method="post" action="/nomina/cumplimiento-patronal/creditos" class="form-grid">
-  <input type="hidden" name="institucion" value="<%= esFonacot ? 'FONACOT' : 'INFONAVIT' %>" />
-  <label>Trabajador
-    <select name="empleadoId" required>
-      <option value="">—</option>
-      <% (empleados || []).forEach(function (e) { %>
-      <option value="<%= e._id %>"><%= empLabel[String(e._id)] %></option>
-      <% }); %>
-    </select>
+<div class="toolbar">
+  <% if (canEdit) { %>
+  <a class="btn btn-primary" href="/nomina/cumplimiento-patronal/creditos/nuevo?institucion=<%= esFonacot ? 'FONACOT' : 'INFONAVIT' %>">Registrar crédito</a>
+  <% } %>
+</div>
+<form method="get" action="/nomina/cumplimiento-patronal" class="form-grid">
+  <input type="hidden" name="tab" value="<%= tab %>" />
+  <label>Buscar por número de trabajador, nombre o crédito
+    <input name="q" value="<%= meta.q || '' %>" placeholder="10103 o I084269" />
   </label>
-  <label>Número de crédito
-    <input name="numeroCredito" required />
-  </label>
-  <label>Tipo de descuento
-    <select name="tipoDescuento" required>
-      <% (cats.tiposDescuento || []).forEach(function (t) { %>
-      <option value="<%= t %>"><%= t %></option>
-      <% }); %>
-    </select>
-  </label>
-  <label>Valor
-    <input type="number" name="valorDescuento" step="0.01" min="0" required />
-  </label>
-  <label>Inicio
-    <input type="date" name="fechaInicio" required />
-  </label>
-  <label>Fin
-    <input type="date" name="fechaFin" />
-  </label>
-  <label>Periodicidad
-    <select name="periodicidad">
-      <% (cats.periodicidades || []).forEach(function (p) { %>
-      <option value="<%= p %>"><%= p %></option>
-      <% }); %>
-    </select>
-  </label>
-  <label>Documento de origen
-    <input name="documentoOrigen" />
-  </label>
-  <label>Vigencia del aviso
-    <input type="date" name="fechaVigencia" />
-  </label>
-  <label>Retenido en nómina
-    <input type="number" name="importeRetenido" step="0.01" min="0" value="0" />
-  </label>
-  <label>Determinado
-    <input type="number" name="importeDeterminado" step="0.01" min="0" value="0" />
-  </label>
-  <label>Enterado
-    <input type="number" name="importeEnterado" step="0.01" min="0" value="0" />
-  </label>
-  <div><button class="btn btn-primary" type="submit">Registrar crédito</button></div>
+  <div><button class="btn" type="submit">Buscar</button></div>
 </form>
-
-<% (creditos || []).forEach(function (c) {
-     const del = (avisos || []).filter(function (a) { return String(a.creditoId) === String(c._id); });
-     const dif = money((c.importeRetenido || 0) - (c.importeEnterado || 0));
-%>
-<h3><%= c.numeroCredito %> · <%= empLabel[String(c.empleadoId)] || '' %> · <%= c.estatus %></h3>
-<p>
-  <%= c.tipoDescuento %> <%= money(c.valorDescuento) %> · <%= c.periodicidad || 'cada_periodo' %>
-  <% if (c.documentoOrigen) { %> · <%= c.documentoOrigen %><% } %>
-  · Retenido $<%= money(c.importeRetenido) %>
-  · Determinado $<%= money(c.importeDeterminado) %>
-  · Enterado $<%= money(c.importeEnterado) %>
-  · Diferencia retenido−enterado $<%= dif %>
-</p>
+<p class="muted"><%= meta.total %> crédito<%= meta.total === 1 ? '' : 's' %><% if (meta.total) { %> · <%= desde %>–<%= hasta %><% } %></p>
 <table class="data-table">
-  <thead><tr><th>Aviso</th><th>Aplicación</th><th>Valor</th><th>Cédula / documento</th></tr></thead>
-  <tbody>
-    <% del.forEach(function (a) { %>
+  <thead>
     <tr>
-      <td><%= a.tipoAviso %></td>
-      <td><%= ymd(a.fechaAplicacion || a.fechaRecepcion) %></td>
-      <td><%= a.valorAnterior != null ? money(a.valorAnterior) : '—' %> → <%= a.valorNuevo != null ? money(a.valorNuevo) : '—' %></td>
-      <td>
-        <%= a.numeroCedula || a.documentoReferencia || '—' %>
-        <% if (a.periodoCedula) { %> · <%= a.periodoCedula %><% } %>
-        <% if (a.importeCedula != null) { %> · $<%= money(a.importeCedula) %><% } %>
-      </td>
+      <th>Trabajador</th>
+      <th>Crédito</th>
+      <th>Descuento</th>
+      <th>Inicio</th>
+      <th>Estatus</th>
+      <th class="num">Retenido</th>
+      <th class="num">Determinado</th>
+      <th class="num">Enterado</th>
+    </tr>
+  </thead>
+  <tbody>
+    <% (creditos || []).forEach(function (c) { %>
+    <tr>
+      <td><a href="/personal-empleados/<%= c.empleadoId %>"><%= c.trabajador || '—' %></a></td>
+      <td><a href="/nomina/cumplimiento-patronal/creditos/<%= c._id %>"><%= c.numeroCredito %></a></td>
+      <td><%= tipoTxt[c.tipoDescuento] || c.tipoDescuento %> <%= money(c.valorDescuento) %></td>
+      <td><%= ymd(c.fechaInicio) %></td>
+      <td><%= c.estatus %></td>
+      <td class="num"><%= money(c.importeRetenido) %></td>
+      <td class="num"><%= money(c.importeDeterminado) %></td>
+      <td class="num"><%= money(c.importeEnterado) %></td>
     </tr>
     <% }); %>
+    <% if (!(creditos || []).length) { %>
+    <tr><td colspan="8" class="muted">No hay créditos con ese criterio.</td></tr>
+    <% } %>
   </tbody>
 </table>
-<form method="post" action="/nomina/cumplimiento-patronal/creditos/aviso" class="form-grid">
-  <input type="hidden" name="creditoId" value="<%= c._id %>" />
-  <label>Aviso
-    <select name="tipoAviso" required>
-      <% avisosTipo.forEach(function (t) { %>
-      <option value="<%= t %>"><%= t %></option>
-      <% }); %>
-    </select>
-  </label>
-  <label>Recepción <input type="date" name="fechaRecepcion" /></label>
-  <label>Aplicación <input type="date" name="fechaAplicacion" /></label>
-  <label>Valor nuevo <input type="number" name="valorNuevo" step="0.01" min="0" /></label>
-  <label>Documento <input name="documentoReferencia" /></label>
-  <% if (esFonacot) { %>
-  <label>Cédula <input name="numeroCedula" /></label>
-  <label>Periodo cédula <input name="periodoCedula" placeholder="2026-10" /></label>
-  <label>Importe cédula <input type="number" name="importeCedula" step="0.01" min="0" /></label>
-  <% } %>
-  <label>Retenido acumulado <input type="number" name="importeRetenido" step="0.01" min="0" value="<%= c.importeRetenido || 0 %>" /></label>
-  <label>Determinado <input type="number" name="importeDeterminado" step="0.01" min="0" value="<%= c.importeDeterminado || 0 %>" /></label>
-  <label>Enterado <input type="number" name="importeEnterado" step="0.01" min="0" value="<%= c.importeEnterado || 0 %>" /></label>
-  <div><button type="submit">Registrar aviso</button></div>
-</form>
-<% }); %>
+<% if (meta.pages > 1) { %>
+<p class="toolbar">
+  <% if (meta.page > 1) { %><a class="btn" href="<%= paginaCredito(meta.page - 1) %>">Anterior</a><% } %>
+  <span class="muted">Página <%= meta.page %> de <%= meta.pages %></span>
+  <% if (meta.page < meta.pages) { %><a class="btn" href="<%= paginaCredito(meta.page + 1) %>">Siguiente</a><% } %>
+</p>
+<% } %>
 <% if (!esFonacot) {
      const etiquetaRubro = {
        trabajadores: 'Trabajadores',

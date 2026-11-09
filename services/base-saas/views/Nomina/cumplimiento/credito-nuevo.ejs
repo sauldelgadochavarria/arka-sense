@@ -1,0 +1,74 @@
+<%- include('../../Partials/layout-top', { title: 'Registrar crédito', session }) %>
+<%
+  const esFonacot = institucion === 'FONACOT';
+  const cats = catalogos || {};
+%>
+<p><a href="/nomina/cumplimiento-patronal?tab=<%= esFonacot ? 'fonacot' : 'infonavit' %>">← <%= esFonacot ? 'FONACOT' : 'INFONAVIT' %></a></p>
+<h1>Registrar crédito <%= institucion %></h1>
+<p class="muted">
+  Esta es la única captura del crédito. Después se consulta en el cumplimiento y en el expediente del trabajador.
+  Lo retenido, lo determinado y lo enterado son saldos acumulados, distintos del valor del descuento.
+</p>
+<% if (!empresa) { %>
+<p>No hay empresa vinculada a este tenant.</p>
+<% } else if (!canEdit) { %>
+<p>Tu rol solo puede consultar el cumplimiento.</p>
+<% } else { %>
+<form method="post" action="/nomina/cumplimiento-patronal/creditos" class="form-grid">
+  <input type="hidden" name="institucion" value="<%= institucion %>" />
+  <% if (trabajador) { %>
+  <input type="hidden" name="empleadoId" value="<%= trabajador._id %>" />
+  <p>Trabajador: <strong><%= trabajador.numEmpleado %> <%= trabajador.nombreSat || ((trabajador.firstName || '') + ' ' + (trabajador.lastName || '')) %></strong></p>
+  <% } else { %>
+  <label>Número de trabajador
+    <input name="numEmpleado" required placeholder="10103" />
+  </label>
+  <% } %>
+  <label>Número de crédito
+    <input name="numeroCredito" required />
+  </label>
+  <label>Tipo de descuento
+    <select name="tipoDescuento" required>
+      <% (cats.tiposDescuento || []).forEach(function (t) { %>
+      <option value="<%= t %>"><%= t %></option>
+      <% }); %>
+    </select>
+  </label>
+  <label>Valor del descuento
+    <input type="number" name="valorDescuento" step="0.01" min="0" required />
+  </label>
+  <label>Inicio
+    <input type="date" name="fechaInicio" required />
+  </label>
+  <label>Fin
+    <input type="date" name="fechaFin" />
+  </label>
+  <label>Periodicidad
+    <select name="periodicidad">
+      <% (cats.periodicidades || []).forEach(function (p) { %>
+      <option value="<%= p %>"><%= p %></option>
+      <% }); %>
+    </select>
+  </label>
+  <label>Documento de origen
+    <input name="documentoOrigen" />
+  </label>
+  <label>Vigencia del aviso
+    <input type="date" name="fechaVigencia" />
+  </label>
+  <fieldset>
+    <legend>Saldos acumulados</legend>
+    <label>Retenido en nómina
+      <input type="number" name="importeRetenido" step="0.01" min="0" value="0" />
+    </label>
+    <label>Determinado
+      <input type="number" name="importeDeterminado" step="0.01" min="0" value="0" />
+    </label>
+    <label>Enterado
+      <input type="number" name="importeEnterado" step="0.01" min="0" value="0" />
+    </label>
+  </fieldset>
+  <div><button class="btn btn-primary" type="submit">Registrar crédito</button></div>
+</form>
+<% } %>
+<%- include('../../Partials/layout-bottom') %>

@@ -90,6 +90,18 @@ async function ensureMenu() {
   );
 }
 
+const PAGE_CREDITOS = 40;
+
+function escapeRegex(value) {
+  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function etiquetaTrabajador(emp) {
+  if (!emp) return 'Trabajador no encontrado';
+  const nom = (emp.nombreSat || `${emp.firstName || ''} ${emp.lastName || ''}`).trim();
+  return `${emp.numEmpleado || ''} ${nom}`.trim();
+}
+
 async function empleadosScope(req, empresa) {
   const Empleado = await getEmpleadoModel();
   const subId = sessionSubsidiariaId(req);
@@ -100,6 +112,65 @@ async function empleadosScope(req, empresa) {
     .sort({ numEmpleado: 1 })
     .limit(800)
     .lean();
+}
+
+async function empleadoEnPlaza(req, empresa, { empleadoId = null, numEmpleado = '' } = {}) {
+  const Empleado = await getEmpleadoModel();
+  const q = { tenantId: req.session.tenantId, empresaId: empresa._id };
+  const subId = sessionSubsidiariaId(req);
+  if (subId) q.subsidiariaId = subId;
+  const id = parseOptionalObjectId(empleadoId);
+  if (id) {
+    return Empleado.findOne({ ...q, _id: id })
+      .select('numEmpleado firstName lastName nombreSat subsidiariaId')
+      .lean();
+  }
+  const num = trimString(numEmpleado);
+  if (!num) return null;
+  const exacto = await Empleado.findOne({ ...q, numEmpleado: num })
+    .select('numEmpleado firstName lastName nombreSat subsidiariaId')
+    .lean();
+  if (exacto || !/^\d+$/.test(num)) return exacto;
+  return Empleado.findOne({ ...q, numEmpleado: new RegExp(`^0*${num}$`) })
+    .select('numEmpleado firstName lastName nombreSat subsidiariaId')
+    .lean();
+}
+
+async function listarCreditosPagina(req, empresa, institucion) {
+  const { CreditoTrabajador } = await models();
+  const Empleado = await getEmpleadoModel();
+  const tenantId = req.session.tenantId;
+  const subId = sessionSubsidiariaId(req);
+  const q = trimString(req.query.q).slice(0, 60);
+  const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+  const plaza = { tenantId, empresaId: empresa._id };
+  if (subId) plaza.subsidiariaId = subId;
+  const idsPlaza = await Empleado.find(plaza).distinct('_id');
+  const filter = { tenantId, empresaId: empresa._id, institucion, empleadoId: { $in: idsPlaza } };
+  if (q) {
+    const rx = new RegExp(escapeRegex(q), 'i');
+    const idsBusqueda = await Empleado.find({
+      ...plaza,
+      $or: [{ numEmpleado: rx }, { firstName: rx }, { lastName: rx }, { nombreSat: rx }]
+    }).distinct('_id');
+    filter.$or = [{ numeroCredito: rx }, { empleadoId: { $in: idsBusqueda } }];
+  }
+  const total = await CreditoTrabajador.countDocuments(filter);
+  const pages = Math.max(1, Math.ceil(total / PAGE_CREDITOS));
+  const pagina = Math.min(page, pages);
+  const rows = await CreditoTrabajador.find(filter)
+    .sort({ numeroCredito: 1 })
+    .skip((pagina - 1) * PAGE_CREDITOS)
+    .limit(PAGE_CREDITOS)
+    .lean();
+  const emps = await Empleado.find({ _id: { $in: rows.map((c) => c.empleadoId) } })
+    .select('numEmpleado firstName lastName nombreSat')
+    .lean();
+  const porId = new Map(emps.map((e) => [String(e._id), e]));
+  return {
+    creditos: rows.map((c) => ({ ...c, trabajador: etiquetaTrabajador(porId.get(String(c.empleadoId))) })),
+    creditosMeta: { q, page: pagina, pages, total, pageSize: PAGE_CREDITOS }
+  };
 }
 
 function empleadoPermitido(empleados, id) {
@@ -132,6 +203,7 @@ async function index(req, res) {
     subsidiarias: [],
     movimientos: [],
     creditos: [],
+    creditosMeta: { q: '', page: 1, pages: 1, total: 0, pageSize: PAGE_CREDITOS },
     avisos: [],
     conciliaciones: [],
     centros: [],
@@ -146,8 +218,6 @@ async function index(req, res) {
 
   const {
     MovimientoAfiliatorio,
-    CreditoTrabajador,
-    CreditoAviso,
     ConciliacionObligacion,
     CentroTrabajo,
     TrabajadorAsignacion,
@@ -161,15 +231,12 @@ async function index(req, res) {
   const scope = subId ? { ...base, subsidiariaId: subId } : base;
   const institucion = tab === 'fonacot' ? 'FONACOT' : 'INFONAVIT';
 
-  const [empleados, patronales, movimientos, creditos, conciliaciones, subsidiarias, centros, asignaciones, auditoria, comparacionesEba] =
+  const [empleados, patronales, movimientos, conciliaciones, subsidiarias, centros, asignaciones, auditoria, comparacionesEba] =
     await Promise.all([
-    empleadosScope(req, empresa),
+    tab === 'imss' || tab === 'centros' ? empleadosScope(req, empresa) : [],
     RegistroPatronal.find({ ...base, activo: { $ne: false } }).sort({ numero: 1 }).lean(),
     tab === 'imss'
       ? MovimientoAfiliatorio.find(scope).sort({ fechaEfectiva: -1 }).limit(200).lean()
-      : [],
-    tab === 'infonavit' || tab === 'fonacot'
-      ? CreditoTrabajador.find({ ...scope, institucion }).sort({ fechaInicio: -1 }).limit(200).lean()
       : [],
     tab === 'conciliacion'
       ? ConciliacionObligacion.find(base).sort({ anio: -1, mes: -1 }).limit(200).lean()
@@ -188,12 +255,11 @@ async function index(req, res) {
       ? ComparacionEba.find(base).sort({ anio: -1, bimestre: -1, rubro: 1 }).limit(200).lean()
       : []
   ]);
-  const avisos =
-    creditos.length
-      ? await CreditoAviso.find({ creditoId: { $in: creditos.map((c) => c._id) } })
-          .sort({ fechaAplicacion: -1, createdAt: -1 })
-          .lean()
-      : [];
+  const paginaCreditos =
+    tab === 'infonavit' || tab === 'fonacot'
+      ? await listarCreditosPagina(req, empresa, institucion)
+      : { creditos: [], creditosMeta: { q: '', page: 1, pages: 1, total: 0, pageSize: PAGE_CREDITOS } };
+  const avisos = [];
 
   res.render('Nomina/cumplimiento/index', {
     empresa,
@@ -205,7 +271,8 @@ async function index(req, res) {
     patronales,
     subsidiarias,
     movimientos,
-    creditos,
+    creditos: paginaCreditos.creditos,
+    creditosMeta: paginaCreditos.creditosMeta,
     avisos,
     conciliaciones,
     centros,
@@ -332,11 +399,12 @@ async function guardarCredito(req, res) {
   try {
     const { empresa, error } = await requireEmpresaForTenant(req);
     if (error || !empresa) throw new Error(error || 'Sin empresa');
-    const empleados = await empleadosScope(req, empresa);
-    const empleadoId = parseOptionalObjectId(req.body.empleadoId);
-    if (!empleadoId || !empleadoPermitido(empleados, empleadoId)) {
-      throw new Error('El trabajador no pertenece a la subsidiaria activa');
-    }
+    const trabajador = await empleadoEnPlaza(req, empresa, {
+      empleadoId: req.body.empleadoId,
+      numEmpleado: req.body.numEmpleado
+    });
+    if (!trabajador) throw new Error('El trabajador no pertenece a la subsidiaria activa');
+    const empleadoId = trabajador._id;
     const tipoDescuento = trimString(req.body.tipoDescuento);
     if (!TIPOS_DESCUENTO_CREDITO.includes(tipoDescuento)) throw new Error('Tipo de descuento no válido');
     const numeroCredito = trimString(req.body.numeroCredito);
@@ -389,11 +457,13 @@ async function guardarCredito(req, res) {
       extra = syncErr.message || 'No se vinculó el descuento de nómina.';
     }
     req.flash('success', `Crédito ${institucion} registrado. ${extra}`);
+    return res.redirect(`/nomina/cumplimiento-patronal/creditos/${credito._id}`);
   } catch (err) {
     const msg = err.code === 11000 ? 'Ese número de crédito ya existe en la empresa' : err.message;
     req.flash('error', msg || 'No se pudo registrar el crédito');
   }
-  res.redirect(`/nomina/cumplimiento-patronal?tab=${tab}`);
+  const vuelta = trimString(req.body.empleadoId);
+  res.redirect(`/nomina/cumplimiento-patronal/creditos/nuevo?institucion=${tab === 'fonacot' ? 'FONACOT' : 'INFONAVIT'}${vuelta ? `&empleadoId=${vuelta}` : ''}`);
 }
 
 async function avisoCredito(req, res) {
@@ -467,10 +537,12 @@ async function avisoCredito(req, res) {
       extra = syncErr.message || 'No se vinculó el descuento de nómina.';
     }
     req.flash('success', `Aviso registrado. ${extra}`);
+    return res.redirect(`/nomina/cumplimiento-patronal/creditos/${credito._id}`);
   } catch (err) {
     req.flash('error', err.message || 'No se pudo registrar el aviso');
   }
-  res.redirect(`/nomina/cumplimiento-patronal?tab=${tab}`);
+  const creditoId = parseOptionalObjectId(req.body.creditoId);
+  res.redirect(creditoId ? `/nomina/cumplimiento-patronal/creditos/${creditoId}` : `/nomina/cumplimiento-patronal?tab=${tab}`);
 }
 
 async function guardarConciliacion(req, res) {
@@ -770,9 +842,72 @@ async function guardarEba(req, res) {
   res.redirect('/nomina/cumplimiento-patronal?tab=infonavit');
 }
 
+async function nuevoCredito(req, res) {
+  if (!userCanViewCumplimiento(req.session)) {
+    req.flash('error', 'No tienes acceso al cumplimiento patronal.');
+    return res.redirect('/dashboard');
+  }
+  const { empresa, error } = await requireEmpresaForTenant(req);
+  const institucion = trimString(req.query.institucion).toUpperCase() === 'FONACOT' ? 'FONACOT' : 'INFONAVIT';
+  let trabajador = null;
+  if (empresa) {
+    trabajador = await empleadoEnPlaza(req, empresa, { empleadoId: req.query.empleadoId });
+  }
+  res.render('Nomina/cumplimiento/credito-nuevo', {
+    empresa,
+    error: error || null,
+    session: req.session,
+    canEdit: userCanEditCumplimiento(req.session),
+    institucion,
+    trabajador,
+    catalogos: {
+      tiposDescuento: TIPOS_DESCUENTO_CREDITO,
+      periodicidades: PERIODICIDADES_CREDITO
+    }
+  });
+}
+
+async function verCredito(req, res) {
+  if (!userCanViewCumplimiento(req.session)) {
+    req.flash('error', 'No tienes acceso al cumplimiento patronal.');
+    return res.redirect('/dashboard');
+  }
+  const { empresa, error } = await requireEmpresaForTenant(req);
+  if (!empresa) return res.redirect('/nomina/cumplimiento-patronal?tab=infonavit');
+  const creditoId = parseOptionalObjectId(req.params.id);
+  if (!creditoId) return res.status(404).send('Crédito no encontrado');
+  const { CreditoTrabajador, CreditoAviso } = await models();
+  const credito = await CreditoTrabajador.findOne({
+    _id: creditoId,
+    tenantId: req.session.tenantId,
+    empresaId: empresa._id
+  }).lean();
+  if (!credito) return res.status(404).send('Crédito no encontrado');
+  const trabajador = await empleadoEnPlaza(req, empresa, { empleadoId: credito.empleadoId });
+  if (sessionSubsidiariaId(req) && !trabajador) {
+    return res.status(404).send('Crédito no encontrado');
+  }
+  const avisos = await CreditoAviso.find({ creditoId: credito._id }).sort({ fechaAplicacion: -1, createdAt: -1 }).lean();
+  res.render('Nomina/cumplimiento/credito-detalle', {
+    empresa,
+    error: error || null,
+    session: req.session,
+    canEdit: userCanEditCumplimiento(req.session),
+    credito: { ...credito, trabajador: etiquetaTrabajador(trabajador) },
+    trabajador,
+    avisos,
+    catalogos: {
+      avisosInfonavit: AVISOS_INFONAVIT,
+      avisosFonacot: AVISOS_FONACOT
+    }
+  });
+}
+
 module.exports = {
   ensureMenu,
   index,
+  nuevoCredito,
+  verCredito,
   guardarMovimiento,
   estatusMovimiento,
   guardarCredito,

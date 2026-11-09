@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const getEmpleadoModel = require('../models/empleado');
 const getDepartamentoModel = require('../models/departamento');
 const getPuestoModel = require('../models/puesto');
@@ -409,31 +410,183 @@ async function loadCatalogMaps(tenantId, empresaId) {
   return maps;
 }
 
+const ORDENES_EMPLEADO = ['nombre', 'numero', 'ingreso', 'departamento', 'puesto'];
+const PAGE_SIZE_EMPLEADOS = 50;
+
+function idConsulta(value) {
+  const s = String(value || '').trim();
+  return /^[a-fA-F0-9]{24}$/.test(s) ? s : '';
+}
+
+function objectIdConsulta(value) {
+  const s = idConsulta(value);
+  return s ? new mongoose.Types.ObjectId(s) : null;
+}
+
+function escapeRegex(value) {
+  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function filtrosListado(query) {
+  const estatus = ['activo', 'suspendido', 'baja', 'todos'].includes(String(query.estatus || ''))
+    ? String(query.estatus)
+    : 'activo';
+  const orden = ORDENES_EMPLEADO.includes(String(query.orden || '')) ? String(query.orden) : 'nombre';
+  const dir = String(query.dir || '') === 'desc' ? 'desc' : 'asc';
+  const clasificacion = ['sindicalizado', 'confianza'].includes(String(query.clasificacion || ''))
+    ? String(query.clasificacion)
+    : '';
+  const marcacion = ['si', 'no'].includes(String(query.marcacion || '')) ? String(query.marcacion) : '';
+  const page = Math.max(1, parseInt(query.page, 10) || 1);
+  return {
+    q: String(query.q || '').trim().slice(0, 80),
+    estatus,
+    departamento: idConsulta(query.departamento),
+    puesto: idConsulta(query.puesto),
+    turno: idConsulta(query.turno),
+    clasificacion,
+    marcacion,
+    orden,
+    dir,
+    page
+  };
+}
+
 async function listEmpleados(req, res) {
   const { empresa, error } = await requireEmpresaForTenant(req);
-  const estatus = String(req.query.estatus || 'activo').trim();
-  const Empleado = await getEmpleadoModel();
-  let filter = { tenantId: req.session.tenantId };
-  if (empresa) filter.empresaId = empresa._id;
+  const filtros = filtrosListado(req.query);
   const subId = sessionSubsidiariaId(req);
-  // Estricto: con subsidiaria activa no mezclar personal de otras sucursales
-  // ni “huérfanos” sin subsidiaria (esos se ven al quitar el filtro de sub).
-  if (subId) filter.subsidiariaId = subId;
-  if (estatus !== 'todos') filter.estatus = estatus;
+  const vacio = {
+    ...buildLookupMaps([], [], [], []),
+    turnoMap: new Map(),
+    tipoPeriodoMap: new Map(),
+    departamentos: [],
+    puestos: [],
+    turnos: []
+  };
+  if (!empresa) {
+    return res.render('Personal/empleados', {
+      ...vacio,
+      empleados: [],
+      empresa,
+      filtros,
+      total: 0,
+      pages: 1,
+      pageSize: PAGE_SIZE_EMPLEADOS,
+      error: error || null,
+      session: req.session
+    });
+  }
 
-  const empleados = empresa
-    ? await Empleado.find(filter).sort({ lastName: 1, firstName: 1 }).lean()
-    : [];
+  const tenantId = req.session.tenantId;
+  const Departamento = await getDepartamentoModel();
+  const Puesto = await getPuestoModel();
+  const Turno = await getTurnoModel();
+  const Empleado = await getEmpleadoModel();
+  const catalogoQ = { tenantId, empresaId: empresa._id };
+  if (subId) catalogoQ.subsidiariaId = subId;
 
-  const maps = empresa
-    ? await loadCatalogMaps(req.session.tenantId, empresa._id)
-    : { ...buildLookupMaps([], [], [], []), turnoMap: new Map(), tipoPeriodoMap: new Map() };
+  const [departamentos, puestos, turnos, subsidiarias, tiposPeriodo] = await Promise.all([
+    Departamento.find(catalogoQ).select('nombre').sort({ nombre: 1 }).lean(),
+    Puesto.find(catalogoQ).select('nombre').sort({ nombre: 1 }).lean(),
+    Turno.find({ ...catalogoQ, activo: { $ne: false } }).select('nombre').sort({ nombre: 1 }).lean(),
+    getSubsidiariaModel().then((M) => M.find({ empresaId: empresa._id }).select('nombre').lean()),
+    listTiposPeriodo(tenantId, false, empresa._id)
+  ]);
+
+  const filter = { tenantId, empresaId: empresa._id };
+  if (subId) filter.subsidiariaId = objectIdConsulta(subId);
+  if (filtros.estatus !== 'todos') filter.estatus = filtros.estatus;
+  if (filtros.departamento) filter.departamentoId = objectIdConsulta(filtros.departamento);
+  if (filtros.puesto) filter.puestoId = objectIdConsulta(filtros.puesto);
+  if (filtros.turno) filter.turnoId = objectIdConsulta(filtros.turno);
+  if (filtros.clasificacion === 'sindicalizado') filter.sindicalizado = true;
+  if (filtros.clasificacion === 'confianza') filter.tipoEmpleado = 'confianza';
+  if (filtros.marcacion === 'si') filter.marcacionAutomatica = true;
+  if (filtros.marcacion === 'no') filter.marcacionAutomatica = { $ne: true };
+  if (filtros.q) {
+    const rx = new RegExp(escapeRegex(filtros.q), 'i');
+    filter.$or = [
+      { numEmpleado: rx },
+      { codigoExterno: rx },
+      { firstName: rx },
+      { lastName: rx },
+      { rfc: rx },
+      { nombreSat: rx }
+    ];
+  }
+
+  const sentido = filtros.dir === 'desc' ? -1 : 1;
+  const sortNombre = { lastName: sentido, firstName: sentido, numEmpleado: 1 };
+  const sorts = {
+    nombre: sortNombre,
+    numero: { numEmpleado: sentido, lastName: 1 },
+    ingreso: { fechaIngreso: sentido, lastName: 1 },
+    departamento: { _depNombre: sentido, lastName: 1, firstName: 1 },
+    puesto: { _puestoNombre: sentido, lastName: 1, firstName: 1 }
+  };
+  const collation = { locale: 'es', numericOrdering: true, strength: 1 };
+  const total = await Empleado.countDocuments(filter);
+  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE_EMPLEADOS));
+  if (filtros.page > pages) filtros.page = pages;
+
+  let empleados;
+  if (filtros.orden === 'departamento' || filtros.orden === 'puesto') {
+    empleados = await Empleado.aggregate([
+      { $match: filter },
+      {
+        $lookup: {
+          from: Departamento.collection.collectionName,
+          localField: 'departamentoId',
+          foreignField: '_id',
+          as: '_dep'
+        }
+      },
+      {
+        $lookup: {
+          from: Puesto.collection.collectionName,
+          localField: 'puestoId',
+          foreignField: '_id',
+          as: '_puesto'
+        }
+      },
+      {
+        $addFields: {
+          _depNombre: { $ifNull: [{ $arrayElemAt: ['$_dep.nombre', 0] }, ''] },
+          _puestoNombre: { $ifNull: [{ $arrayElemAt: ['$_puesto.nombre', 0] }, ''] }
+        }
+      },
+      { $sort: sorts[filtros.orden] },
+      { $skip: (filtros.page - 1) * PAGE_SIZE_EMPLEADOS },
+      { $limit: PAGE_SIZE_EMPLEADOS },
+      { $project: { _dep: 0, _puesto: 0, _depNombre: 0, _puestoNombre: 0 } }
+    ]).collation(collation);
+  } else {
+    empleados = await Empleado.find(filter)
+      .collation(collation)
+      .sort(sorts[filtros.orden] || sortNombre)
+      .skip((filtros.page - 1) * PAGE_SIZE_EMPLEADOS)
+      .limit(PAGE_SIZE_EMPLEADOS)
+      .lean();
+  }
+
+  const maps = buildLookupMaps(departamentos, puestos, subsidiarias, []);
+  maps.turnoMap = new Map(turnos.map((t) => [String(t._id), t.nombre]));
+  maps.tipoPeriodoMap = new Map(
+    tiposPeriodo.map((t) => [String(t._id), t.nombre])
+  );
 
   res.render('Personal/empleados', {
     ...maps,
+    departamentos,
+    puestos,
+    turnos,
     empleados,
     empresa,
-    estatus,
+    filtros,
+    total,
+    pages,
+    pageSize: PAGE_SIZE_EMPLEADOS,
     error: error || null,
     session: req.session
   });
@@ -581,6 +734,16 @@ async function showEmpleado(req, res) {
 
   const acceso = await describirAcceso(req.session.tenantId, empleado);
   const expediente = await cargarExpedienteEmpleado(req, empleado, empresa);
+  let creditosEmpleado = [];
+  if (empresa) {
+    const { models: cumplimientoModels } = require('../models/cumplimientoPatronal');
+    const { CreditoTrabajador } = await cumplimientoModels();
+    creditosEmpleado = await CreditoTrabajador.find({
+      tenantId: req.session.tenantId,
+      empresaId: empresa._id,
+      empleadoId: empleado._id
+    }).sort({ institucion: 1, fechaInicio: -1 }).lean();
+  }
 
   res.render('Personal/empleado-show', {
     empleado,
@@ -606,6 +769,7 @@ async function showEmpleado(req, res) {
     turnoVigenteOrigen: turnoVigente?.origen || 'ninguno',
     historialReciente,
     historialNominas,
+    creditosEmpleado,
     tipoMovMap,
     tablaPrestacionesResuelta,
     empresa,

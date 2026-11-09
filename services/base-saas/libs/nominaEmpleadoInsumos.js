@@ -87,17 +87,53 @@ function resolverDiasPrimaVacacional(empleado, contexto = {}, periodoOpts = {}) 
   };
 }
 
-function resolverInfonavitDescuento(empleado, contexto, parametros) {
+function creditoVigente(creditos, institucion, periodoOpts = {}) {
+  const inicio = periodoOpts.fechaInicio ? new Date(periodoOpts.fechaInicio).getTime() : null;
+  const fin = periodoOpts.fechaFin ? new Date(periodoOpts.fechaFin).getTime() : null;
+  const rows = (Array.isArray(creditos) ? creditos : []).filter((c) => {
+    if (!c || String(c.institucion) !== institucion) return false;
+    if (c.estatus && c.estatus !== 'activo') return false;
+    const desde = c.fechaInicio ? new Date(c.fechaInicio).getTime() : null;
+    const hasta = c.fechaFin ? new Date(c.fechaFin).getTime() : null;
+    if (fin != null && desde != null && desde > fin) return false;
+    if (inicio != null && hasta != null && hasta < inicio) return false;
+    return true;
+  });
+  rows.sort((a, b) => {
+    const da = a.fechaInicio ? new Date(a.fechaInicio).getTime() : 0;
+    const db = b.fechaInicio ? new Date(b.fechaInicio).getTime() : 0;
+    return db - da;
+  });
+  return rows[0] || null;
+}
+
+function montoCuotaCredito(credito) {
+  if (!credito) return 0;
+  const tipo = String(credito.tipoDescuento || '');
+  if (tipo !== 'cuota_periodica' && tipo !== 'cuota_fija') return 0;
+  return Number(credito.valorDescuento) || 0;
+}
+
+function resolverInfonavitDescuento(empleado, contexto, parametros, periodoOpts = {}) {
   const cfg = empleado.nominaConfig || {};
   if (cfg.infonavitDescuento > 0) return cfg.infonavitDescuento;
 
-  const tasa = Number(cfg.tasaInfonavit) || 0;
+  const credito = creditoVigente(periodoOpts.creditos, 'INFONAVIT', periodoOpts);
+  const cuota = montoCuotaCredito(credito);
+  if (cuota > 0) return cuota;
+
+  const tasaCredito =
+    credito && credito.tipoDescuento === 'porcentaje' ? Number(credito.valorDescuento) || 0 : 0;
+  const tasa = Number(cfg.tasaInfonavit) || tasaCredito;
   if (tasa <= 0) return 0;
 
   const dias = cfg.diasCotizacionImss > 0 ? cfg.diasCotizacionImss : contexto.diasLaborados;
   if (dias <= 0) return 0;
 
-  const tipo = cfg.tipoCreditoInfonavit || 'porcentaje';
+  const tipo =
+    credito && credito.tipoDescuento === 'porcentaje' && !(Number(cfg.tasaInfonavit) > 0)
+      ? 'porcentaje'
+      : cfg.tipoCreditoInfonavit || 'porcentaje';
   const sueInt =
     cfg.sueldoIntegrado > 0 ? cfg.sueldoIntegrado : contexto.sueldoDiario * dias;
   const salMin = parametros.salarioMinimo || 0;
@@ -129,7 +165,7 @@ function baseNominalCreditos(empleado, contexto) {
  *
  * @returns {{ descuento: number, bruto: number, topeLegal: number, tope30: number, disponible30: number, pctAplicado: number, esSalarioMinimo: boolean }}
  */
-function resolverFonacotDescuento(empleado, contexto, parametros, infonavitAplicado = 0) {
+function resolverFonacotDescuento(empleado, contexto, parametros, infonavitAplicado = 0, periodoOpts = {}) {
   const vacio = {
     descuento: 0,
     bruto: 0,
@@ -140,7 +176,12 @@ function resolverFonacotDescuento(empleado, contexto, parametros, infonavitAplic
     esSalarioMinimo: false
   };
   const cfg = empleado.nominaConfig || {};
-  const tipo = String(cfg.tipoCreditoFonacot || '').trim();
+  const credito = creditoVigente(periodoOpts.creditos, 'FONACOT', periodoOpts);
+  const cuota = montoCuotaCredito(credito);
+  let tipo = String(cfg.tipoCreditoFonacot || '').trim();
+  if (!tipo && cuota > 0) tipo = 'monto_fijo';
+  if (!tipo && credito && credito.tipoDescuento === 'porcentaje') tipo = 'porcentaje';
+  if (!tipo && Number(cfg.fonacotDescuento) > 0) tipo = 'monto_fijo';
   if (!tipo) return vacio;
 
   const base = baseNominalCreditos(empleado, contexto);
@@ -160,10 +201,14 @@ function resolverFonacotDescuento(empleado, contexto, parametros, infonavitAplic
 
   if (Number(cfg.fonacotDescuento) > 0) {
     bruto = Number(cfg.fonacotDescuento);
+  } else if (cuota > 0) {
+    bruto = cuota;
   } else if (tipo === 'monto_fijo') {
     bruto = Number(cfg.fonacotMonto) || 0;
   } else if (tipo === 'porcentaje') {
-    let pct = Number(cfg.fonacotPorcentaje) || 0;
+    let pct =
+      Number(cfg.fonacotPorcentaje) ||
+      (credito && credito.tipoDescuento === 'porcentaje' ? Number(credito.valorDescuento) || 0 : 0);
     if (pct > maxPctLegal) pct = maxPctLegal;
     if (pct < 0) pct = 0;
     // Permitidos típicos 10 / 15 / 20 (SM solo 10)
@@ -455,9 +500,17 @@ function resolverInsumosNominaEmpleado(empleado, contexto, parametros, periodoOp
   const baseSind = resolveConceptoBase('CUOTA_SINDICAL', cfg, polEmpresa);
 
   const baseCreditos = baseNominalCreditos(empleado, contexto);
-  const infonavitBruto = roundMoney(resolverInfonavitDescuento(empleado, contexto, parametros));
+  const infonavitBruto = roundMoney(
+    resolverInfonavitDescuento(empleado, contexto, parametros, periodoOpts)
+  );
   const infonavitDescuento = aplicarTope30Credito(infonavitBruto, baseCreditos);
-  const fonacot = resolverFonacotDescuento(empleado, contexto, parametros, infonavitDescuento);
+  const fonacot = resolverFonacotDescuento(
+    empleado,
+    contexto,
+    parametros,
+    infonavitDescuento,
+    periodoOpts
+  );
   const consumido30 = roundMoney(infonavitDescuento + fonacot.descuento);
   const sindical = resolverCuotaSindical(empleado, contexto, parametros, consumido30, {
     enTope30,

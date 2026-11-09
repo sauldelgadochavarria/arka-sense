@@ -1,0 +1,89 @@
+<%- include('../../Partials/layout-top', { title: 'Crédito ' + credito.numeroCredito, session }) %>
+<%
+  const esFonacot = credito.institucion === 'FONACOT';
+  const cats = catalogos || {};
+  const avisosTipo = esFonacot ? (cats.avisosFonacot || []) : (cats.avisosInfonavit || []);
+  const tipoTxt = { cuota_fija: 'Cuota fija', porcentaje: 'Porcentaje', factor: 'Factor', cuota_periodica: 'Cuota periódica' };
+  function money(n) {
+    return Number(n || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  function ymd(d) {
+    if (!d) return '—';
+    const dt = new Date(d);
+    if (Number.isNaN(dt.getTime())) return '—';
+    return dt.toISOString().slice(0, 10);
+  }
+  const dif = money((credito.importeRetenido || 0) - (credito.importeEnterado || 0));
+%>
+<p>
+  <a href="/nomina/cumplimiento-patronal?tab=<%= esFonacot ? 'fonacot' : 'infonavit' %>">← <%= credito.institucion %></a>
+  <% if (trabajador) { %> · <a href="/personal-empleados/<%= trabajador._id %>">Expediente</a><% } %>
+</p>
+<h1><%= credito.numeroCredito %></h1>
+<p class="muted"><%= credito.trabajador %> · <%= credito.estatus %></p>
+<dl>
+  <dt>Descuento</dt>
+  <dd><%= tipoTxt[credito.tipoDescuento] || credito.tipoDescuento %> <%= money(credito.valorDescuento) %> · <%= credito.periodicidad || 'cada_periodo' %></dd>
+  <dt>Vigencia</dt>
+  <dd><%= ymd(credito.fechaInicio) %> – <%= ymd(credito.fechaFin) %></dd>
+  <dt>Documento</dt>
+  <dd><%= credito.documentoOrigen || '—' %></dd>
+  <dt>Retenido en nómina</dt>
+  <dd><%= money(credito.importeRetenido) %></dd>
+  <dt>Determinado</dt>
+  <dd><%= money(credito.importeDeterminado) %></dd>
+  <dt>Enterado</dt>
+  <dd><%= money(credito.importeEnterado) %></dd>
+  <dt>Diferencia retenido − enterado</dt>
+  <dd><%= dif %></dd>
+</dl>
+
+<h2>Avisos</h2>
+<table class="data-table">
+  <thead><tr><th>Aviso</th><th>Aplicación</th><th>Valor</th><th>Cédula / documento</th></tr></thead>
+  <tbody>
+    <% (avisos || []).forEach(function (a) { %>
+    <tr>
+      <td><%= a.tipoAviso %></td>
+      <td><%= ymd(a.fechaAplicacion || a.fechaRecepcion) %></td>
+      <td><%= a.valorAnterior != null ? money(a.valorAnterior) : '—' %> → <%= a.valorNuevo != null ? money(a.valorNuevo) : '—' %></td>
+      <td>
+        <%= a.numeroCedula || a.documentoReferencia || '—' %>
+        <% if (a.periodoCedula) { %> · <%= a.periodoCedula %><% } %>
+        <% if (a.importeCedula != null) { %> · $<%= money(a.importeCedula) %><% } %>
+      </td>
+    </tr>
+    <% }); %>
+    <% if (!(avisos || []).length) { %>
+    <tr><td colspan="4" class="muted">Sin avisos.</td></tr>
+    <% } %>
+  </tbody>
+</table>
+
+<% if (canEdit) { %>
+<h2>Registrar aviso</h2>
+<form method="post" action="/nomina/cumplimiento-patronal/creditos/aviso" class="form-grid">
+  <input type="hidden" name="creditoId" value="<%= credito._id %>" />
+  <label>Aviso
+    <select name="tipoAviso" required>
+      <% avisosTipo.forEach(function (t) { %>
+      <option value="<%= t %>"><%= t %></option>
+      <% }); %>
+    </select>
+  </label>
+  <label>Recepción <input type="date" name="fechaRecepcion" /></label>
+  <label>Aplicación <input type="date" name="fechaAplicacion" /></label>
+  <label>Valor nuevo <input type="number" name="valorNuevo" step="0.01" min="0" /></label>
+  <label>Documento <input name="documentoReferencia" /></label>
+  <% if (esFonacot) { %>
+  <label>Cédula <input name="numeroCedula" /></label>
+  <label>Periodo cédula <input name="periodoCedula" placeholder="2026-10" /></label>
+  <label>Importe cédula <input type="number" name="importeCedula" step="0.01" min="0" /></label>
+  <% } %>
+  <label>Retenido acumulado <input type="number" name="importeRetenido" step="0.01" min="0" value="<%= credito.importeRetenido || 0 %>" /></label>
+  <label>Determinado <input type="number" name="importeDeterminado" step="0.01" min="0" value="<%= credito.importeDeterminado || 0 %>" /></label>
+  <label>Enterado <input type="number" name="importeEnterado" step="0.01" min="0" value="<%= credito.importeEnterado || 0 %>" /></label>
+  <div><button class="btn btn-primary" type="submit">Registrar aviso</button></div>
+</form>
+<% } %>
+<%- include('../../Partials/layout-bottom') %>

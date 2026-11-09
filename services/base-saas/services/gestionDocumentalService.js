@@ -668,20 +668,45 @@ function contarEstados(filas) {
   };
 }
 
-async function filaAcuseIsn({ tenantId, empresaId, anio, mes, periodo, limite, now, docs }) {
-  const proc = PROCESOS_CUMPLIMIENTO.find((p) => p.codigo === 'ISN');
-  const comps = (docs || []).filter((d) => d.tipoCodigo === 'ISN_COMPROBANTE' || d.tipoCodigo === 'IMP_ISN');
-  const legacy = comps.some((d) => d.tipoCodigo === 'IMP_ISN' && !d.entidad);
+function entidadesIsnDePlaza(det, subsidiariaId) {
+  const todas = ((det && det.porEntidad) || []).filter((e) => e && e.entidad);
+  if (!subsidiariaId) return todas;
+  const sid = String(subsidiariaId);
+  const propias = new Set();
+  for (const row of (det && det.detalle) || []) {
+    if (!row || !row.entidad || !row.subsidiariaId) continue;
+    if (String(row.subsidiariaId) === sid) propias.add(String(row.entidad).toUpperCase());
+  }
+  return todas.filter((e) => propias.has(String(e.entidad).toUpperCase()));
+}
+
+function documentoDePlaza(doc, subsidiariaId, entidades) {
+  if (!subsidiariaId) return true;
+  if (doc.subsidiariaId && String(doc.subsidiariaId) === String(subsidiariaId)) return true;
+  if (doc.empleadoId || doc.periodoId) return true;
+  const ent = String(doc.entidad || '').toUpperCase();
+  return Boolean(ent && entidades && entidades.has(ent));
+}
+
+async function determinacionIsnVigente(tenantId, empresaId, anio, mes) {
   const { models } = require('../models/isn');
   const { DeterminacionIsn } = await models();
-  const det = await DeterminacionIsn.findOne({
+  return DeterminacionIsn.findOne({
     tenantId,
     empresaId,
     anio,
     mes,
     estatus: { $in: ['borrador', 'cerrado'] }
-  }).sort({ version: -1 }).select('porEntidad declaraciones').lean();
-  const requeridas = ((det && det.porEntidad) || []).map((e) => e.entidad).filter(Boolean);
+  }).sort({ version: -1 }).lean();
+}
+
+async function filaAcuseIsn({ tenantId, empresaId, anio, mes, periodo, limite, now, docs, subsidiariaId = null, det = null }) {
+  const proc = PROCESOS_CUMPLIMIENTO.find((p) => p.codigo === 'ISN');
+  const entidades = entidadesIsnDePlaza(det, subsidiariaId);
+  if (subsidiariaId && !entidades.length) return null;
+  const comps = (docs || []).filter((d) => d.tipoCodigo === 'ISN_COMPROBANTE' || d.tipoCodigo === 'IMP_ISN');
+  const legacy = !subsidiariaId && comps.some((d) => d.tipoCodigo === 'IMP_ISN' && !d.entidad);
+  const requeridas = entidades.map((e) => String(e.entidad).toUpperCase()).filter(Boolean);
   const conArchivo = new Set(
     comps.map((d) => String(d.entidad || '').toUpperCase()).filter(Boolean)
   );
@@ -752,21 +777,13 @@ function filaDocumento(proc, { anio, mes, periodo, limite, now, docs, anioCarga,
   };
 }
 
-async function filasCumplimientoIsn({ tenantId, empresaId, anio, mes, periodo, now, docsMes }) {
+async function filasCumplimientoIsn({ tenantId, empresaId, anio, mes, periodo, now, docsMes, subsidiariaId = null, det = null }) {
   const proc = PROCESOS_CUMPLIMIENTO.find((p) => p.codigo === 'ISN');
   const limite = fechaDiaMesSiguiente(anio, mes, proc.diaLimiteMesSiguiente || 17);
-  const { models } = require('../models/isn');
   const { labelEntidad } = require('./isnCalculoService');
   const { ENTIDADES_FEDERATIVAS } = require('../config/empleadoCatalogos');
-  const { DeterminacionIsn } = await models();
-  const det = await DeterminacionIsn.findOne({
-    tenantId,
-    empresaId,
-    anio,
-    mes,
-    estatus: { $in: ['borrador', 'cerrado'] }
-  }).sort({ version: -1 }).lean();
-  const entidades = ((det && det.porEntidad) || []).filter((e) => e.entidad);
+  const entidades = entidadesIsnDePlaza(det, subsidiariaId);
+  if (subsidiariaId && !entidades.length) return [];
   const base = {
     procesoCodigo: 'ISN',
     periodo,
@@ -846,10 +863,15 @@ async function tableroCumplimiento({ tenantId, empresaId, subsidiariaId = null, 
     listarDocumentos(tenantId, empresaId, { ambito: 'empleado', ...docScope })
   ]);
 
+  const detIsn = await determinacionIsnVigente(tenantId, empresaId, prev.anio, prev.mes);
+  const entidadesPlaza = entidadesIsnDePlaza(detIsn, subsidiariaId);
+  const setEnt = new Set(entidadesPlaza.map((e) => String(e.entidad).toUpperCase()));
+  const docsMesPlaza = (docsMes || []).filter((d) => documentoDePlaza(d, subsidiariaId, setEnt));
   const docsBimFiltrados = (docsBim || []).filter(
     (d) =>
       d.anio === bim.anio &&
-      (d.mes === bim.mesInicio || d.mes === bim.mesFin || !d.mes)
+      (d.mes === bim.mesInicio || d.mes === bim.mesFin || !d.mes) &&
+      documentoDePlaza(d, subsidiariaId, setEnt)
   );
 
   const filas = [];
@@ -881,7 +903,9 @@ async function tableroCumplimiento({ tenantId, empresaId, subsidiariaId = null, 
     mes: prev.mes,
     periodo: prev.nombre,
     now,
-    docsMes
+    docsMes: docsMesPlaza,
+    subsidiariaId,
+    det: detIsn
   });
   filas.push(...filasIsn);
 
@@ -889,7 +913,7 @@ async function tableroCumplimiento({ tenantId, empresaId, subsidiariaId = null, 
   for (const proc of mesRows) {
     const limite = fechaDiaMesSiguiente(prev.anio, prev.mes, proc.diaLimiteMesSiguiente || 17);
     if (proc.codigo === 'ISN') {
-      filasDocumentos.push(await filaAcuseIsn({
+      const acuse = await filaAcuseIsn({
         tenantId,
         empresaId,
         anio: prev.anio,
@@ -897,8 +921,11 @@ async function tableroCumplimiento({ tenantId, empresaId, subsidiariaId = null, 
         periodo: prev.nombre,
         limite,
         now,
-        docs: docsMes
-      }));
+        docs: docsMesPlaza,
+        subsidiariaId,
+        det: detIsn
+      });
+      if (acuse) filasDocumentos.push(acuse);
       continue;
     }
     filasDocumentos.push(filaDocumento(proc, {
@@ -907,7 +934,7 @@ async function tableroCumplimiento({ tenantId, empresaId, subsidiariaId = null, 
       periodo: prev.nombre,
       limite,
       now,
-      docs: docsMes
+      docs: docsMesPlaza
     }));
   }
 

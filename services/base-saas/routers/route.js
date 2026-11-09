@@ -419,6 +419,8 @@ router.post(
 router.get('/nomina/isn/comprobantes/:documentoId', isnController.descargarComprobante);
 router.get('/nomina/isn/export', isnController.exportCsv);
 router.get('/nomina/cumplimiento-patronal', cumplimientoPatronalController.index);
+router.get('/nomina/cumplimiento-patronal/creditos/nuevo', cumplimientoPatronalController.nuevoCredito);
+router.get('/nomina/cumplimiento-patronal/creditos/:id', cumplimientoPatronalController.verCredito);
 router.post('/nomina/cumplimiento-patronal/movimientos', cumplimientoPatronalController.guardarMovimiento);
 router.post('/nomina/cumplimiento-patronal/movimientos/:id/estatus', cumplimientoPatronalController.estatusMovimiento);
 router.post('/nomina/cumplimiento-patronal/creditos', cumplimientoPatronalController.guardarCredito);

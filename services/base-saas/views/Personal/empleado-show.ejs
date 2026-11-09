@@ -41,6 +41,7 @@
     <% if (typeof showNominaConfig !== 'undefined' && showNominaConfig) { %>
     <button type="button" class="ficha-tab" role="tab" id="exp-tab-nomina" aria-selected="false" aria-controls="exp-panel-nomina" data-ficha-tab="nomina" tabindex="-1">Nómina</button>
     <% } %>
+    <button type="button" class="ficha-tab" role="tab" id="exp-tab-creditos" aria-selected="false" aria-controls="exp-panel-creditos" data-ficha-tab="creditos" tabindex="-1">Créditos</button>
     <button type="button" class="ficha-tab" role="tab" id="exp-tab-acceso" aria-selected="false" aria-controls="exp-panel-acceso" data-ficha-tab="acceso" tabindex="-1">Acceso</button>
     <button type="button" class="ficha-tab" role="tab" id="exp-tab-historial" aria-selected="false" aria-controls="exp-panel-historial" data-ficha-tab="historial" tabindex="-1">Historial</button>
   </div>
@@ -334,6 +335,42 @@
     </div>
   </div>
   <% } %>
+
+  <div class="ficha-panel" role="tabpanel" id="exp-panel-creditos" data-ficha-panel="creditos" aria-labelledby="exp-tab-creditos">
+    <section>
+      <h2>INFONAVIT y FONACOT</h2>
+      <p class="muted">Los mismos créditos del cumplimiento patronal. La captura es una sola pantalla.</p>
+      <p>
+        <a class="btn" href="/nomina/cumplimiento-patronal/creditos/nuevo?institucion=INFONAVIT&empleadoId=<%= empleado._id %>">Registrar INFONAVIT</a>
+        <a class="btn" href="/nomina/cumplimiento-patronal/creditos/nuevo?institucion=FONACOT&empleadoId=<%= empleado._id %>">Registrar FONACOT</a>
+      </p>
+      <table class="data-table">
+        <thead>
+          <tr><th>Institución</th><th>Crédito</th><th>Descuento</th><th>Inicio</th><th>Estatus</th><th>Retenido</th><th>Determinado</th><th>Enterado</th></tr>
+        </thead>
+        <tbody>
+          <% (creditosEmpleado || []).forEach(function (c) {
+               const moneyC = Number(c.valorDescuento || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+               const ini = c.fechaInicio ? new Date(c.fechaInicio).toISOString().slice(0, 10) : '—';
+          %>
+          <tr>
+            <td><%= c.institucion %></td>
+            <td><a href="/nomina/cumplimiento-patronal/creditos/<%= c._id %>"><%= c.numeroCredito %></a></td>
+            <td><%= c.tipoDescuento %> <%= moneyC %></td>
+            <td><%= ini %></td>
+            <td><%= c.estatus %></td>
+            <td><%= Number(c.importeRetenido || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) %></td>
+            <td><%= Number(c.importeDeterminado || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) %></td>
+            <td><%= Number(c.importeEnterado || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) %></td>
+          </tr>
+          <% }); %>
+          <% if (!(creditosEmpleado || []).length) { %>
+          <tr><td colspan="8" class="muted">Este trabajador no tiene créditos registrados.</td></tr>
+          <% } %>
+        </tbody>
+      </table>
+    </section>
+  </div>
 
   <div class="ficha-panel" role="tabpanel" id="exp-panel-acceso" data-ficha-panel="acceso" aria-labelledby="exp-tab-acceso">
     <%- include('partials/acceso-portal', { empleado, acceso }) %>

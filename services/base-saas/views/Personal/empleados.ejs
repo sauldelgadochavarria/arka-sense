@@ -1,40 +1,143 @@
 <%- include('../Partials/layout-top', { title: 'Empleados', session }) %>
+<%
+  const f = filtros || {};
+  function listaQuery(extra) {
+    const base = {
+      q: f.q || '',
+      estatus: f.estatus || 'activo',
+      departamento: f.departamento || '',
+      puesto: f.puesto || '',
+      turno: f.turno || '',
+      clasificacion: f.clasificacion || '',
+      marcacion: f.marcacion || '',
+      orden: f.orden || 'nombre',
+      dir: f.dir || 'asc',
+      page: f.page || 1
+    };
+    Object.assign(base, extra || {});
+    const params = new URLSearchParams();
+    Object.keys(base).forEach(function(k) {
+      if (base[k] != null && String(base[k]) !== '') params.set(k, String(base[k]));
+    });
+    const s = params.toString();
+    return s ? ('/personal-empleados?' + s) : '/personal-empleados';
+  }
+  function flecha(col) {
+    if ((f.orden || 'nombre') !== col) return '';
+    return f.dir === 'desc' ? ' ↓' : ' ↑';
+  }
+  function siguienteDir(col) {
+    if ((f.orden || 'nombre') !== col) return 'asc';
+    return f.dir === 'desc' ? 'asc' : 'desc';
+  }
+  const desde = total ? ((f.page - 1) * pageSize) + 1 : 0;
+  const hasta = Math.min(total || 0, (f.page || 1) * (pageSize || 50));
+%>
 <h1>Empleados</h1>
 <% if (!empresa) { %>
 <p>No hay empresa vinculada a este tenant. Activa el tenant desde Arka-Presence Admin.</p>
 <% } else { %>
 <div class="toolbar">
   <a class="btn" href="/personal-empleados/nuevo">Nuevo empleado</a>
-  <form method="get" action="/personal-empleados" class="inline-form">
-    <label>Estatus</label>
-    <select name="estatus" onchange="this.form.submit()">
-      <option value="activo" <%= estatus === 'activo' ? 'selected' : '' %>>Activos</option>
-      <option value="suspendido" <%= estatus === 'suspendido' ? 'selected' : '' %>>Suspendidos</option>
-      <option value="baja" <%= estatus === 'baja' ? 'selected' : '' %>>Baja</option>
-      <option value="todos" <%= estatus === 'todos' ? 'selected' : '' %>>Todos</option>
-    </select>
-  </form>
+  <a class="btn btn-secondary" href="/personal-empleados">Limpiar filtros</a>
 </div>
+
+<form method="get" action="/personal-empleados" class="filter-form form-grid">
+  <label>Buscar
+    <input name="q" value="<%= f.q || '' %>" placeholder="Número, nombre, RFC o código" />
+  </label>
+  <label>Estatus
+    <select name="estatus">
+      <option value="activo" <%= f.estatus === 'activo' ? 'selected' : '' %>>Activos</option>
+      <option value="suspendido" <%= f.estatus === 'suspendido' ? 'selected' : '' %>>Suspendidos</option>
+      <option value="baja" <%= f.estatus === 'baja' ? 'selected' : '' %>>Baja</option>
+      <option value="todos" <%= f.estatus === 'todos' ? 'selected' : '' %>>Todos</option>
+    </select>
+  </label>
+  <label>Clasificación
+    <select name="clasificacion">
+      <option value="">Todas</option>
+      <option value="sindicalizado" <%= f.clasificacion === 'sindicalizado' ? 'selected' : '' %>>Sindicalizado</option>
+      <option value="confianza" <%= f.clasificacion === 'confianza' ? 'selected' : '' %>>Confianza</option>
+    </select>
+  </label>
+  <label>Departamento
+    <select name="departamento">
+      <option value="">Todos</option>
+      <% (departamentos || []).forEach(function(d) { %>
+      <option value="<%= d._id %>" <%= f.departamento === String(d._id) ? 'selected' : '' %>><%= d.nombre %></option>
+      <% }); %>
+    </select>
+  </label>
+  <label>Puesto
+    <select name="puesto">
+      <option value="">Todos</option>
+      <% (puestos || []).forEach(function(p) { %>
+      <option value="<%= p._id %>" <%= f.puesto === String(p._id) ? 'selected' : '' %>><%= p.nombre %></option>
+      <% }); %>
+    </select>
+  </label>
+  <label>Turno
+    <select name="turno">
+      <option value="">Todos</option>
+      <% (turnos || []).forEach(function(t) { %>
+      <option value="<%= t._id %>" <%= f.turno === String(t._id) ? 'selected' : '' %>><%= t.nombre %></option>
+      <% }); %>
+    </select>
+  </label>
+  <label>Marcación automática
+    <select name="marcacion">
+      <option value="">Todas</option>
+      <option value="si" <%= f.marcacion === 'si' ? 'selected' : '' %>>Sí</option>
+      <option value="no" <%= f.marcacion === 'no' ? 'selected' : '' %>>No</option>
+    </select>
+  </label>
+  <label>Ordenar por
+    <select name="orden">
+      <option value="nombre" <%= (f.orden || 'nombre') === 'nombre' ? 'selected' : '' %>>Nombre</option>
+      <option value="numero" <%= f.orden === 'numero' ? 'selected' : '' %>>Número</option>
+      <option value="ingreso" <%= f.orden === 'ingreso' ? 'selected' : '' %>>Fecha de ingreso</option>
+      <option value="departamento" <%= f.orden === 'departamento' ? 'selected' : '' %>>Departamento</option>
+      <option value="puesto" <%= f.orden === 'puesto' ? 'selected' : '' %>>Puesto</option>
+    </select>
+  </label>
+  <label>Dirección
+    <select name="dir">
+      <option value="asc" <%= f.dir !== 'desc' ? 'selected' : '' %>>Ascendente</option>
+      <option value="desc" <%= f.dir === 'desc' ? 'selected' : '' %>>Descendente</option>
+    </select>
+  </label>
+  <button type="submit">Filtrar</button>
+</form>
+
+<p class="muted">
+  <% if (total) { %>
+  <%= desde %>–<%= hasta %> de <strong><%= total %></strong>
+  <% } else { %>
+  Sin empleados con estos filtros.
+  <% } %>
+</p>
 
 <table>
   <thead>
     <tr>
-      <th>No.</th>
+      <th><a href="<%= listaQuery({ orden: 'numero', dir: siguienteDir('numero'), page: 1 }) %>">No.<%= flecha('numero') %></a></th>
       <th>Cód. ext.</th>
-      <th>Nombre</th>
+      <th><a href="<%= listaQuery({ orden: 'nombre', dir: siguienteDir('nombre'), page: 1 }) %>">Nombre<%= flecha('nombre') %></a></th>
       <th>RFC</th>
       <th>Sucursal</th>
-      <th>Departamento</th>
-      <th>Puesto</th>
+      <th><a href="<%= listaQuery({ orden: 'departamento', dir: siguienteDir('departamento'), page: 1 }) %>">Departamento<%= flecha('departamento') %></a></th>
+      <th><a href="<%= listaQuery({ orden: 'puesto', dir: siguienteDir('puesto'), page: 1 }) %>">Puesto<%= flecha('puesto') %></a></th>
+      <th>Turno</th>
       <th>Período</th>
-      <th>Ingreso</th>
+      <th><a href="<%= listaQuery({ orden: 'ingreso', dir: siguienteDir('ingreso'), page: 1 }) %>">Ingreso<%= flecha('ingreso') %></a></th>
       <th>Estatus</th>
       <th></th>
     </tr>
   </thead>
   <tbody>
     <% if (!empleados.length) { %>
-    <tr><td colspan="11" class="muted">No hay empleados con este filtro.</td></tr>
+    <tr><td colspan="12" class="muted">No hay empleados con este filtro.</td></tr>
     <% } %>
     <% empleados.forEach(function(e) { %>
     <tr class="<%= e.estatus !== 'activo' ? 'row-muted' : '' %>">
@@ -45,6 +148,7 @@
       <td><%= e.subsidiariaId ? (subMap.get(String(e.subsidiariaId)) || '—') : '—' %></td>
       <td><%= e.departamentoId ? (deptMap.get(String(e.departamentoId)) || '—') : '—' %></td>
       <td><%= e.puestoId ? (puestoMap.get(String(e.puestoId)) || '—') : '—' %></td>
+      <td><%= e.turnoId && turnoMap ? (turnoMap.get(String(e.turnoId)) || '—') : '—' %></td>
       <td><%= e.tipoPeriodoId && tipoPeriodoMap ? (tipoPeriodoMap.get(String(e.tipoPeriodoId)) || '—') : '—' %></td>
       <td><%= e.fechaIngreso ? new Date(e.fechaIngreso).toLocaleDateString('es-MX') : '—' %></td>
       <td><span class="badge badge-<%= e.estatus %>"><%= e.estatus %></span></td>
@@ -55,5 +159,17 @@
     <% }); %>
   </tbody>
 </table>
+
+<% if (pages > 1) { %>
+<div class="toolbar">
+  <% if (f.page > 1) { %>
+  <a class="btn" href="<%= listaQuery({ page: f.page - 1 }) %>">Anterior</a>
+  <% } %>
+  <span class="muted">Página <%= f.page %> de <%= pages %></span>
+  <% if (f.page < pages) { %>
+  <a class="btn" href="<%= listaQuery({ page: f.page + 1 }) %>">Siguiente</a>
+  <% } %>
+</div>
+<% } %>
 <% } %>
 <%- include('../Partials/layout-bottom') %>

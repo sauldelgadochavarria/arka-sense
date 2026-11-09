@@ -268,7 +268,8 @@ async function calcularReciboEmpleado(
       fechaInicio: periodo.fechaInicio,
       fechaFin: periodo.fechaFin,
       tablaPrestaciones,
-      politicaDescuentos: diasOpts.politicaDescuentos || {}
+      politicaDescuentos: diasOpts.politicaDescuentos || {},
+      creditos: empleado._creditosCalculo || []
     }
   );
 
@@ -740,6 +741,34 @@ async function aplicarTipoSubsidiaria(conceptos, { tenantId, empresaId, subsidia
   }
 }
 
+async function adjuntarCreditosCalculo(tenantId, empresaId, empleados) {
+  if (!empresaId || !empleados?.length) return;
+  try {
+    const { models } = require('../../models/cumplimientoPatronal');
+    const { CreditoTrabajador } = await models();
+    const rows = await CreditoTrabajador.find({
+      tenantId,
+      empresaId,
+      empleadoId: { $in: empleados.map((e) => e._id) },
+      estatus: 'activo',
+      institucion: { $in: ['INFONAVIT', 'FONACOT'] }
+    })
+      .select('empleadoId institucion tipoDescuento valorDescuento fechaInicio fechaFin estatus')
+      .lean();
+    const porEmpleado = new Map();
+    for (const row of rows) {
+      const key = String(row.empleadoId);
+      if (!porEmpleado.has(key)) porEmpleado.set(key, []);
+      porEmpleado.get(key).push(row);
+    }
+    for (const emp of empleados) {
+      emp._creditosCalculo = porEmpleado.get(String(emp._id)) || [];
+    }
+  } catch (err) {
+    console.warn('[calculoNomina] creditos:', err.message);
+  }
+}
+
 async function calcularPeriodo(tenantId, periodoId, options = {}) {
   const PeriodoNomina = await getPeriodoNominaModel();
   const ConceptoNomina = await getConceptoNominaModel();
@@ -760,7 +789,13 @@ async function calcularPeriodo(tenantId, periodoId, options = {}) {
     periodo.diasPeriodo = diasOk;
   }
 
-  await limpiarCalculoPeriodo(tenantId, periodoId);
+  const soloIds = (Array.isArray(options.soloEmpleadoIds) ? options.soloEmpleadoIds : [])
+    .map((id) => String(id))
+    .filter(Boolean);
+  const calculoParcial = soloIds.length > 0;
+  if (!calculoParcial) {
+    await limpiarCalculoPeriodo(tenantId, periodoId);
+  }
 
   if (!periodo.empresaId) {
     throw new Error('El período no tiene empresa. No se calcula para no mezclar compañías.');
@@ -1023,6 +1058,34 @@ async function calcularPeriodo(tenantId, periodoId, options = {}) {
     console.warn('[calculoNomina] departamentos:', err.message);
   }
 
+  if (calculoParcial) {
+    const solo = new Set(soloIds);
+    empleados = empleados.filter((e) => solo.has(String(e._id)));
+    if (!empleados.length) {
+      throw new Error('El trabajador no entra en este período.');
+    }
+  }
+
+  await adjuntarCreditosCalculo(tenantId, periodo.empresaId, empleados);
+
+  let recibosPrevios = [];
+  if (calculoParcial) {
+    const ReciboPrevio = await getReciboNominaModel();
+    const ConceptoPrevio = await getConceptoAplicadoModel();
+    recibosPrevios = await ReciboPrevio.find({
+      tenantId,
+      periodoId,
+      empleadoId: { $in: empleados.map((e) => e._id) }
+    })
+      .select('_id empleadoId totalPercepciones totalDeducciones netoPagar')
+      .lean();
+    if (recibosPrevios.length) {
+      const idsViejos = recibosPrevios.map((r) => r._id);
+      await ConceptoPrevio.deleteMany({ tenantId, reciboId: { $in: idsViejos } });
+      await ReciboPrevio.deleteMany({ tenantId, _id: { $in: idsViejos } });
+    }
+  }
+
   const total = empleados.length;
   let procesados = 0;
   let exitos = 0;
@@ -1078,13 +1141,25 @@ async function calcularPeriodo(tenantId, periodoId, options = {}) {
     _id: { $in: recibosOk.map((r) => r.reciboId) }
   }).lean();
 
-  const totales = {
+  let totales = {
     empleados: recibos.length,
     empleadosConError: resultados.filter((r) => !r.ok).length,
     percepciones: redondear(recibos.reduce((s, r) => s + r.totalPercepciones, 0)),
     deducciones: redondear(recibos.reduce((s, r) => s + r.totalDeducciones, 0)),
     neto: redondear(recibos.reduce((s, r) => s + r.netoPagar, 0))
   };
+
+  if (calculoParcial) {
+    const previo = periodo.totales || {};
+    const resta = (campo) => recibosPrevios.reduce((s, r) => s + (Number(r[campo]) || 0), 0);
+    totales = {
+      empleados: Math.max(0, (Number(previo.empleados) || 0) - recibosPrevios.length + recibos.length),
+      empleadosConError: resultados.filter((r) => !r.ok).length,
+      percepciones: redondear((Number(previo.percepciones) || 0) - resta('totalPercepciones') + totales.percepciones),
+      deducciones: redondear((Number(previo.deducciones) || 0) - resta('totalDeducciones') + totales.deducciones),
+      neto: redondear((Number(previo.neto) || 0) - resta('netoPagar') + totales.neto)
+    };
+  }
 
   const now = new Date();
   const userId = options.userId || '';
@@ -1118,7 +1193,9 @@ async function calcularPeriodo(tenantId, periodoId, options = {}) {
     periodoId,
     userId,
     userLabel,
-    mensaje: `Cálculo completado: ${totales.empleados} recibos, neto ${totales.neto}`,
+    mensaje: calculoParcial
+      ? `Cálculo de ${recibos.length} trabajador(es). Neto del período ${totales.neto}`
+      : `Cálculo completado: ${totales.empleados} recibos, neto ${totales.neto}`,
     detalle: {
       totales,
       errores: totales.empleadosConError || 0,

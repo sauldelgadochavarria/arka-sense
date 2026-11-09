@@ -5,12 +5,14 @@ const getAttendanceRecordModel = require('../models/attendanceRecord');
 const getSubsidiariaModel = require('../models/subsidiaria');
 const getEmpresaModel = require('../models/empresa');
 const { resolveTurnoVigente } = require('./turnoResolverService');
+const { instantesProgramados } = require('../libs/turnoHelpers');
 const { recalculateDailyAttendance } = require('./attendanceProcessingService');
 const { registrarAuditoriaAsistencia } = require('./asistenciaAuditoriaService');
 const {
   parseTimeHHMM,
   parseDateTimeLocal,
   ymdInTimeZone,
+  addDaysYmd,
   DEFAULT_TZ
 } = require('../libs/timeHelpers');
 
@@ -187,22 +189,19 @@ async function generarMarcacionesAutomaticas({
       }
     ];
 
-    const entradaTs = instanteEnDia(
-      ymd,
-      turno.horaEntrada,
-      zona,
-      reproceso
-        ? offsetSorteo(rango.entradaAntesMin, rango.entradaDespuesMin)
-        : offsetEstable(`${empleado._id}|${ymd}|entrada`, rango.entradaAntesMin, rango.entradaDespuesMin)
-    );
-    const salidaTs = instanteEnDia(
-      ymd,
-      turno.horaSalida,
-      zona,
-      reproceso
-        ? offsetSorteo(rango.salidaAntesMin, rango.salidaDespuesMin)
-        : offsetEstable(`${empleado._id}|${ymd}|salida`, rango.salidaAntesMin, rango.salidaDespuesMin)
-    );
+    const programado = instantesProgramados(fecha, turno, zona);
+    const deltaEntrada = reproceso
+      ? offsetSorteo(rango.entradaAntesMin, rango.entradaDespuesMin)
+      : offsetEstable(`${empleado._id}|${ymd}|entrada`, rango.entradaAntesMin, rango.entradaDespuesMin);
+    const deltaSalida = reproceso
+      ? offsetSorteo(rango.salidaAntesMin, rango.salidaDespuesMin)
+      : offsetEstable(`${empleado._id}|${ymd}|salida`, rango.salidaAntesMin, rango.salidaDespuesMin);
+    const entradaTs = programado.entradaProgramada
+      ? new Date(programado.entradaProgramada.getTime() + deltaEntrada * 60000)
+      : null;
+    const salidaTs = programado.salidaProgramada
+      ? new Date(programado.salidaProgramada.getTime() + deltaSalida * 60000)
+      : null;
 
     const slots = planes.map((p) => ({
       ...p,
@@ -346,16 +345,19 @@ function iniciarWorkerMarcacionAutomatica() {
         if (!empresa?.tenantId) continue;
         const zona = sub.zonaHoraria || DEFAULT_TZ;
         const ymd = ymdInTimeZone(new Date(), zona);
-        const resumen = await generarMarcacionesAutomaticas({
-          tenantId: empresa.tenantId,
-          subsidiaria: sub,
-          ymd,
-          modo: 'auto'
-        });
-        if (resumen.creadas) {
-          console.log(
-            `[marcacion-auto] ${sub.codigo || sub.nombre} ${ymd} creadas=${resumen.creadas}`
-          );
+        const dias = [addDaysYmd(ymd, -1), ymd].filter(Boolean);
+        for (const dia of dias) {
+          const resumen = await generarMarcacionesAutomaticas({
+            tenantId: empresa.tenantId,
+            subsidiaria: sub,
+            ymd: dia,
+            modo: 'auto'
+          });
+          if (resumen.creadas) {
+            console.log(
+              `[marcacion-auto] ${sub.codigo || sub.nombre} ${dia} creadas=${resumen.creadas}`
+            );
+          }
         }
       }
     } catch (err) {

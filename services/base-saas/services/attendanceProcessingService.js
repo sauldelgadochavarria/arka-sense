@@ -5,7 +5,7 @@ const getAttendanceRecordModel = require('../models/attendanceRecord');
 const getDailyAttendanceModel = require('../models/dailyAttendance');
 const { applyTimeToDate, minutesDiff, startOfDay, endOfDay, ymdAncla, ymdInTimeZone, addDaysYmd, DEFAULT_TZ } = require('../libs/timeHelpers');
 const { zonaDeSubsidiariaId } = require('./zonaHorariaService');
-const { isTimestampInHolgura } = require('../libs/turnoHelpers');
+const { isTimestampInHolgura, instantesProgramados } = require('../libs/turnoHelpers');
 const { shouldQualifyAttendance } = require('../libs/empleadoHelpers');
 const { syncAutomaticIncidencias } = require('./incidenciasAutoSync');
 const { resolveTurnoVigente } = require('./turnoResolverService');
@@ -169,8 +169,8 @@ function computeUnqualifiedDaily(fecha, turno, records, empleado, timeZone = DEF
   else if (!records.length) estatus = 'falta';
 
   return {
-    entradaProgramada: turno ? applyTimeToDate(fecha, turno.horaEntrada, timeZone) : null,
-    salidaProgramada: turno ? applyTimeToDate(fecha, turno.horaSalida, timeZone) : null,
+    entradaProgramada: turno ? instantesProgramados(fecha, turno, timeZone).entradaProgramada : null,
+    salidaProgramada: turno ? instantesProgramados(fecha, turno, timeZone).salidaProgramada : null,
     entradaReal: entrada,
     salidaComida: null,
     regresoComida: null,
@@ -207,8 +207,9 @@ function computeDailyMetrics(turno, fechaInput, records, empleado, timeZone = DE
   const multiEntrada = countTipo('entrada') > 1;
   const multiSalida = countTipo('salida') > 1;
 
-  const entradaProgramada = turno ? applyTimeToDate(fecha, turno.horaEntrada, timeZone) : null;
-  const salidaProgramada = turno ? applyTimeToDate(fecha, turno.horaSalida, timeZone) : null;
+  const programado = turno ? instantesProgramados(fecha, turno, timeZone) : null;
+  const entradaProgramada = programado?.entradaProgramada || null;
+  const salidaProgramada = programado?.salidaProgramada || null;
   const holguraAntes = turno?.holguraAntesMin ?? 180;
   const holguraDespues = turno?.holguraDespuesMin ?? 180;
   const modoTolerancia = turno?.modoTolerancia || 'normal';
@@ -246,7 +247,8 @@ function computeDailyMetrics(turno, fechaInput, records, empleado, timeZone = DE
         turno.horaSalida,
         holguraAntes,
         holguraDespues,
-        timeZone
+        timeZone,
+        salidaProgramada
       )
   );
 

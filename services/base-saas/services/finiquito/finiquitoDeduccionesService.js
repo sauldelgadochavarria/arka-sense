@@ -227,14 +227,39 @@ async function calcularDeduccionesFiniquito({
       sueldoDiario: salarioDiario,
       tipoPeriodo
     };
-    const insumos = resolverInsumosNominaEmpleado(empleado, ctxCreditos, fiscalesParams, {});
+    let creditos = [];
+    try {
+      const { models } = require('../../models/cumplimientoPatronal');
+      const { CreditoTrabajador } = await models();
+      if (empleado?._id && empleado.empresaId) {
+        creditos = await CreditoTrabajador.find({
+          tenantId,
+          empresaId: empleado.empresaId,
+          empleadoId: empleado._id,
+          estatus: 'activo',
+          institucion: { $in: ['INFONAVIT', 'FONACOT'] }
+        })
+          .select('institucion tipoDescuento valorDescuento fechaInicio fechaFin estatus')
+          .lean();
+      }
+    } catch (err) {
+      console.warn('[finiquito] creditos:', err.message);
+    }
+    const optsCreditos = { fechaInicio: fechaRef, fechaFin: fechaRef, creditos };
+    const insumos = resolverInsumosNominaEmpleado(empleado, ctxCreditos, fiscalesParams, optsCreditos);
     let infonavit = money(
-      resolverInfonavitDescuento(empleado, ctxCreditos, fiscalesParams)
+      resolverInfonavitDescuento(empleado, ctxCreditos, fiscalesParams, optsCreditos)
     );
     const baseNom = baseNominalCreditos(empleado, ctxCreditos);
     infonavit = money(aplicarTope30Credito(infonavit, baseNom));
 
-    const fonacotRes = resolverFonacotDescuento(empleado, ctxCreditos, fiscalesParams, infonavit);
+    const fonacotRes = resolverFonacotDescuento(
+      empleado,
+      ctxCreditos,
+      fiscalesParams,
+      infonavit,
+      optsCreditos
+    );
     const fonacot = money(fonacotRes?.descuento ?? 0);
 
     resumen.infonavit = infonavit;
