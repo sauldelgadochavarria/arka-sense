@@ -64,6 +64,8 @@ app.listen(PORT, () => {
   console.log(`[arka-presence-saas] http://localhost:${PORT}`);
   const { iniciarWorkerNomina } = require('./services/nomina/nominaCalculoJobService');
   iniciarWorkerNomina();
+  const { iniciarWorkerPrenomina } = require('./services/prenominaProcesoJobService');
+  iniciarWorkerPrenomina();
   try {
     const { iniciarWorkerMarcacionAutomatica } = require('./services/marcacionAutomaticaService');
     iniciarWorkerMarcacionAutomatica();

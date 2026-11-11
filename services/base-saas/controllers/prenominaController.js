@@ -13,7 +13,7 @@ const {
 } = require('../services/zonaHorariaService');
 const { TIPOS_PERIODO, ESTATUS_PERIODO } = require('../config/prenomina');
 const { ESTATUS_DIARIO } = require('../config/asistencia');
-const { filterEmpleadosByTipoMotor } = require('../libs/empleadoTipoPeriodo');
+const { filterEmpleadosForPeriodo } = require('../libs/empleadoTipoPeriodo');
 const { FORMULAS_CONCEPTO } = require('../config/catalogos');
 const {
   ensurePayrollConceptsForTenant,
@@ -26,7 +26,11 @@ const {
   getTipoPeriodoById
 } = require('../services/tipoPeriodoNominaService');
 const {
-  calculatePayrollPeriod,
+  encolarProceso,
+  obtenerEstadoJob,
+  obtenerJobActivo
+} = require('../services/prenominaProcesoJobService');
+const {
   applyManualAdjustment,
   closePayrollPeriod
 } = require('../services/payrollCalculationService');
@@ -287,7 +291,7 @@ async function showPeriodo(req, res) {
       .sort({ netoPagar: -1 })
       .lean(),
     Empleado.find(empFilter).lean(),
-    listTiposPeriodo(req.session.tenantId, false, empresa._id)
+    listTiposPeriodo(req.session.tenantId, false, empresa._id, subId || undefined)
   ]);
 
   const empMap = new Map(empleadosAll.map((e) => [String(e._id), e]));
@@ -301,15 +305,19 @@ async function showPeriodo(req, res) {
   const fin = endOfDay(periodo.fechaFin);
   const fechasYmd = eachYmdInclusive(periodo.fechaInicio, periodo.fechaFin);
 
-  const empleadosScope = filterEmpleadosByTipoMotor(
+  const empleadosScope = filterEmpleadosForPeriodo(
     empleadosAll.filter((e) => e.estatus === 'activo' && e.activo !== false),
     tiposPeriodo,
-    periodo.tipo || null,
+    periodo,
     { strict: false }
   );
   const scopeIds = empleadosScope.map((e) => e._id);
+  const scopeSet = new Set(scopeIds.map((id) => String(id)));
+  const detallesPeriodo = detalles.filter((d) => scopeSet.has(String(d.empleadoId)));
 
-  if (periodo.estatus !== 'cerrado' && scopeIds.length) {
+  const procesoJob = await obtenerEstadoJob(req.session.tenantId, periodo._id);
+  const procesoOcupado = procesoJob && ['pending', 'running'].includes(procesoJob.estatus);
+  if (periodo.estatus !== 'cerrado' && scopeIds.length && !procesoOcupado) {
     const { completarDescansosRango } = require('../services/attendanceProcessingService');
     await completarDescansosRango(
       req.session.tenantId,
@@ -375,7 +383,7 @@ async function showPeriodo(req, res) {
 
   res.render('Prenomina/periodo-show', {
     periodo,
-    detalles,
+    detalles: detallesPeriodo,
     empMap,
     departamentos,
     cobertura,
@@ -383,6 +391,8 @@ async function showPeriodo(req, res) {
     fechasYmd,
     preflight,
     conceptosAjuste,
+    procesoJob,
+    procesoOcupado,
     estatusLabels: ESTATUS_PERIODO,
     estatusDiarioLabels: ESTATUS_DIARIO,
     formatTimeHHMM,
@@ -394,8 +404,18 @@ async function showPeriodo(req, res) {
 
 async function calcularPeriodo(req, res) {
   try {
-    await calculatePayrollPeriod(req.params.id, req.session.tenantId, req.session.userid || '');
-    req.flash('success', 'Pre-nómina calculada (borrador)');
+    const { yaEncolado } = await encolarProceso(
+      req.session.tenantId,
+      req.params.id,
+      'calculo',
+      req.session.userid || ''
+    );
+    req.flash(
+      'success',
+      yaEncolado
+        ? 'Ya hay un proceso en curso para este período'
+        : 'Cálculo de pre-nómina iniciado. El avance se muestra en esta página.'
+    );
     res.redirect(`/prenomina-periodos/${req.params.id}`);
   } catch (err) {
     console.error('[prenomina]', err);
@@ -434,19 +454,17 @@ async function reprocesarAsistenciaPeriodo(req, res) {
       return res.redirect(`/prenomina-periodos/${periodo._id}`);
     }
 
-    const { recalculateRangeForTenant } = require('../services/attendanceProcessingService');
-    const result = await recalculateRangeForTenant(
+    const { yaEncolado } = await encolarProceso(
       req.session.tenantId,
-      periodo.fechaInicio,
-      periodo.fechaFin,
-      {
-        empresaId: periodo.empresaId || empresa._id,
-        subsidiariaId: periodo.subsidiariaId || sessionSubsidiariaId(req)
-      }
+      periodo._id,
+      'asistencia',
+      req.session.userid || ''
     );
     req.flash(
       'success',
-      `Asistencia reprocesada: ${result.dias} día(s), ${result.registros} registro(s) diario(s). Ahora puedes (re)calcular la pre-nómina.`
+      yaEncolado
+        ? 'Ya hay un proceso en curso para este período'
+        : 'Reproceso de asistencia iniciado. El avance se muestra en esta página.'
     );
     res.redirect(`/prenomina-periodos/${periodo._id}`);
   } catch (err) {
@@ -456,8 +474,37 @@ async function reprocesarAsistenciaPeriodo(req, res) {
   }
 }
 
+async function ocupadoResponde(req, res) {
+  const activo = await obtenerJobActivo(req.session.tenantId, req.params.id);
+  if (!activo) return false;
+  req.flash('error', 'Hay un proceso en curso. Espera a que termine para continuar.');
+  res.redirect(`/prenomina-periodos/${req.params.id}`);
+  return true;
+}
+
+async function estadoProceso(req, res) {
+  const job = await obtenerEstadoJob(req.session.tenantId, req.params.id);
+  if (!job) return res.json({ ok: true, job: null });
+  const total = Number(job.progreso?.total) || 0;
+  const procesados = Number(job.progreso?.procesados) || 0;
+  const porcentaje =
+    job.estatus === 'completed' ? 100 : total > 0 ? Math.min(100, Math.round((procesados / total) * 100)) : 0;
+  res.json({
+    ok: true,
+    job: {
+      tipo: job.tipo,
+      estatus: job.estatus,
+      progreso: job.progreso || {},
+      porcentaje,
+      error: job.error || '',
+      resultado: job.resultado || null
+    }
+  });
+}
+
 async function cerrarPeriodo(req, res) {
   try {
+    if (await ocupadoResponde(req, res)) return;
     await closePayrollPeriod(req.params.id, req.session.tenantId, req.session.userid || '');
     req.flash('success', 'Período cerrado. Ya no admite cambios.');
     res.redirect(`/prenomina-periodos/${req.params.id}`);
@@ -567,6 +614,7 @@ function volverAjuste(req) {
 async function aplicarAjuste(req, res) {
   const volver = () => res.redirect(volverAjuste(req));
   try {
+    if (await ocupadoResponde(req, res)) return;
     const { conceptoNombre, tipo, clave } = await conceptoDesdeBody(req.session.tenantId, req.body);
     if (!conceptoNombre) {
       req.flash('error', 'Selecciona un concepto del catálogo');
@@ -608,6 +656,7 @@ async function aplicarAjuste(req, res) {
 }
 
 async function aplicarAjusteMasivo(req, res) {
+  if (await ocupadoResponde(req, res)) return;
   const volver = `/prenomina-periodos/${req.params.id}#ajuste-masivo`;
   try {
     const ids = idsMarcados(req.body);
@@ -891,6 +940,7 @@ module.exports = {
   abrirPeriodoAction,
   calcularPeriodo,
   reprocesarAsistenciaPeriodo,
+  estadoProceso,
   cerrarPeriodo,
   showComprobante,
   aplicarAjuste,

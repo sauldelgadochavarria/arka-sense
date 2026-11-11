@@ -158,6 +158,16 @@ const empleadoSchema = new mongoose.Schema(
         default: 'imss_40_uma'
       },
       despensaTopeMonto: { type: Number, default: 0, min: 0 },
+      /** Vale semanal (concepto 030). Se paga cada semana, aparte del vale mensual. */
+      valeDespensaSemanal: { type: Number, default: 0, min: 0 },
+      /** Vale variable (concepto 013). Importe de la semana, no se prorratea. */
+      valeDespensaVariable: { type: Number, default: 0, min: 0 },
+      /** Vale mensual adicional (concepto 080). Sale cuando el período paga despensa. */
+      valeDespensaAdicional: { type: Number, default: 0, min: 0 },
+      /** Ayuda semanal fija (concepto 021) cuando el importe no es tarifa por día. */
+      ayudaSemanalFija: { type: Number, default: 0, min: 0 },
+      /** Ayuda de transporte por día laborado (concepto 021). */
+      ayudaTransporteDiaria: { type: Number, default: 0, min: 0 },
       seguroVidaMonto: { type: Number, default: 0, min: 0 },
       sgmmMonto: { type: Number, default: 0, min: 0 },
       tipoCreditoInfonavit: {

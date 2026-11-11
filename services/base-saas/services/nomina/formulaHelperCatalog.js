@@ -21,6 +21,11 @@ const ARGS_COMUNES = [
   },
   { key: 'porcentajeFondoAhorro', label: 'porcentajeFondoAhorro', descripcion: '% fondo' },
   { key: 'aplicaFondoAhorro', label: 'aplicaFondoAhorro', descripcion: '0/1' },
+  { key: 'valeDespensaSemanal', label: 'valeDespensaSemanal', descripcion: 'Vale semanal (030)' },
+  { key: 'valeDespensaVariable', label: 'valeDespensaVariable', descripcion: 'Vale variable (013)' },
+  { key: 'valeDespensaAdicional', label: 'valeDespensaAdicional', descripcion: 'Vale mensual adicional (080)' },
+  { key: 'ayudaSemanalFija', label: 'ayudaSemanalFija', descripcion: 'Ayuda semanal fija (021)' },
+  { key: 'ayudaTransporteDiaria', label: 'ayudaTransporteDiaria', descripcion: 'Ayuda por día laborado (021)' },
   { key: 'fondoAhorroTopeExento', label: 'fondoAhorroTopeExento', descripcion: 'Tope exento precalculado' },
   { key: 'fondoAhorroEmpresa', label: 'fondoAhorroEmpresa', descripcion: 'Mitad aportación empresa' },
   { key: 'uma', label: 'uma', descripcion: 'UMA diaria vigente' }

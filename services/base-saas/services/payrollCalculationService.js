@@ -16,7 +16,7 @@ const { startOfDay, endOfDay, ymdInTimeZone } = require('../libs/timeHelpers');
 const { isDiaLaborable } = require('./attendanceProcessingService');
 const { calcularDiasPagados } = require('../libs/diasPagadosMotor');
 const { heMinimosDe } = require('./asistenciaAutorizacionService');
-const { filterEmpleadosByTipoMotor } = require('../libs/empleadoTipoPeriodo');
+const { filterEmpleadosForPeriodo } = require('../libs/empleadoTipoPeriodo');
 const { listTiposPeriodo } = require('./tipoPeriodoNominaService');
 const { clasificarHorasExtraPeriodo, minutosExtraDesdeDaily } = require('../libs/horasExtraClasificacion');
 const { resolveEsquemaJornada, computeValorHora } = require('../libs/esquemaJornada');
@@ -262,7 +262,25 @@ function aplicarMovimientosAlCalculo(calc, movimientos, conceptosMap) {
   return calc;
 }
 
-async function calculatePayrollPeriod(periodId, tenantId, userId = '') {
+async function listEmpleadosParaPrenomina(period) {
+  const Empleado = await getEmpleadoModel();
+  const empleadosAll = await Empleado.find(
+    scopeEmpleadosFilter({
+      tenantId: period.tenantId,
+      empresaId: period.empresaId || null,
+      subsidiariaId: period.subsidiariaId || null
+    })
+  ).lean();
+  const tiposPeriodo = await listTiposPeriodo(
+    period.tenantId,
+    false,
+    period.empresaId || null,
+    period.subsidiariaId || undefined
+  );
+  return filterEmpleadosForPeriodo(empleadosAll, tiposPeriodo, period, { strict: false });
+}
+
+async function calculatePayrollPeriod(periodId, tenantId, userId = '', options = {}) {
   const PayrollPeriod = await getPayrollPeriodModel();
   const period = await PayrollPeriod.findOne({ _id: periodId, tenantId });
   if (!period) throw new Error('PERIOD_NOT_FOUND');
@@ -291,11 +309,22 @@ async function calculatePayrollPeriod(periodId, tenantId, userId = '') {
       subsidiariaId: period.subsidiariaId || null
     })
   ).lean();
-  const tiposPeriodo = await listTiposPeriodo(tenantId, false, period.empresaId || null);
-  const tipoMotor = period.tipo || null;
-  const empleados = filterEmpleadosByTipoMotor(empleadosAll, tiposPeriodo, tipoMotor, {
+  const tiposPeriodo = await listTiposPeriodo(
+    tenantId,
+    false,
+    period.empresaId || null,
+    period.subsidiariaId || undefined
+  );
+  const empleados = filterEmpleadosForPeriodo(empleadosAll, tiposPeriodo, period, {
     strict: false
   });
+  if (empleados.length) {
+    await PayrollDetail.deleteMany({
+      tenantId,
+      periodId: period._id,
+      empleadoId: { $nin: empleados.map((e) => e._id) }
+    });
+  }
   const inicio = startOfDay(period.fechaInicio);
   const fin = endOfDay(period.fechaFin);
   const usaAsistencia = period.aplicaAsistenciaPrenomina !== false;
@@ -327,6 +356,7 @@ async function calculatePayrollPeriod(periodId, tenantId, userId = '') {
     politicaDias = empresaDoc?.nominaDias || {};
   }
 
+  const tipoMotor = period.tipo || null;
   let weekStartsOnPeriod = 1;
   if (period.tipoPeriodoId) {
     const tipoRef = await getTipoPeriodoById(tenantId, period.tipoPeriodoId);
@@ -353,25 +383,60 @@ async function calculatePayrollPeriod(periodId, tenantId, userId = '') {
   }
 
   let totales = { empleados: 0, percepciones: 0, deducciones: 0, neto: 0 };
+  const idsEmpleados = empleados.map((e) => e._id);
+  const turnoIds = [...new Set(empleados.map((e) => e.turnoId).filter(Boolean).map(String))];
+  const [dailiesTodos, incidenciasTodas, turnosLista] = await Promise.all([
+    usaAsistencia && idsEmpleados.length
+      ? DailyAttendance.find({
+          tenantId,
+          empleadoId: { $in: idsEmpleados },
+          fecha: { $gte: inicio, $lte: fin }
+        }).lean()
+      : [],
+    idsEmpleados.length
+      ? Incidencia.find({
+          tenantId,
+          empleadoId: { $in: idsEmpleados },
+          estatus: 'aprobada',
+          fechaInicio: { $lte: fin },
+          fechaFin: { $gte: inicio }
+        }).lean()
+      : [],
+    turnoIds.length ? Turno.find({ _id: { $in: turnoIds } }).lean() : []
+  ]);
+  const dailiesPorEmpleado = new Map();
+  for (const day of dailiesTodos) {
+    const key = String(day.empleadoId);
+    if (!dailiesPorEmpleado.has(key)) dailiesPorEmpleado.set(key, []);
+    dailiesPorEmpleado.get(key).push(day);
+  }
+  const incidenciasPorEmpleado = new Map();
+  for (const inc of incidenciasTodas) {
+    const key = String(inc.empleadoId);
+    if (!incidenciasPorEmpleado.has(key)) incidenciasPorEmpleado.set(key, []);
+    incidenciasPorEmpleado.get(key).push(inc);
+  }
+  const turnoPorId = new Map(turnosLista.map((t) => [String(t._id), t]));
+  const opsDetalle = [];
 
-  for (const empleado of empleados) {
-    const [dailies, incidencias, turno] = await Promise.all([
-      usaAsistencia
-        ? DailyAttendance.find({
-            tenantId,
-            empleadoId: empleado._id,
-            fecha: { $gte: inicio, $lte: fin }
-          }).lean()
-        : Promise.resolve([]),
-      Incidencia.find({
-        tenantId,
-        empleadoId: empleado._id,
-        estatus: 'aprobada',
-        fechaInicio: { $lte: fin },
-        fechaFin: { $gte: inicio }
-      }).lean(),
-      empleado.turnoId ? Turno.findById(empleado.turnoId).lean() : null
-    ]);
+  const avisar = async (procesados) => {
+    if (typeof options.onProgress !== 'function') return;
+    await options.onProgress({
+      total: empleados.length,
+      procesados,
+      exitos: procesados,
+      errores: 0,
+      mensaje: `Pre-nómina ${procesados} de ${empleados.length}`
+    });
+  };
+  await avisar(0);
+
+  for (let indice = 0; indice < empleados.length; indice += 1) {
+    const empleado = empleados[indice];
+    const claveEmp = String(empleado._id);
+    const dailies = dailiesPorEmpleado.get(claveEmp) || [];
+    const incidencias = incidenciasPorEmpleado.get(claveEmp) || [];
+    const turno = empleado.turnoId ? turnoPorId.get(String(empleado.turnoId)) || null : null;
 
     let minutosNota = 0;
     let minutosSinAutorizar = 0;
@@ -443,25 +508,35 @@ async function calculatePayrollPeriod(periodId, tenantId, userId = '') {
       calc = aplicarMovimientosAlCalculo(calc, movsEmp, conceptosMap);
     }
 
-    await PayrollDetail.findOneAndUpdate(
-      { tenantId, periodId: period._id, empleadoId: empleado._id },
-      {
-        $set: {
-          tenantId,
-          periodId: period._id,
-          empleadoId: empleado._id,
-          ...calc,
-          ajustesManuales: []
-        }
-      },
-      { upsert: true }
-    );
+    opsDetalle.push({
+      updateOne: {
+        filter: { tenantId, periodId: period._id, empleadoId: empleado._id },
+        update: {
+          $set: {
+            tenantId,
+            periodId: period._id,
+            empleadoId: empleado._id,
+            ...calc,
+            ajustesManuales: []
+          }
+        },
+        upsert: true
+      }
+    });
+    if (opsDetalle.length >= 400) {
+      await PayrollDetail.bulkWrite(opsDetalle.splice(0, opsDetalle.length), { ordered: false });
+    }
 
     totales.empleados += 1;
     totales.percepciones += calc.totalPercepciones;
     totales.deducciones += calc.totalDeducciones;
     totales.neto += calc.netoPagar;
+    if ((indice + 1) % 80 === 0) await avisar(indice + 1);
   }
+  if (opsDetalle.length) {
+    await PayrollDetail.bulkWrite(opsDetalle, { ordered: false });
+  }
+  await avisar(empleados.length);
 
   if (movimientoIds.length) {
     await vincularAlPeriodo(tenantId, movimientoIds, period._id);
@@ -622,6 +697,7 @@ module.exports = {
   calcularEmpleadoPeriodo,
   aplicarMovimientosAlCalculo,
   buildConceptosMap,
+  listEmpleadosParaPrenomina,
   calculatePayrollPeriod,
   applyManualAdjustment,
   closePayrollPeriod,

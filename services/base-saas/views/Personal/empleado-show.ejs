@@ -286,6 +286,17 @@
         <% } %>
         <% } %>
       </dd>
+      <dt>Vale semanal</dt><dd><%= Number(nc.valeDespensaSemanal) > 0 ? ('$' + Number(nc.valeDespensaSemanal).toLocaleString('es-MX', { minimumFractionDigits: 2 }) + ' cada semana') : '—' %></dd>
+      <dt>Vale variable</dt><dd><%= Number(nc.valeDespensaVariable) > 0 ? ('$' + Number(nc.valeDespensaVariable).toLocaleString('es-MX', { minimumFractionDigits: 2 }) + ' cada semana') : '—' %></dd>
+      <dt>Vale adicional</dt><dd><%= Number(nc.valeDespensaAdicional) > 0 ? ('$' + Number(nc.valeDespensaAdicional).toLocaleString('es-MX', { minimumFractionDigits: 2 }) + ' con la despensa del período') : '—' %></dd>
+      <dt>Ayuda semanal</dt>
+      <dd>
+        <% if (Number(nc.ayudaTransporteDiaria) > 0) { %>
+        $<%= Number(nc.ayudaTransporteDiaria).toLocaleString('es-MX', { minimumFractionDigits: 2 }) %> por día laborado
+        <% } else if (Number(nc.ayudaSemanalFija) > 0) { %>
+        $<%= Number(nc.ayudaSemanalFija).toLocaleString('es-MX', { minimumFractionDigits: 2 }) %> fijos por semana
+        <% } else { %>—<% } %>
+      </dd>
       <dt>Seguro de vida</dt><dd><%= nc.seguroVidaMonto > 0 ? ('$' + Number(nc.seguroVidaMonto).toLocaleString('es-MX', { minimumFractionDigits: 2 })) : '—' %></dd>
       <dt>SGMM</dt><dd><%= nc.sgmmMonto > 0 ? ('$' + Number(nc.sgmmMonto).toLocaleString('es-MX', { minimumFractionDigits: 2 })) : '—' %></dd>
       <dt>INFONAVIT</dt>

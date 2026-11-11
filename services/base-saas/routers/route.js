@@ -659,6 +659,7 @@ router.get('/prenomina-periodos', prenominaController.listPeriodos);
 router.post('/prenomina-periodos', prenominaController.createPeriodo);
 router.get('/prenomina-periodos/:id', prenominaController.showPeriodo);
 router.post('/prenomina-periodos/:id/abrir', prenominaController.abrirPeriodoAction);
+router.get('/prenomina-periodos/:id/estado-proceso', prenominaController.estadoProceso);
 router.post('/prenomina-periodos/:id/reprocesar-asistencia', prenominaController.reprocesarAsistenciaPeriodo);
 router.post('/prenomina-periodos/:id/calcular', prenominaController.calcularPeriodo);
 router.post('/prenomina-periodos/:id/cerrar', prenominaController.cerrarPeriodo);

@@ -103,7 +103,27 @@
   <a class="btn" href="/prenomina-periodos">← Períodos</a>
 </div>
 
-<details class="panel" id="opciones-calculo">
+<% const ocupado = typeof procesoOcupado !== 'undefined' && procesoOcupado; %>
+<% if (typeof procesoJob !== 'undefined' && procesoJob && procesoJob.completedAt && (Date.now() - new Date(procesoJob.completedAt).getTime()) < 3 * 60 * 1000) { %>
+  <% if (procesoJob.estatus === 'failed') { %>
+<div class="alert alert-warning">El último proceso no terminó: <%= procesoJob.error || 'error' %></div>
+  <% } else if (procesoJob.estatus === 'completed') { %>
+<div class="alert alert-success">
+  <% if (procesoJob.tipo === 'asistencia') { %>
+  Asistencia reprocesada<% if (procesoJob.resultado) { %>: <%= procesoJob.resultado.dias %> día(s), <%= procesoJob.resultado.registros %> registro(s). Ya puedes calcular la pre-nómina.<% } %>
+  <% } else { %>
+  Pre-nómina calculada.
+  <% } %>
+</div>
+  <% } %>
+<% } %>
+<div id="prenomina-progreso" class="calculo-progress <%= ocupado ? '' : 'hidden' %>">
+  <h3 id="prenomina-progreso-titulo"><%= procesoJob && procesoJob.tipo === 'asistencia' ? 'Reprocesando asistencia' : 'Calculando pre-nómina' %></h3>
+  <div class="progress-bar"><div id="prenomina-progress-fill" class="progress-fill" style="width:0%"></div></div>
+  <p id="prenomina-progress-text" class="muted">Iniciando…</p>
+</div>
+
+<details class="panel" id="opciones-calculo" <%= ocupado ? 'open' : '' %>>
   <summary style="cursor:pointer;font-weight:700">Opciones de cálculo</summary>
 <% if (typeof cobertura !== 'undefined' && cobertura) { %>
 <section class="panel" style="margin-top:.75rem">
@@ -144,22 +164,22 @@
 <div class="toolbar" style="flex-wrap:wrap;align-items:flex-start;gap:.75rem;margin-top:.75rem">
   <% if (periodo.estatus === 'abierto' || periodo.estatus === 'borrador') { %>
   <form method="post" action="/prenomina-periodos/<%= periodo._id %>/reprocesar-asistencia" class="inline-form"
-        onsubmit="return confirm('¿Reprocesar la asistencia de todo el período a partir de las checadas? Los montos de pre-nómina no cambian.');">
-    <button type="submit">Reprocesar asistencia</button>
+        onsubmit="return confirmarProceso('¿Reprocesar la asistencia de todo el período a partir de las checadas? Los montos de pre-nómina no cambian.');">
+    <button type="submit" data-proceso-btn <%= ocupado ? 'disabled' : '' %>>Reprocesar asistencia</button>
     <span class="muted small" style="display:block;max-width:16rem">Arma otra vez los días (presente, falta, horas extra) desde las checadas. No toca los montos.</span>
   </form>
   <form method="post" action="/prenomina-periodos/<%= periodo._id %>/calcular" class="inline-form"
-        onsubmit="return confirm('¿Calcular la pre-nómina con la asistencia ya armada? Se sustituye el pre-cálculo anterior, ajustes manuales incluidos.');">
-    <button type="submit"><%= periodo.estatus === 'borrador' ? 'Recalcular pre-nómina' : 'Calcular pre-nómina' %></button>
+        onsubmit="return confirmarProceso('¿Calcular la pre-nómina con la asistencia ya armada? Se sustituye el pre-cálculo anterior, ajustes manuales incluidos.');">
+    <button type="submit" data-proceso-btn <%= ocupado ? 'disabled' : '' %>><%= periodo.estatus === 'borrador' ? 'Recalcular pre-nómina' : 'Calcular pre-nómina' %></button>
     <span class="muted small" style="display:block;max-width:16rem">Lee la asistencia ya armada y calcula percepciones, deducciones y neto. No vuelve a leer las checadas.</span>
   </form>
   <% } %>
   <% if (periodo.estatus === 'borrador' || periodo.estatus === 'cerrado') { %>
   <form method="post" action="/prenomina-periodos/<%= periodo._id %>/cerrar" class="inline-form"
         onsubmit="return confirm('¿Cerrar período? No se podrán hacer más cambios.');">
-    <button type="submit"
-      <%= periodo.estatus === 'cerrado' || (preflight && !preflight.ok) ? 'disabled' : '' %>
-      title="<%= preflight && !preflight.ok ? 'Corrige el pre-flight antes de cerrar' : '' %>">
+    <button type="submit" data-proceso-btn
+      <%= ocupado || periodo.estatus === 'cerrado' || (preflight && !preflight.ok) ? 'disabled' : '' %>
+      title="<%= ocupado ? 'Hay un proceso en curso' : (preflight && !preflight.ok ? 'Corrige el pre-flight antes de cerrar' : '') %>">
       Cerrar período
     </button>
   </form>
@@ -179,7 +199,7 @@
 </div>
 <% } %>
 
-<% const puedeAjustar = periodo.estatus !== 'cerrado' && detalles.length; %>
+<% const puedeAjustar = periodo.estatus !== 'cerrado' && detalles.length && !(typeof procesoOcupado !== 'undefined' && procesoOcupado); %>
 <%- include('./partials/revision-calculo', { puedeAjustar: puedeAjustar }) %>
 <% if (puedeAjustar) { %>
 <details class="panel" id="ajuste-masivo" style="margin-top:1rem">
@@ -232,4 +252,47 @@
 })();
 </script>
 <% } %>
+<script>
+function confirmarProceso(mensaje) {
+  if (!window.confirm(mensaje)) return false;
+  document.querySelectorAll('[data-proceso-btn]').forEach(function (b) { b.disabled = true; });
+  var box = document.getElementById('prenomina-progreso');
+  if (box) box.classList.remove('hidden');
+  var text = document.getElementById('prenomina-progress-text');
+  if (text) text.textContent = 'Encolando…';
+  return true;
+}
+(function () {
+  var ocupado = <%= (typeof procesoOcupado !== 'undefined' && procesoOcupado) ? 'true' : 'false' %>;
+  if (!ocupado) return;
+  var periodoId = '<%= periodo._id %>';
+  var fill = document.getElementById('prenomina-progress-fill');
+  var text = document.getElementById('prenomina-progress-text');
+  var titulo = document.getElementById('prenomina-progreso-titulo');
+  async function poll() {
+    try {
+      var res = await fetch('/prenomina-periodos/' + periodoId + '/estado-proceso');
+      var data = await res.json();
+      if (!data.ok || !data.job) return;
+      var j = data.job;
+      if (titulo) titulo.textContent = j.tipo === 'asistencia' ? 'Reprocesando asistencia' : 'Calculando pre-nómina';
+      if (fill) fill.style.width = (j.porcentaje || 0) + '%';
+      var p = j.progreso || {};
+      if (text) {
+        text.textContent = j.estatus === 'completed'
+          ? (p.mensaje || 'Listo')
+          : j.estatus === 'failed'
+            ? ('No se completó: ' + (j.error || 'error'))
+            : (p.mensaje || ('Procesando ' + (p.procesados || 0) + ' / ' + (p.total || '…')));
+      }
+      if (j.estatus === 'completed' || j.estatus === 'failed') {
+        setTimeout(function () { window.location.reload(); }, 900);
+        return;
+      }
+    } catch (e) { /* sigue intentando */ }
+    setTimeout(poll, 1500);
+  }
+  poll();
+})();
+</script>
 <%- include('../Partials/layout-bottom') %>

@@ -426,10 +426,14 @@
   </select>
   <input name="nomina_despensaTopeMonto" type="number" min="0" step="0.01" placeholder="Tope monto fijo (si aplica)" value="<%= nc.despensaTopeMonto > 0 ? nc.despensaTopeMonto : '' %>" />
   <p class="muted small" style="grid-column:1/-1">
-    La despensa se paga cuando el <strong>período</strong> tiene «Paga despensa» (2ª quincena / 3ª semana habitualmente).
-    El motor resuelve <code>despensaMonto</code> con fijo o % topado.
-    ISR: exento hasta <strong>1 UMA mensual</strong> (~$3,566) si el pago es mensual; en semanal, <strong>7 × UMA diaria</strong>. El excedente grava.
+    La despensa mensual se paga cuando el <strong>período</strong> tiene «Paga despensa».
+    El vale semanal y el variable salen cada semana. La ayuda por día usa los días laborados.
   </p>
+  <input name="nomina_valeDespensaSemanal" type="number" min="0" step="0.01" placeholder="Vale de despensa semanal ($)" value="<%= nc.valeDespensaSemanal > 0 ? nc.valeDespensaSemanal : '' %>" />
+  <input name="nomina_valeDespensaVariable" type="number" min="0" step="0.01" placeholder="Vale de despensa variable ($)" value="<%= nc.valeDespensaVariable > 0 ? nc.valeDespensaVariable : '' %>" />
+  <input name="nomina_valeDespensaAdicional" type="number" min="0" step="0.01" placeholder="Vale mensual adicional ($)" value="<%= nc.valeDespensaAdicional > 0 ? nc.valeDespensaAdicional : '' %>" />
+  <input name="nomina_ayudaTransporteDiaria" type="number" min="0" step="0.01" placeholder="Ayuda semanal por día laborado ($)" value="<%= nc.ayudaTransporteDiaria > 0 ? nc.ayudaTransporteDiaria : '' %>" />
+  <input name="nomina_ayudaSemanalFija" type="number" min="0" step="0.01" placeholder="Ayuda semanal fija ($)" value="<%= nc.ayudaSemanalFija > 0 ? nc.ayudaSemanalFija : '' %>" />
 
   <input name="nomina_seguroVidaMonto" type="number" min="0" step="0.01" placeholder="Seguro de vida (monto del período)" value="<%= nc.seguroVidaMonto > 0 ? nc.seguroVidaMonto : '' %>" />
   <input name="nomina_sgmmMonto" type="number" min="0" step="0.01" placeholder="SGMM (monto del período)" value="<%= nc.sgmmMonto > 0 ? nc.sgmmMonto : '' %>" />

@@ -8,7 +8,8 @@ const { zonaDeSubsidiariaId } = require('./zonaHorariaService');
 const { isTimestampInHolgura, instantesProgramados } = require('../libs/turnoHelpers');
 const { shouldQualifyAttendance } = require('../libs/empleadoHelpers');
 const { syncAutomaticIncidencias } = require('./incidenciasAutoSync');
-const { resolveTurnoVigente } = require('./turnoResolverService');
+const { resolveTurnoVigente, cargarContextoTurnos, resolverTurnoConContexto } = require('./turnoResolverService');
+const { mapaZonasPorSubsidiaria, zonaDeEmpleado } = require('./zonaHorariaService');
 const { clasificarMinutosDia } = require('../libs/horasExtraClasificacion');
 const { resolveEsquemaJornada } = require('../libs/esquemaJornada');
 
@@ -374,28 +375,30 @@ function computeDailyMetrics(turno, fechaInput, records, empleado, timeZone = DE
   };
 }
 
-async function recalculateDailyAttendance(tenantId, empleadoId, fechaInput) {
+async function recalculateDailyAttendance(tenantId, empleadoId, fechaInput, ctx = {}) {
   const fecha = startOfDay(fechaInput);
   const Empleado = await getEmpleadoModel();
   const AttendanceRecord = await getAttendanceRecordModel();
   const DailyAttendance = await getDailyAttendanceModel();
 
-  const empleado = await Empleado.findOne({ _id: empleadoId, tenantId }).lean();
+  const empleado = ctx.empleado || (await Empleado.findOne({ _id: empleadoId, tenantId }).lean());
   if (!empleado) return null;
 
-  const timeZone = await zonaDeSubsidiariaId(empleado.subsidiariaId);
-  const resolved = await resolveTurnoVigente(tenantId, empleado, fecha);
+  const timeZone = ctx.timeZone || (await zonaDeSubsidiariaId(empleado.subsidiariaId));
+  const resolved = ctx.resolved || (await resolveTurnoVigente(tenantId, empleado, fecha));
   const { turno, esDescansoForzado, plantilla, asignacion } = resolved;
 
-  const records = await AttendanceRecord.find({
-    tenantId,
-    empleadoId,
-    fecha: { $gte: fecha, $lte: endOfDay(fecha) },
-    // Legado sin campo estado = activa; anuladas no computan jornada
-    $or: [{ estado: 'activa' }, { estado: { $exists: false } }, { estado: null }]
-  })
-    .sort({ timestamp: 1 })
-    .lean();
+  const records = ctx.records
+    ? ctx.records
+    : await AttendanceRecord.find({
+        tenantId,
+        empleadoId,
+        fecha: { $gte: fecha, $lte: endOfDay(fecha) },
+        // Legado sin campo estado = activa; anuladas no computan jornada
+        $or: [{ estado: 'activa' }, { estado: { $exists: false } }, { estado: null }]
+      })
+        .sort({ timestamp: 1 })
+        .lean();
 
   if (esDescansoForzado && !turno) {
     const daily = await DailyAttendance.findOneAndUpdate(
@@ -421,7 +424,9 @@ async function recalculateDailyAttendance(tenantId, empleadoId, fechaInput) {
       },
       { upsert: true, new: true }
     ).lean();
-    await syncAutomaticIncidencias(tenantId, empleado.empresaId, empleadoId, fecha, daily);
+    if (!ctx.deferSync) {
+    await syncAutomaticIncidencias(tenantId, empleado.empresaId, empleadoId, fecha, daily, ctx.syncCtx || null);
+  }
     return daily;
   }
 
@@ -435,7 +440,11 @@ async function recalculateDailyAttendance(tenantId, empleadoId, fechaInput) {
   if (metrics.estatus === 'falta' || metrics.incidenciasAutomaticas?.includes('FI')) {
     try {
       const { empleadoEnVacacionesAprobadas } = require('./calendarioLaboralService');
-      if (await empleadoEnVacacionesAprobadas(tenantId, empleadoId, fecha)) {
+      const enVacaciones =
+        typeof ctx.enVacaciones === 'boolean'
+          ? ctx.enVacaciones
+          : await empleadoEnVacacionesAprobadas(tenantId, empleadoId, fecha);
+      if (enVacaciones) {
         metrics.estatus = 'vacaciones';
         metrics.incidenciasAutomaticas = (metrics.incidenciasAutomaticas || []).filter(
           (c) => c !== 'FI'
@@ -454,12 +463,15 @@ async function recalculateDailyAttendance(tenantId, empleadoId, fechaInput) {
 
   // Una checada anulada no es jornada, pero tampoco es falta.
   if (!records.length && metrics.estatus === 'falta') {
-    const anuladas = await AttendanceRecord.countDocuments({
-      tenantId,
-      empleadoId,
-      fecha: { $gte: fecha, $lte: endOfDay(fecha) },
-      estado: 'anulada'
-    });
+    const anuladas =
+      ctx.anuladasCount != null
+        ? ctx.anuladasCount
+        : await AttendanceRecord.countDocuments({
+            tenantId,
+            empleadoId,
+            fecha: { $gte: fecha, $lte: endOfDay(fecha) },
+            estado: 'anulada'
+          });
     if (anuladas > 0) {
       metrics.estatus = 'anulada';
       metrics.incidenciasAutomaticas = (metrics.incidenciasAutomaticas || []).filter(
@@ -485,12 +497,16 @@ async function recalculateDailyAttendance(tenantId, empleadoId, fechaInput) {
     { upsert: true, new: true }
   ).lean();
 
-  await AttendanceRecord.updateMany(
-    { tenantId, empleadoId, fecha: { $gte: fecha, $lte: endOfDay(fecha) } },
-    { $set: { procesado: true } }
-  );
+  if (!ctx.deferSync) {
+    await AttendanceRecord.updateMany(
+      { tenantId, empleadoId, fecha: { $gte: fecha, $lte: endOfDay(fecha) } },
+      { $set: { procesado: true } }
+    );
+  }
 
-  await syncAutomaticIncidencias(tenantId, empleado.empresaId, empleadoId, fecha, daily);
+  if (!ctx.deferSync) {
+    await syncAutomaticIncidencias(tenantId, empleado.empresaId, empleadoId, fecha, daily, ctx.syncCtx || null);
+  }
 
   try {
     const { syncRetardoDesdeDaily } = require('./asistenciaAutorizacionService');
@@ -502,22 +518,174 @@ async function recalculateDailyAttendance(tenantId, empleadoId, fechaInput) {
   return daily;
 }
 
-async function recalculateDayForTenant(tenantId, fechaInput, opts = {}) {
-  const fecha = startOfDay(fechaInput);
+function punzonActivo(estado) {
+  return estado == null || estado === '' || estado === 'activa';
+}
+
+function cubreDia(inicio, fin, fecha) {
+  const t = startOfDay(fecha).getTime();
+  if (inicio && new Date(inicio).getTime() > t) return false;
+  if (fin && new Date(fin).getTime() < t) return false;
+  return true;
+}
+
+async function prepararSyncAsistencia(tenantId, empresaId, subsidiariaId) {
+  const { ensureTiposIncidenciaForTenant } = require('./tiposIncidenciaService');
+  const getTipoIncidenciaModel = require('../models/tipoIncidencia');
+  const { heMinimosDe } = require('./asistenciaAutorizacionService');
+  const AUTO = ['FI', 'RP', 'FR', 'RET', 'SA', 'HEO', 'HED', 'HEF'];
+  await ensureTiposIncidenciaForTenant(tenantId, empresaId);
+  const TipoIncidencia = await getTipoIncidenciaModel();
+  const tipos = await TipoIncidencia.find({ tenantId, clave: { $in: AUTO }, activo: true }).lean();
+  let heMinimo = heMinimosDe(undefined);
+  if (subsidiariaId) {
+    const getSubsidiariaModel = require('../models/subsidiaria');
+    const Subsidiaria = await getSubsidiariaModel();
+    const sub = await Subsidiaria.findById(subsidiariaId).select('heMinutosParaAutorizar').lean();
+    heMinimo = heMinimosDe(sub?.heMinutosParaAutorizar);
+  }
+  return {
+    tiposByClave: new Map(tipos.map((t) => [t.clave, t])),
+    heMinimo
+  };
+}
+
+async function cargarVacacionesRango(tenantId, empleadoIds, desde, hasta) {
+  if (!empleadoIds.length) return [];
+  const getVacacionSolicitudModel = require('../models/vacacionSolicitud');
+  const getIncidenciaModel = require('../models/incidencia');
+  const VacacionSolicitud = await getVacacionSolicitudModel();
+  const Incidencia = await getIncidenciaModel();
+  const inicio = startOfDay(desde);
+  const fin = endOfDay(hasta);
+  const [solicitudes, incidencias] = await Promise.all([
+    VacacionSolicitud.find({
+      tenantId,
+      empleadoId: { $in: empleadoIds },
+      status: 'APPROVED',
+      fechaInicio: { $lte: fin },
+      fechaFin: { $gte: inicio }
+    })
+      .select('empleadoId fechaInicio fechaFin')
+      .lean(),
+    Incidencia.find({
+      tenantId,
+      empleadoId: { $in: empleadoIds },
+      codigo: 'VAC',
+      estatus: 'aprobada',
+      fechaInicio: { $lte: fin },
+      fechaFin: { $gte: inicio }
+    })
+      .select('empleadoId fechaInicio fechaFin')
+      .lean()
+  ]);
+  return solicitudes.concat(incidencias);
+}
+
+async function empleadosDelReproceso(tenantId, opts) {
+  if (Array.isArray(opts.empleados) && opts.empleados.length) return opts.empleados;
   const Empleado = await getEmpleadoModel();
   const { scopeEmpleadosFilter } = require('../libs/tenantScope');
-  const empQ = scopeEmpleadosFilter({
-    tenantId,
-    empresaId: opts.empresaId || null,
-    subsidiariaId: opts.subsidiariaId || null
-  });
-  const empleados = await Empleado.find(empQ).lean();
+  return Empleado.find(
+    scopeEmpleadosFilter({
+      tenantId,
+      empresaId: opts.empresaId || null,
+      subsidiariaId: opts.subsidiariaId || null
+    })
+  ).lean();
+}
+
+async function reprocesarDiaPreparados(tenantId, fecha, prep) {
+  const { syncAutomaticIncidenciasLote } = require('./incidenciasAutoSync');
+  const AttendanceRecord = await getAttendanceRecordModel();
+  const dayStart = startOfDay(fecha);
+  const dayEnd = endOfDay(fecha);
+  const ids = prep.empleados.map((e) => e._id);
+  const registros = ids.length
+    ? await AttendanceRecord.find({
+        tenantId,
+        empleadoId: { $in: ids },
+        fecha: { $gte: dayStart, $lte: dayEnd }
+      })
+        .sort({ timestamp: 1 })
+        .lean()
+    : [];
+  const activas = new Map();
+  const anuladas = new Map();
+  for (const rec of registros) {
+    const key = String(rec.empleadoId);
+    if (punzonActivo(rec.estado)) {
+      if (!activas.has(key)) activas.set(key, []);
+      activas.get(key).push(rec);
+    } else if (rec.estado === 'anulada') {
+      anuladas.set(key, (anuladas.get(key) || 0) + 1);
+    }
+  }
 
   const results = [];
-  for (const empleado of empleados) {
-    results.push(await recalculateDailyAttendance(tenantId, empleado._id, fecha));
+  const lote = [];
+  let procesados = prep.procesados || 0;
+  for (const empleado of prep.empleados) {
+    const key = String(empleado._id);
+    const enVacaciones = prep.vacaciones.some(
+      (v) => String(v.empleadoId) === key && cubreDia(v.fechaInicio, v.fechaFin, dayStart)
+    );
+    const daily = await recalculateDailyAttendance(tenantId, empleado._id, dayStart, {
+      empleado,
+      timeZone: zonaDeEmpleado(empleado, prep.zonas),
+      resolved: resolverTurnoConContexto(prep.turnos, empleado, dayStart),
+      records: activas.get(key) || [],
+      anuladasCount: anuladas.get(key) || 0,
+      enVacaciones,
+      deferSync: true,
+      syncCtx: { heMinimo: prep.syncCtx.heMinimo, tiposByClave: prep.syncCtx.tiposByClave }
+    });
+    if (daily) {
+      results.push(daily);
+      lote.push({ empleadoId: empleado._id, daily, heMinimo: prep.syncCtx.heMinimo });
+    }
+    procesados += 1;
+    prep.procesados = procesados;
+    if (typeof prep.onProgress === 'function' && (procesados % 40 === 0 || procesados === prep.total)) {
+      await prep.onProgress({
+        total: prep.total,
+        procesados,
+        exitos: procesados,
+        errores: 0,
+        mensaje: `Asistencia ${procesados} de ${prep.total}`
+      });
+    }
+  }
+
+  if (lote.length) {
+    await syncAutomaticIncidenciasLote(tenantId, prep.empresaId, lote, prep.syncCtx);
+  }
+  if (ids.length) {
+    await AttendanceRecord.updateMany(
+      { tenantId, empleadoId: { $in: ids }, fecha: { $gte: dayStart, $lte: dayEnd } },
+      { $set: { procesado: true } }
+    );
   }
   return results;
+}
+
+async function recalculateDayForTenant(tenantId, fechaInput, opts = {}) {
+  const fecha = startOfDay(fechaInput);
+  const empleados = await empleadosDelReproceso(tenantId, opts);
+  const zonas = await mapaZonasPorSubsidiaria(empleados.map((e) => e.subsidiariaId));
+  const empresaId = opts.empresaId || empleados[0]?.empresaId || null;
+  const prep = {
+    empleados,
+    zonas,
+    turnos: await cargarContextoTurnos(tenantId, empleados, fecha, fecha),
+    vacaciones: await cargarVacacionesRango(tenantId, empleados.map((e) => e._id), fecha, fecha),
+    syncCtx: await prepararSyncAsistencia(tenantId, empresaId, opts.subsidiariaId || empleados[0]?.subsidiariaId),
+    empresaId,
+    total: empleados.length,
+    procesados: 0,
+    onProgress: opts.onProgress
+  };
+  return reprocesarDiaPreparados(tenantId, fecha, prep);
 }
 
 /**
@@ -538,26 +706,32 @@ async function completarDescansosRango(tenantId, empleadoIds, desdeYmd, hastaYmd
     activo: { $ne: false },
     tipoRegistro: { $ne: 'ninguno' }
   }).lean();
+  if (!empleados.length) return { creados: 0 };
+
+  const desde = new Date(`${desdeYmd}T12:00:00.000Z`);
+  const hasta = new Date(`${hastaYmd}T12:00:00.000Z`);
+  const existentes = await DailyAttendance.find({
+    tenantId,
+    empleadoId: { $in: empleados.map((e) => e._id) },
+    fecha: { $gte: startOfDay(desde), $lte: endOfDay(hasta) }
+  })
+    .select('empleadoId fecha')
+    .lean();
+  const ya = new Set(existentes.map((d) => `${d.empleadoId}|${startOfDay(d.fecha).getTime()}`));
+  const turnos = await cargarContextoTurnos(tenantId, empleados, desde, hasta);
 
   let creados = 0;
   for (const empleado of empleados) {
     let ymd = desdeYmd;
     while (ymd && ymd <= hastaYmd) {
       const ancla = new Date(`${ymd}T12:00:00.000Z`);
-      const existe = await DailyAttendance.exists({
-        tenantId,
-        empleadoId: empleado._id,
-        fecha: {
-          $gte: new Date(`${ymd}T00:00:00.000Z`),
-          $lte: new Date(`${ymd}T23:59:59.999Z`)
-        }
-      });
-      if (!existe) {
-        const resolved = await resolveTurnoVigente(tenantId, empleado, ancla);
+      const clave = `${empleado._id}|${startOfDay(ancla).getTime()}`;
+      if (!ya.has(clave)) {
+        const resolved = resolverTurnoConContexto(turnos, empleado, ancla);
         const descanso = resolved.esDescansoForzado
           || (resolved.turno && !isDiaLaborable(resolved.turno, ancla));
         if (descanso) {
-          await recalculateDailyAttendance(tenantId, empleado._id, ancla);
+          await recalculateDailyAttendance(tenantId, empleado._id, ancla, { empleado, resolved });
           creados += 1;
         }
       }
@@ -569,17 +743,50 @@ async function completarDescansosRango(tenantId, empleadoIds, desdeYmd, hastaYmd
 
 /** Reprocesa asistencia diaria día a día en un rango (marcaciones → daily_attendance). */
 async function recalculateRangeForTenant(tenantId, fechaInicio, fechaFin, opts = {}) {
-  let d = startOfDay(fechaInicio);
-  const end = startOfDay(fechaFin);
-  let dias = 0;
-  let registros = 0;
-  while (d <= end) {
-    const dayResults = await recalculateDayForTenant(tenantId, d, opts);
-    dias += 1;
-    registros += dayResults.length;
-    d = new Date(d.getTime() + 86400000);
+  const inicio = startOfDay(fechaInicio);
+  const fin = startOfDay(fechaFin);
+  const dias = [];
+  for (let d = new Date(inicio); d <= fin; d = new Date(d.getTime() + 86400000)) {
+    dias.push(new Date(d));
   }
-  return { dias, registros };
+  const empleados = await empleadosDelReproceso(tenantId, opts);
+  const empresaId = opts.empresaId || empleados[0]?.empresaId || null;
+  const prep = {
+    empleados,
+    zonas: await mapaZonasPorSubsidiaria(empleados.map((e) => e.subsidiariaId)),
+    turnos: await cargarContextoTurnos(tenantId, empleados, inicio, fin),
+    vacaciones: await cargarVacacionesRango(
+      tenantId,
+      empleados.map((e) => e._id),
+      inicio,
+      fin
+    ),
+    syncCtx: await prepararSyncAsistencia(
+      tenantId,
+      empresaId,
+      opts.subsidiariaId || empleados[0]?.subsidiariaId
+    ),
+    empresaId,
+    total: empleados.length * dias.length,
+    procesados: 0,
+    onProgress: opts.onProgress
+  };
+
+  let registros = 0;
+  for (const dia of dias) {
+    const dayResults = await reprocesarDiaPreparados(tenantId, dia, prep);
+    registros += dayResults.length;
+  }
+  if (typeof opts.onProgress === 'function') {
+    await opts.onProgress({
+      total: prep.total,
+      procesados: prep.total,
+      exitos: prep.total,
+      errores: 0,
+      mensaje: `Asistencia lista: ${dias.length} día(s), ${registros} registro(s)`
+    });
+  }
+  return { dias: dias.length, registros };
 }
 
 module.exports = {

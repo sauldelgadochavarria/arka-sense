@@ -10,6 +10,8 @@ const { startOfDay, endOfDay, ymdInTimeZone } = require('../libs/timeHelpers');
 const { ESQUEMA_JORNADA_DEFAULTS } = require('../libs/esquemaJornada');
 const { buildTiempoClasificado, buildBanderasExcepcion, horasExtraDesdeDetail } = require('./nomina/prenominaBridge');
 const { scopeEmpleadosFilter } = require('../libs/tenantScope');
+const { filterEmpleadosForPeriodo } = require('../libs/empleadoTipoPeriodo');
+const { listTiposPeriodo } = require('./tipoPeriodoNominaService');
 
 function empleadosDelPeriodoFilter(period, tenantId) {
   return scopeEmpleadosFilter({
@@ -19,15 +21,23 @@ function empleadosDelPeriodoFilter(period, tenantId) {
   });
 }
 
-async function validateCodigoExternoForPeriod(period, tenantId) {
+async function empleadosDelPeriodo(period, tenantId) {
   const Empleado = await getEmpleadoModel();
+  const [empleados, tipos] = await Promise.all([
+    Empleado.find(empleadosDelPeriodoFilter(period, tenantId)).lean(),
+    listTiposPeriodo(tenantId, false, period.empresaId || null, period.subsidiariaId || undefined)
+  ]);
+  return filterEmpleadosForPeriodo(empleados, tipos, period, { strict: false });
+}
+
+async function validateCodigoExternoForPeriod(period, tenantId) {
   const Incidencia = await getIncidenciaModel();
   const PayrollDetail = await getPayrollDetailModel();
   const inicio = startOfDay(period.fechaInicio);
   const fin = endOfDay(period.fechaFin);
 
   const [empleados, incidencias, detalles] = await Promise.all([
-    Empleado.find(empleadosDelPeriodoFilter(period, tenantId)).lean(),
+    empleadosDelPeriodo(period, tenantId),
     Incidencia.find({
       tenantId,
       estatus: 'aprobada',
@@ -36,13 +46,15 @@ async function validateCodigoExternoForPeriod(period, tenantId) {
     PayrollDetail.find({ tenantId, periodId: period._id }).lean()
   ]);
 
+  const idsPeriodo = new Set(empleados.map((e) => String(e._id)));
+  const detallesPeriodo = detalles.filter((d) => idsPeriodo.has(String(d.empleadoId)));
   const empMap = new Map(empleados.map((e) => [String(e._id), e]));
   const afectados = new Set();
 
   for (const inc of incidencias) {
     if (empMap.has(String(inc.empleadoId))) afectados.add(String(inc.empleadoId));
   }
-  for (const det of detalles) {
+  for (const det of detallesPeriodo) {
     if ((det.diasFalta || 0) > 0 || (det.minutosRetardo || 0) > 0 || (det.minutosHorasExtra || 0) > 0) {
       afectados.add(String(det.empleadoId));
     }
@@ -76,7 +88,6 @@ async function validateCodigoExternoForPeriod(period, tenantId) {
 async function validateJornadaForPeriod(period, tenantId) {
   const bloqueos = [];
   const advertencias = [];
-  const Empleado = await getEmpleadoModel();
   const Turno = await getTurnoModel();
   const PayrollDetail = await getPayrollDetailModel();
   const DailyAttendance = await getDailyAttendanceModel();
@@ -84,8 +95,8 @@ async function validateJornadaForPeriod(period, tenantId) {
   const inicio = startOfDay(period.fechaInicio);
   const fin = endOfDay(period.fechaFin);
 
-  const [empleados, detalles, diarios] = await Promise.all([
-    Empleado.find(empleadosDelPeriodoFilter(period, tenantId)).lean(),
+  const [empleados, detallesTodos, diariosTodos] = await Promise.all([
+    empleadosDelPeriodo(period, tenantId),
     PayrollDetail.find({ tenantId, periodId: period._id }).lean(),
     DailyAttendance.find({
       tenantId,
@@ -95,6 +106,9 @@ async function validateJornadaForPeriod(period, tenantId) {
       .select('empleadoId fecha minutosHorasExtra')
       .lean()
   ]);
+  const idsPeriodo = new Set(empleados.map((e) => String(e._id)));
+  const detalles = detallesTodos.filter((d) => idsPeriodo.has(String(d.empleadoId)));
+  const diarios = diariosTodos.filter((d) => idsPeriodo.has(String(d.empleadoId)));
 
   const sinTurno = empleados
     .filter((e) => !e.turnoId)
@@ -223,14 +237,11 @@ async function validatePeriodClose(period, tenantId) {
  */
 async function validateAsistenciaIncompletaForPeriod(period, tenantId) {
   const DailyAttendance = await getDailyAttendanceModel();
-  const Empleado = await getEmpleadoModel();
   const inicio = startOfDay(period.fechaInicio);
   const fin = endOfDay(period.fechaFin);
   const hoyYmd = ymdInTimeZone(new Date());
 
-  const empleadosScope = await Empleado.find(empleadosDelPeriodoFilter(period, tenantId))
-    .select('_id firstName lastName numEmpleado')
-    .lean();
+  const empleadosScope = await empleadosDelPeriodo(period, tenantId);
   const scopeIds = empleadosScope.map((e) => e._id);
   if (!scopeIds.length) {
     return { ok: true, bloqueos: [], advertencias: [], incompletos: [], enCurso: [] };

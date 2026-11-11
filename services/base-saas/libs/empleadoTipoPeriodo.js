@@ -54,7 +54,7 @@ function filterEmpleadosForPeriodo(empleados, tiposPeriodo, periodo, { strict = 
   const list = empleados || [];
   const tipos = tiposPeriodo || [];
   const byId = new Map(tipos.map((t) => [String(t._id), t]));
-  const tipoMotor = String(periodo?.tipoPeriodo || '').toLowerCase();
+  const tipoMotor = String(periodo?.tipoPeriodo || periodo?.tipo || '').toLowerCase();
 
   if (periodo?.tipoPeriodoId) {
     const targetId = String(periodo.tipoPeriodoId);

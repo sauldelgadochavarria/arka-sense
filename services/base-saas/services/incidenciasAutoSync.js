@@ -69,20 +69,22 @@ function minutosPorCodigo(clave, daily) {
  * Crea/actualiza las de incidenciasAutomaticas y cancela las automáticas
  * del catálogo que ya no aplican (p. ej. FI cuando el día pasó a presente/retardo).
  */
-async function syncAutomaticIncidencias(tenantId, empresaId, empleadoId, fecha, daily) {
-  await ensureTiposIncidenciaForTenant(tenantId, empresaId);
-  const TipoIncidencia = await getTipoIncidenciaModel();
+async function syncAutomaticIncidencias(tenantId, empresaId, empleadoId, fecha, daily, syncCtx = null) {
+  const TipoIncidencia = syncCtx?.tiposByClave ? null : await getTipoIncidenciaModel();
+  if (!syncCtx?.tiposByClave) await ensureTiposIncidenciaForTenant(tenantId, empresaId);
   const Incidencia = await getIncidenciaModel();
   const dayStart = startOfDay(fecha);
   const activas = new Set(daily?.incidenciasAutomaticas || []);
-  const minimo = await minimoHeDeEmpleado(empleadoId);
+  const minimo = syncCtx?.heMinimo != null ? syncCtx.heMinimo : await minimoHeDeEmpleado(empleadoId);
   const heTotal = minutosHeTotal(daily);
   if (heTotal < minimo) {
     for (const clave of HE_CLAVES) activas.delete(clave);
   }
 
   for (const clave of activas) {
-    const tipo = await TipoIncidencia.findOne({ tenantId, clave, activo: true }).lean();
+    const tipo = syncCtx?.tiposByClave
+      ? syncCtx.tiposByClave.get(clave) || null
+      : await TipoIncidencia.findOne({ tenantId, clave, activo: true }).lean();
     if (!tipo) continue;
 
     const estatus = tipo.requiereAprobacion ? 'pendiente' : 'aprobada';
@@ -215,4 +217,125 @@ async function cerrarHePendientesBajoMinimo() {
   return { revisadas: pendientes.length, cerradas, actualizadas };
 }
 
-module.exports = { syncAutomaticIncidencias, cerrarHePendientesBajoMinimo };
+/**
+ * Misma regla que syncAutomaticIncidencias, en un solo lote del día.
+ * items: [{ empleadoId, daily, heMinimo }]
+ */
+async function syncAutomaticIncidenciasLote(tenantId, empresaId, items, syncCtx) {
+  if (!items?.length || !syncCtx?.tiposByClave) return;
+  const Incidencia = await getIncidenciaModel();
+  const dayStart = startOfDay(items[0].daily?.fecha || new Date());
+  const ids = items.map((item) => item.empleadoId).filter(Boolean);
+  const existentes = await Incidencia.find({
+    tenantId,
+    empleadoId: { $in: ids },
+    origen: 'automatica',
+    fechaInicio: dayStart,
+    codigo: { $in: AUTO_CLAVES_DIA },
+    estatus: { $ne: 'rechazada' }
+  })
+    .select('empleadoId codigo estatus')
+    .lean();
+  const porEmpleado = new Map();
+  for (const row of existentes) {
+    const key = String(row.empleadoId);
+    if (!porEmpleado.has(key)) porEmpleado.set(key, []);
+    porEmpleado.get(key).push(row);
+  }
+
+  const ops = [];
+  const rechazarBajo = [];
+  const rechazarOtras = [];
+  for (const item of items) {
+    const daily = item.daily || {};
+    const minimo = item.heMinimo;
+    const activas = new Set(daily.incidenciasAutomaticas || []);
+    const enElDia = new Set(daily.incidenciasAutomaticas || []);
+    const heTotal = minutosHeTotal(daily);
+    if (heTotal < minimo) {
+      for (const clave of HE_CLAVES) activas.delete(clave);
+    }
+    for (const clave of activas) {
+      const tipo = syncCtx.tiposByClave.get(clave);
+      if (!tipo) continue;
+      const estatus = tipo.requiereAprobacion ? 'pendiente' : 'aprobada';
+      const minutosAfectados = minutosPorCodigo(clave, daily);
+      const set = {
+        tenantId,
+        empleadoId: item.empleadoId,
+        tipoIncidenciaId: tipo._id,
+        codigo: clave,
+        fechaInicio: dayStart,
+        fechaFin: dayStart,
+        diasAfectados: ['FI', 'RP', 'FR'].includes(clave) ? 1 : 0,
+        minutosAfectados,
+        motivo: motivoAutomatico(clave, daily, dayStart, minimo),
+        origen: 'automatica',
+        estatus,
+        dailyAttendanceId: daily._id || null
+      };
+      if (estatus === 'aprobada') set.fechaResolucion = new Date();
+      ops.push({
+        updateOne: {
+          filter: {
+            tenantId,
+            empleadoId: item.empleadoId,
+            codigo: clave,
+            fechaInicio: dayStart,
+            origen: 'automatica'
+          },
+          update: { $set: set, $unset: { canceladaAt: 1 } },
+          upsert: true
+        }
+      });
+    }
+    for (const stale of porEmpleado.get(String(item.empleadoId)) || []) {
+      if (activas.has(stale.codigo)) continue;
+      if (HE_CLAVES.includes(stale.codigo) && enElDia.has(stale.codigo) && heTotal < minimo) {
+        if (stale.estatus === 'pendiente') rechazarBajo.push({ id: stale._id, heTotal, minimo });
+        continue;
+      }
+      rechazarOtras.push(stale._id);
+    }
+  }
+
+  for (let i = 0; i < ops.length; i += 500) {
+    await Incidencia.bulkWrite(ops.slice(i, i + 500), { ordered: false });
+  }
+  const bajoPorMensaje = new Map();
+  for (const row of rechazarBajo) {
+    const msg = `Horas extra de ${row.heTotal} min, bajo el mínimo de ${row.minimo} min de la subsidiaria. Queda como nota y no pide autorización.`;
+    if (!bajoPorMensaje.has(msg)) bajoPorMensaje.set(msg, []);
+    bajoPorMensaje.get(msg).push(row.id);
+  }
+  for (const [motivoRechazo, idsBajo] of bajoPorMensaje) {
+    await Incidencia.updateMany(
+      { _id: { $in: idsBajo } },
+      {
+        $set: {
+          estatus: 'rechazada',
+          motivoRechazo,
+          fechaResolucion: new Date()
+        }
+      }
+    );
+  }
+  if (rechazarOtras.length) {
+    await Incidencia.updateMany(
+      { _id: { $in: rechazarOtras } },
+      {
+        $set: {
+          estatus: 'rechazada',
+          motivoRechazo: 'Cancelada: la asistencia del día ya no genera esta incidencia',
+          fechaResolucion: new Date()
+        }
+      }
+    );
+  }
+}
+
+module.exports = {
+  syncAutomaticIncidencias,
+  syncAutomaticIncidenciasLote,
+  cerrarHePendientesBajoMinimo
+};
